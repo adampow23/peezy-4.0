@@ -6,6 +6,13 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		45D0CA042F157FCC00064C3C /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = 45D0CA032F157FCC00064C3C /* FirebaseAuth */; };
+		45D0CA062F157FCC00064C3C /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = 45D0CA052F157FCC00064C3C /* FirebaseFirestore */; };
+		45D0CA082F157FCC00064C3C /* FirebaseFunctions in Frameworks */ = {isa = PBXBuildFile; productRef = 45D0CA072F157FCC00064C3C /* FirebaseFunctions */; };
+		45D0CA0A2F160200000GSIN1 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = 45D0CA092F160200000GSIN1 /* GoogleSignIn */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		45D0C99F2F14D0A600064C3C /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -29,9 +36,33 @@
 		45D0C9A82F14D0A600064C3C /* Peezy 4.0UITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Peezy 4.0UITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		455D7E762F16002800C1BC98 /* Exceptions for "Peezy 4.0" folder in "Peezy 4.0" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				"Documents/Anthropic-API-Key.txt",
+			);
+			target = 45D0C9902F14D0A500064C3C /* Peezy 4.0 */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
+/* Begin PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet section */
+		455D7E772F16002800C1BC98 /* Exceptions for "Peezy 4.0" folder in "Compile Sources" phase from "Peezy 4.0" target */ = {
+			isa = PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet;
+			buildPhase = 45D0C98D2F14D0A500064C3C /* Sources */;
+			membershipExceptions = (
+				"Documents/Anthropic-API-Key.txt",
+			);
+		};
+/* End PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		45D0C9932F14D0A500064C3C /* Peezy 4.0 */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				455D7E762F16002800C1BC98 /* Exceptions for "Peezy 4.0" folder in "Peezy 4.0" target */,
+				455D7E772F16002800C1BC98 /* Exceptions for "Peezy 4.0" folder in "Compile Sources" phase from "Peezy 4.0" target */,
+			);
 			path = "Peezy 4.0";
 			sourceTree = "<group>";
 		};
@@ -52,6 +83,10 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				45D0CA082F157FCC00064C3C /* FirebaseFunctions in Frameworks */,
+				45D0CA042F157FCC00064C3C /* FirebaseAuth in Frameworks */,
+				45D0CA062F157FCC00064C3C /* FirebaseFirestore in Frameworks */,
+				45D0CA0A2F160200000GSIN1 /* GoogleSignIn in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -79,6 +114,7 @@
 				45D0C9A12F14D0A600064C3C /* Peezy 4.0Tests */,
 				45D0C9AB2F14D0A600064C3C /* Peezy 4.0UITests */,
 				45D0C9922F14D0A500064C3C /* Products */,
+				45D0CA022F157FCC00064C3C /* Frameworks */,
 			);
 			sourceTree = "<group>";
 		};
@@ -90,6 +126,13 @@
 				45D0C9A82F14D0A600064C3C /* Peezy 4.0UITests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		45D0CA022F157FCC00064C3C /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = Frameworks;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -112,6 +155,10 @@
 			);
 			name = "Peezy 4.0";
 			packageProductDependencies = (
+				45D0CA032F157FCC00064C3C /* FirebaseAuth */,
+				45D0CA052F157FCC00064C3C /* FirebaseFirestore */,
+				45D0CA072F157FCC00064C3C /* FirebaseFunctions */,
+				45D0CA092F160200000GSIN1 /* GoogleSignIn */,
 			);
 			productName = "Peezy 4.0";
 			productReference = 45D0C9912F14D0A500064C3C /* Peezy 4.0.app */;
@@ -195,6 +242,10 @@
 			);
 			mainGroup = 45D0C9882F14D0A500064C3C;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				45D0C9BB2F1512B300064C3C /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
+				455D7E7A2F1601C700C1BC98 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 45D0C9922F14D0A500064C3C /* Products */;
 			projectDirPath = "";
@@ -400,6 +451,9 @@
 				DEVELOPMENT_TEAM = C7434HTS3Q;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Peezy-4-0-Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "";
+				INFOPLIST_KEY_LSApplicationCategoryType = "";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -432,6 +486,9 @@
 				DEVELOPMENT_TEAM = C7434HTS3Q;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Peezy-4-0-Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "";
+				INFOPLIST_KEY_LSApplicationCategoryType = "";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -578,6 +635,48 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		455D7E7A2F1601C700C1BC98 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/google/GoogleSignIn-iOS";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 9.1.0;
+			};
+		};
+		45D0C9BB2F1512B300064C3C /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/firebase/firebase-ios-sdk";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 12.7.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		45D0CA032F157FCC00064C3C /* FirebaseAuth */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 45D0C9BB2F1512B300064C3C /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAuth;
+		};
+		45D0CA052F157FCC00064C3C /* FirebaseFirestore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 45D0C9BB2F1512B300064C3C /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseFirestore;
+		};
+		45D0CA072F157FCC00064C3C /* FirebaseFunctions */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 45D0C9BB2F1512B300064C3C /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseFunctions;
+		};
+		45D0CA092F160200000GSIN1 /* GoogleSignIn */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 455D7E7A2F1601C700C1BC98 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */;
+			productName = GoogleSignIn;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 45D0C9892F14D0A500064C3C /* Project object */;
 }

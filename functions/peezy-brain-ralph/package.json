@@ -1,0 +1,27 @@
+{
+  "name": "peezy-brain",
+  "version": "1.0.0",
+  "description": "Peezy Brain - Conversational AI for moving assistance",
+  "scripts": {
+    "test": "jest --config tests/jest.config.js",
+    "test:watch": "jest --config tests/jest.config.js --watch",
+    "test:coverage": "jest --config tests/jest.config.js --coverage",
+    "test:scenarios": "jest --config tests/jest.config.js tests/scenarios.test.js",
+    "test:behaviors": "jest --config tests/jest.config.js tests/behaviors.test.js",
+    "test:vendors": "jest --config tests/jest.config.js tests/vendors.test.js",
+    "test:workflows": "jest --config tests/jest.config.js tests/workflows.test.js",
+    "test:edge": "jest --config tests/jest.config.js tests/edgeCases.test.js",
+    "test:errors": "jest --config tests/jest.config.js tests/errors.test.js",
+    "test:integration": "jest --config tests/jest.config.js tests/integration.test.js",
+    "test:performance": "jest --config tests/jest.config.js tests/performance.test.js",
+    "deploy": "cd functions && npm run deploy",
+    "emulator": "cd functions && npm run serve"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "jest-summary-reporter": "^0.0.2"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
