@@ -69,7 +69,7 @@ struct MoveExperience: View {
             }
         }
         .navigationBarBackButtonHidden(true)
-        .background(Color(.systemBackground))
+        .background(InteractiveBackground())
         .onAppear {
             selected = assessmentData.MoveExperience
             withAnimation {

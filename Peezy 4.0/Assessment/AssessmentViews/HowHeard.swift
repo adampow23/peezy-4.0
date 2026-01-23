@@ -70,7 +70,7 @@ struct HowHeard: View {
             }
         }
         .navigationBarBackButtonHidden(true)
-        .background(Color(.systemBackground))
+        .background(InteractiveBackground())
         .onAppear {
             selected = assessmentData.HowHeard
             withAnimation {

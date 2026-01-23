@@ -15,6 +15,7 @@ struct AssessmentContentArea<Content: View>: View {
                 HStack {
                     Text(questionText)
                         .font(.system(size: 34, weight: .bold))
+                        .foregroundColor(.white)
                         .frame(width: geo.size.width * 0.6, alignment: .leading)
                         .multilineTextAlignment(.leading)
                         .lineLimit(nil)

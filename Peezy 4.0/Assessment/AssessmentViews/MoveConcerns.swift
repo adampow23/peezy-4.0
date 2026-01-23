@@ -42,14 +42,15 @@ struct MoveConcerns: View {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("What worries you most about moving?")
                                 .font(.system(size: 34, weight: .bold))
+                                .foregroundColor(.white)
                                 .frame(width: geo.size.width * 0.6, alignment: .leading)
                                 .multilineTextAlignment(.leading)
                                 .lineLimit(nil)
                                 .fixedSize(horizontal: false, vertical: true)
-                            
+
                             Text("Tap all that apply")
                                 .font(.system(size: 16))
-                                .foregroundColor(.gray)
+                                .foregroundColor(.white.opacity(0.6))
                         }
                         .padding(.horizontal, 20)
                         Spacer(minLength: 0)
@@ -88,9 +89,11 @@ struct MoveConcerns: View {
                                 if concern.0 == "Other" && selectedConcerns.contains("Other") {
                                     TextField("Please specify...", text: $otherText)
                                         .font(.system(size: 16))
+                                        .foregroundColor(.black)
                                         .padding()
-                                        .background(Color(.systemGray6))
+                                        .background(Color.white)
                                         .cornerRadius(12)
+                                        .shadow(color: Color.black.opacity(0.1), radius: 8, x: 0, y: 4)
                                         .transition(.opacity.combined(with: .scale))
                                 }
                             }
@@ -123,7 +126,7 @@ struct MoveConcerns: View {
             .animation(.spring(response: 0.6, dampingFraction: 0.8).delay(0.4), value: showContent)
         }
         .navigationBarBackButtonHidden(true)
-        .background(Color(.systemBackground))
+        .background(InteractiveBackground())
         .onAppear {
             selectedConcerns = Set(assessmentData.MoveConcerns.map { concern in
                 if concern.hasPrefix("Other: ") {

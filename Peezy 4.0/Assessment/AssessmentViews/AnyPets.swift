@@ -67,7 +67,7 @@ struct AnyPets: View {
             }
         }
         .navigationBarBackButtonHidden(true)
-        .background(Color(.systemBackground))
+        .background(InteractiveBackground())
         .onAppear {
             selected = assessmentData.AnyPets
             withAnimation {

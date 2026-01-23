@@ -37,6 +37,11 @@ struct SnoozeCardView: View {
                 .shadow(color: .black.opacity(0.12), radius: 20, x: 0, y: 10)
 
             switch card {
+            case .swipeable:
+                // Swipeable cards are handled by SwipeableSnoozeCardView
+                // This legacy view shouldn't receive this case
+                EmptyView()
+
             case .options(_, let taskTitle):
                 SnoozeOptionsContent(
                     taskTitle: taskTitle,
@@ -55,7 +60,7 @@ struct SnoozeCardView: View {
                     onBack: onCancel
                 )
 
-            case .confirmation(let taskTitle, let snoozeDate):
+            case .confirmation(let taskTitle, let snoozeDate, _):
                 SnoozeConfirmationContent(
                     taskTitle: taskTitle,
                     snoozeDate: snoozeDate
@@ -404,7 +409,7 @@ struct SnoozeConfirmationContent: View {
 
 #Preview("Confirmation") {
     SnoozeCardView(
-        card: .confirmation(taskTitle: "Book Moving Company", snoozeDate: Date().addingTimeInterval(86400 * 7)),
+        card: .confirmation(taskTitle: "Book Moving Company", snoozeDate: Date().addingTimeInterval(86400 * 7), action: .snoozed),
         options: [],
         selectedDate: .constant(Date().addingTimeInterval(86400)),
         isLoading: false,

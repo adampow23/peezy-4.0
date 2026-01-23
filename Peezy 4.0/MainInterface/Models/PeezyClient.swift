@@ -3,15 +3,23 @@ import Foundation
 // MARK: - PeezyClient
 /// Handles all network communication with the Peezy Firebase backend
 final class PeezyClient {
-    
+
     // MARK: - Configuration
     private let baseURL: String
     private let session: URLSession
     private let decoder: JSONDecoder
     private let encoder: JSONEncoder
-    
+
     // Singleton for easy access
     static let shared = PeezyClient()
+
+    // MARK: - Debug Logging (for Debug Menu)
+    #if DEBUG
+    /// Last request body sent to the backend (for debug inspection)
+    static var lastPromptSent: String = ""
+    /// Last response body received from the backend (for debug inspection)
+    static var lastResponseReceived: String = ""
+    #endif
     
     // MARK: - Init
     init(
@@ -148,26 +156,57 @@ final class PeezyClient {
     }
     
     // MARK: - Debug Logging
-    
+
     #if DEBUG
     private func logRequest<T: Codable>(_ request: URLRequest, body: T) {
         print("📤 PEEZY REQUEST")
         print("   URL: \(request.url?.absoluteString ?? "nil")")
         if let bodyData = try? encoder.encode(body),
            let bodyString = String(data: bodyData, encoding: .utf8) {
-            // Truncate long bodies
+            // Store full body for debug menu inspection
+            Self.lastPromptSent = """
+            URL: \(request.url?.absoluteString ?? "nil")
+            Method: \(request.httpMethod ?? "POST")
+            Timestamp: \(ISO8601DateFormatter().string(from: Date()))
+
+            Body:
+            \(formatJSON(bodyString))
+            """
+
+            // Truncate for console
             let truncated = bodyString.prefix(500)
             print("   Body: \(truncated)\(bodyString.count > 500 ? "..." : "")")
         }
     }
-    
+
     private func logResponse(_ response: HTTPURLResponse, data: Data) {
         let emoji = (200...299).contains(response.statusCode) ? "✅" : "❌"
         print("\(emoji) PEEZY RESPONSE [\(response.statusCode)]")
         if let bodyString = String(data: data, encoding: .utf8) {
+            // Store full response for debug menu inspection
+            Self.lastResponseReceived = """
+            Status: \(response.statusCode)
+            Timestamp: \(ISO8601DateFormatter().string(from: Date()))
+
+            Body:
+            \(formatJSON(bodyString))
+            """
+
+            // Truncate for console
             let truncated = bodyString.prefix(500)
             print("   Body: \(truncated)\(bodyString.count > 500 ? "..." : "")")
         }
+    }
+
+    /// Pretty-print JSON for debug display
+    private func formatJSON(_ jsonString: String) -> String {
+        guard let data = jsonString.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data),
+              let prettyData = try? JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .sortedKeys]),
+              let prettyString = String(data: prettyData, encoding: .utf8) else {
+            return jsonString
+        }
+        return prettyString
     }
     #endif
 }

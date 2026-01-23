@@ -21,7 +21,7 @@ struct AssessmentIntroView: View {
             // Icon with breathing animation and entrance
             Image(systemName: "list.clipboard.fill")
                 .font(.system(size: 80))
-                .foregroundColor(Color(red: 0.98, green: 0.85, blue: 0.29))
+                .foregroundColor(.white)
                 .padding(.bottom, 32)
                 .scaleEffect(showContent ? iconScale : 0.5)
                 .opacity(showContent ? 1 : 0)
@@ -37,7 +37,7 @@ struct AssessmentIntroView: View {
             Text("Let's build your moving plan")
                 .font(.system(size: 28, weight: .semibold))
                 .multilineTextAlignment(.center)
-                .foregroundColor(.primary)
+                .foregroundColor(.white)
                 .padding(.horizontal, 40)
                 .padding(.bottom, 16)
                 .opacity(showContent ? 1 : 0)
@@ -48,7 +48,7 @@ struct AssessmentIntroView: View {
             Text("Answer 15 quick questions and we'll generate a personalized task list to guide you through every step of your move.")
                 .font(.system(size: 17))
                 .multilineTextAlignment(.center)
-                .foregroundColor(.secondary)
+                .foregroundColor(.white.opacity(0.7))
                 .padding(.horizontal, 40)
                 .padding(.bottom, 8)
                 .opacity(showContent ? 1 : 0)
@@ -61,7 +61,7 @@ struct AssessmentIntroView: View {
                 Text("Takes about 2 minutes")
                     .font(.system(size: 15))
             }
-            .foregroundColor(.secondary)
+            .foregroundColor(.white.opacity(0.6))
             .opacity(showContent ? 1 : 0)
             .animation(.easeOut(duration: 0.5).delay(0.7), value: showContent)
 
@@ -77,18 +77,7 @@ struct AssessmentIntroView: View {
             .offset(y: showContent ? 0 : 30)
             .animation(.spring(response: 0.6, dampingFraction: 0.8).delay(0.8), value: showContent)
         }
-        .background(
-            // Subtle gradient background
-            LinearGradient(
-                colors: [
-                    Color.white,
-                    Color(red: 0.98, green: 0.85, blue: 0.29).opacity(0.05)
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .ignoresSafeArea()
-        )
+        .background(InteractiveBackground())
         .onAppear {
             // Trigger entrance animations
             withAnimation {

@@ -98,7 +98,7 @@ struct UserState: Codable {
     var daysUntilMove: Int? {
         guard let moveDate = moveDate else { return nil }
         let calendar = Calendar.current
-        let components = calendar.dateComponents([.day], from: Date(), to: moveDate)
+        let components = calendar.dateComponents([.day], from: DateProvider.shared.now, to: moveDate)
         return components.day
     }
     

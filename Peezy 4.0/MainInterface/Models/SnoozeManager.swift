@@ -24,6 +24,15 @@ import SwiftUI
 import FirebaseFirestore
 import FirebaseAuth
 
+// MARK: - Snooze Swipe Action
+
+/// Actions available on the swipeable snooze card
+enum SnoozeSwipeAction {
+    case tomorrow   // Swipe right - snooze until tomorrow
+    case never      // Swipe left - dismiss permanently
+    case other      // Swipe up - show date picker for custom date
+}
+
 // MARK: - Snooze Option
 
 struct SnoozeOption: Identifiable, Equatable {
@@ -35,7 +44,7 @@ struct SnoozeOption: Identifiable, Equatable {
 
     static func quickOptions(moveDate: Date?, taskDueDate: Date?) -> [SnoozeOption] {
         let calendar = Calendar.current
-        let now = Date()
+        let now = DateProvider.shared.now
 
         var options: [SnoozeOption] = []
 
@@ -114,7 +123,7 @@ struct SnoozeOption: Identifiable, Equatable {
     /// - Otherwise → returns this coming Saturday
     private static func nextWeekend() -> Date? {
         let calendar = Calendar.current
-        let now = Date()
+        let now = DateProvider.shared.now
         let today = calendar.startOfDay(for: now)
 
         // Get current weekday (1 = Sunday, 7 = Saturday)
@@ -144,17 +153,25 @@ struct SnoozeOption: Identifiable, Equatable {
 // MARK: - Snooze Card Type
 
 enum SnoozeCard: Identifiable, Equatable {
-    case options(taskId: String, taskTitle: String)
+    case swipeable(taskId: String, taskTitle: String)  // New swipeable card
+    case options(taskId: String, taskTitle: String)    // Legacy options list
     case datePicker(taskId: String, taskTitle: String)
-    case confirmation(taskTitle: String, snoozeDate: Date)
+    case confirmation(taskTitle: String, snoozeDate: Date, action: SnoozeConfirmAction)
 
     var id: String {
         switch self {
+        case .swipeable(let taskId, _): return "snooze-swipe-\(taskId)"
         case .options(let taskId, _): return "snooze-options-\(taskId)"
         case .datePicker(let taskId, _): return "snooze-picker-\(taskId)"
-        case .confirmation(let title, _): return "snooze-confirm-\(title)"
+        case .confirmation(let title, _, _): return "snooze-confirm-\(title)"
         }
     }
+}
+
+// Action type for confirmation display
+enum SnoozeConfirmAction: Equatable {
+    case snoozed    // Tomorrow or custom date
+    case dismissed  // Never - removed from list
 }
 
 // MARK: - Snooze Manager
@@ -165,7 +182,7 @@ class SnoozeManager {
     // State
     var isSnoozing = false
     var snoozeCard: SnoozeCard?
-    var selectedDate: Date = Date().addingTimeInterval(86400) // Default tomorrow
+    var selectedDate: Date = DateProvider.shared.now.addingTimeInterval(86400) // Default tomorrow
     var isLoading = false
     var error: Error?
 
@@ -196,20 +213,105 @@ class SnoozeManager {
         self.moveDate = moveDate
 
         // Default to tomorrow
-        let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: Date()))!
+        let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: DateProvider.shared.now))!
         self.selectedDate = tomorrow
 
-        // Show options card
+        // Show swipeable card (new style)
+        snoozeCard = .swipeable(taskId: taskId, taskTitle: taskTitle)
+        isSnoozing = true
+    }
+
+    /// Start with legacy options card (for backwards compatibility)
+    func startSnoozeWithOptions(taskId: String, taskTitle: String, taskDueDate: Date?, moveDate: Date?) {
+        self.currentTaskId = taskId
+        self.currentTaskTitle = taskTitle
+        self.taskDueDate = taskDueDate
+        self.moveDate = moveDate
+
+        let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: DateProvider.shared.now))!
+        self.selectedDate = tomorrow
+
         snoozeCard = .options(taskId: taskId, taskTitle: taskTitle)
         isSnoozing = true
     }
 
-    // MARK: - Handle Selection
+    // MARK: - Handle Swipe Actions (New Style)
+
+    /// Handle swipe action from swipeable card
+    func handleSwipeAction(_ action: SnoozeSwipeAction) async {
+        guard let taskId = currentTaskId else { return }
+
+        switch action {
+        case .tomorrow:
+            let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: DateProvider.shared.now))!
+            await snoozeTask(taskId: taskId, until: tomorrow, confirmAction: .snoozed)
+
+        case .never:
+            await dismissTaskPermanently(taskId: taskId)
+
+        case .other:
+            // Show date picker
+            await MainActor.run {
+                showDatePicker()
+            }
+        }
+    }
+
+    /// Dismiss task permanently (mark as skipped, won't come back)
+    private func dismissTaskPermanently(taskId: String) async {
+        guard let userId = Auth.auth().currentUser?.uid else {
+            error = NSError(domain: "SnoozeManager", code: 1, userInfo: [NSLocalizedDescriptionKey: "Not logged in"])
+            return
+        }
+
+        await MainActor.run {
+            isLoading = true
+        }
+
+        do {
+            // Update task status to skipped
+            try await db.collection("users")
+                .document(userId)
+                .collection("tasks")
+                .document(taskId)
+                .updateData([
+                    "status": "Skipped",
+                    "skippedAt": Timestamp(date: Date())
+                ])
+
+            print("✅ Task '\(currentTaskTitle ?? taskId)' dismissed permanently")
+
+            await MainActor.run {
+                // Show confirmation
+                self.snoozeCard = .confirmation(
+                    taskTitle: self.currentTaskTitle ?? "Task",
+                    snoozeDate: Date(),
+                    action: .dismissed
+                )
+                self.isLoading = false
+            }
+
+            // Auto-dismiss after showing confirmation
+            try? await Task.sleep(nanoseconds: 900_000_000)
+
+            await MainActor.run {
+                self.completeSnooze()
+            }
+
+        } catch {
+            await MainActor.run {
+                self.error = error
+                self.isLoading = false
+            }
+        }
+    }
+
+    // MARK: - Handle Selection (Legacy Options)
 
     /// User selected a quick option
     func selectOption(_ option: SnoozeOption) async {
         guard let taskId = currentTaskId else { return }
-        await snoozeTask(taskId: taskId, until: option.date)
+        await snoozeTask(taskId: taskId, until: option.date, confirmAction: .snoozed)
     }
 
     /// User wants to pick a custom date
@@ -221,19 +323,21 @@ class SnoozeManager {
     /// User confirmed custom date
     func confirmCustomDate() async {
         guard let taskId = currentTaskId else { return }
-        await snoozeTask(taskId: taskId, until: selectedDate)
+        await snoozeTask(taskId: taskId, until: selectedDate, confirmAction: .snoozed)
     }
 
     // MARK: - Snooze Task
 
     /// Updates task in Firestore with snooze date
-    private func snoozeTask(taskId: String, until date: Date) async {
+    private func snoozeTask(taskId: String, until date: Date, confirmAction: SnoozeConfirmAction = .snoozed) async {
         guard let userId = Auth.auth().currentUser?.uid else {
             error = NSError(domain: "SnoozeManager", code: 1, userInfo: [NSLocalizedDescriptionKey: "Not logged in"])
             return
         }
 
-        isLoading = true
+        await MainActor.run {
+            isLoading = true
+        }
 
         do {
             // Update task in Firestore
@@ -253,7 +357,8 @@ class SnoozeManager {
                 // Show confirmation briefly
                 self.snoozeCard = .confirmation(
                     taskTitle: self.currentTaskTitle ?? "Task",
-                    snoozeDate: date
+                    snoozeDate: date,
+                    action: confirmAction
                 )
                 self.isLoading = false
             }

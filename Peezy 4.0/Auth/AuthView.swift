@@ -31,19 +31,22 @@ struct AuthView: View {
     private var isAppleLoading: Bool { loadingState == .apple }
     private var isGoogleLoading: Bool { loadingState == .google }
 
+    // Charcoal glass color
+    private let charcoalColor = PeezyTheme.Colors.charcoalGlass
+
     var body: some View {
         ZStack {
-            Color.white
-                .ignoresSafeArea()
+            // Animated orb background matching the rest of the app
+            InteractiveBackground()
 
             VStack(spacing: 0) {
                 Spacer()
 
                 // Header
                 TypewriterText(
-                    phrases: ["Let's get moving.", "Moving made Peezy.", "Your move, simplified."],
+                    phrases: ["Let's get moving.", "Moving made Peezy.", "Your move, on autopilot."],
                     font: .system(size: 32, weight: .semibold),
-                    foregroundColor: .black
+                    foregroundColor: .white
                 )
                     .opacity(showContent ? 1 : 0)
                     .offset(y: showContent ? 0 : 20)
@@ -144,9 +147,9 @@ struct AuthView: View {
                     } label: {
                         HStack(spacing: 4) {
                             Text("Already have an account?")
-                                .foregroundColor(.secondary)
+                                .foregroundColor(.white.opacity(0.6))
                             Text("Log in")
-                                .foregroundColor(PeezyTheme.Colors.brandYellow)
+                                .foregroundColor(PeezyTheme.Colors.accentBlue)
                                 .fontWeight(.semibold)
                         }
                         .font(PeezyTheme.Typography.callout)
@@ -160,12 +163,30 @@ struct AuthView: View {
                 .padding(.top, PeezyTheme.Layout.sectionSpacing)
                 .padding(.bottom, 40)
                 .frame(maxWidth: .infinity)
-                .background(PeezyTheme.Colors.backgroundSecondary)
-                .clipShape(
+                .background(
+                    ZStack {
+                        // Glass blur effect
+                        UnevenRoundedRectangle(
+                            topLeadingRadius: 30,
+                            topTrailingRadius: 30
+                        )
+                        .fill(.ultraThinMaterial)
+
+                        // Charcoal tint
+                        UnevenRoundedRectangle(
+                            topLeadingRadius: 30,
+                            topTrailingRadius: 30
+                        )
+                        .fill(charcoalColor.opacity(0.6))
+                    }
+                )
+                .overlay(
+                    // Edge highlight at top
                     UnevenRoundedRectangle(
                         topLeadingRadius: 30,
                         topTrailingRadius: 30
                     )
+                    .stroke(Color.white.opacity(0.1), lineWidth: 1)
                 )
                 .opacity(showContent ? 1 : 0)
                 .offset(y: showContent ? 0 : 50)
@@ -217,13 +238,14 @@ struct AuthView: View {
 
 private struct AuthErrorToast: View {
     let message: String
+    private let charcoalColor = PeezyTheme.Colors.charcoalGlass
 
     var body: some View {
         VStack {
             HStack(spacing: 12) {
                 ZStack {
                     Circle()
-                        .fill(PeezyTheme.Colors.emotionalRed.opacity(0.15))
+                        .fill(PeezyTheme.Colors.emotionalRed.opacity(0.2))
                         .frame(width: 36, height: 36)
 
                     Image(systemName: "exclamationmark.triangle.fill")
@@ -233,7 +255,7 @@ private struct AuthErrorToast: View {
 
                 Text(message)
                     .font(PeezyTheme.Typography.calloutMedium)
-                    .foregroundColor(.black)
+                    .foregroundColor(.white)
                     .multilineTextAlignment(.leading)
 
                 Spacer()
@@ -241,23 +263,19 @@ private struct AuthErrorToast: View {
             .padding(PeezyTheme.Layout.cardPadding)
             .background(
                 ZStack {
+                    // Glass blur effect
                     RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadius, style: .continuous)
-                        .fill(Color.clear)
-                        .peezyLiquidGlass(
-                            cornerRadius: PeezyTheme.Layout.cornerRadius,
-                            intensity: 0.55,
-                            speed: 0.22,
-                            tintOpacity: 0.05,
-                            highlightOpacity: 0.12
-                        )
-                    
+                        .fill(.ultraThinMaterial)
+
+                    // Charcoal tint
                     RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadius, style: .continuous)
-                        .fill(.white)
-                    
+                        .fill(charcoalColor.opacity(0.6))
+
+                    // Red border for error
                     RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadius, style: .continuous)
-                        .strokeBorder(PeezyTheme.Colors.emotionalRed.opacity(0.2), lineWidth: 1)
+                        .strokeBorder(PeezyTheme.Colors.emotionalRed.opacity(0.4), lineWidth: 1)
                 }
-                .peezyCardShadow()
+                .shadow(color: Color.black.opacity(0.3), radius: 12, x: 0, y: 6)
             )
             .padding(.horizontal, PeezyTheme.Layout.horizontalPadding)
             .padding(.top, 60)

@@ -23,18 +23,22 @@ struct PeezyFormField2: View {
 
     @FocusState private var isFocused: Bool
 
+    // Charcoal glass colors
+    private let charcoalColor = PeezyTheme.Colors.charcoalGlass
+    private let accentBlue = PeezyTheme.Colors.accentBlue
+
     private var hasError: Bool { !(error ?? "").isEmpty }
 
     private var strokeColor: Color {
         if hasError { return PeezyTheme.Colors.emotionalRed }
-        if isFocused { return PeezyTheme.Colors.brandYellow.opacity(0.9) }
-        return Color.clear
+        if isFocused { return accentBlue.opacity(0.6) }
+        return Color.white.opacity(0.1)
     }
 
     private var shadowColor: Color {
-        if hasError { return PeezyTheme.Colors.emotionalRed.opacity(0.12) }
-        if isFocused { return PeezyTheme.Shadows.brandGlow(opacity: 0.25) }
-        return Color.clear
+        if hasError { return PeezyTheme.Colors.emotionalRed.opacity(0.2) }
+        if isFocused { return accentBlue.opacity(0.2) }
+        return Color.black.opacity(0.3)
     }
 
     var body: some View {
@@ -42,14 +46,14 @@ struct PeezyFormField2: View {
             if let label = label, !label.isEmpty {
                 Text(label)
                     .font(PeezyTheme.Typography.callout)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(.white.opacity(0.6))
             }
 
             HStack(spacing: 12) {
                 if let icon = leadingIcon {
                     Image(systemName: icon)
                         .font(.system(size: 16, weight: .semibold))
-                        .foregroundColor(isFocused ? PeezyTheme.Colors.brandYellow : .secondary)
+                        .foregroundColor(isFocused ? accentBlue : .white.opacity(0.5))
                 }
 
                 Group {
@@ -70,21 +74,28 @@ struct PeezyFormField2: View {
                     }
                 }
                 .font(PeezyTheme.Typography.body)
-                .foregroundColor(.primary)
-                .tint(PeezyTheme.Colors.brandYellow)
+                .foregroundColor(.white)
+                .tint(accentBlue)
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 14)
             .frame(minHeight: 52)
             .background(
-                RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadiusFixed, style: .continuous)
-                    .fill(PeezyTheme.Colors.backgroundSecondary)
+                ZStack {
+                    // Glass blur effect
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(.ultraThinMaterial)
+
+                    // Charcoal tint
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(charcoalColor.opacity(0.6))
+                }
             )
             .overlay(
-                RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadiusFixed, style: .continuous)
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .stroke(strokeColor, lineWidth: hasError || isFocused ? 2 : 1)
             )
-            .shadow(color: shadowColor, radius: 12, y: 6)
+            .shadow(color: shadowColor, radius: 10, y: 5)
 
             if let error = error, !error.isEmpty {
                 Text(error)
@@ -93,7 +104,7 @@ struct PeezyFormField2: View {
             } else if let helper = helper, !helper.isEmpty {
                 Text(helper)
                     .font(PeezyTheme.Typography.footnote)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(.white.opacity(0.5))
             }
         }
     }

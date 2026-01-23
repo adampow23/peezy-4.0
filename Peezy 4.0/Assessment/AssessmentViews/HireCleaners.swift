@@ -67,7 +67,7 @@ struct HireCleaners: View {
             }
         }
         .navigationBarBackButtonHidden(true)
-        .background(Color(.systemBackground))
+        .background(InteractiveBackground())
         .onAppear {
             selected = assessmentData.HireCleaners
             withAnimation {

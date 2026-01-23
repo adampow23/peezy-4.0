@@ -14,7 +14,6 @@ struct AnimatedAssessmentProgressBar: View {
     let onCompletion: () -> Void
 
     @State private var pulseScale: CGFloat = 1.0
-    @State private var shimmerOffset: CGFloat = -200
     @State private var breathingScale: CGFloat = 0.95
     @State private var showExplosion = false
     @State private var explosionScale: CGFloat = 1.0
@@ -34,18 +33,14 @@ struct AnimatedAssessmentProgressBar: View {
                 ZStack(alignment: .leading) {
                     // Background track
                     RoundedRectangle(cornerRadius: barHeight / 2)
-                        .fill(Color.gray.opacity(0.15))
+                        .fill(Color.white.opacity(0.2))
                         .frame(height: barHeight)
 
                     // Filled portion
                     RoundedRectangle(cornerRadius: barHeight / 2)
-                        .fill(barColor)
+                        .fill(Color.white)
                         .frame(width: geometry.size.width * progress, height: barHeight)
-                        .overlay(
-                            // Shimmer effect (70%+)
-                            shimmerOverlay(width: geometry.size.width * progress)
-                        )
-                        .shadow(color: glowColor, radius: glowRadius)
+                        .shadow(color: Color.white.opacity(glowOpacity), radius: glowRadius)
                         .scaleEffect(x: 1.0, y: animationScale, anchor: .leading)
                 }
             }
@@ -81,26 +76,13 @@ struct AnimatedAssessmentProgressBar: View {
         else { return 12 }
     }
 
-    private var barColor: Color {
-        if progress < 0.4 {
-            return Color.gray.opacity(0.3)
-        } else if progress < 0.7 {
-            return Color.yellow.opacity(0.6)
-        } else if progress < 0.95 {
-            return Color(red: 0.98, green: 0.85, blue: 0.29)
-        } else {
-            // Pure gold at 95%+
-            return Color(red: 1.0, green: 0.84, blue: 0.0)
-        }
-    }
-
-    private var glowColor: Color {
+    private var glowOpacity: Double {
         if progress >= 0.95 {
-            return Color(red: 1.0, green: 0.84, blue: 0.0).opacity(0.6)
+            return 0.6
         } else if progress >= 0.9 {
-            return Color(red: 0.98, green: 0.85, blue: 0.29).opacity(0.4)
+            return 0.4
         } else {
-            return Color.clear
+            return 0
         }
     }
 
@@ -124,42 +106,9 @@ struct AnimatedAssessmentProgressBar: View {
         }
     }
 
-    // MARK: - Shimmer Effect
-
-    @ViewBuilder
-    private func shimmerOverlay(width: CGFloat) -> some View {
-        if progress >= 0.7 {
-            Rectangle()
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            Color.clear,
-                            Color.white.opacity(0.3),
-                            Color.clear
-                        ],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                )
-                .frame(width: 60)
-                .offset(x: shimmerOffset)
-                .mask(
-                    RoundedRectangle(cornerRadius: barHeight / 2)
-                        .frame(width: width)
-                )
-        }
-    }
-
     // MARK: - Animations
 
     private func startAnimations() {
-        // Start shimmer animation if in range
-        if progress >= 0.7 {
-            withAnimation(.linear(duration: 1.5).repeatForever(autoreverses: false)) {
-                shimmerOffset = 400
-            }
-        }
-
         // Start breathing animation if in range
         if progress >= 0.9 && progress < 0.95 {
             startBreathingAnimation()
@@ -186,7 +135,7 @@ struct AnimatedAssessmentProgressBar: View {
                 }
             }
         } else if progress >= 0.7 && progress < 0.9 {
-            // Medium pulse with shimmer (70-90%)
+            // Medium pulse (70-90%)
             withAnimation(.spring(response: 0.3, dampingFraction: 0.5)) {
                 pulseScale = 1.1
             }
@@ -194,12 +143,6 @@ struct AnimatedAssessmentProgressBar: View {
                 withAnimation(.spring(response: 0.3, dampingFraction: 0.5)) {
                     pulseScale = 1.0
                 }
-            }
-
-            // Restart shimmer
-            shimmerOffset = -200
-            withAnimation(.linear(duration: 1.5).repeatForever(autoreverses: false)) {
-                shimmerOffset = 400
             }
         } else if progress >= 0.9 && progress < 0.95 {
             // Start breathing if not already
@@ -276,13 +219,13 @@ struct AssessmentProgressHeader: View {
             HStack {
                 Button(action: onBack) {
                     Image(systemName: "arrow.left")
-                        .foregroundColor(.cyan)
+                        .foregroundColor(.white)
                         .font(.system(size: 20))
                 }
                 Spacer()
                 Text("Step \(currentStep) of \(totalSteps)")
-                    .font(.system(size: 16))
-                    .foregroundColor(.gray)
+                    .font(.system(size: 18))
+                    .foregroundColor(.white.opacity(0.8))
                 Spacer()
             }
             .padding(.horizontal, 20)
@@ -303,18 +246,19 @@ struct AssessmentProgressHeader: View {
 // MARK: - Preview
 
 #Preview {
-    VStack(spacing: 40) {
-        Text("Progress Evolution Demo")
-            .font(.title)
+    ZStack {
+        InteractiveBackground()
 
-        AssessmentProgressHeader(
-            currentStep: 14,
-            totalSteps: 15,
-            onBack: {},
-            onCompletion: {}
-        )
+        VStack(spacing: 40) {
+            AssessmentProgressHeader(
+                currentStep: 5,
+                totalSteps: 15,
+                onBack: {},
+                onCompletion: {}
+            )
 
-        Spacer()
+            Spacer()
+        }
+        .padding()
     }
-    .padding()
 }

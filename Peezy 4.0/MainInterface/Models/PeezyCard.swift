@@ -37,6 +37,9 @@ struct PeezyCard: Identifiable, Equatable, Codable {
     var dueDate: Date?
     var snoozedUntil: Date?
     var lastSnoozedAt: Date?
+
+    // Intro card briefing message (warm, conversational summary)
+    var briefingMessage: String?
     
     // MARK: - Card Types
     enum CardType: String, Codable {
@@ -136,7 +139,7 @@ struct PeezyCard: Identifiable, Equatable, Codable {
     /// Whether this card is currently snoozed
     var isSnoozed: Bool {
         guard let snoozedUntil = snoozedUntil else { return false }
-        return snoozedUntil > Date()
+        return snoozedUntil > DateProvider.shared.now
     }
 
     /// Whether this card should be shown in the stack
@@ -168,7 +171,8 @@ struct PeezyCard: Identifiable, Equatable, Codable {
         status: TaskStatus = .upcoming,
         dueDate: Date? = nil,
         snoozedUntil: Date? = nil,
-        lastSnoozedAt: Date? = nil
+        lastSnoozedAt: Date? = nil,
+        briefingMessage: String? = nil
     ) {
         self.id = id
         self.type = type
@@ -185,24 +189,40 @@ struct PeezyCard: Identifiable, Equatable, Codable {
         self.dueDate = dueDate
         self.snoozedUntil = snoozedUntil
         self.lastSnoozedAt = lastSnoozedAt
+        self.briefingMessage = briefingMessage
     }
     
     // MARK: - Factory Methods
-    
-    /// Create intro card for daily greeting
-    static func intro(updateCount: Int) -> PeezyCard {
-        let greeting = greetingForTimeOfDay()
-        let subtitle = updateCount == 0
-            ? "You're all caught up!"
-            : "\(updateCount) update\(updateCount == 1 ? "" : "s") ready for you."
-        
+
+    /// Create intro card for daily greeting with user name and contextual briefing
+    static func intro(userName: String?, briefing: String? = nil) -> PeezyCard {
+        let timeOfDay = TimeOfDay.current
+        let greeting = timeOfDay.greeting
+        let name = userName ?? ""
+
+        // Title: "Good morning," or "Good morning" (without comma if no name)
+        let title = name.isEmpty ? greeting : "\(greeting),"
+
+        // Subtitle stores the user's name for display
+        // briefingMessage stores the warm, conversational summary
         return PeezyCard(
             type: .intro,
-            title: greeting,
-            subtitle: subtitle,
+            title: title,
+            subtitle: name,
             colorName: "white",
-            priority: .high
+            priority: .high,
+            briefingMessage: briefing
         )
+    }
+
+    /// Legacy factory for backward compatibility
+    static func intro(userName: String?, updateCount: Int, taskCount: Int) -> PeezyCard {
+        return intro(userName: userName, briefing: nil)
+    }
+
+    /// Legacy factory for backward compatibility
+    static func intro(updateCount: Int) -> PeezyCard {
+        return intro(userName: nil, briefing: nil)
     }
     
     /// Create task decision card from MovingTask
@@ -266,16 +286,8 @@ struct PeezyCard: Identifiable, Equatable, Codable {
     }
     
     // MARK: - Helpers
-    
-    private static func greetingForTimeOfDay() -> String {
-        let hour = Calendar.current.component(.hour, from: Date())
-        switch hour {
-        case 5..<12: return "Good Morning"
-        case 12..<17: return "Good Afternoon"
-        case 17..<22: return "Good Evening"
-        default: return "Hey There"
-        }
-    }
+
+    // Greeting is now handled by TimeOfDay enum in PeezyTheme.swift
     
     private static func colorForPriority(_ priority: Priority) -> String {
         switch priority {

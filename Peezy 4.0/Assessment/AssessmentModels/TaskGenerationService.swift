@@ -116,7 +116,7 @@ class TaskGenerationService {
     ///   - urgencyPercentage: Task urgency (1-99)
     /// - Returns: Calculated due date
     private func calculateDueDate(moveDate: Date, urgencyPercentage: Int) -> Date {
-        let today = Calendar.current.startOfDay(for: Date())
+        let today = Calendar.current.startOfDay(for: DateProvider.shared.now)
         let moveDateStart = Calendar.current.startOfDay(for: moveDate)
         
         // Calculate total days between today and move date
@@ -147,7 +147,7 @@ class TaskGenerationService {
     private func createAssessmentCompletionTask(userId: String, moveDate: Date) async throws {
         print("🎯 Creating special 'Complete Assessment' task")
 
-        let today = Calendar.current.startOfDay(for: Date())
+        let today = Calendar.current.startOfDay(for: DateProvider.shared.now)
 
         // Create the assessment completion task
         let assessmentTask: [String: Any] = [

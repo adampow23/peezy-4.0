@@ -25,109 +25,116 @@ struct LoginView: View {
         !password.isEmpty
     }
 
+    // Charcoal glass color
+    private let charcoalColor = PeezyTheme.Colors.charcoalGlass
+
     var body: some View {
         NavigationStack {
-            VStack(spacing: 24) {
-                // Header
-                VStack(spacing: 8) {
-                    Text("Welcome Back")
-                        .font(PeezyTheme.Typography.largeTitle)
+            ZStack {
+                // Dark background
+                InteractiveBackground()
 
-                    Text("Log in to continue your move")
-                        .font(PeezyTheme.Typography.callout)
-                        .foregroundColor(.secondary)
-                }
-                .padding(.top, 40)
-                .padding(.bottom, 20)
+                VStack(spacing: 24) {
+                    // Header
+                    VStack(spacing: 8) {
+                        Text("Welcome Back")
+                            .font(PeezyTheme.Typography.largeTitle)
+                            .foregroundColor(.white)
 
-                // Form
-                VStack(spacing: PeezyTheme.Layout.cardPadding) {
-                    LoginFormField(
-                        label: "Email",
-                        placeholder: "your@email.com",
-                        text: $email,
-                        contentType: .emailAddress,
-                        keyboardType: .emailAddress
-                    )
-
-                    LoginFormField(
-                        label: "Password",
-                        placeholder: "Enter your password",
-                        text: $password,
-                        isSecure: true,
-                        contentType: .password
-                    )
-                }
-                .padding(.horizontal, 24)
-
-                // Log In Button
-                Button(action: handleLogin) {
-                    Group {
-                        if isLoading {
-                            ProgressView()
-                                .tint(.black)
-                        } else {
-                            Text("Log In")
-                                .font(PeezyTheme.Typography.headline)
-                        }
+                        Text("Log in to continue your move")
+                            .font(PeezyTheme.Typography.callout)
+                            .foregroundColor(.white.opacity(0.6))
                     }
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 50)
-                    .background(
-                        ZStack {
-                            RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadiusSmall, style: .continuous)
-                                .fill(Color.clear)
-                                .peezyLiquidGlass(
-                                    cornerRadius: PeezyTheme.Layout.cornerRadiusSmall,
-                                    intensity: 0.55,
-                                    speed: 0.22,
-                                    tintOpacity: 0.05,
-                                    highlightOpacity: 0.12
-                                )
-                            
-                            RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadiusSmall, style: .continuous)
-                                .fill(isFormValid ? PeezyTheme.Colors.brandYellow : Color.gray.opacity(0.3))
-                        }
-                    )
-                    .foregroundColor(.black)
-                    .cornerRadius(PeezyTheme.Layout.cornerRadiusSmall)
-                }
-                .buttonStyle(.peezyPrimary)
-                .disabled(!isFormValid || isLoading)
-                .padding(.horizontal, 24)
-                .padding(.top, 8)
+                    .padding(.top, 40)
+                    .padding(.bottom, 20)
 
-                // Forgot Password
-                Button(action: {
-                    // TODO: Implement forgot password
-                }) {
-                    Text("Forgot Password?")
-                        .font(PeezyTheme.Typography.callout)
-                        .foregroundColor(.blue)
-                }
-                .padding(.top, 8)
+                    // Form
+                    VStack(spacing: PeezyTheme.Layout.cardPadding) {
+                        LoginFormField(
+                            label: "Email",
+                            placeholder: "your@email.com",
+                            text: $email,
+                            contentType: .emailAddress,
+                            keyboardType: .emailAddress
+                        )
 
-                Spacer()
-
-                // Don't have account
-                Button(action: { dismiss() }) {
-                    HStack(spacing: 4) {
-                        Text("Don't have an account?")
-                            .foregroundColor(.secondary)
-                        Text("Sign up")
-                            .foregroundColor(.blue)
-                            .fontWeight(.medium)
+                        LoginFormField(
+                            label: "Password",
+                            placeholder: "Enter your password",
+                            text: $password,
+                            isSecure: true,
+                            contentType: .password
+                        )
                     }
-                    .font(PeezyTheme.Typography.callout)
+                    .padding(.horizontal, 24)
+
+                    // Log In Button
+                    Button(action: handleLogin) {
+                        Group {
+                            if isLoading {
+                                ProgressView()
+                                    .tint(.white)
+                            } else {
+                                Text("Log In")
+                                    .font(PeezyTheme.Typography.headline)
+                            }
+                        }
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 50)
+                        .foregroundColor(.white)
+                        .background(
+                            ZStack {
+                                // Glass blur effect
+                                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                    .fill(.ultraThinMaterial)
+
+                                // Charcoal tint (or accent blue when valid)
+                                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                    .fill(isFormValid ? PeezyTheme.Colors.accentBlue : charcoalColor.opacity(0.6))
+                            }
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                        )
+                        .shadow(color: isFormValid ? PeezyTheme.Colors.accentBlue.opacity(0.3) : Color.black.opacity(0.3), radius: 10, y: 5)
+                    }
+                    .disabled(!isFormValid || isLoading)
+                    .padding(.horizontal, 24)
+                    .padding(.top, 8)
+
+                    // Forgot Password
+                    Button(action: {
+                        // TODO: Implement forgot password
+                    }) {
+                        Text("Forgot Password?")
+                            .font(PeezyTheme.Typography.callout)
+                            .foregroundColor(PeezyTheme.Colors.accentBlue)
+                    }
+                    .padding(.top, 8)
+
+                    Spacer()
+
+                    // Don't have account
+                    Button(action: { dismiss() }) {
+                        HStack(spacing: 4) {
+                            Text("Don't have an account?")
+                                .foregroundColor(.white.opacity(0.6))
+                            Text("Sign up")
+                                .foregroundColor(PeezyTheme.Colors.accentBlue)
+                                .fontWeight(.medium)
+                        }
+                        .font(PeezyTheme.Typography.callout)
+                    }
+                    .padding(.bottom, PeezyTheme.Layout.sectionSpacing)
                 }
-                .padding(.bottom, PeezyTheme.Layout.sectionSpacing)
             }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button(action: { dismiss() }) {
                         Image(systemName: "xmark")
-                            .foregroundColor(.primary)
+                            .foregroundColor(.white)
                     }
                 }
             }

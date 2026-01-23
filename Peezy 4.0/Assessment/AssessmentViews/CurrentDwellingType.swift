@@ -69,7 +69,7 @@ struct CurrentDwellingType: View {
             }
         }
         .navigationBarBackButtonHidden(true)
-        .background(Color(.systemBackground))
+        .background(InteractiveBackground())
         .onAppear {
             selected = assessmentData.CurrentDwellingType
             withAnimation {

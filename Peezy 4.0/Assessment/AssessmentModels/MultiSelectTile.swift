@@ -11,6 +11,10 @@ struct MultiSelectTile: View {
     // Haptic feedback
     private let lightHaptic = UIImpactFeedbackGenerator(style: .light)
 
+    // Charcoal glass color
+    private let charcoalColor = PeezyTheme.Colors.charcoalGlass
+    private let accentBlue = PeezyTheme.Colors.accentBlue
+
     var body: some View {
         Button(action: {
             lightHaptic.impactOccurred()
@@ -20,61 +24,53 @@ struct MultiSelectTile: View {
                 // Icon on left
                 Image(systemName: icon)
                     .font(.system(size: 24))
-                    .foregroundColor(.primary)
+                    .foregroundColor(.white)
                     .frame(width: 32)
-                
+
                 // Text in center
                 Text(title)
                     .font(.system(size: 16, weight: .medium))
-                    .foregroundColor(.primary)
+                    .foregroundColor(.white)
                     .multilineTextAlignment(.leading)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                
+
                 // Checkmark on right
                 if isSelected {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 20, weight: .semibold))
-                        .foregroundColor(.primary)
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 22, weight: .semibold))
+                        .foregroundColor(accentBlue)
                 }
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 16)
             .background(
                 ZStack {
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(Color.clear)
-                        .peezyLiquidGlass(
-                            cornerRadius: 12,
-                            intensity: 0.55,
-                            speed: 0.22,
-                            tintOpacity: 0.05,
-                            highlightOpacity: 0.12
-                        )
-                    
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(Color.white.opacity(0.35))
-                    
-                    // Flash effect on selection
-                    if isSelected {
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .fill(Color.white.opacity(0.3))
-                            .transition(.opacity)
-                    }
+                    // Glass blur effect
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(.ultraThinMaterial)
+
+                    // Charcoal tint (darker when selected)
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(charcoalColor.opacity(isSelected ? 0.8 : 0.6))
                 }
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(isSelected ? PeezyTheme.Colors.brandYellow : Color.gray.opacity(0.2), lineWidth: isSelected ? 2 : 1)
-                    .animation(.spring(response: 0.4, dampingFraction: 0.7), value: isSelected)
+                // Edge highlight (brighter when selected)
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(
+                        isSelected ? accentBlue.opacity(0.6) : Color.white.opacity(0.1),
+                        lineWidth: isSelected ? 2 : 1
+                    )
             )
             .shadow(
-                color: Color.black.opacity(isPressed ? 0 : 0.08),
-                radius: isPressed ? 0 : 6,
+                color: isSelected ? accentBlue.opacity(0.2) : Color.black.opacity(0.3),
+                radius: isPressed ? 3 : 8,
                 x: 0,
-                y: isPressed ? 0 : 3
+                y: isPressed ? 1 : 4
             )
             .scaleEffect(isPressed ? 0.98 : 1.0)
             .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isPressed)
+            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isSelected)
         }
         .buttonStyle(PlainButtonStyle())
         .simultaneousGesture(
@@ -131,5 +127,5 @@ struct MultiSelectTile: View {
         )
     }
     .padding()
-    .background(Color(.systemGroupedBackground))
+    .background(InteractiveBackground())
 }

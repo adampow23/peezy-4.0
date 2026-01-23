@@ -6,13 +6,17 @@ struct SelectionTile: View {
     let icon: String?
     let isSelected: Bool
     let onTap: () -> Void
-    
+
     @State private var isPressed = false
-    
+
     // Haptic feedback
     private let lightHaptic = UIImpactFeedbackGenerator(style: .light)
     private let mediumHaptic = UIImpactFeedbackGenerator(style: .medium)
-    
+
+    // Charcoal glass color
+    private let charcoalColor = PeezyTheme.Colors.charcoalGlass
+    private let accentBlue = PeezyTheme.Colors.accentBlue
+
     init(title: String, subtitle: String? = nil, icon: String? = nil, isSelected: Bool, onTap: @escaping () -> Void) {
         self.title = title
         self.subtitle = subtitle
@@ -20,7 +24,7 @@ struct SelectionTile: View {
         self.isSelected = isSelected
         self.onTap = onTap
     }
-    
+
     var body: some View {
         Button(action: {
             mediumHaptic.impactOccurred()
@@ -30,20 +34,20 @@ struct SelectionTile: View {
                 if let icon = icon {
                     Image(systemName: icon)
                         .font(.system(size: 48))
-                        .foregroundColor(PeezyTheme.Colors.brandYellow)
-                        .scaleEffect(isSelected ? 1.0 : 1.0)
+                        .foregroundColor(.gray)
+                        .scaleEffect(isSelected ? 1.05 : 1.0)
                         .animation(.spring(response: 0.5, dampingFraction: 0.5), value: isSelected)
                 }
-                
+
                 VStack(spacing: 4) {
                     Text(title)
                         .font(.system(size: 17, weight: .medium))
-                        .foregroundColor(.primary)
-                    
+                        .foregroundColor(.white)
+
                     if let subtitle = subtitle {
                         Text(subtitle)
                             .font(.system(size: 14, weight: .regular))
-                            .foregroundColor(.secondary)
+                            .foregroundColor(.white.opacity(0.6))
                     }
                 }
             }
@@ -51,42 +55,32 @@ struct SelectionTile: View {
             .frame(height: icon != nil ? 140 : 80)
             .background(
                 ZStack {
+                    // Glass blur effect
                     RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .fill(Color.clear)
-                        .peezyLiquidGlass(
-                            cornerRadius: 20,
-                            intensity: 0.55,
-                            speed: 0.22,
-                            tintOpacity: 0.05,
-                            highlightOpacity: 0.12
-                        )
-                    
+                        .fill(.ultraThinMaterial)
+
+                    // Charcoal tint (darker when selected)
                     RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .fill(Color.white.opacity(0.35))
-                    
-                    // Flash effect on selection
-                    if isSelected {
-                        RoundedRectangle(cornerRadius: 20, style: .continuous)
-                            .fill(Color.white.opacity(0.3))
-                            .transition(.opacity)
-                    }
+                        .fill(charcoalColor.opacity(isSelected ? 0.8 : 0.6))
                 }
             )
-            .cornerRadius(20)
             .overlay(
+                // Edge highlight (brighter when selected)
                 RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .stroke(isSelected ? PeezyTheme.Colors.brandYellow : Color.clear, lineWidth: 3)
-                    .animation(.spring(response: 0.4, dampingFraction: 0.7), value: isSelected)
+                    .stroke(
+                        isSelected ? accentBlue.opacity(0.6) : Color.white.opacity(0.1),
+                        lineWidth: isSelected ? 2 : 1
+                    )
             )
             .shadow(
-                color: Color.black.opacity(isPressed ? 0 : 0.1),
-                radius: isPressed ? 0 : 8,
+                color: isSelected ? accentBlue.opacity(0.3) : Color.black.opacity(0.3),
+                radius: isPressed ? 5 : 12,
                 x: 0,
-                y: isPressed ? 0 : 4
+                y: isPressed ? 2 : 6
             )
             .scaleEffect(isPressed ? 0.95 : 1.0)
-            .opacity(isSelected ? 1.0 : 1.0)
             .animation(.spring(response: 0.3, dampingFraction: 0.6), value: isPressed)
+            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isSelected)
         }
         .buttonStyle(PlainButtonStyle())
         .simultaneousGesture(

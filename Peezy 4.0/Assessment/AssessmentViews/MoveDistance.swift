@@ -77,7 +77,7 @@ struct MoveDistance: View {
             }
         }
         .navigationBarBackButtonHidden(true)
-        .background(Color(.systemBackground))
+        .background(InteractiveBackground())
         .onAppear {
             selected = assessmentData.MoveDistance
             withAnimation {

@@ -35,7 +35,19 @@ final class PeezyStackViewModel {
 
     // Track actions for undo
     private var actionHistory: [CardActionResult] = []
-    
+
+    // MARK: - Computed Counts (for intro card display)
+
+    /// Count of update cards in the stack (excludes intro card)
+    var updateCount: Int {
+        cards.filter { $0.type == .update }.count
+    }
+
+    /// Count of task/vendor cards in the stack (excludes intro card)
+    var taskCount: Int {
+        cards.filter { $0.type == .task || $0.type == .vendor }.count
+    }
+
     // Dependencies
     private let client: PeezyClient
     
@@ -82,14 +94,15 @@ final class PeezyStackViewModel {
             await MainActor.run {
                 self.error = peezyError
                 self.isLoading = false
-                // Show placeholder cards on error
-                self.cards = Self.placeholderCards()
+                // Use intro cards with user's name on error
+                self.cards = Self.introCards(for: userState)
             }
         } catch {
             await MainActor.run {
                 self.error = .networkError(error)
                 self.isLoading = false
-                self.cards = Self.placeholderCards()
+                // Use intro cards with user's name on error
+                self.cards = Self.introCards(for: userState)
             }
         }
     }
@@ -286,7 +299,12 @@ final class PeezyStackViewModel {
     /// Generate intro cards based on user state
     static func introCards(for userState: UserState) -> [PeezyCard] {
         var cards: [PeezyCard] = []
-        
+
+        // Track what tasks we're adding for the briefing
+        var hasMovers = false
+        var hasInternet = false
+        var moversUrgent = false
+
         // Add contextual task cards based on urgency
         if let days = userState.daysUntilMove {
             if days <= 14 && !userState.vendorsBooked.contains("movers") {
@@ -297,9 +315,11 @@ final class PeezyStackViewModel {
                     workflowId: "book_movers",
                     priority: days <= 7 ? .urgent : .high
                 ))
+                hasMovers = true
+                moversUrgent = days <= 7
             }
         }
-        
+
         // Internet is always relevant
         if !userState.vendorsBooked.contains("internet") {
             cards.append(PeezyCard.fromTask(
@@ -309,11 +329,65 @@ final class PeezyStackViewModel {
                 workflowId: "internet_setup",
                 priority: .normal
             ))
+            hasInternet = true
         }
-        
-        // Intro card on top
-        cards.append(PeezyCard.intro(updateCount: cards.count))
-        
+
+        // Build warm, user-centric briefing message
+        let briefing = buildBriefingMessage(
+            hasMovers: hasMovers,
+            hasInternet: hasInternet,
+            moversUrgent: moversUrgent,
+            totalTasks: cards.count
+        )
+
+        // Intro card on top with user's name and briefing
+        cards.append(PeezyCard.intro(
+            userName: userState.name.isEmpty ? nil : userState.name,
+            briefing: briefing
+        ))
+
         return cards
+    }
+
+    /// Build a warm, eager assistant briefing message
+    /// Should feel like a happy assistant who genuinely wants to help
+    private static func buildBriefingMessage(
+        hasMovers: Bool,
+        hasInternet: Bool,
+        moversUrgent: Bool,
+        totalTasks: Int
+    ) -> String {
+        // No tasks - all caught up
+        if totalTasks == 0 {
+            return "All clear! I'll let you know when something comes up."
+        }
+
+        // Single task - eager, helpful tone
+        if totalTasks == 1 {
+            if hasInternet {
+                return "Just one thing today - I need your input on a few details so I can get the internet set up for you."
+            }
+            if hasMovers {
+                if moversUrgent {
+                    return "I found some great mover options - wanted to get these in front of you before they book up."
+                }
+                return "I put together some mover options for you to check out whenever you're ready."
+            }
+        }
+
+        // Multiple tasks - still warm and eager
+        if hasMovers && hasInternet {
+            if moversUrgent {
+                return "Got a couple things for you - some mover options to review, and a few quick details so I can schedule your internet."
+            }
+            return "I've got mover quotes ready for you, plus a few questions so I can get your internet sorted."
+        }
+
+        // Generic fallback
+        if totalTasks == 2 {
+            return "Couple things for you today - shouldn't take long!"
+        }
+
+        return "Got a few things ready for you."
     }
 }

@@ -30,16 +30,17 @@ struct CalendarDayCell: View {
     let progress: Double
 
     private var calendar: Calendar { Calendar.current }
+    private let accentBlue = PeezyTheme.Colors.accentBlue
 
     var body: some View {
         ZStack {
             // Background
             if isSelected {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(PeezyTheme.Colors.brandYellow)
+                    .fill(accentBlue)
             } else if isToday {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .strokeBorder(PeezyTheme.Colors.brandYellow, lineWidth: 2)
+                    .strokeBorder(Color.white.opacity(0.5), lineWidth: 2)
             }
 
             // Day number
@@ -54,9 +55,9 @@ struct CalendarDayCell: View {
         if day.ignored {
             return .clear
         } else if isSelected {
-            return .black
+            return .white
         } else {
-            return .primary
+            return .white
         }
     }
 }
@@ -120,6 +121,9 @@ struct PeezyCalendarPicker: View {
         _currentMonth = State(initialValue: monthStart)
     }
 
+    // Charcoal glass color
+    private let charcoalColor = PeezyTheme.Colors.charcoalGlass
+
     var body: some View {
         VStack(spacing: 12) {
             header
@@ -127,8 +131,23 @@ struct PeezyCalendarPicker: View {
             monthGrid
         }
         .padding(PeezyTheme.Layout.cardPadding)
-        .peezyGlassBackground(cornerRadius: PeezyTheme.Layout.cornerRadius)
-        .peezyCardShadow()
+        .background(
+            ZStack {
+                // Glass blur effect
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .fill(.ultraThinMaterial)
+
+                // Charcoal tint
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .fill(charcoalColor.opacity(0.6))
+            }
+        )
+        .overlay(
+            // Edge highlight
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .stroke(Color.white.opacity(0.1), lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(0.3), radius: 15, x: 0, y: 8)
     }
 
     // MARK: - Sections
@@ -138,7 +157,7 @@ struct PeezyCalendarPicker: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(monthFormatter.string(from: currentMonth))
                     .font(.system(size: 20, weight: .semibold))
-                    .foregroundColor(.primary)
+                    .foregroundColor(.white)
             }
 
             Spacer()
@@ -151,9 +170,9 @@ struct PeezyCalendarPicker: View {
                 } label: {
                     Image(systemName: "chevron.left")
                         .font(.system(size: 16, weight: .semibold))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(.white.opacity(0.7))
                         .frame(width: 36, height: 36)
-                        .background(Color(UIColor.systemGray6))
+                        .background(Color.white.opacity(0.1))
                         .clipShape(Circle())
                 }
                 .disabled(!canMoveToPreviousMonth)
@@ -166,9 +185,9 @@ struct PeezyCalendarPicker: View {
                 } label: {
                     Image(systemName: "chevron.right")
                         .font(.system(size: 16, weight: .semibold))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(.white.opacity(0.7))
                         .frame(width: 36, height: 36)
-                        .background(Color(UIColor.systemGray6))
+                        .background(Color.white.opacity(0.1))
                         .clipShape(Circle())
                 }
             }
@@ -181,7 +200,7 @@ struct PeezyCalendarPicker: View {
                 Text(symbol)
                     .font(.system(size: 12, weight: .semibold))
                     .frame(maxWidth: .infinity)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(.white.opacity(0.5))
                     .textCase(.uppercase)
             }
         }
@@ -203,14 +222,6 @@ struct PeezyCalendarPicker: View {
                     taskCount: 0,
                     progress: 0
                 )
-                .overlay(alignment: .bottomTrailing) {
-                    if isSelected {
-                        Circle()
-                            .fill(accentColor)
-                            .frame(width: 6, height: 6)
-                            .offset(x: -6, y: -6)
-                    }
-                }
                 .opacity(isDisabled ? 0.32 : 1.0)
                 .contentShape(Rectangle())
                 .onTapGesture {
@@ -250,7 +261,9 @@ struct PeezyCalendarPicker: View {
 
 #Preview {
     @Previewable @State var date = Date()
-    PeezyCalendarPicker(selectedDate: $date, minimumDate: Date())
-        .padding()
-        .background(Color(.systemBackground))
+    ZStack {
+        InteractiveBackground()
+        PeezyCalendarPicker(selectedDate: $date, minimumDate: Date())
+            .padding()
+    }
 }

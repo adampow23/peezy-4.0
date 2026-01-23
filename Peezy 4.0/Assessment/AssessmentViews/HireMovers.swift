@@ -67,7 +67,7 @@ struct HireMovers: View {
             }
         }
         .navigationBarBackButtonHidden(true)
-        .background(Color(.systemBackground))
+        .background(InteractiveBackground())
         .onAppear {
             selected = assessmentData.HireMovers
             withAnimation {

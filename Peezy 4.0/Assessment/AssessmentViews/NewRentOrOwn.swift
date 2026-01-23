@@ -67,7 +67,7 @@ struct NewRentOrOwn: View {
             }
         }
         .navigationBarBackButtonHidden(true)
-        .background(Color(.systemBackground))
+        .background(InteractiveBackground())
         .onAppear {
             selected = assessmentData.NewRentOrOwn
             withAnimation {

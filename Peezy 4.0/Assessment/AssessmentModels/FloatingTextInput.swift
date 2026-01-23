@@ -62,6 +62,7 @@ struct floatingTextInput: View {
                     HStack {
                         Text(question)
                             .font(.system(size: 34, weight: .bold))
+                            .foregroundColor(.white)
                             .frame(width: geo.size.width * 0.6, alignment: .leading)
                             .multilineTextAlignment(.leading)
                             .lineLimit(nil)
@@ -76,50 +77,44 @@ struct floatingTextInput: View {
                     // Gap 2: Question → TextField
                     Spacer(minLength: 0)
                     
-                    // Large floating text input with sleek design
+                    // Large floating text input with charcoal glass design
                     VStack(spacing: 8) {
                         TextField(placeholder, text: $text)
                             .font(.system(size: 48, weight: .regular))
                             .multilineTextAlignment(.center)
                             .keyboardType(keyboardType)
-                            .foregroundColor(.primary)
-                            .tint(Color(red: 0.98, green: 0.85, blue: 0.29).opacity(0.5))
+                            .foregroundColor(.white)
+                            .tint(.white)
                             .padding(.vertical, 20)
                             .padding(.horizontal, 24)
                             .background(
                                 ZStack {
-                                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                        .fill(Color.clear)
-                                        .peezyLiquidGlass(
-                                            cornerRadius: 16,
-                                            intensity: 0.55,
-                                            speed: 0.22,
-                                            tintOpacity: 0.05,
-                                            highlightOpacity: 0.12
-                                        )
+                                    // Glass blur effect
+                                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                                        .fill(.ultraThinMaterial)
 
-                                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                        .fill(PeezyTheme.Colors.brandYellow.opacity(0.06))
-
-                                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                        .strokeBorder(
-                                            text.isEmpty ? Color.gray.opacity(0.3) : PeezyTheme.Colors.brandYellow.opacity(0.35),
-                                            lineWidth: 2
-                                        )
+                                    // Charcoal tint
+                                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                                        .fill(PeezyTheme.Colors.charcoalGlass.opacity(0.6))
                                 }
                             )
+                            .overlay(
+                                // Edge highlight
+                                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                                    .stroke(Color.white.opacity(0.15), lineWidth: 1)
+                            )
                             .shadow(
-                                color: text.isEmpty ? Color.clear : Color(red: 0.98, green: 0.85, blue: 0.29).opacity(0.2),
-                                radius: 8,
+                                color: Color.black.opacity(0.3),
+                                radius: 12,
                                 x: 0,
-                                y: 4
+                                y: 6
                             )
 
                         // Subtle helper text
                         if text.isEmpty {
                             Text("Tap to enter your name")
                                 .font(.system(size: 14))
-                                .foregroundColor(.secondary)
+                                .foregroundColor(.white.opacity(0.5))
                                 .transition(.opacity)
                         }
                     }
@@ -144,7 +139,7 @@ struct floatingTextInput: View {
             .offset(y: showContent ? 0 : 30)
             .animation(.spring(response: 0.6, dampingFraction: 0.8).delay(0.4), value: showContent)
         }
-        .background(Color(.systemBackground))
+        .background(InteractiveBackground())
         .onAppear {
             withAnimation {
                 showContent = true

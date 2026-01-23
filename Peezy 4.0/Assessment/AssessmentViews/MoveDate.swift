@@ -31,6 +31,7 @@ struct MoveDate: View {
                     HStack {
                         Text("When are you moving?")
                             .font(.system(size: 34, weight: .bold))
+                            .foregroundColor(.white)
                             .frame(width: geo.size.width * 0.6, alignment: .leading)
                             .multilineTextAlignment(.leading)
                             .lineLimit(nil)
@@ -81,7 +82,7 @@ struct MoveDate: View {
             }
         }
         .navigationBarBackButtonHidden(true)
-        .background(Color(.systemBackground))
+        .background(InteractiveBackground())
         .onAppear {
             selectedDate = assessmentData.MoveDate
             withAnimation {

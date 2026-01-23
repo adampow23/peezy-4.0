@@ -69,7 +69,7 @@ struct WhosMoving: View {
             }
         }
         .navigationBarBackButtonHidden(true)
-        .background(Color(.systemBackground))
+        .background(InteractiveBackground())
         .onAppear {
             selected = assessmentData.WhosMoving
             withAnimation {
