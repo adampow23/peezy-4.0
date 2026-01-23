@@ -67,3 +67,8 @@ node_modules/
 
 # dataconnect generated files
 .dataconnect
+
+# API Keys and sensitive credentials
+**/Anthropic-API-Key.txt
+**/GoogleService-Info.plist
+*.xcuserstate
