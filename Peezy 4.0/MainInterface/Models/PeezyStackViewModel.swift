@@ -16,28 +16,8 @@ final class PeezyStackViewModel {
     // User context
     var userState: UserState?
 
-    // Workflow support
-    var workflowManager = WorkflowManager()
-    var isInWorkflow: Bool { workflowManager.isInWorkflow }
-    var workflowTriggeredByCardId: String? = nil
-
-    // Snooze support
-    var snoozeManager = SnoozeManager()
-    var isSnoozing: Bool { snoozeManager.isSnoozing }
-
-    // Mini-assessment support
-    var showMiniAssessmentSheet = false
-    var miniAssessmentCard: PeezyCard?
-
-    // Helper for workflow submission
-    var currentUserId: String? {
-        userState?.userId
-    }
-
-    // Helper for snooze - user's move date from assessment
-    var userMoveDate: Date? {
-        userState?.moveDate
-    }
+    // NOTE: Workflow, snooze, and mini-assessment logic moved to PeezyHomeViewModel.
+    // PeezyStackViewModel now serves Timeline only (data loading + card array).
 
     // Track actions for undo
     private var actionHistory: [CardActionResult] = []
@@ -164,7 +144,7 @@ final class PeezyStackViewModel {
                     subtitle: data["desc"] as? String ?? "",
                     colorName: colorNameForPriority(priority),
                     taskId: data["id"] as? String ?? document.documentID,
-                    workflowId: data["workflowId"] as? String ?? data["id"] as? String,
+                    workflowId: data["workflowId"] as? String,
                     vendorCategory: isVendorTask ? (data["category"] as? String) : nil,
                     vendorId: nil,
                     priority: priority,
@@ -256,49 +236,43 @@ final class PeezyStackViewModel {
         return "Here's what's on your plate today."
     }
 
-    // MARK: - Handle Swipe
+    // MARK: - Handle Swipe (simplified — timeline doesn't use swipe actions)
 
-    /// Handle user swiping a card
+    /// Handle user swiping a card (retained for backward compatibility)
     func handleSwipe(card: PeezyCard, action: SwipeAction) {
-        // Haptic feedback
         let generator = UIImpactFeedbackGenerator(style: action == .doIt ? .heavy : .light)
         generator.impactOccurred()
 
         switch action {
         case .doIt:
-            // Track action
-            actionHistory.append(CardActionResult(card: card, action: action))
-
-            // Remove card with animation
+            completeCardDirectly(card: card)
+        case .later:
+            // Simple dismiss — snooze logic is in PeezyHomeViewModel now
             withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
                 cards.removeAll { $0.id == card.id }
-            }
-
-            // Update local state
-            updateLocalState(for: card, action: action)
-
-            // Notify backend (fire and forget, don't block UI)
-            Task {
-                await notifyBackendOfAction(card: card, action: action)
-            }
-
-        case .later:
-            // Use snooze flow for snoozeable cards
-            handleLaterSwipe(for: card)
-
-            // Track action (card removal handled by snooze completion)
-            actionHistory.append(CardActionResult(card: card, action: action))
-
-            // Update local state
-            updateLocalState(for: card, action: action)
-
-            // Notify backend
-            Task {
-                await notifyBackendOfAction(card: card, action: action)
             }
         }
     }
     
+    /// Directly complete a card (remove + notify backend).
+    func completeCardDirectly(card: PeezyCard) {
+        // Track action
+        actionHistory.append(CardActionResult(card: card, action: .doIt))
+
+        // Remove card with animation
+        withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
+            cards.removeAll { $0.id == card.id }
+        }
+
+        // Update local state
+        updateLocalState(for: card, action: .doIt)
+
+        // Notify backend (fire and forget, don't block UI)
+        Task {
+            await notifyBackendOfAction(card: card, action: .doIt)
+        }
+    }
+
     /// Update local UserState based on swipe
     private func updateLocalState(for card: PeezyCard, action: SwipeAction) {
         guard var state = userState else { return }

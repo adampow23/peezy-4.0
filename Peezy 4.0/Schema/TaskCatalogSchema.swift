@@ -4,7 +4,12 @@ import Foundation
 // FILE: TaskCatalogSchema.swift
 // PURPOSE: Source of truth for task catalog data structures
 // STATUS: READ-ONLY reference - Firestore must match this format
-// LAST SYNCED: 2026-01-24
+// LAST SYNCED: 2026-02-12
+//
+// MAJOR UPDATE: Assessment redesigned from mini-assessment card system to
+// consolidated upfront conversational assessment. Mini-assessment parent
+// tasks and individual Yes/No flags are eliminated. Services, health,
+// and fitness are now multi-select tiles in the main assessment.
 //
 // This file documents the EXACT format of conditions in Firestore.
 // The TaskConditionParser MUST handle all formats documented here.
@@ -24,25 +29,53 @@ import Foundation
  │   - Multiple keys = AND logic (all must match)                              │
  │                                                                             │
  │ Examples from real Firestore data:                                          │
- │   {AnyPets: ["Yes"]}                                                        │
- │   {WhosMoving: ["Family"]}                                                  │
- │   {MoveDistance: ["Long Distance", "Cross-Country"]}                        │
+ │   {anyPets: ["Yes"]}                                                        │
+ │   {hireMovers: ["Yes"]}                                                     │
+ │   {moveDistance: ["Long Distance"]}                                         │
  │   {newDwellingType: ["Apartment", "Condo"]}                                 │
  │   {currentRentOrOwn: ["Rent"], newRentOrOwn: ["Own"]}                       │
- │   {MoveDistance: ["Long Distance", "Cross-Country"], SchoolAgeChildren: [">=1"]} │
+ │   {fitnessWellness: ["Yoga"], moveDistance: ["Long Distance"]}                    │
+ │   {healthcareProviders: ["Doctor"], moveDistance: ["Long Distance"]}              │
+ │   {financialInstitutions: ["Bank Account"], moveDistance: ["Local"]}              │
+ │   {isInterstate: ["Yes"]}                                                        │
+ │   {schoolAgeChildren: [">=1"], moveDistance: ["Long Distance"]}                   │
  └─────────────────────────────────────────────────────────────────────────────┘
 
  EVALUATION LOGIC:
  1. For each key in conditions:
-    - Get user's value for that assessment field
-    - Check if user's value is IN the array of acceptable values
-    - If user's value is NOT in array → condition FAILS
+    a. Get user's value for that assessment field
+    b. If user's value is a String:
+       - Check if user's value is IN the array of acceptable values
+    c. If user's value is an Array (multi-select fields):
+       - Check if ANY of the user's selected values appear in the acceptable values
+       - e.g., user selected ["Yoga", "Gym"], condition wants ["Yoga"] → PASS
+    d. If match fails → condition FAILS
  2. ALL conditions must pass (AND logic between keys)
  3. Empty conditions {} or missing conditions → auto-PASS (task for everyone)
 
  SPECIAL VALUES:
  - ">=1" → Numeric comparison (user value >= 1)
- - "true" / "false" → String booleans (not Bool type)
+
+ MULTI-SELECT MATCHING:
+ For fields like fitnessWellness, healthcareProviders, and financialInstitutions,
+ the user's assessment data contains an ARRAY of selected options. The condition
+ specifies which option(s) trigger this task. If ANY user selection matches ANY
+ condition value, the condition passes.
+
+ Example:
+   User data:     { fitnessWellness: ["Yoga", "Gym", "Pilates"] }
+   Condition:     { fitnessWellness: ["Yoga"] }
+   Result:        PASS — "Yoga" is in the user's selections
+
+ COMPUTED FIELDS:
+ Some condition fields are not directly asked in the assessment but are derived
+ by the backend after assessment completion:
+   - moveDistance: Computed from distance between currentAddress and newAddress.
+     Under 50 miles = "Local", 50+ miles = "Long Distance".
+   - isInterstate: Computed by comparing state in currentAddress vs newAddress.
+     Different state = "Yes", same state = "No".
+   - schoolAgeChildren: Derived from childrenAges response
+   - childrenUnder5: Derived from childrenAges response
 */
 
 struct TaskCatalogSchema {
@@ -53,492 +86,190 @@ struct TaskCatalogSchema {
     /// These MUST match the keys used in AssessmentDataManager
     static let conditionFields: [String: ConditionFieldInfo] = [
 
-        // === MOVING BASICS ===
-        "MoveDistance": ConditionFieldInfo(
-            description: "How far the user is moving",
-            possibleValues: ["Local", "Long Distance", "Cross-Country"],
-            assessmentQuestion: "How far are you moving?"
-        ),
+        // ═══════════════════════════════════════════════════
+        // DIRECT ASSESSMENT FIELDS
+        // Asked directly in the conversational assessment
+        // ═══════════════════════════════════════════════════
 
         // === DWELLING TYPES ===
         "currentDwellingType": ConditionFieldInfo(
             description: "Type of current home",
-            possibleValues: ["House", "Apartment", "Condo", "Townhouse", "Other"],
-            assessmentQuestion: "What type of home are you moving FROM?"
+            possibleValues: ["House", "Apartment", "Condo", "Townhouse"],
+            assessmentSource: .direct,
+            assessmentQuestion: "What type of place is it? (current)"
         ),
         "newDwellingType": ConditionFieldInfo(
             description: "Type of new home",
-            possibleValues: ["House", "Apartment", "Condo", "Townhouse", "Other"],
-            assessmentQuestion: "What type of home are you moving TO?"
+            possibleValues: ["House", "Apartment", "Condo", "Townhouse"],
+            assessmentSource: .direct,
+            assessmentQuestion: "What kind of place? (new)"
         ),
 
         // === OWNERSHIP ===
         "currentRentOrOwn": ConditionFieldInfo(
             description: "Rent or own current home",
             possibleValues: ["Rent", "Own"],
-            assessmentQuestion: "Do you rent or own your current home?"
+            assessmentSource: .direct,
+            assessmentQuestion: "Are you renting or do you own?"
         ),
         "newRentOrOwn": ConditionFieldInfo(
             description: "Rent or own new home",
             possibleValues: ["Rent", "Own"],
-            assessmentQuestion: "Will you rent or own your new home?"
+            assessmentSource: .direct,
+            assessmentQuestion: "Renting or buying?"
         ),
 
         // === HOUSEHOLD ===
-        "WhosMoving": ConditionFieldInfo(
-            description: "Who is included in the move",
-            possibleValues: ["Just Me", "Me and Partner", "Family", "Roommates"],
-            assessmentQuestion: "Who's moving with you?"
-        ),
-        "AnyPets": ConditionFieldInfo(
+        "anyPets": ConditionFieldInfo(
             description: "Whether user has pets",
             possibleValues: ["Yes", "No"],
-            assessmentQuestion: "Do you have any pets?"
+            assessmentSource: .direct,
+            assessmentQuestion: "Any pets coming along?"
         ),
 
         // === SERVICES ===
-        "HireMovers": ConditionFieldInfo(
-            description: "Moving method",
-            possibleValues: ["Hire Movers", "Move Myself"],
-            assessmentQuestion: "How do you plan to move your belongings?"
+        "hireMovers": ConditionFieldInfo(
+            description: "Interested in professional movers",
+            possibleValues: ["Yes", "No"],
+            assessmentSource: .direct,
+            assessmentQuestion: "Are you interested in getting quotes from a moving company, or planning to handle moving yourself?"
         ),
-        "HirePackers": ConditionFieldInfo(
-            description: "Packing method",
-            possibleValues: ["Hire packers", "Pack myself"],
-            assessmentQuestion: "How do you plan to pack?"
+        "hirePackers": ConditionFieldInfo(
+            description: "Interested in professional packers",
+            possibleValues: ["Yes", "No"],
+            assessmentSource: .direct,
+            assessmentQuestion: "Would you like help from a professional packing team, or are you planning to pack everything yourself?"
         ),
-        "HireCleaners": ConditionFieldInfo(
-            description: "Cleaning method",
-            possibleValues: ["Hire Cleaners", "Clean myself"],
-            assessmentQuestion: "How do you plan to handle move-out cleaning?"
+        "hireCleaners": ConditionFieldInfo(
+            description: "Interested in professional cleaning",
+            possibleValues: ["Yes", "No"],
+            assessmentSource: .direct,
+            assessmentQuestion: "Want us to help you find a professional move-out cleaning service, or are you handling that yourself?"
         ),
 
-        // === CHILDREN (from mini-assessment) ===
-        "SchoolAgeChildren": ConditionFieldInfo(
-            description: "Number of school-age children",
+        // ═══════════════════════════════════════════════════
+        // MULTI-SELECT ASSESSMENT FIELDS
+        // User taps all that apply from a tile grid
+        // Parser must check if ANY user selection matches
+        // ═══════════════════════════════════════════════════
+
+        "financialInstitutions": ConditionFieldInfo(
+            description: "Financial accounts that need address updates",
+            possibleValues: ["Bank Account", "Credit Union", "Credit Card"],
+            assessmentSource: .multiSelect,
+            assessmentQuestion: "Which financial institutions do you need to update your address with?"
+        ),
+
+        "healthcareProviders": ConditionFieldInfo(
+            description: "Healthcare providers and insurance that need updates or record transfers",
+            possibleValues: ["Doctor", "Dentist", "Therapist", "Pharmacy", "Specialists",
+                             "Health Insurance", "Dental Insurance", "HSA"],
+            assessmentSource: .multiSelect,
+            assessmentQuestion: "Any doctors, dentists, or insurance providers that need your new info?"
+        ),
+
+        "fitnessWellness": ConditionFieldInfo(
+            description: "Fitness and wellness memberships that need cancellation, transfer, or setup",
+            possibleValues: ["Gym", "CrossFit", "Yoga", "Pilates", "Spin/Cycling",
+                             "Golf", "Massage", "Spa", "Other", "Country Club"],
+            assessmentSource: .multiSelect,
+            assessmentQuestion: "Any gym memberships, studios, or clubs?"
+        ),
+
+        // ═══════════════════════════════════════════════════
+        // COMPUTED / DERIVED FIELDS
+        // Not asked directly — calculated by backend after
+        // assessment completion
+        // ═══════════════════════════════════════════════════
+
+        "moveDistance": ConditionFieldInfo(
+            description: "Whether the move is over or under 50 miles — determines cancel+setup vs update tasks",
+            possibleValues: ["Local", "Long Distance"],
+            assessmentSource: .computed,
+            assessmentQuestion: "Computed from distance between currentAddress and newAddress. Under 50 miles = Local, 50+ miles = Long Distance."
+        ),
+
+        "isInterstate": ConditionFieldInfo(
+            description: "Whether the user is changing states — triggers DMV, vehicle registration",
+            possibleValues: ["Yes", "No"],
+            assessmentSource: .computed,
+            assessmentQuestion: "Computed by comparing state component of currentAddress vs newAddress. Different state = Yes."
+        ),
+
+        "schoolAgeChildren": ConditionFieldInfo(
+            description: "Count of school-age children (5-18) — derived from childrenAges",
             possibleValues: ["0", ">=1", "1", "2", "3+"],
-            assessmentQuestion: "How many school-age children (K-12)?"
-        ),
-        "ChildrenUnder5": ConditionFieldInfo(
-            description: "Number of children under 5",
-            possibleValues: ["0", ">=1", ">=2", "1", "2", "3+"],
-            assessmentQuestion: "How many children under 5?"
+            assessmentSource: .computed,
+            assessmentQuestion: "Derived from childrenAges age group breakdown"
         ),
 
-        // === FITNESS & LIFESTYLE (from mini-assessments) ===
-        "Gym": ConditionFieldInfo(
-            description: "Has gym membership",
-            possibleValues: ["Yes", "No"],
-            assessmentQuestion: "Do you have a gym membership?"
+        "childrenUnder5": ConditionFieldInfo(
+            description: "Count of children under 5 — derived from childrenAges",
+            possibleValues: ["0", ">=1", "1", "2", "3+"],
+            assessmentSource: .computed,
+            assessmentQuestion: "Derived from childrenAges age group breakdown"
         ),
-        "GymMembership": ConditionFieldInfo(
-            description: "Has gym membership (alternate key)",
-            possibleValues: ["Yes", "No"],
-            assessmentQuestion: "Do you have a gym membership?"
-        ),
-        "Crossfit": ConditionFieldInfo(
-            description: "Has CrossFit membership",
-            possibleValues: ["Yes", "No"],
-            assessmentQuestion: "Do you have a CrossFit membership?"
-        ),
-        "Yoga": ConditionFieldInfo(
-            description: "Has yoga studio membership",
-            possibleValues: ["Yes", "No"],
-            assessmentQuestion: "Do you have a yoga membership?"
-        ),
-        "Pilates": ConditionFieldInfo(
-            description: "Has Pilates membership",
-            possibleValues: ["Yes", "No"],
-            assessmentQuestion: "Do you have a Pilates membership?"
-        ),
-        "SpinCycling": ConditionFieldInfo(
-            description: "Has spin/cycling membership",
-            possibleValues: ["Yes", "No"],
-            assessmentQuestion: "Do you have a spin studio membership?"
-        ),
-        "Golf": ConditionFieldInfo(
-            description: "Has golf membership",
-            possibleValues: ["Yes", "No"],
-            assessmentQuestion: "Do you have a golf membership?"
-        ),
-        "Massage": ConditionFieldInfo(
-            description: "Has massage membership",
-            possibleValues: ["Yes", "No"],
-            assessmentQuestion: "Do you have a massage membership?"
-        ),
-        "Spa": ConditionFieldInfo(
-            description: "Has spa membership",
-            possibleValues: ["Yes", "No"],
-            assessmentQuestion: "Do you have a spa membership?"
-        ),
-        "OtherFitness": ConditionFieldInfo(
-            description: "Has other fitness membership",
-            possibleValues: ["Yes", "No"],
-            assessmentQuestion: "Other fitness memberships?"
-        ),
-        "CountryClub": ConditionFieldInfo(
-            description: "Has country club membership",
-            possibleValues: ["Yes", "No"],
-            assessmentQuestion: "Do you have a country club membership?"
-        ),
-
-        // === FINANCE (from mini-assessment) ===
-        "BankAccount": ConditionFieldInfo(
-            description: "Has bank account",
-            possibleValues: ["Yes", "No"],
-            assessmentQuestion: "Do you have a bank account?"
-        ),
-        "CreditUnion": ConditionFieldInfo(
-            description: "Has credit union account",
-            possibleValues: ["Yes", "No"],
-            assessmentQuestion: "Do you have a credit union account?"
-        ),
-        "CreditCard": ConditionFieldInfo(
-            description: "Has credit card",
-            possibleValues: ["Yes", "No"],
-            assessmentQuestion: "Do you have credit cards?"
-        ),
-        "InvestmentAccounts": ConditionFieldInfo(
-            description: "Has investment accounts",
-            possibleValues: ["Yes", "No"],
-            assessmentQuestion: "Do you have investment accounts?"
-        ),
-        "RetirementAccounts": ConditionFieldInfo(
-            description: "Has retirement accounts",
-            possibleValues: ["Yes", "No"],
-            assessmentQuestion: "Do you have retirement accounts (401k, IRA)?"
-        ),
-        "StudentLoans": ConditionFieldInfo(
-            description: "Has student loans",
-            possibleValues: ["Yes", "No"],
-            assessmentQuestion: "Do you have student loans?"
-        ),
-
-        // === HEALTH (from mini-assessment) ===
-        "Doctor": ConditionFieldInfo(
-            description: "Has primary care doctor",
-            possibleValues: ["Yes", "No"],
-            assessmentQuestion: "Do you have a primary care doctor?"
-        ),
-        "Dentist": ConditionFieldInfo(
-            description: "Has dentist",
-            possibleValues: ["Yes", "No"],
-            assessmentQuestion: "Do you have a dentist?"
-        ),
-        "Pharmacy": ConditionFieldInfo(
-            description: "Uses a pharmacy",
-            possibleValues: ["Yes", "No"],
-            assessmentQuestion: "Do you use a pharmacy?"
-        ),
-        "Specialists": ConditionFieldInfo(
-            description: "Sees medical specialists",
-            possibleValues: ["Yes", "No"],
-            assessmentQuestion: "Do you see any specialists?"
-        ),
-        "Therapy": ConditionFieldInfo(
-            description: "Has therapist",
-            possibleValues: ["Yes", "No"],
-            assessmentQuestion: "Do you see a therapist?"
-        ),
-
-        // === INSURANCE (from mini-assessment) ===
-        "HealthInsurance": ConditionFieldInfo(
-            description: "Has health insurance",
-            possibleValues: ["Yes", "No"],
-            assessmentQuestion: "Do you have health insurance?"
-        ),
-        "DentalInsurance": ConditionFieldInfo(
-            description: "Has dental insurance",
-            possibleValues: ["Yes", "No"],
-            assessmentQuestion: "Do you have dental insurance?"
-        ),
-        "VisionInsurance": ConditionFieldInfo(
-            description: "Has vision insurance",
-            possibleValues: ["Yes", "No"],
-            assessmentQuestion: "Do you have vision insurance?"
-        ),
-        "HealthSavingsAccount": ConditionFieldInfo(
-            description: "Has HSA",
-            possibleValues: ["Yes", "No"],
-            assessmentQuestion: "Do you have an HSA?"
-        ),
-        "SupplementalInsurance": ConditionFieldInfo(
-            description: "Has supplemental insurance",
-            possibleValues: ["Yes", "No"],
-            assessmentQuestion: "Do you have supplemental insurance?"
-        ),
-        "LifeInsurance": ConditionFieldInfo(
-            description: "Has life insurance",
-            possibleValues: ["Yes", "No"],
-            assessmentQuestion: "Do you have life insurance?"
-        ),
-        "PetInsurance": ConditionFieldInfo(
-            description: "Has pet insurance",
-            possibleValues: ["Yes", "No"],
-            assessmentQuestion: "Do you have pet insurance?"
-        ),
-
-        // === TECH & DELIVERY (from mini-assessments) ===
-        "Amazon": ConditionFieldInfo(
-            description: "Uses Amazon",
-            possibleValues: ["Yes", "No"],
-            assessmentQuestion: "Do you use Amazon?"
-        ),
-        "DoorDash": ConditionFieldInfo(
-            description: "Uses DoorDash",
-            possibleValues: ["Yes", "No"],
-            assessmentQuestion: "Do you use DoorDash?"
-        ),
-        "Instacart": ConditionFieldInfo(
-            description: "Uses Instacart",
-            possibleValues: ["Yes", "No"],
-            assessmentQuestion: "Do you use Instacart?"
-        ),
-        "UberOne": ConditionFieldInfo(
-            description: "Has Uber One",
-            possibleValues: ["Yes", "No"],
-            assessmentQuestion: "Do you have Uber One?"
-        ),
-        "Walmart": ConditionFieldInfo(
-            description: "Uses Walmart delivery",
-            possibleValues: ["Yes", "No"],
-            assessmentQuestion: "Do you use Walmart delivery?"
-        ),
-        "OtherDelivery": ConditionFieldInfo(
-            description: "Uses other delivery services",
-            possibleValues: ["Yes", "No"],
-            assessmentQuestion: "Other delivery services?"
-        ),
-
-        // === STREAMING (from mini-assessment) ===
-        "Netflix": ConditionFieldInfo(
-            description: "Has Netflix",
-            possibleValues: ["Yes", "No"],
-            assessmentQuestion: "Do you have Netflix?"
-        ),
-        "Hulu": ConditionFieldInfo(
-            description: "Has Hulu",
-            possibleValues: ["Yes", "No"],
-            assessmentQuestion: "Do you have Hulu?"
-        ),
-        "Disney": ConditionFieldInfo(
-            description: "Has Disney+",
-            possibleValues: ["Yes", "No"],
-            assessmentQuestion: "Do you have Disney+?"
-        ),
-        "HBOMax": ConditionFieldInfo(
-            description: "Has HBO Max",
-            possibleValues: ["Yes", "No"],
-            assessmentQuestion: "Do you have HBO Max?"
-        ),
-        "Peacock": ConditionFieldInfo(
-            description: "Has Peacock",
-            possibleValues: ["Yes", "No"],
-            assessmentQuestion: "Do you have Peacock?"
-        ),
-        "Paramount": ConditionFieldInfo(
-            description: "Has Paramount+",
-            possibleValues: ["Yes", "No"],
-            assessmentQuestion: "Do you have Paramount+?"
-        ),
-        "YoutubeTV": ConditionFieldInfo(
-            description: "Has YouTube TV",
-            possibleValues: ["Yes", "No"],
-            assessmentQuestion: "Do you have YouTube TV?"
-        ),
-        "OtherStreaming": ConditionFieldInfo(
-            description: "Has other streaming",
-            possibleValues: ["Yes", "No"],
-            assessmentQuestion: "Other streaming services?"
-        ),
-
-        // === OTHER TECH ===
-        "AppleAccount": ConditionFieldInfo(
-            description: "Has Apple account",
-            possibleValues: ["Yes", "No"],
-            assessmentQuestion: "Do you have an Apple account?"
-        ),
-        "UberAccount": ConditionFieldInfo(
-            description: "Has Uber account",
-            possibleValues: ["Yes", "No"],
-            assessmentQuestion: "Do you use Uber?"
-        ),
-        "LyftAccount": ConditionFieldInfo(
-            description: "Has Lyft account",
-            possibleValues: ["Yes", "No"],
-            assessmentQuestion: "Do you use Lyft?"
-        ),
-        "PaypalAccount": ConditionFieldInfo(
-            description: "Has PayPal account",
-            possibleValues: ["Yes", "No"],
-            assessmentQuestion: "Do you have PayPal?"
-        ),
-        "VenmoAccount": ConditionFieldInfo(
-            description: "Has Venmo account",
-            possibleValues: ["Yes", "No"],
-            assessmentQuestion: "Do you have Venmo?"
-        ),
-        "CashAppAccount": ConditionFieldInfo(
-            description: "Has Cash App account",
-            possibleValues: ["Yes", "No"],
-            assessmentQuestion: "Do you have Cash App?"
-        ),
-
-        // === MEMBERSHIPS ===
-        "CostcoMembership": ConditionFieldInfo(
-            description: "Has Costco membership",
-            possibleValues: ["Yes", "No"],
-            assessmentQuestion: "Do you have a Costco membership?"
-        ),
-        "SamsMembership": ConditionFieldInfo(
-            description: "Has Sam's Club membership",
-            possibleValues: ["Yes", "No"],
-            assessmentQuestion: "Do you have a Sam's Club membership?"
-        ),
-
-        // === VEHICLE & ADMIN ===
-        "TollPass": ConditionFieldInfo(
-            description: "Has toll pass",
-            possibleValues: ["Yes", "No"],
-            assessmentQuestion: "Do you have a toll pass (EZPass, etc.)?"
-        ),
-        "ParkingPass": ConditionFieldInfo(
-            description: "Has parking permit",
-            possibleValues: ["Yes", "No"],
-            assessmentQuestion: "Do you have a parking permit?"
-        ),
-        "PetRegistration": ConditionFieldInfo(
-            description: "Has pet registration",
-            possibleValues: ["Yes", "No"],
-            assessmentQuestion: "Is your pet registered with the city?"
-        ),
-
-        // === SYSTEM FLAGS ===
-        "selectedMoveDate": ConditionFieldInfo(
-            description: "User has selected a move date",
-            possibleValues: ["true", "false"],
-            assessmentQuestion: "(System) Has user completed date selection?"
-        ),
-        "PREP": ConditionFieldInfo(
-            description: "User has prep tasks enabled",
-            possibleValues: ["true", "false"],
-            assessmentQuestion: "(System) Prep tasks enabled?"
-        )
     ]
 
-    // MARK: - Sample Tasks (for testing)
+    // MARK: - Assessment Field Inventory
 
-    /// Real tasks from Firestore with their exact condition formats
-    static let sampleTasks: [SampleTask] = [
-        // Tasks with no conditions (everyone gets these)
-        SampleTask(
-            id: "BOOK_MOVERS",
-            title: "Book Professional Movers",
-            conditions: ["HireMovers": ["Hire Movers"]],
-            urgencyPercentage: 94
-        ),
-
-        // Pet-conditional task
-        SampleTask(
-            id: "PET_OPTIONS",
-            title: "Pet Mini-Assessment",
-            conditions: ["AnyPets": ["Yes"]],
-            urgencyPercentage: 98
-        ),
-
-        // Children-conditional task
-        SampleTask(
-            id: "CHILDREN_OPTIONS",
-            title: "Children Mini-Assessment",
-            conditions: ["WhosMoving": ["Family"]],
-            urgencyPercentage: 99
-        ),
-
-        // School task with multiple conditions
-        SampleTask(
-            id: "BEGIN_SCHOOL_TRANSFER",
-            title: "Notify Current School to Begin Transfer",
-            conditions: ["MoveDistance": ["Long Distance", "Cross-Country"], "SchoolAgeChildren": [">=1"]],
-            urgencyPercentage: 82
-        ),
-
-        // Dwelling type condition
-        SampleTask(
-            id: "RESERVE_ELEVATORS_OLD",
-            title: "Reserve Elevator at Old Home",
-            conditions: ["currentDwellingType": ["Apartment"]],
-            urgencyPercentage: 71
-        ),
-
-        // Ownership condition
-        SampleTask(
-            id: "PHOTOGRAPH_RENTAL_CONDITION",
-            title: "Photograph Empty Rental Condition",
-            conditions: ["CurrentRentOrOwn": ["Rent"]],
-            urgencyPercentage: 4
-        ),
-
-        // Service hire condition
-        SampleTask(
-            id: "BUY_PACKING_SUPPLIES",
-            title: "Buy Packing Supplies",
-            conditions: ["HirePackers": ["Pack myself"]],
-            urgencyPercentage: 85
-        ),
-
-        // Multiple ownership conditions
-        SampleTask(
-            id: "CANCEL_RENTERS_INSURANCE",
-            title: "Cancel or Update Renter's Insurance",
-            conditions: ["currentRentOrOwn": ["Rent"], "newRentOrown": ["Own"]],
-            urgencyPercentage: 77
-        ),
-
-        // Long distance only
-        SampleTask(
-            id: "NEW_DRIVERS_LICENSE",
-            title: "Get New Driver's License",
-            conditions: ["MoveDistance": ["Long Distance", "Cross-Country"]],
-            urgencyPercentage: 84
-        ),
-
-        // System flag condition
-        SampleTask(
-            id: "FORWARD_MAIL_USPS",
-            title: "Submit USPS Mail Forwarding",
-            conditions: ["selectedMoveDate": ["true"]],
-            urgencyPercentage: 79
-        ),
-
-        // Mini-assessment subtask
-        SampleTask(
-            id: "SETUP_VET",
-            title: "Set Up New Veterinarian",
-            conditions: ["AnyPets": ["Yes"], "MoveDistance": ["Long Distance", "Cross-Country"]],
-            urgencyPercentage: 61
-        ),
-
-        // Fitness condition
-        SampleTask(
-            id: "CANCEL_YOGA",
-            title: "Cancel Yoga Studio Membership",
-            conditions: ["MoveDistance": ["Long Distance", "Cross-Country"], "Yoga": ["Yes"]],
-            urgencyPercentage: 87
-        )
+    /// Complete list of fields collected by the conversational assessment.
+    /// Not all of these are used as condition keys — some are used for
+    /// personalization, copy, or backend calculations only.
+    ///
+    /// Fields marked with ★ are used as condition keys in the task catalog.
+    /// Fields marked with ● are used to derive condition keys.
+    /// Fields marked with ○ are informational only (not used in conditions).
+    static let assessmentFields: [String] = [
+        "userName",              // ○ Personalization
+        "moveOutDate",           // ○ Timeline calculation
+        "moveInDate",            // ○ Timeline calculation
+        "moveFlexibility",       // ○ Planning context
+        "moveExperience",        // ○ Tone calibration
+        "moveConcerns",          // ○ Priority hints
+        "currentRentOrOwn",      // ★ Condition key
+        "currentDwellingType",   // ★ Condition key
+        "currentAddress",        // ● Used to compute moveDistance
+        "currentFloor",          // ○ Logistics
+        "currentElevatorAccess", // ○ Logistics
+        "currentBedrooms",       // ○ Estimation
+        "currentSquareFootage",  // ○ Estimation
+        "currentFinishedSqFt",   // ○ Estimation (house)
+        "currentUnfinishedSqFt", // ○ Estimation (house)
+        "newRentOrOwn",          // ★ Condition key
+        "newDwellingType",       // ★ Condition key
+        "newAddress",            // ● Used to compute moveDistance
+        "newFloor",              // ○ Logistics
+        "newElevatorAccess",     // ○ Logistics
+        "newBedrooms",           // ○ Estimation
+        "newSquareFootage",      // ○ Estimation
+        "newFinishedSqFt",       // ○ Estimation (house)
+        "newUnfinishedSqFt",     // ○ Estimation (house)
+        "anyChildren",           // ○ Branch gate only
+        "childrenAges",          // ● Used to derive schoolAgeChildren, childrenUnder5
+        "anyPets",               // ★ Condition key
+        "petSelection",          // ○ Pet-specific task detail
+        "hireMovers",            // ★ Condition key
+        "hirePackers",           // ★ Condition key
+        "hireCleaners",          // ★ Condition key
+        "financialInstitutions", // ★ Condition key (multi-select)
+        "healthcareProviders",   // ★ Condition key (multi-select)
+        "fitnessWellness",       // ★ Condition key (multi-select)
+        "howHeard",              // ○ Analytics only
     ]
 }
 
 // MARK: - Supporting Types
 
+enum AssessmentSource {
+    case direct      // Asked directly in assessment
+    case multiSelect // Multi-select tile grid in assessment
+    case computed    // Derived by backend after assessment
+}
+
 struct ConditionFieldInfo {
     let description: String
     let possibleValues: [String]
+    let assessmentSource: AssessmentSource
     let assessmentQuestion: String
-}
-
-struct SampleTask {
-    let id: String
-    let title: String
-    let conditions: [String: [String]]
-    let urgencyPercentage: Int
 }

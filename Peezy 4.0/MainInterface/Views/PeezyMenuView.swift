@@ -2,7 +2,7 @@ import SwiftUI
 
 enum PeezyDestination: String, CaseIterable, Identifiable {
     case home = "Home"
-    case timeline = "Timeline"
+    case timeline = "Task List"
     case settings = "Settings"
     case account = "Account"
 

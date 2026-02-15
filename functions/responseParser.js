@@ -64,7 +64,7 @@ function cleanResponseText(text) {
     // Remove any XML-like tags that might slip through
     .replace(/<\/?[a-z]+>/gi, '')
     // Normalize whitespace
-    .replace(/\s+/g, ' ')
+    .replace(/[^\S\n]+/g, ' ')
     // Clean up multiple periods
     .replace(/\.{2,}/g, '.')
     // Clean up excessive newlines

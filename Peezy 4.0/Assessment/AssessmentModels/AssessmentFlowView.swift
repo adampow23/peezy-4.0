@@ -1,126 +1,128 @@
-import SwiftUI
+//
+//  AssessmentFlowView.swift
+//  Peezy
+//
+//  The container view that hosts the entire assessment flow.
+//  Renders the correct view based on the coordinator's current node:
+//  - Interstitial nodes → ConversationalInterstitialView (comment only, tap to dismiss)
+//  - Input nodes → AssessmentInputWrapper (context typewriter + reveal) wrapping the question view
+//
+//  Progress bar visible throughout. Completion sheet on finish.
+//
 
-// MARK: - AssessmentFlowView
-// Container view for the assessment flow.
-// Creates the DataManager and Coordinator, reads the current node,
-// and renders either an interstitial or the appropriate question view.
-// All child views receive dataManager and coordinator via .environmentObject().
+import SwiftUI
 
 struct AssessmentFlowView: View {
     
-    @StateObject private var dataManager: AssessmentDataManager
-    @StateObject private var coordinator: AssessmentCoordinator
-    
     @Binding var showAssessment: Bool
-    
-    // MARK: - Init
+    @StateObject private var coordinator: AssessmentCoordinator
+    @StateObject private var dataManager: AssessmentDataManager
     
     init(showAssessment: Binding<Bool>) {
-        self._showAssessment = showAssessment
+        _showAssessment = showAssessment
         let dm = AssessmentDataManager()
         _dataManager = StateObject(wrappedValue: dm)
         _coordinator = StateObject(wrappedValue: AssessmentCoordinator(dataManager: dm))
     }
     
-    // MARK: - Body
-    
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
             
-            if let node = coordinator.currentNode {
-                nodeContent(for: node)
-                    .environmentObject(dataManager)
-                    .environmentObject(coordinator)
-                    .id(coordinator.currentIndex)
-                    .transition(.opacity.combined(with: .move(edge: .trailing)))
-                    .animation(.easeInOut(duration: 0.3), value: coordinator.currentIndex)
-            }
-            
-            // Progress bar — only visible on input nodes
-            if let node = coordinator.currentNode, !node.isInterstitial {
-                VStack {
-                    progressHeader
-                    Spacer()
+            VStack(spacing: 0) {
+                // Progress bar — visible on input screens, hidden on interstitials
+                if let node = coordinator.currentNode, !node.isInterstitial {
+                    assessmentProgressBar
+                        .transition(.opacity)
+                }
+                
+                // Main content area
+                if let node = coordinator.currentNode {
+                    nodeView(for: node)
+                        .id(coordinator.currentIndex) // Force fresh view on navigation
                 }
             }
         }
-        .fullScreenCover(isPresented: $coordinator.isComplete) {
+        .environmentObject(coordinator)
+        .environmentObject(dataManager)
+        .sheet(isPresented: $coordinator.isComplete) {
             AssessmentCompleteView()
+                .environmentObject(coordinator)
+                .environmentObject(dataManager)
         }
     }
     
-    // MARK: - Progress Header
+    // MARK: - Progress Bar
     
-    private var progressHeader: some View {
-        HStack(spacing: 16) {
-            // Back button — hidden on first input
-            Button {
-                coordinator.goBack()
-            } label: {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 18, weight: .medium))
-                    .foregroundColor(.white.opacity(0.7))
+    private var assessmentProgressBar: some View {
+        VStack(spacing: 4) {
+            HStack {
+                // Back button
+                if coordinator.currentInputStepNumber > 1 {
+                    Button {
+                        coordinator.goBack()
+                    } label: {
+                        Image(systemName: "chevron.left")
+                            .font(.body.weight(.semibold))
+                            .foregroundColor(.white.opacity(0.6))
+                    }
+                }
+                
+                Spacer()
+                
+                // Step counter
+                Text("\(coordinator.currentInputStepNumber) of \(coordinator.totalInputSteps)")
+                    .font(.caption)
+                    .foregroundColor(.white.opacity(0.4))
             }
-            .opacity(coordinator.currentInputStepNumber > 1 ? 1 : 0)
-            .disabled(coordinator.currentInputStepNumber <= 1)
+            .padding(.horizontal, 24)
+            .padding(.top, 8)
             
             // Progress bar
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
-                    Capsule()
-                        .fill(Color.white.opacity(0.15))
-                        .frame(height: 6)
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(Color.white.opacity(0.1))
+                        .frame(height: 4)
                     
-                    Capsule()
-                        .fill(
-                            LinearGradient(
-                                colors: [.blue, .purple],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
-                        .frame(width: geo.size.width * coordinator.progress, height: 6)
-                        .animation(.easeInOut(duration: 0.4), value: coordinator.progress)
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(Color.white)
+                        .frame(width: geo.size.width * coordinator.progress, height: 4)
+                        .animation(.easeInOut(duration: 0.3), value: coordinator.progress)
                 }
             }
-            .frame(height: 6)
-            
-            // Step counter
-            Text("\(coordinator.currentInputStepNumber)/\(coordinator.totalInputSteps)")
-                .font(.caption)
-                .foregroundColor(.white.opacity(0.5))
-                .monospacedDigit()
+            .frame(height: 4)
+            .padding(.horizontal, 24)
+            .padding(.bottom, 8)
         }
-        .padding(.horizontal, 20)
-        .padding(.top, 12)
     }
     
-    // MARK: - Node Content Router
+    // MARK: - Node Routing
     
     @ViewBuilder
-    private func nodeContent(for node: AssessmentNode) -> some View {
+    private func nodeView(for node: AssessmentNode) -> some View {
         switch node {
-        case .interstitial(let beforeStep):
-            let content = coordinator.interstitialContent(before: beforeStep)
-            ConversationalInterstitialView(
-                commentText: content.comment,
-                contextHeader: content.contextHeader,
-                contextSubheader: content.contextSubheader,
-                onContinue: { coordinator.goToNext() }
-            )
+        case .interstitial(let afterStep):
+            let comment = coordinator.interstitialComment(after: afterStep)
+            ConversationalInterstitialView(commentText: comment.text) {
+                coordinator.goToNext()
+            }
             
         case .input(let step):
-            inputView(for: step)
+            AssessmentInputWrapper(step: step, coordinator: coordinator) {
+                questionView(for: step)
+            }
         }
     }
     
-    // MARK: - Input View Router
+    // MARK: - Question View Switch
     
+    /// Returns the raw question view for a given step.
+    /// These views contain ONLY input controls (tiles, text fields, pickers, etc.)
+    /// Context header/subheader is handled by AssessmentInputWrapper.
     @ViewBuilder
-    private func inputView(for step: AssessmentInputStep) -> some View {
+    private func questionView(for step: AssessmentInputStep) -> some View {
         switch step {
-            
         // --- Section 1: Basics ---
         case .userName:              UserName()
         case .moveExperience:        MoveExperience()
@@ -172,3 +174,11 @@ struct AssessmentFlowView: View {
         }
     }
 }
+
+// MARK: - Preview
+
+#if DEBUG
+#Preview {
+    AssessmentFlowView(showAssessment: .constant(true))
+}
+#endif

@@ -36,7 +36,7 @@ enum ConfettiIntensity {
     var particleCount: Int {
         switch self {
         case .low: return 1
-        case .high: return 600
+        case .high: return 1000
         }
     }
 
@@ -134,7 +134,7 @@ struct ConfettiView: View {
             ),
             rotation: Double.random(in: 0...(2 * .pi)),
             rotationSpeed: Double.random(in: -10...10),
-            scale: gentle ? CGFloat.random(in: 0.3...0.6) : CGFloat.random(in: 0.5...1.2),
+            scale: gentle ? CGFloat.random(in: 0.3...0.6) : CGFloat.random(in: 0.8...1.8),
             opacity: 1.0,
             color: colors.randomElement()!,
             shape: ConfettiParticle.ConfettiShape.allCases.randomElement()!
@@ -143,7 +143,7 @@ struct ConfettiView: View {
 
     private func animateParticles(size: CGSize) {
         let updateInterval: TimeInterval = 1/60.0 // 60 FPS
-        let gravity: CGFloat = 500 // pixels per second squared
+        let gravity: CGFloat = 480 // pixels per second squared
 
         Timer.scheduledTimer(withTimeInterval: updateInterval, repeats: false) { _ in
             for index in particles.indices {
@@ -160,8 +160,8 @@ struct ConfettiView: View {
                 particle.rotation += particle.rotationSpeed * updateInterval
 
                 // Fade out
-                if particle.position.y > size.height - 100 {
-                    particle.opacity -= 0.02
+                if particle.position.y > size.height - 50 {
+                    particle.opacity -= 0.01
                 }
 
                 particles[index] = particle
@@ -191,16 +191,16 @@ struct ParticleView: View {
             case .circle:
                 Circle()
                     .fill(particle.color)
-                    .frame(width: 8, height: 8)
+                    .frame(width: 1, height: 1)
 
             case .checkmark:
                 Image(systemName: "checkmark")
-                    .font(.system(size: 12, weight: .bold))
+                    .font(.system(size: 20, weight: .bold))
                     .foregroundStyle(particle.color)
 
             case .star:
                 Image(systemName: "star.fill")
-                    .font(.system(size: 10))
+                    .font(.system(size: 16))
                     .foregroundStyle(particle.color)
             }
         }

@@ -81,7 +81,7 @@ const submitWorkflowAnswers = onCall(
       const db = admin.firestore();
       
       // Determine if this is a mini-assessment or vendor workflow
-      const isMiniAssessment = workflowId.startsWith('address_change_');
+      const isMiniAssessment = workflowId in MINI_ASSESSMENT_WORKFLOWS;
       
       if (isMiniAssessment) {
         // Mini-assessment: answers is an array of { id, displayName, textEntry? }
@@ -151,12 +151,31 @@ const submitWorkflowAnswers = onCall(
             qualifyingCompletedAt: admin.firestore.FieldValue.serverTimestamp()
           });
         
+        // Send booking notification (non-blocking)
+        const webhookUrl = process.env.NOTIFICATION_WEBHOOK_URL;
+        if (webhookUrl) {
+          fetch(webhookUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              type: 'vendor_workflow_submitted',
+              userId,
+              workflowId,
+              answers,
+              submittedAt: new Date().toISOString(),
+              status: 'pending_matching'
+            })
+          }).catch(err => console.error('Notification webhook failed:', err.message));
+        } else {
+          console.warn('NOTIFICATION_WEBHOOK_URL not configured — vendor submission not notified');
+        }
+
         return {
           success: true,
           status: 'matching_in_progress'
         };
       }
-      
+
     } catch (error) {
       console.error('Error submitting workflow answers:', error);
       throw new HttpsError('internal', 'Failed to submit answers');

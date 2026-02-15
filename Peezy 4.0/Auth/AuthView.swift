@@ -44,13 +44,13 @@ struct AuthView: View {
 
                 // Header
                 TypewriterText(
-                    phrases: ["Let's get moving.", "Moving made Peezy.", "Your move, on autopilot."],
+                    phrases: ["F*ck moving.", "Moving made Peezy.", "Your move, on autopilot."],
                     font: .system(size: 32, weight: .semibold),
                     foregroundColor: .white
                 )
                     .opacity(showContent ? 1 : 0)
                     .offset(y: showContent ? 0 : 20)
-                    .animation(.easeOut(duration: 0.6).delay(0.2), value: showContent)
+                    .animation(.easeOut(duration: 0.8).delay(0.2), value: showContent)
 
                 Spacer()
 
@@ -77,20 +77,6 @@ struct AuthView: View {
                         .cornerRadius(PeezyTheme.Layout.cornerRadiusSmall)
                         .disabled(isAnyLoading)
                         .opacity(isAppleLoading ? 0.6 : 1)
-                        .overlay(
-                            ZStack {
-                                RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadiusSmall, style: .continuous)
-                                    .fill(Color.clear)
-                                    .peezyLiquidGlass(
-                                        cornerRadius: PeezyTheme.Layout.cornerRadiusSmall,
-                                        intensity: 0.55,
-                                        speed: 0.22,
-                                        tintOpacity: 0.05,
-                                        highlightOpacity: 0.12
-                                    )
-                                    .allowsHitTesting(false)
-                            }
-                        )
 
                         if isAppleLoading {
                             ProgressView()
@@ -129,7 +115,7 @@ struct AuthView: View {
                         title: "Continue with Email",
                         icon: "envelope.fill",
                         backgroundColor: Color.gray.opacity(0.15),
-                        textColor: .black.opacity(0.8),
+                        textColor: .white.opacity(0.8),
                         isLoading: false,
                         isDisabled: isAnyLoading
                     ) {

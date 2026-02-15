@@ -26,7 +26,7 @@ class TimelineService {
         let snapshot = try await db.collection("users")
             .document(userId)
             .collection("tasks")
-            .whereField("status", in: ["Upcoming", "InProgress", "pending", "Snoozed"])
+            .whereField("status", in: ["Upcoming", "InProgress", "pending", "Snoozed", "Completed"])
             .getDocuments()
 
         print("📅 TimelineService: Found \(snapshot.documents.count) documents")
@@ -60,7 +60,8 @@ class TimelineService {
             let lastSnoozedAt = (data["lastSnoozedAt"] as? Timestamp)?.dateValue()
 
             // Determine card type based on task properties
-            let isVendorTask = (data["category"] as? String)?.lowercased().contains("vendor") ?? false
+            let categoryRaw = data["category"] as? String
+            let isVendorTask = categoryRaw?.lowercased().contains("vendor") ?? false
             let cardType: PeezyCard.CardType = isVendorTask ? .vendor : .task
 
             // Create the card
@@ -72,14 +73,15 @@ class TimelineService {
                 colorName: colorNameForPriority(priority),
                 taskId: data["id"] as? String ?? document.documentID,
                 workflowId: data["workflowId"] as? String ?? data["id"] as? String,
-                vendorCategory: isVendorTask ? (data["category"] as? String) : nil,
+                vendorCategory: isVendorTask ? categoryRaw : nil,
                 vendorId: nil,
                 priority: priority,
                 createdAt: (data["createdAt"] as? Timestamp)?.dateValue() ?? Date(),
                 status: status,
                 dueDate: dueDate,
                 snoozedUntil: snoozedUntil,
-                lastSnoozedAt: lastSnoozedAt
+                lastSnoozedAt: lastSnoozedAt,
+                taskCategory: categoryRaw
             )
 
             // 📅 DEBUG: Log dueDate from Firestore before filtering
@@ -87,8 +89,9 @@ class TimelineService {
             dueDateFormatter.dateFormat = "MMM d, yyyy"
             print("📅 TimelineService: '\(card.title)' dueDate from Firestore: \(dueDate.map { dueDateFormatter.string(from: $0) } ?? "nil")")
 
-            // Only include cards that should be shown (not completed, not actively snoozed)
-            if card.shouldShow {
+            // Include all fetched cards for timeline display
+            // (snoozed and completed are shown with distinct styling)
+            if card.status != .skipped {
                 cards.append(card)
             }
         }

@@ -1,549 +1,585 @@
+//
+//  PeezyTimelineView.swift
+//  Peezy
+//
+//  Simple grouped task list: Active → Snoozed → Completed
+//  Data source: TimelineService (unchanged)
+//
+
 import SwiftUI
 
-// MARK: - 1. DATA MODELS
-struct PeezyDay: Identifiable {
-    var id: String { formatDateKey(date) }
-    var date: Date
-    var tasks: [PeezyTimelineTask]
+// MARK: - Task Tab
 
-    private func formatDateKey(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        return formatter.string(from: date)
-    }
+enum TaskTab: String, CaseIterable {
+    case active = "Active"
+    case snoozed = "Snoozed"
+    case completed = "Completed"
 }
 
-struct PeezyTimelineTask: Identifiable {
-    var id: String
-    var title: String
-    var subtitle: String
-    var time: String
-    var type: TaskType
-    var dueDate: Date?
-    var priority: Int
+// MARK: - Main View
 
-    enum TaskType {
-        case active
-        case future
-        case completed
-        case urgent
-    }
-}
-
-// MARK: - 2. MAIN VIEW
 struct PeezyTaskStream: View {
-    // External data
+    // External data (kept for container compatibility)
     var viewModel: PeezyStackViewModel?
     var userState: UserState?
 
-    // View Properties
-    @State private var days: [PeezyDay] = []
-    @State private var selectedDate: Date = DateProvider.shared.now
+    // Task data from Firestore
+    @State private var allTasks: [PeezyCard] = []
     @State private var isLoading = true
-    @Namespace private var namespace
 
-    // Timeline-specific data fetched directly from Firestore
-    @State private var timelineTasks: [PeezyCard] = []
-    @State private var isLoadingTasks = false
+    // Task tap → chat
+    @State private var selectedTask: PeezyCard? = nil
+    @State private var showChat: Bool = false
 
-    // Computed: days until move for timeline range
-    private var daysUntilMove: Int {
-        userState?.daysUntilMove ?? 30
-    }
+    // Tab selection
+    @State private var selectedTab: TaskTab = .active
 
-    // Computed: timeline range (today to move date + 7 days buffer)
-    private var timelineRange: Int {
-        max(daysUntilMove + 7, 14) // At least 2 weeks, up to move date + buffer
-    }
+    // Expandable row tracking
+    @State private var expandedTaskId: String? = nil
+
+    // Preview/test data injection
+    private var previewTasks: [PeezyCard]?
 
     // Init for standalone use (preview/testing)
     init() {
         self.viewModel = nil
         self.userState = nil
+        self.previewTasks = nil
     }
 
     // Init for integrated use
     init(viewModel: PeezyStackViewModel?, userState: UserState?) {
         self.viewModel = viewModel
         self.userState = userState
+        self.previewTasks = nil
     }
+
+    // Init with sample data for previews
+    init(previewTasks: [PeezyCard]) {
+        self.viewModel = nil
+        self.userState = nil
+        self.previewTasks = previewTasks
+    }
+
+    // MARK: - Grouped Tasks
+
+    private var activeTasks: [PeezyCard] {
+        allTasks.filter { card in
+            card.status != .completed && card.status != .skipped && !isSnoozed(card)
+        }
+        .sorted { a, b in
+            if a.priority.rawValue != b.priority.rawValue {
+                return a.priority.rawValue > b.priority.rawValue
+            }
+            return (a.dueDate ?? .distantFuture) < (b.dueDate ?? .distantFuture)
+        }
+    }
+
+    private var snoozedTasks: [PeezyCard] {
+        allTasks.filter { isSnoozed($0) }
+            .sorted { ($0.snoozedUntil ?? .distantFuture) < ($1.snoozedUntil ?? .distantFuture) }
+    }
+
+    private var completedTasks: [PeezyCard] {
+        allTasks.filter { $0.status == .completed }
+    }
+
+    private func isSnoozed(_ card: PeezyCard) -> Bool {
+        guard card.status != .completed else { return false }
+        if card.status == .snoozed { return true }
+        if let snoozedUntil = card.snoozedUntil, snoozedUntil > DateProvider.shared.now {
+            return true
+        }
+        return false
+    }
+
+    // MARK: - Filtered Tasks
+
+    private var tasksForSelectedTab: [PeezyCard] {
+        switch selectedTab {
+        case .active: return activeTasks
+        case .snoozed: return snoozedTasks
+        case .completed: return completedTasks
+        }
+    }
+
+    private func countForTab(_ tab: TaskTab) -> Int {
+        switch tab {
+        case .active: return activeTasks.count
+        case .snoozed: return snoozedTasks.count
+        case .completed: return completedTasks.count
+        }
+    }
+
+    // MARK: - Body
 
     var body: some View {
         ZStack {
-            // Background
             InteractiveBackground()
 
             VStack(spacing: 0) {
-                // Top Strip (Week Selector)
-                HeaderView()
-                    .padding(.bottom, 10)
-                    .background(.ultraThinMaterial)
-                    .clipShape(RoundedRectangle(cornerRadius: 30, style: .continuous))
-                    .shadow(color: .black.opacity(0.2), radius: 10, y: 5)
+                headerView
+                tabBar
 
                 if isLoading {
                     Spacer()
                     ProgressView()
                         .tint(.white)
                     Spacer()
+                } else if allTasks.isEmpty {
+                    Spacer()
+                    emptyState
+                    Spacer()
                 } else {
-                    GeometryReader { geometry in
-                        let size = geometry.size
-
-                        ScrollView(.vertical, showsIndicators: false) {
-                            LazyVStack(spacing: 15, pinnedViews: [.sectionHeaders]) {
-                                ForEach(days) { day in
-                                    let isLast = days.last?.id == day.id
-
-                                    Section {
-                                        VStack(alignment: .leading, spacing: 15) {
-                                            if day.tasks.isEmpty {
-                                                EmptyDayRow()
-                                            } else {
-                                                ForEach(day.tasks) { task in
-                                                    TimelineTaskRow(task: task)
-                                                }
-                                            }
-                                        }
-                                        .frame(maxWidth: .infinity)
-                                        .padding(.leading, 80)
-                                        .padding(.top, -70)
-                                        .padding(.bottom, 10)
-                                        .frame(minHeight: isLast ? size.height - 110 : nil, alignment: .top)
-
-                                    } header: {
-                                        DayHeader(date: day.date, moveDate: userState?.moveDate)
-                                    }
-                                }
-                            }
-                            .padding(.top, 20)
-                        }
-                    }
+                    taskList
                 }
             }
         }
         .edgesIgnoringSafeArea(.bottom)
+        .sheet(isPresented: $showChat) {
+            ChatView(userState: userState, card: selectedTask)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+        }
         .task {
-            await loadTasksFromFirestore()
-        }
-        .onAppear {
-            // Initial load from any available data while Firestore loads
-            loadDays()
-        }
-        .onChange(of: timelineTasks.count) { _, _ in
-            loadDays()
+            if let previewTasks {
+                allTasks = previewTasks
+                isLoading = false
+            } else {
+                await loadTasks()
+            }
         }
     }
 
-    // MARK: - Firestore Data Loading
+    // MARK: - Header
 
-    private func loadTasksFromFirestore() async {
-        isLoadingTasks = true
-        do {
-            let service = TimelineService()
-            timelineTasks = try await service.fetchUserTasks()
-            print("📅 Timeline: Loaded \(timelineTasks.count) tasks from Firestore")
-            // Trigger UI update
-            await MainActor.run {
-                loadDays()
+    private var headerView: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Task List")
+                    .font(.title2.bold())
+                    .foregroundColor(.white)
+
+                Text(taskSummary)
+                    .font(.subheadline)
+                    .foregroundColor(.white.opacity(0.6))
             }
-        } catch {
-            print("❌ Timeline: Failed to load tasks from Firestore: \(error)")
-            // Fall back to viewModel if available
-            timelineTasks = viewModel?.cards.filter { $0.type == .task || $0.type == .vendor } ?? []
+
+            Spacer()
+
+            if let daysLeft = userState?.daysUntilMove, daysLeft > 0 {
+                Text("\(daysLeft)d")
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundColor(.cyan)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(Capsule().fill(.white.opacity(0.1)))
+            }
         }
-        isLoadingTasks = false
+        .padding(.horizontal, 20)
+        .padding(.top, 56)
+        .padding(.bottom, 16)
+    }
+
+    private var taskSummary: String {
+        let active = activeTasks.count
+        let snoozed = snoozedTasks.count
+        let completed = completedTasks.count
+
+        if active == 0 && snoozed == 0 {
+            return completed > 0 ? "\(completed) completed" : "No tasks yet"
+        }
+
+        var parts: [String] = []
+        if active > 0 { parts.append("\(active) active") }
+        if snoozed > 0 { parts.append("\(snoozed) snoozed") }
+        if completed > 0 { parts.append("\(completed) done") }
+        return parts.joined(separator: " · ")
+    }
+
+    // MARK: - Tab Bar
+
+    private var tabBar: some View {
+        HStack(spacing: 6) {
+            ForEach(TaskTab.allCases, id: \.self) { tab in
+                let isSelected = selectedTab == tab
+                let count = countForTab(tab)
+
+                Button {
+                    PeezyHaptics.light()
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                        selectedTab = tab
+                        expandedTaskId = nil
+                    }
+                } label: {
+                    Text("\(tab.rawValue) (\(count))")
+                        .font(.system(size: 13, weight: isSelected ? .semibold : .medium))
+                        .foregroundColor(isSelected ? .white : .white.opacity(0.4))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .background(
+                            Group {
+                                if isSelected {
+                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                        .fill(.white.opacity(0.12))
+                                }
+                            }
+                        )
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(4)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(.ultraThinMaterial)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(Color(red: 0.15, green: 0.15, blue: 0.17).opacity(0.5))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .stroke(.white.opacity(0.06), lineWidth: 0.5)
+                )
+        )
+        .padding(.horizontal, 16)
+        .padding(.bottom, 8)
+    }
+
+    // MARK: - Task List
+
+    private var taskList: some View {
+        ScrollView(.vertical, showsIndicators: false) {
+            LazyVStack(spacing: 0) {
+                let tasks = tasksForSelectedTab
+
+                if tasks.isEmpty {
+                    tabEmptyState
+                } else {
+                    ForEach(tasks) { task in
+                        TaskListRow(
+                            task: task,
+                            isExpanded: expandedTaskId == task.id,
+                            onExpand: {
+                                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                    expandedTaskId = expandedTaskId == task.id ? nil : task.id
+                                }
+                            },
+                            onTap: {
+                                selectedTask = task
+                                showChat = true
+                            }
+                        )
+                    }
+                }
+
+                Color.clear.frame(height: 40)
+            }
+            .padding(.horizontal, 16)
+        }
+        .refreshable {
+            await loadTasks()
+        }
+    }
+
+    // MARK: - Empty State
+
+    private var emptyState: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "checklist")
+                .font(.system(size: 50))
+                .foregroundStyle(.white.opacity(0.4))
+
+            Text("No tasks yet")
+                .font(.title3.bold())
+                .foregroundStyle(.white)
+
+            Text("Tasks will appear here after your assessment.")
+                .font(.subheadline)
+                .foregroundStyle(.white.opacity(0.5))
+                .multilineTextAlignment(.center)
+        }
+        .padding(.horizontal, 40)
+    }
+
+    private var tabEmptyState: some View {
+        VStack(spacing: 12) {
+            let (icon, message): (String, String) = {
+                switch selectedTab {
+                case .active:
+                    return ("checkmark.seal.fill", "No active tasks — you're all caught up!")
+                case .snoozed:
+                    return ("moon.zzz.fill", "No snoozed tasks")
+                case .completed:
+                    return ("trophy.fill", "No completed tasks yet")
+                }
+            }()
+
+            Image(systemName: icon)
+                .font(.system(size: 32))
+                .foregroundStyle(.white.opacity(0.3))
+
+            Text(message)
+                .font(.subheadline)
+                .foregroundStyle(.white.opacity(0.4))
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 60)
     }
 
     // MARK: - Data Loading
 
-    private func loadDays() {
-        isLoading = true
+    private func loadTasks() async {
+        let showSpinner = allTasks.isEmpty
+        if showSpinner { isLoading = true }
 
-        // Use timeline tasks from Firestore (primary source)
-        // Fall back to viewModel only if timelineTasks is empty and we're still loading
-        let cards: [PeezyCard]
-        if !timelineTasks.isEmpty {
-            cards = timelineTasks.filter { $0.type == .task || $0.type == .vendor }
-        } else if !isLoadingTasks, let vmCards = viewModel?.cards {
-            // Fallback: use viewModel cards if Firestore load failed
-            cards = vmCards.filter { $0.type == .task || $0.type == .vendor }
-        } else {
-            cards = []
-        }
-
-        print("📅 Timeline: Loading days with \(cards.count) task cards, timeline range: \(timelineRange) days")
-
-        if cards.isEmpty {
-            // No real tasks - generate empty timeline
-            days = generateEmptyTimeline()
-        } else {
-            // Convert real cards to timeline format
-            days = convertCardsToTimeline(cards)
-        }
-
-        isLoading = false
-    }
-
-    // Generate timeline structure with no tasks
-    private func generateEmptyTimeline() -> [PeezyDay] {
-        let calendar = Calendar.current
-        let today = calendar.startOfDay(for: DateProvider.shared.now)
-        var result: [PeezyDay] = []
-
-        for i in 0..<timelineRange {
-            if let date = calendar.date(byAdding: .day, value: i, to: today) {
-                result.append(PeezyDay(date: date, tasks: []))
+        do {
+            let service = TimelineService()
+            let tasks = try await service.fetchUserTasks()
+            await MainActor.run {
+                self.allTasks = tasks
+                self.isLoading = false
+            }
+        } catch {
+            await MainActor.run {
+                self.allTasks = viewModel?.cards.filter {
+                    $0.type == .task || $0.type == .vendor
+                } ?? []
+                self.isLoading = false
             }
         }
-
-        return result
-    }
-
-    // Convert PeezyCards to timeline days
-    private func convertCardsToTimeline(_ cards: [PeezyCard]) -> [PeezyDay] {
-        let calendar = Calendar.current
-        let today = calendar.startOfDay(for: DateProvider.shared.now)
-
-        // Create day buckets for the timeline range
-        var dayMap: [String: [PeezyTimelineTask]] = [:]
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateFormat = "yyyy-MM-dd"
-
-        // Initialize all days
-        for i in 0..<timelineRange {
-            if let date = calendar.date(byAdding: .day, value: i, to: today) {
-                let key = dateFormatter.string(from: date)
-                dayMap[key] = []
-            }
-        }
-
-        // Map cards to their due dates
-        for card in cards {
-            let task = PeezyTimelineTask(
-                id: card.id,
-                title: card.title,
-                subtitle: card.subtitle,
-                time: formatTaskTime(card),
-                type: mapTaskType(card, today: today),
-                dueDate: card.dueDate,
-                priority: card.priority.rawValue
-            )
-
-            // Determine which day this task belongs to
-            let taskDate: Date
-            if let dueDate = card.dueDate {
-                taskDate = calendar.startOfDay(for: dueDate)
-            } else {
-                // No due date - put on today
-                taskDate = today
-            }
-
-            let key = dateFormatter.string(from: taskDate)
-
-            // Only add if within our timeline range
-            if dayMap[key] != nil {
-                dayMap[key]?.append(task)
-                print("📅 Task '\(card.title)' added to \(key)")
-            } else {
-                // Task is outside timeline range - check if it's before today
-                if taskDate < today {
-                    // Overdue task - put on today
-                    let todayKey = dateFormatter.string(from: today)
-                    dayMap[todayKey]?.append(task)
-                    print("📅 Overdue task '\(card.title)' added to today")
-                } else {
-                    // Future task beyond range - put at end
-                    if let lastDate = calendar.date(byAdding: .day, value: timelineRange - 1, to: today) {
-                        let lastKey = dateFormatter.string(from: lastDate)
-                        dayMap[lastKey]?.append(task)
-                        print("📅 Future task '\(card.title)' added to end of timeline")
-                    }
-                }
-            }
-        }
-
-        // Convert to array, sorted by date
-        var result: [PeezyDay] = []
-        for i in 0..<timelineRange {
-            if let date = calendar.date(byAdding: .day, value: i, to: today) {
-                let key = dateFormatter.string(from: date)
-                var tasks = dayMap[key] ?? []
-                // Sort tasks by priority (highest first)
-                tasks.sort { $0.priority > $1.priority }
-                result.append(PeezyDay(date: date, tasks: tasks))
-            }
-        }
-
-        return result
-    }
-
-    private func mapTaskType(_ card: PeezyCard, today: Date) -> PeezyTimelineTask.TaskType {
-        let calendar = Calendar.current
-
-        // Check priority
-        if card.priority == .urgent {
-            return .urgent
-        }
-
-        // Check if due today or overdue
-        if let dueDate = card.dueDate {
-            let dueDateStart = calendar.startOfDay(for: dueDate)
-            if calendar.isDate(dueDateStart, inSameDayAs: today) {
-                return .active
-            } else if dueDateStart < today {
-                return .urgent // Overdue
-            }
-        }
-
-        return .future
-    }
-
-    private func formatTaskTime(_ card: PeezyCard) -> String {
-        if let dueDate = card.dueDate {
-            let components = Calendar.current.dateComponents([.hour, .minute], from: dueDate)
-            // If time component is midnight (0:00), show "All Day"
-            if components.hour == 0 && components.minute == 0 {
-                return "All Day"
-            }
-            let formatter = DateFormatter()
-            formatter.dateFormat = "h:mm a"
-            return formatter.string(from: dueDate)
-        }
-        return "Flexible"
-    }
-
-    // MARK: - Header View
-
-    @ViewBuilder
-    func HeaderView() -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("Mission Schedule")
-                    .font(.title2.bold())
-                    .foregroundColor(.white)
-                Spacer()
-
-                // Days until move indicator
-                if let daysLeft = userState?.daysUntilMove, daysLeft > 0 {
-                    Text("\(daysLeft) days to move")
-                        .font(.caption)
-                        .foregroundColor(.cyan)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(Capsule().fill(.white.opacity(0.1)))
-                }
-            }
-            .padding(.horizontal, 20)
-            .padding(.top, 50)
-
-            // Scrollable date strip
-            ScrollViewReader { proxy in
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 10) {
-                        ForEach(days) { day in
-                            let isSameDate = Calendar.current.isDate(day.date, inSameDayAs: selectedDate)
-                            let hasTask = !day.tasks.isEmpty
-                            let isToday = Calendar.current.isDateInToday(day.date)
-
-                            VStack(spacing: 6) {
-                                Text(formatDate(day.date, "EEE").prefix(1))
-                                    .font(.caption2)
-                                    .fontWeight(.bold)
-                                    .foregroundColor(isSameDate ? .black : .white.opacity(0.5))
-
-                                Text(formatDate(day.date, "dd"))
-                                    .font(.headline)
-                                    .fontWeight(.semibold)
-                                    .foregroundColor(isSameDate ? .black : .white)
-
-                                // Task indicator dot
-                                Circle()
-                                    .fill(hasTask ? .cyan : .clear)
-                                    .frame(width: 6, height: 6)
-                            }
-                            .frame(width: 45, height: 70)
-                            .background {
-                                if isSameDate {
-                                    Capsule()
-                                        .fill(.white)
-                                        .matchedGeometryEffect(id: "ACTIVEDATE", in: namespace)
-                                        .shadow(color: .white.opacity(0.5), radius: 10)
-                                } else if isToday {
-                                    Capsule()
-                                        .fill(Color.cyan.opacity(0.2))
-                                } else {
-                                    Capsule()
-                                        .fill(Color.white.opacity(0.05))
-                                }
-                            }
-                            .id(day.id)
-                            .onTapGesture {
-                                withAnimation(.spring(response: 0.3)) {
-                                    selectedDate = day.date
-                                }
-                            }
-                        }
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.bottom, 15)
-                }
-                .onAppear {
-                    // Scroll to today on appear
-                    if let todayDay = days.first(where: { Calendar.current.isDateInToday($0.date) }) {
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                            withAnimation {
-                                proxy.scrollTo(todayDay.id, anchor: .leading)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    func formatDate(_ date: Date, _ format: String) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = format
-        return formatter.string(from: date)
     }
 }
 
-// MARK: - Timeline Task Row
-struct TimelineTaskRow: View {
-    let task: PeezyTimelineTask
+// MARK: - Task List Row
+
+struct TaskListRow: View {
+    let task: PeezyCard
+    var isExpanded: Bool = false
+    var onExpand: () -> Void = {}
+    var onTap: () -> Void
+
     private let charcoalColor = Color(red: 0.15, green: 0.15, blue: 0.17)
 
+    private var isSnoozed: Bool {
+        if task.status == .snoozed { return true }
+        if let snoozedUntil = task.snoozedUntil, snoozedUntil > DateProvider.shared.now {
+            return true
+        }
+        return false
+    }
+
+    private var isCompleted: Bool {
+        task.status == .completed
+    }
+
     var body: some View {
-        HStack(spacing: 15) {
-            // Status dot
-            Circle()
-                .fill(statusColor)
-                .frame(width: 8, height: 8)
-                .shadow(color: statusColor.opacity(0.5), radius: 5)
+        VStack(spacing: 0) {
+            // Main row
+            HStack(spacing: 14) {
+                // Tappable area → opens ChatView
+                Button(action: onTap) {
+                    HStack(spacing: 14) {
+                        statusIcon
+                            .frame(width: 32, height: 32)
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text(task.title)
-                    .font(.headline)
-                    .foregroundColor(.white)
-                    .strikethrough(task.type == .completed)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(task.title)
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundColor(.white)
+                                .strikethrough(isCompleted)
+                                .lineLimit(1)
 
-                if !task.subtitle.isEmpty {
-                    Text(task.subtitle)
-                        .font(.caption)
-                        .foregroundColor(.white.opacity(0.6))
+                            if isSnoozed, let snoozedUntil = task.snoozedUntil {
+                                Text("Until \(formattedDate(snoozedUntil))")
+                                    .font(.caption)
+                                    .foregroundColor(.orange.opacity(0.8))
+                            }
+                        }
+
+                        Spacer()
+                    }
                 }
+                .buttonStyle(.plain)
+
+                // Expand/collapse chevron
+                Button(action: onExpand) {
+                    Image(systemName: "chevron.right")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundColor(.white.opacity(0.3))
+                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: isExpanded)
+                        .frame(width: 32, height: 32)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
             }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
 
-            Spacer()
+            // Expanded description
+            if isExpanded, !task.subtitle.isEmpty {
+                Rectangle()
+                    .fill(Color.white.opacity(0.06))
+                    .frame(height: 0.5)
+                    .padding(.horizontal, 16)
 
-            Text(task.time)
-                .font(.caption)
-                .fontWeight(.bold)
-                .foregroundColor(.white.opacity(0.3))
+                Text(task.subtitle)
+                    .font(.caption)
+                    .foregroundColor(.white.opacity(0.6))
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
         }
-        .padding(16)
-        .background(
-            ZStack {
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .fill(.ultraThinMaterial)
+        .background(rowBackground)
+        .opacity(isCompleted ? 0.5 : (isSnoozed ? 0.7 : 1.0))
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .padding(.vertical, 4)
+    }
 
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .fill(charcoalColor.opacity(task.type == .active || task.type == .urgent ? 0.7 : 0.4))
-            }
-            .overlay(
-                RoundedRectangle(cornerRadius: 20)
-                    .stroke(borderColor, lineWidth: 1)
-            )
-            .shadow(color: .black.opacity(0.2), radius: 10, y: 5)
+    // MARK: - Category Icon
+
+    @ViewBuilder
+    private var statusIcon: some View {
+        if isCompleted {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 20))
+                .foregroundColor(.green)
+        } else if isSnoozed {
+            Image(systemName: "moon.zzz.fill")
+                .font(.system(size: 18))
+                .foregroundColor(.yellow)
+        } else {
+            Image(systemName: iconForCategory(task.taskCategory))
+                .font(.system(size: 18))
+                .foregroundColor(.white.opacity(0.5))
+        }
+    }
+
+    private func iconForCategory(_ category: String?) -> String {
+        switch (category ?? "").lowercased() {
+        case "moving":          return "shippingbox.fill"
+        case "packing":         return "archivebox.fill"
+        case "services":        return "wrench.and.screwdriver.fill"
+        case "utilities":       return "bolt.fill"
+        case "administrative":  return "doc.text.fill"
+        case "children":        return "figure.and.child.holdinghands"
+        case "pets":            return "pawprint.fill"
+        case "finance":         return "creditcard.fill"
+        case "insurance":       return "shield.checkered"
+        case "health":          return "heart.fill"
+        case "fitness":         return "figure.run"
+        default:                return "list.bullet.circle.fill"
+        }
+    }
+
+    // MARK: - Row Background
+
+    private var rowBackground: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(.ultraThinMaterial)
+
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(charcoalColor.opacity(isCompleted ? 0.3 : 0.5))
+        }
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(borderColor, lineWidth: 0.5)
         )
-        .padding(.trailing, 20)
-        .opacity(task.type == .completed ? 0.5 : 1.0)
     }
 
-    private var statusColor: Color {
-        switch task.type {
-        case .active: return .cyan
-        case .urgent: return .orange
-        case .future: return .white.opacity(0.2)
-        case .completed: return .green
-        }
-    }
+    // MARK: - Helpers
 
     private var borderColor: Color {
-        switch task.type {
-        case .active: return .white.opacity(0.2)
-        case .urgent: return .orange.opacity(0.3)
-        case .future: return .white.opacity(0.05)
-        case .completed: return .white.opacity(0.05)
-        }
-    }
-}
-
-// MARK: - Day Header
-struct DayHeader: View {
-    let date: Date
-    var moveDate: Date?
-
-    private var isToday: Bool {
-        Calendar.current.isDateInToday(date)
+        if isSnoozed { return .yellow.opacity(0.15) }
+        if task.priority == .urgent { return .orange.opacity(0.2) }
+        return .white.opacity(0.06)
     }
 
-    private var isMoveDay: Bool {
-        guard let moveDate = moveDate else { return false }
-        return Calendar.current.isDate(date, inSameDayAs: moveDate)
-    }
-
-    var body: some View {
-        VStack(spacing: 4) {
-            Text(formatDate("EEE").uppercased())
-                .font(.caption)
-                .fontWeight(.bold)
-                .foregroundColor(isMoveDay ? .orange : (isToday ? .cyan : .cyan.opacity(0.7)))
-
-            Text(formatDate("dd"))
-                .font(.system(size: 34, weight: .bold))
-                .foregroundColor(isMoveDay ? .orange : .white)
-
-            if isToday {
-                Text("TODAY")
-                    .font(.system(size: 8, weight: .bold))
-                    .foregroundColor(.cyan)
-            } else if isMoveDay {
-                Text("MOVE DAY")
-                    .font(.system(size: 8, weight: .bold))
-                    .foregroundColor(.orange)
-            }
-        }
-        .frame(width: 60, height: 80)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .offset(x: 10)
-    }
-
-    private func formatDate(_ format: String) -> String {
+    private func formattedDate(_ date: Date) -> String {
         let formatter = DateFormatter()
-        formatter.dateFormat = format
+        formatter.dateFormat = "MMM d"
         return formatter.string(from: date)
-    }
-}
-
-// MARK: - Empty Day Row
-struct EmptyDayRow: View {
-    var body: some View {
-        HStack {
-            Spacer()
-            Text("No tasks scheduled")
-                .font(.caption)
-                .italic()
-                .foregroundColor(.white.opacity(0.3))
-            Spacer()
-        }
-        .padding(.vertical, 20)
-        .padding(.trailing, 20)
     }
 }
 
 // MARK: - Preview
+
 #Preview {
-    PeezyTaskStream()
+    PeezyTaskStream(previewTasks: [
+        // Active tasks
+        PeezyCard(
+            id: "1",
+            type: .task,
+            title: "Book Professional Movers",
+            subtitle: "Research and reserve a moving company. Get at least three quotes from licensed, insured movers and compare pricing, availability, and reviews.",
+            priority: .high,
+            status: .upcoming,
+            dueDate: Calendar.current.date(byAdding: .day, value: 5, to: Date()),
+            taskCategory: "moving"
+        ),
+        PeezyCard(
+            id: "2",
+            type: .task,
+            title: "Set Up Mail Forwarding",
+            subtitle: "Visit USPS.com or your local post office to forward mail from your current address to your new one. This ensures you don't miss important documents during the transition.",
+            priority: .normal,
+            status: .upcoming,
+            dueDate: Calendar.current.date(byAdding: .day, value: 10, to: Date()),
+            taskCategory: "administrative"
+        ),
+        PeezyCard(
+            id: "3",
+            type: .task,
+            title: "Transfer Utilities",
+            subtitle: "Contact your electric, gas, water, and internet providers to schedule disconnection at your old address and activation at your new one.",
+            priority: .urgent,
+            status: .inProgress,
+            dueDate: Date(),
+            taskCategory: "utilities"
+        ),
+        PeezyCard(
+            id: "4",
+            type: .task,
+            title: "Update Vehicle Registration",
+            subtitle: "Visit your local DMV or go online to update your vehicle registration and driver's license with your new address.",
+            priority: .normal,
+            status: .upcoming,
+            taskCategory: "administrative"
+        ),
+        // Snoozed task
+        PeezyCard(
+            id: "5",
+            type: .task,
+            title: "Hire a Cleaning Service",
+            subtitle: "Schedule a deep clean of your old place before move-out to ensure you get your security deposit back.",
+            priority: .normal,
+            status: .snoozed,
+            snoozedUntil: Calendar.current.date(byAdding: .day, value: 3, to: Date()),
+            taskCategory: "services"
+        ),
+        // Completed tasks
+        PeezyCard(
+            id: "6",
+            type: .task,
+            title: "Declutter & Donate",
+            subtitle: "Go room by room and sort items into keep, donate, and discard piles. Schedule a donation pickup or drop-off.",
+            priority: .normal,
+            status: .completed,
+            taskCategory: "packing"
+        ),
+        PeezyCard(
+            id: "7",
+            type: .task,
+            title: "Gather Packing Supplies",
+            subtitle: "Stock up on boxes, tape, bubble wrap, and markers. Check local stores or community groups for free moving boxes.",
+            priority: .low,
+            status: .completed,
+            taskCategory: "packing"
+        )
+    ])
 }

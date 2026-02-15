@@ -1,6 +1,6 @@
 import SwiftUI
 
-struct HirePackers: View {
+struct CurrentRentOrOwn: View {
     @State private var selected = ""
     @EnvironmentObject var assessmentData: AssessmentDataManager
     @EnvironmentObject var coordinator: AssessmentCoordinator
@@ -11,30 +11,18 @@ struct HirePackers: View {
     // Haptic feedback
     private let lightHaptic = UIImpactFeedbackGenerator(style: .light)
     
-    let options = ["Hire Packers", "Pack Myself"]
+    let options = ["Rent", "Own"]
     
     let iconMap: [String: String] = [
-        "Hire Packers": "shippingbox.fill",
-        "Pack Myself": "hand.raised.fill"
+        "Rent": "key.fill",
+        "Own": "house.fill"
     ]
     
     var body: some View {
         VStack(spacing: 0) {
-            // Animated Progress Header
-            AssessmentProgressHeader(
-                currentStep: AssessmentStep.HirePackers.stepNumber,
-                totalSteps: AssessmentStep.HirePackers.totalSteps,
-                onBack: {
-                    coordinator.goBack()
-                },
-                onCompletion: {
-                    // Not used for intermediate steps
-                }
-            )
-            
             // Content area with equal spacing
             AssessmentContentArea(
-                questionText: "Will you hire packers?",
+                questionText: "Rent or own?",
                 showContent: showContent
             ) {
                 // Options grid
@@ -49,12 +37,11 @@ struct HirePackers: View {
                             isSelected: selected == option,
                             onTap: {
                                 selected = option
-                                assessmentData.HirePackers = option
-                                assessmentData.saveData()
+                                assessmentData.currentRentOrOwn = option
                                 
                                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                                     lightHaptic.impactOccurred()
-                                    coordinator.goToNext(from: .HirePackers)
+                                    coordinator.goToNext()
                                 }
                             }
                         )
@@ -66,10 +53,9 @@ struct HirePackers: View {
                 .padding(.horizontal, 20)
             }
         }
-        .navigationBarBackButtonHidden(true)
         .background(InteractiveBackground())
         .onAppear {
-            selected = assessmentData.HirePackers
+            selected = assessmentData.currentRentOrOwn
             withAnimation {
                 showContent = true
             }
@@ -79,9 +65,7 @@ struct HirePackers: View {
 
 #Preview {
     let manager = AssessmentDataManager()
-    NavigationStack {
-        HirePackers()
-            .environmentObject(manager)
-            .environmentObject(AssessmentCoordinator(dataManager: manager))
-    }
+    CurrentRentOrOwn()
+        .environmentObject(manager)
+        .environmentObject(AssessmentCoordinator(dataManager: manager))
 }

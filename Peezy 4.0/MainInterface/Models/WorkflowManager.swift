@@ -217,6 +217,32 @@ class WorkflowManager {
         onOpenChat = nil
     }
 
+    // MARK: - Demo Workflow (No Firebase)
+
+    /// Start a workflow with pre-loaded data (no Firebase fetch).
+    /// Used for walkthrough demo workflows.
+    func startDemoWorkflow(workflowId: String, workflowTitle: String, qualifying: WorkflowQualifying) {
+        guard !isInWorkflow else { return }
+
+        self.qualifying = qualifying
+        self.isInWorkflow = true
+        self.currentWorkflowId = workflowId
+        self.currentWorkflowTitle = workflowTitle
+        self.currentQuestionIndex = 0
+        self.answers = WorkflowAnswers(workflowId: workflowId)
+        self.isLoading = false
+        self.error = nil
+
+        let introCard = WorkflowCard(
+            id: "\(workflowId)-intro",
+            workflowId: workflowId,
+            workflowTitle: workflowTitle,
+            cardType: .intro,
+            qualifying: qualifying
+        )
+        self.workflowCards = [introCard]
+    }
+
     // MARK: - Helpers
 
     private func formatWorkflowTitle(_ workflowId: String) -> String {

@@ -480,8 +480,7 @@ struct RecapAnswerRow: View {
             title: "Got it. Here's what I heard:",
             closing: "I'm reaching out to your top 3 matches now.",
             button: "Sounds Good"
-        ),
-        questionCount: 4
+        )
     )
 
     let card = WorkflowCard(

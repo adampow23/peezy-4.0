@@ -80,7 +80,7 @@ struct PeezyLiquidGlassModifier: ViewModifier {
                 .layerEffect(ShaderLibrary.liquidRefraction(intensity: Float(intensity),
                                                             speed: Float(speed),
                                                             t: Float(time)),
-                             maxSampleOffset: .zero,
+                             maxSampleOffset: CGSize(width: 3, height: 3),
                              isEnabled: true)
         }
     }

@@ -37,8 +37,7 @@ struct AppRootView: View {
                 
             case .needsAssessment:
                 if showAssessment {
-                    AssessmentFlowView()
-                } else {
+                    AssessmentFlowView(showAssessment: $showAssessment)                } else {
                     AssessmentIntroView(showAssessment: $showAssessment)
                 }
                 

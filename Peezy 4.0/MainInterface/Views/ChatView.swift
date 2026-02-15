@@ -3,11 +3,16 @@ import SwiftUI
 // MARK: - ChatView
 struct ChatView: View {
     var userState: UserState?
+    var card: PeezyCard?
 
     @State private var messages: [ChatMessage] = []
     @State private var inputText: String = ""
     @State private var isLoading: Bool = false
     @State private var error: String?
+    @State private var animatingMessageId: String? = nil
+    @State private var displayedCharacterCount: Int = 0
+    @State private var messageFeedback: [String: Bool] = [:]
+    @State private var welcomeMessageId: String?
 
     @FocusState private var isInputFocused: Bool
 
@@ -27,8 +32,21 @@ struct ChatView: View {
                     ScrollView {
                         LazyVStack(spacing: 12) {
                             ForEach(messages) { message in
-                                MessageBubble(message: message)
-                                    .id(message.id)
+                                MessageBubble(
+                                    message: message,
+                                    isAnimating: message.id == animatingMessageId,
+                                    displayedCharacterCount: message.id == animatingMessageId ? displayedCharacterCount : message.content.count,
+                                    showFeedback: message.role == .assistant && message.id != welcomeMessageId,
+                                    feedback: messageFeedback[message.id],
+                                    onFeedback: { value in
+                                        if let value {
+                                            messageFeedback[message.id] = value
+                                        } else {
+                                            messageFeedback.removeValue(forKey: message.id)
+                                        }
+                                    }
+                                )
+                                .id(message.id)
                             }
 
                             // Loading indicator
@@ -49,6 +67,11 @@ struct ChatView: View {
                     .onChange(of: isLoading) { _, _ in
                         scrollToBottom(proxy: proxy)
                     }
+                    .onChange(of: displayedCharacterCount) { _, _ in
+                        if animatingMessageId != nil {
+                            scrollToBottom(proxy: proxy)
+                        }
+                    }
                 }
 
                 // Error banner
@@ -57,6 +80,13 @@ struct ChatView: View {
                         self.error = nil
                     }
                 }
+
+                // AI disclaimer
+                Text("Peezy can make mistakes")
+                    .font(.caption2)
+                    .foregroundColor(.white.opacity(0.3))
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 4)
 
                 // Input bar
                 ChatInputBar(
@@ -85,16 +115,24 @@ struct ChatView: View {
         guard messages.isEmpty else { return }
 
         let greeting: String
-        if let name = userState?.name, !name.isEmpty {
+        if let card = card, !card.title.isEmpty {
+            if let name = userState?.name, !name.isEmpty {
+                greeting = "Hey \(name)! Let's talk about \(card.title). What questions do you have?"
+            } else {
+                greeting = "Let's talk about \(card.title). What questions do you have?"
+            }
+        } else if let name = userState?.name, !name.isEmpty {
             greeting = "Hey \(name)! What's on your mind about the move?"
         } else {
             greeting = "Hey! What's on your mind about the move?"
         }
 
-        messages.append(ChatMessage(
+        let welcomeMessage = ChatMessage(
             role: .assistant,
             content: greeting
-        ))
+        )
+        welcomeMessageId = welcomeMessage.id
+        messages.append(welcomeMessage)
     }
 
     private func sendMessage() {
@@ -122,15 +160,37 @@ struct ChatView: View {
             let response = try await client.sendMessage(
                 text,
                 userState: userState ?? UserState(userId: "unknown", name: ""),
-                conversationHistory: messages
+                conversationHistory: messages,
+                currentTaskId: card?.id,
+                requestType: "chat"
+            )
+
+            let assistantMessage = ChatMessage(
+                role: .assistant,
+                content: response.text
             )
 
             await MainActor.run {
-                messages.append(ChatMessage(
-                    role: .assistant,
-                    content: response.text
-                ))
+                messages.append(assistantMessage)
                 isLoading = false
+                animatingMessageId = assistantMessage.id
+                displayedCharacterCount = 0
+            }
+
+            let totalCharacters = response.text.count
+            let messageId = assistantMessage.id
+
+            while await MainActor.run(body: {
+                displayedCharacterCount < totalCharacters && animatingMessageId == messageId
+            }) {
+                try? await Task.sleep(nanoseconds: 18_000_000) // ~18ms
+                await MainActor.run {
+                    guard animatingMessageId == messageId else { return }
+                    displayedCharacterCount = min(displayedCharacterCount + 2, totalCharacters)
+                    if displayedCharacterCount >= totalCharacters {
+                        animatingMessageId = nil
+                    }
+                }
             }
         } catch {
             await MainActor.run {
@@ -286,9 +346,21 @@ struct ChatHeader: View {
 // MARK: - Message Bubble (Charcoal Glass Style)
 struct MessageBubble: View {
     let message: ChatMessage
+    var isAnimating: Bool = false
+    var displayedCharacterCount: Int = 0
+    var showFeedback: Bool = false
+    var feedback: Bool? = nil
+    var onFeedback: ((Bool?) -> Void)? = nil
 
     // Charcoal color for assistant bubbles
     private let charcoalColor = Color(red: 0.15, green: 0.15, blue: 0.17)
+
+    private var displayedText: String {
+        if isAnimating {
+            return String(message.content.prefix(displayedCharacterCount))
+        }
+        return message.content
+    }
 
     var body: some View {
         HStack {
@@ -296,41 +368,76 @@ struct MessageBubble: View {
                 Spacer(minLength: 60)
             }
 
-            Text(message.content)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
-                .background(
-                    ZStack {
-                        if message.role == .user {
-                            // User bubble: Solid blue with subtle gradient
-                            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                                .fill(
-                                    LinearGradient(
-                                        colors: [
-                                            Color(red: 0.2, green: 0.5, blue: 1.0),
-                                            Color(red: 0.15, green: 0.4, blue: 0.9)
-                                        ],
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
+            VStack(alignment: .leading, spacing: 4) {
+                Text(displayedText)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .background(
+                        ZStack {
+                            if message.role == .user {
+                                // User bubble: Solid blue with subtle gradient
+                                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                                    .fill(
+                                        LinearGradient(
+                                            colors: [
+                                                Color(red: 0.2, green: 0.5, blue: 1.0),
+                                                Color(red: 0.15, green: 0.4, blue: 0.9)
+                                            ],
+                                            startPoint: .topLeading,
+                                            endPoint: .bottomTrailing
+                                        )
                                     )
-                                )
-                        } else {
-                            // Assistant bubble: Charcoal glass
-                            ZStack {
-                                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                                    .fill(.ultraThinMaterial)
+                            } else {
+                                // Assistant bubble: Charcoal glass
+                                ZStack {
+                                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                                        .fill(.ultraThinMaterial)
 
-                                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                                    .fill(charcoalColor.opacity(0.6))
+                                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                                        .fill(charcoalColor.opacity(0.6))
+                                }
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                                        .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                                )
                             }
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                                    .stroke(Color.white.opacity(0.1), lineWidth: 1)
-                            )
                         }
+                    )
+                    .foregroundColor(.white)
+
+                // Feedback buttons for non-welcome assistant messages
+                if showFeedback && message.role == .assistant {
+                    HStack(spacing: 12) {
+                        Button {
+                            if feedback == true {
+                                onFeedback?(nil)
+                            } else {
+                                onFeedback?(true)
+                            }
+                        } label: {
+                            Image(systemName: feedback == true ? "hand.thumbsup.fill" : "hand.thumbsup")
+                                .font(.system(size: 13))
+                                .foregroundColor(feedback == true ? .white.opacity(0.9) : .white.opacity(0.35))
+                        }
+                        .buttonStyle(.plain)
+
+                        Button {
+                            if feedback == false {
+                                onFeedback?(nil)
+                            } else {
+                                onFeedback?(false)
+                            }
+                        } label: {
+                            Image(systemName: feedback == false ? "hand.thumbsdown.fill" : "hand.thumbsdown")
+                                .font(.system(size: 13))
+                                .foregroundColor(feedback == false ? .white.opacity(0.9) : .white.opacity(0.35))
+                        }
+                        .buttonStyle(.plain)
                     }
-                )
-                .foregroundColor(.white)
+                    .padding(.leading, 12)
+                    .padding(.top, 2)
+                }
+            }
 
             if message.role == .assistant {
                 Spacer(minLength: 60)

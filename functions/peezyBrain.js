@@ -85,12 +85,21 @@ async function generateResponse(request) {
   try {
     const client = getAnthropicClient();
     
-    const response = await client.messages.create({
-      model: DEFAULT_CONFIG.model,
-      max_tokens: DEFAULT_CONFIG.maxTokens,
-      system: systemPrompt,
-      messages
-    });
+    const timeoutMs = DEFAULT_CONFIG.timeout;
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Anthropic API request timed out')), timeoutMs)
+    );
+
+    const response = await Promise.race([
+      client.messages.create({
+        model: DEFAULT_CONFIG.model,
+        max_tokens: DEFAULT_CONFIG.maxTokens,
+        temperature: DEFAULT_CONFIG.temperature,
+        system: systemPrompt,
+        messages
+      }),
+      timeoutPromise
+    ]);
     
     // Parse response
     const parsedResponse = parseResponse(response, context);

@@ -1,6 +1,6 @@
 import SwiftUI
 
-struct MoveExperience: View {
+struct MoveFlexibility: View {
     @State private var selected = ""
     @EnvironmentObject var assessmentData: AssessmentDataManager
     @EnvironmentObject var coordinator: AssessmentCoordinator
@@ -11,32 +11,20 @@ struct MoveExperience: View {
     // Haptic feedback
     private let lightHaptic = UIImpactFeedbackGenerator(style: .light)
     
-    let options = ["First Timer", "A Few Times", "Pretty Experienced", "Moving Pro"]
+    // Options match coordinator tile label contract
+    let options = ["Firm Dates", "Some Flexibility", "Very Flexible"]
     
     let iconMap: [String: String] = [
-        "First Timer": "star.fill",
-        "A Few Times": "arrow.triangle.2.circlepath",
-        "Pretty Experienced": "checkmark.seal.fill",
-        "Moving Pro": "trophy.fill"
+        "Firm Dates": "lock.fill",
+        "Some Flexibility": "arrow.left.arrow.right",
+        "Very Flexible": "wind"
     ]
     
     var body: some View {
         VStack(spacing: 0) {
-            // Animated Progress Header
-            AssessmentProgressHeader(
-                currentStep: AssessmentStep.MoveExperience.stepNumber,
-                totalSteps: AssessmentStep.MoveExperience.totalSteps,
-                onBack: {
-                    coordinator.goBack()
-                },
-                onCompletion: {
-                    // Not used for intermediate steps
-                }
-            )
-            
             // Content area with equal spacing
             AssessmentContentArea(
-                questionText: "How experienced are you with moving?",
+                questionText: "Any wiggle room?",
                 showContent: showContent
             ) {
                 // Options grid
@@ -51,12 +39,11 @@ struct MoveExperience: View {
                             isSelected: selected == option,
                             onTap: {
                                 selected = option
-                                assessmentData.MoveExperience = option
-                                assessmentData.saveData()
+                                assessmentData.moveFlexibility = option
                                 
                                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                                     lightHaptic.impactOccurred()
-                                    coordinator.goToNext(from: .MoveExperience)
+                                    coordinator.goToNext()
                                 }
                             }
                         )
@@ -68,10 +55,9 @@ struct MoveExperience: View {
                 .padding(.horizontal, 20)
             }
         }
-        .navigationBarBackButtonHidden(true)
         .background(InteractiveBackground())
         .onAppear {
-            selected = assessmentData.MoveExperience
+            selected = assessmentData.moveFlexibility
             withAnimation {
                 showContent = true
             }
@@ -81,9 +67,13 @@ struct MoveExperience: View {
 
 #Preview {
     let manager = AssessmentDataManager()
-    NavigationStack {
-        MoveExperience()
-            .environmentObject(manager)
-            .environmentObject(AssessmentCoordinator(dataManager: manager))
-    }
-}
+    MoveFlexibility()
+        .environmentObject(manager)
+        .environmentObject(AssessmentCoordinator(dataManager: manager))
+}//
+//  MoveFlexibility.swift
+//  Peezy 4.0
+//
+//  Created by Adam Powell on 2/10/26.
+//
+

@@ -16,11 +16,14 @@ struct PeezyV1App: App {
     // This runs ONCE when the app launches, before any views appear
     init() {
         FirebaseApp.configure()
+        // Start StoreKit transaction listener early
+        _ = SubscriptionManager.shared
     }
-    
+
     var body: some Scene {
         WindowGroup {
             AppRootView()
+                .environmentObject(SubscriptionManager.shared)
                 .onOpenURL { url in
                     // Handle Google Sign-In URL callback
                     GIDSignIn.sharedInstance.handle(url)

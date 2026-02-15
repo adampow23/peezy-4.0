@@ -56,6 +56,7 @@ struct DebugMenuView: View {
 
                 personasSection
                 timeTravelSection
+                subscriptionSection
                 actionsSection
                 loggingSection
             }
@@ -186,6 +187,55 @@ struct DebugMenuView: View {
             Text("Time Travel")
         } footer: {
             Text("Simulates different points in the moving timeline. Affects task surfacing and urgency.")
+        }
+    }
+
+    private var subscriptionSection: some View {
+        Section {
+            HStack {
+                Text("Status:")
+                Spacer()
+                Text(subscriptionStatusDebugLabel)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            HStack {
+                Text("Products loaded:")
+                Spacer()
+                Text("\(SubscriptionManager.shared.products.count)")
+                    .foregroundStyle(.secondary)
+            }
+
+            Button {
+                Task {
+                    await SubscriptionManager.shared.updateSubscriptionStatus()
+                    showStatus("Subscription status refreshed")
+                }
+            } label: {
+                Label("Refresh Subscription Status", systemImage: "arrow.clockwise")
+            }
+
+            Button {
+                NotificationCenter.default.post(name: .assessmentCompleted, object: nil)
+                showStatus("Bypassed paywall")
+            } label: {
+                Label("Bypass Paywall", systemImage: "lock.open")
+            }
+        } header: {
+            Text("Subscription (StoreKit)")
+        } footer: {
+            Text("Use the StoreKit Configuration in Xcode scheme for sandbox testing.")
+        }
+    }
+
+    private var subscriptionStatusDebugLabel: String {
+        switch SubscriptionManager.shared.subscriptionStatus {
+        case .notSubscribed: return "Not Subscribed"
+        case .trial(let id, let exp): return "Trial (\(id)) exp \(exp.formatted(date: .abbreviated, time: .omitted))"
+        case .subscribed(let id, let exp): return "Subscribed (\(id)) exp \(exp.formatted(date: .abbreviated, time: .omitted))"
+        case .expired: return "Expired"
+        case .revoked: return "Revoked"
         }
     }
 

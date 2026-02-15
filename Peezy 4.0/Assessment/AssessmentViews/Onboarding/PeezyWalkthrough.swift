@@ -126,21 +126,19 @@ struct PeezyWalkthrough<Content: View>: View {
               !hasCompletedWalkthrough,
               coordinator.overlayWindow == nil else { return }
 
-        // Reuse existing tagged window or create new one
-        let window: UIWindow
+        // If a leftover tagged window exists, ensure it's disabled and bail out
         if let existing = scene.windows.first(where: { $0.tag == 1009 }) {
             existing.rootViewController = nil
-            existing.isHidden = false
-            existing.isUserInteractionEnabled = true
-            window = existing
-        } else {
-            let newWindow = UIWindow(windowScene: scene)
-            newWindow.backgroundColor = .clear
-            newWindow.isHidden = false
-            newWindow.isUserInteractionEnabled = true
-            newWindow.tag = 1009
-            window = newWindow
+            existing.isHidden = true
+            existing.isUserInteractionEnabled = false
+            return
         }
+
+        let window = UIWindow(windowScene: scene)
+        window.backgroundColor = .clear
+        window.isHidden = false
+        window.isUserInteractionEnabled = true
+        window.tag = 1009
         coordinator.overlayWindow = window
 
         // Brief delay so .walkthroughStep modifiers have time to register geometry
@@ -169,6 +167,7 @@ struct PeezyWalkthrough<Content: View>: View {
         coordinator.overlayWindow?.rootViewController = nil
         coordinator.overlayWindow?.isHidden = true
         coordinator.overlayWindow?.isUserInteractionEnabled = false
+        coordinator.overlayWindow = nil
     }
 }
 
@@ -405,6 +404,12 @@ fileprivate struct WalkthroughOverlayView: View {
             animate = false
         } completion: {
             coordinator.isFinished = true
+        }
+        // Fallback: if animation completion doesn't fire, force finish after delay
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            if !coordinator.isFinished {
+                coordinator.isFinished = true
+            }
         }
     }
 

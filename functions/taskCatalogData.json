@@ -1,0 +1,1405 @@
+[
+  {
+    "taskId": "ARRANGE_PARKING_NEW",
+    "title": "Reserve Parking at New Home",
+    "actionCategory": "book-schedule",
+    "category": "moving",
+    "conditions": {
+      "newDwellingType": [
+        "Apartment",
+        "Condo"
+      ]
+    },
+    "desc": "Secure a designated parking space at your new building for moving day to ensure the truck can park legally and close to the entrance.",
+    "estHours": 1,
+    "tips": "Contact your new building's management 2\u20133 weeks before your move. Confirm whether they require permits, fees, or insurance documents from your moving company. Always get written confirmation of the reservation and relay the parking instructions to your movers to avoid delays or fines.",
+    "urgencyPercentage": 72,
+    "whyNeeded": "Many buildings require advance reservations for moving trucks. Securing parking prevents last-minute issues such as citations, long carry distances, or denied access on move day."
+  },
+  {
+    "taskId": "ARRANGE_PARKING_OLD",
+    "title": "Reserve Parking at Current Home",
+    "actionCategory": "book-schedule",
+    "category": "moving",
+    "conditions": {
+      "currentDwellingType": [
+        "Apartment",
+        "Condo"
+      ]
+    },
+    "desc": "Book a legal and accessible parking space for the moving truck at your current building so movers can load efficiently.",
+    "estHours": 1,
+    "tips": "Reach out to your property manager about two weeks before your move. Some buildings may charge $50\u2013100, require truck measurements, or ask for a Certificate of Insurance from your movers.",
+    "urgencyPercentage": 73,
+    "whyNeeded": "Apartment and condo buildings often enforce strict parking rules, and failing to reserve space can lead to fines, towing risks, or long carry distances on moving day."
+  },
+  {
+    "taskId": "BOOK_CLEANERS",
+    "title": "Schedule Move-Out Cleaning Service",
+    "actionCategory": "book-schedule",
+    "category": "services",
+    "conditions": {
+      "hireCleaners": [
+        "Yes"
+      ]
+    },
+    "desc": "Book a professional cleaning team to deep clean your home after you move out.",
+    "estHours": 1.5,
+    "tips": "Schedule cleaners 2\u20133 weeks in advance for the day after the movers finish. Get quotes from at least three companies and review your lease or sale agreement for specific cleaning requirements.",
+    "urgencyPercentage": 25,
+    "whyNeeded": "A professional cleaning often determines how much of your security deposit you get back."
+  },
+  {
+    "taskId": "BOOK_MOVERS",
+    "title": "Book Professional Movers",
+    "actionCategory": "book-schedule",
+    "category": "moving",
+    "conditions": {
+      "hireMovers": [
+        "Yes"
+      ]
+    },
+    "desc": "Research and reserve a moving company to handle your relocation safely and efficiently.",
+    "estHours": 3,
+    "tips": "Get at least three quotes from licensed movers. During peak season (May\u2013September), book 8\u201312 weeks in advance; off-season typically requires 4\u20136 weeks. Verify insurance, USDOT registration, and reviews.",
+    "urgencyPercentage": 94,
+    "whyNeeded": "Booking early secures better availability, competitive pricing, and reliable crews."
+  },
+  {
+    "taskId": "BOOK_PACKERS",
+    "title": "Schedule Professional Packers",
+    "actionCategory": "book-schedule",
+    "category": "moving",
+    "conditions": {
+      "hirePackers": [
+        "Yes"
+      ]
+    },
+    "desc": "Hire a packing team to pack your belongings safely and efficiently before move day.",
+    "estHours": 2.5,
+    "tips": "Book packers 6\u20138 weeks ahead, especially during peak season. Clarify whether they provide materials or if you need to purchase them separately.",
+    "urgencyPercentage": 91,
+    "whyNeeded": "Professional packing saves significant time, reduces stress, and helps protect valuable or fragile items."
+  },
+  {
+    "taskId": "BUY_CLEANING_SUPPLIES",
+    "title": "Buy Move-Out Cleaning Supplies",
+    "actionCategory": "purchase-get",
+    "category": "services",
+    "conditions": {
+      "hireCleaners": [
+        "No"
+      ]
+    },
+    "desc": "Purchase essential cleaning products needed to complete your move-out cleaning.",
+    "estHours": 1,
+    "tips": "Buy supplies 3\u20135 days before your move. Key items include: all-purpose cleaner, glass cleaner, mop, broom, gloves, trash bags, sponges, and paper towels.",
+    "urgencyPercentage": 10,
+    "whyNeeded": "Move-out cleaning requires multiple supplies that you may not want to unpack once boxes are sealed."
+  },
+  {
+    "taskId": "BUY_PACKING_SUPPLIES",
+    "title": "Buy Packing Supplies",
+    "actionCategory": "purchase-get",
+    "category": "packing",
+    "conditions": {
+      "hirePackers": [
+        "No"
+      ]
+    },
+    "desc": "Purchase boxes, tape, bubble wrap, and other materials needed to pack your belongings safely.",
+    "estHours": 1.5,
+    "tips": "Start early\u2014people almost always underestimate how much they need. A typical one-bedroom move requires around 30 small boxes, 40 medium boxes, and 20 large boxes.",
+    "urgencyPercentage": 85,
+    "whyNeeded": "Having the right supplies early prevents delays, protects fragile items, and helps you pack in an organized way."
+  },
+  {
+    "taskId": "RESERVE_ELEVATORS_NEW",
+    "title": "Reserve Elevator at New Home",
+    "actionCategory": "book-schedule",
+    "category": "moving",
+    "conditions": {
+      "newDwellingType": [
+        "Apartment"
+      ]
+    },
+    "desc": "Book an elevator time slot at your new building so movers can load and unload efficiently.",
+    "estHours": 0.75,
+    "tips": "Contact your new building's management 2\u20133 weeks before move-in. Ask about required time windows, fees, and insurance documents from your movers.",
+    "urgencyPercentage": 70,
+    "whyNeeded": "High-rise buildings often require elevator reservations for moves."
+  },
+  {
+    "taskId": "RESERVE_ELEVATORS_OLD",
+    "title": "Reserve Elevator at Old Home",
+    "actionCategory": "book-schedule",
+    "category": "moving",
+    "conditions": {
+      "currentDwellingType": [
+        "Apartment"
+      ]
+    },
+    "desc": "Book a move-out elevator time slot at your current building.",
+    "estHours": 0.75,
+    "tips": "High-rise buildings usually require reservations 2 to 3 weeks in advance. Time slots fill quickly, especially mornings.",
+    "urgencyPercentage": 71,
+    "whyNeeded": "Without a reserved elevator, movers may be blocked or delayed, which increases labor time and cost."
+  },
+  {
+    "taskId": "RESERVE_MOVING_TRUCK",
+    "title": "Reserve DIY Moving Truck",
+    "actionCategory": "book-schedule",
+    "category": "moving",
+    "conditions": {
+      "hireMovers": [
+        "No"
+      ]
+    },
+    "desc": "Book a rental truck if you're handling the move yourself.",
+    "estHours": 2,
+    "tips": "Compare pricing between U-Haul, Penske, and Budget. Reserve 4 to 6 weeks early, especially during peak season.",
+    "urgencyPercentage": 93,
+    "whyNeeded": "Truck availability becomes limited close to your move. Early booking ensures better pricing and the right vehicle size."
+  },
+  {
+    "taskId": "INVENTORY_BELONGINGS",
+    "title": "Create Moving Inventory",
+    "actionCategory": "document-record",
+    "category": "packing",
+    "conditions": {
+      "hireMovers": [
+        "Yes"
+      ]
+    },
+    "desc": "Document your belongings with photos, videos, and notes so you have a record for insurance and any damage claims.",
+    "estHours": 3,
+    "tips": "Walk room by room taking photos and short videos of furniture, electronics, and valuables. Store everything in the cloud.",
+    "urgencyPercentage": 42,
+    "whyNeeded": "If anything is lost or damaged during the move, a clear inventory makes insurance claims much easier."
+  },
+  {
+    "taskId": "DECLUTTER_DONATE_BELONGINGS",
+    "title": "Declutter and Donate Belongings",
+    "actionCategory": "prepare-plan",
+    "category": "packing",
+    "conditions": {},
+    "desc": "Sort through your home and remove items you no longer need by selling, donating, or discarding them before packing.",
+    "estHours": 8,
+    "tips": "Start 4\u20136 weeks before move-out. Tackle one room at a time. Schedule donation pickups, list valuable items online early.",
+    "urgencyPercentage": 54,
+    "whyNeeded": "Most households can reduce 20\u201330 percent of belongings before a move, saving both time and money."
+  },
+  {
+    "taskId": "DEFROST_FREEZER",
+    "title": "Defrost and Clean Freezer",
+    "actionCategory": "pack-clean",
+    "category": "packing",
+    "conditions": {},
+    "desc": "Prepare your refrigerator/freezer for moving by emptying, defrosting, and thoroughly cleaning it.",
+    "estHours": 4,
+    "tips": "Start 48 hours before moving. Consume or donate frozen food. Unplug the appliance 24 hours in advance.",
+    "urgencyPercentage": 8,
+    "whyNeeded": "Moving companies will not transport wet or leaking appliances."
+  },
+  {
+    "taskId": "DIY_DEEP_CLEANING",
+    "title": "Deep Clean Your Home",
+    "actionCategory": "pack-clean",
+    "category": "services",
+    "conditions": {
+      "hireCleaners": [
+        "No"
+      ]
+    },
+    "desc": "Perform a full deep clean of your home before move-out to meet lease or sale requirements.",
+    "estHours": 6,
+    "tips": "Plan 6+ hours of physical work, ideally with two people. Clean appliances, walls, floors, windows, bathrooms, and baseboards.",
+    "urgencyPercentage": 5,
+    "whyNeeded": "A thorough cleaning is often required to receive your full deposit back."
+  },
+  {
+    "taskId": "DIY_FINAL_CLEANING",
+    "title": "Final Walkthrough and Cleaning",
+    "actionCategory": "pack-clean",
+    "category": "services",
+    "conditions": {
+      "hireCleaners": [
+        "No"
+      ]
+    },
+    "desc": "Do a last sweep of your empty home and document its condition before turning in keys.",
+    "estHours": 2,
+    "tips": "Walk every room, closet, and cabinet to confirm nothing is left behind. Take detailed photos or videos of the empty space.",
+    "urgencyPercentage": 2,
+    "whyNeeded": "A careful final walkthrough and photo record can be the difference between getting your deposit back and being charged for damage you didn't cause."
+  },
+  {
+    "taskId": "FORWARD_MAIL_USPS",
+    "title": "Submit USPS Mail Forwarding",
+    "actionCategory": "update-notify",
+    "category": "administrative",
+    "conditions": {},
+    "desc": "File a change of address with the postal service so your mail is forwarded from your old address to your new one.",
+    "estHours": 0.5,
+    "tips": "Complete this online at USPS.com (small verification fee) or at your local post office. You can schedule the start date up to a few months in advance.",
+    "urgencyPercentage": 79,
+    "whyNeeded": "Mail forwarding acts as a safety net so important letters and documents don't get lost during your move."
+  },
+  {
+    "taskId": "SCHEDULE_TIME_OFF_WORK",
+    "title": "Request Time Off for Move",
+    "actionCategory": "plan-schedule",
+    "category": "administrative",
+    "conditions": {},
+    "desc": "Submit PTO requests to ensure you're available for move-related tasks.",
+    "estHours": 1.5,
+    "tips": "Request 2 to 3 days off: one before the move, moving day itself, and optionally the day after. Submit at least 4 weeks ahead.",
+    "urgencyPercentage": 92,
+    "whyNeeded": "Being present for packing, movers, and installation appointments prevents delays and mistakes."
+  },
+  {
+    "taskId": "UPDATE_EMPLOYER_RECORDS",
+    "title": "Update Employer HR Records",
+    "actionCategory": "update-notify",
+    "category": "administrative",
+    "conditions": {},
+    "desc": "Update your home address with your employer's HR department.",
+    "estHours": 1.5,
+    "tips": "Update for tax documents, benefits, and emergency contacts. Some employers require submitting a new W-4 if moving states.",
+    "urgencyPercentage": 68,
+    "whyNeeded": "Incorrect HR information can cause tax issues, lost documents, and incorrect benefit processing."
+  },
+  {
+    "taskId": "UPDATE_DRIVERS_LICENSE",
+    "title": "Update Driver's License Address",
+    "actionCategory": "update-notify",
+    "category": "administrative",
+    "conditions": {
+      "isInterstate": [
+        "No"
+      ]
+    },
+    "desc": "Update the address on your driver's license at your local DMV.",
+    "estHours": 3,
+    "tips": "Make an appointment online if possible. Bring your current license and two proofs of your new address. Many states require updates within 30 days.",
+    "urgencyPercentage": 84,
+    "whyNeeded": "Your driver's license must reflect your correct address for legal compliance, voting, and identification."
+  },
+  {
+    "taskId": "NEW_DRIVERS_LICENSE",
+    "title": "Get New Driver's License",
+    "actionCategory": "update-notify",
+    "category": "administrative",
+    "conditions": {
+      "isInterstate": [
+        "Yes"
+      ]
+    },
+    "desc": "Obtain a new driver's license in your new state or country after you move.",
+    "estHours": 3,
+    "tips": "Check your new state's DMV website for required documents. Many states require this within 30\u201360 days of moving.",
+    "urgencyPercentage": 84,
+    "whyNeeded": "Most locations legally require your license to reflect your current address and issuing state."
+  },
+  {
+    "taskId": "REGISTER_VEHICLE",
+    "title": "Register Vehicle in New State",
+    "actionCategory": "update-notify",
+    "category": "administrative",
+    "conditions": {
+      "isInterstate": [
+        "Yes"
+      ]
+    },
+    "desc": "Update your vehicle registration with your new state or country after you move.",
+    "estHours": 3,
+    "tips": "Check your new state's DMV site for deadlines; many require registration within 30 days of establishing residency.",
+    "urgencyPercentage": 82,
+    "whyNeeded": "Driving with outdated registration can result in tickets, towing, or insurance issues."
+  },
+  {
+    "taskId": "PHOTOGRAPH_RENTAL_CONDITION",
+    "title": "Photograph Empty Rental Condition",
+    "actionCategory": "document-record",
+    "category": "administrative",
+    "conditions": {
+      "currentRentOrOwn": [
+        "Rent"
+      ]
+    },
+    "desc": "Take photos and videos of your empty rental unit after move-out to document its condition.",
+    "estHours": 0.75,
+    "tips": "Do this immediately after everything is moved out and cleaning is complete. Capture every room from multiple angles.",
+    "urgencyPercentage": 4,
+    "whyNeeded": "Photo evidence is often your best protection in security deposit disputes."
+  },
+  {
+    "taskId": "RETURN_KEY_FOBS_REMOTES",
+    "title": "Return Keys and Remotes",
+    "actionCategory": "finalize-closeout",
+    "category": "administrative",
+    "conditions": {
+      "currentRentOrOwn": [
+        "Rent"
+      ]
+    },
+    "desc": "Return all property access devices to your landlord or property manager.",
+    "estHours": 1,
+    "tips": "Gather everything: apartment keys, mailbox keys, gate fobs, garage remotes, parking tags, and storage keys. Get a receipt confirming all items were returned.",
+    "urgencyPercentage": 1,
+    "whyNeeded": "Returning all access devices is required for final move-out and prevents unnecessary charges."
+  },
+  {
+    "taskId": "CANCEL_UTILITIES_1",
+    "title": "Cancel Utility Accounts",
+    "actionCategory": "cancel-stop",
+    "category": "utilities",
+    "conditions": {
+      "moveDistance": [
+        "Long Distance"
+      ]
+    },
+    "desc": "Notify your current utility providers that you are moving and need to stop service at your current address.",
+    "estHours": 1.25,
+    "tips": "Identify all utilities tied to your home: electricity, gas, water, internet, trash, and sewer. Each may require separate cancellation.",
+    "urgencyPercentage": 75,
+    "whyNeeded": "Failing to cancel utilities can result in ongoing charges or new tenants using services under your name."
+  },
+  {
+    "taskId": "CANCEL_UTILITIES_2",
+    "title": "Schedule Utility Shutoffs",
+    "actionCategory": "cancel-stop",
+    "category": "utilities",
+    "conditions": {
+      "moveDistance": [
+        "Long Distance"
+      ]
+    },
+    "desc": "Schedule the disconnection of utility services at your current home to align with your move-out date.",
+    "estHours": 2,
+    "tips": "Plan shutoff for the day after you move out to keep lights and water available during cleaning.",
+    "urgencyPercentage": 20,
+    "whyNeeded": "Utility companies often need advance notice for shutoff scheduling."
+  },
+  {
+    "taskId": "SETUP_UTILITIES",
+    "title": "Set Up New Home Utilities",
+    "actionCategory": "setup-establish",
+    "category": "utilities",
+    "conditions": {
+      "moveDistance": [
+        "Long Distance"
+      ]
+    },
+    "desc": "Arrange electric, gas, and water service for your new home.",
+    "estHours": 2.5,
+    "tips": "Contact utility providers 2 to 3 weeks before move-in. Some may require deposits or credit checks.",
+    "urgencyPercentage": 80,
+    "whyNeeded": "Having power, water, and gas active when you arrive prevents a very unpleasant first night."
+  },
+  {
+    "taskId": "TRANSFER_UTILITIES",
+    "title": "Transfer Utilities to New Home",
+    "actionCategory": "transfer-update",
+    "category": "utilities",
+    "conditions": {
+      "moveDistance": [
+        "Local"
+      ]
+    },
+    "desc": "Move existing utility accounts from your current home to your new address for a local move.",
+    "estHours": 1.5,
+    "tips": "Contact each utility company 1 to 2 weeks before your move. Set the shutoff date for the old home and the start date for the new home.",
+    "urgencyPercentage": 72,
+    "whyNeeded": "Transferring utilities properly prevents surprise shutoffs, double billing, or incorrect final charges."
+  },
+  {
+    "taskId": "SETUP_INTERNET",
+    "title": "Schedule Internet Installation",
+    "actionCategory": "book-schedule",
+    "category": "utilities",
+    "conditions": {},
+    "desc": "Book installation for internet service at your new home.",
+    "estHours": 1.5,
+    "tips": "Schedule 2 to 3 weeks ahead. Compare providers and speeds. Installation often requires a 2 to 4 hour time window.",
+    "urgencyPercentage": 81,
+    "whyNeeded": "Internet is essential for work, school, streaming, and everyday life."
+  },
+  {
+    "taskId": "BEGIN_SCHOOL_TRANSFER",
+    "title": "Notify Current School to Begin Transfer",
+    "actionCategory": "update-notify",
+    "category": "children",
+    "conditions": {
+      "schoolAgeChildren": [
+        ">=1"
+      ],
+      "moveDistance": [
+        "Long Distance"
+      ]
+    },
+    "desc": "Contact your child's current school to inform them of your upcoming move and begin the formal transfer process.",
+    "estHours": 1,
+    "tips": "Notify the school as early as possible because districts often require transcripts, vaccination records, and special program documentation.",
+    "urgencyPercentage": 82,
+    "whyNeeded": "School transfers can take time, especially if moving out of state."
+  },
+  {
+    "taskId": "NEW_SCHOOL_ENROLLMENT",
+    "title": "Enroll Children in New Schools",
+    "actionCategory": "book-schedule",
+    "category": "children",
+    "conditions": {
+      "schoolAgeChildren": [
+        ">=1"
+      ],
+      "moveDistance": [
+        "Long Distance"
+      ]
+    },
+    "desc": "Register your children in their new school district or school system at your destination.",
+    "estHours": 4,
+    "tips": "Begin researching schools as soon as your move is confirmed. Most districts require immunization records, birth certificates, prior report cards, and proof of residency.",
+    "urgencyPercentage": 90,
+    "whyNeeded": "School enrollment can be time-sensitive and capacity-limited."
+  },
+  {
+    "taskId": "COA_SCHOOLS",
+    "title": "Update Address with Your Child's School",
+    "actionCategory": "update-notify",
+    "category": "children",
+    "conditions": {
+      "schoolAgeChildren": [
+        ">=1"
+      ],
+      "moveDistance": [
+        "Local"
+      ]
+    },
+    "desc": "Notify your child's current school of your new address so records, mail, and communication remain accurate.",
+    "estHours": 1,
+    "tips": "Provide proof of your new address, update emergency contacts, and ask whether additional documents are required.",
+    "urgencyPercentage": 90,
+    "whyNeeded": "Schools need accurate addresses for communication, transportation eligibility, and official records."
+  },
+  {
+    "taskId": "SETUP_DAYCARE",
+    "title": "Set Up New Daycare Services",
+    "actionCategory": "setup-establish",
+    "category": "children",
+    "conditions": {
+      "childrenUnder5": [
+        ">=1"
+      ],
+      "moveDistance": [
+        "Long Distance"
+      ]
+    },
+    "desc": "Find and enroll your child in daycare near your new home.",
+    "estHours": 2.5,
+    "tips": "Daycares often have long waitlists. Contact centers early, tour multiple locations, ask about availability, staff ratios, and pricing.",
+    "urgencyPercentage": 88,
+    "whyNeeded": "Daycare availability varies widely. Early enrollment is essential to avoid gaps in childcare."
+  },
+  {
+    "taskId": "TRANSFER_DAYCARE",
+    "title": "Update Address With Daycare",
+    "actionCategory": "update-notify",
+    "category": "children",
+    "conditions": {
+      "childrenUnder5": [
+        ">=1"
+      ],
+      "moveDistance": [
+        "Local"
+      ]
+    },
+    "desc": "Update your daycare provider with your new address and any schedule changes if you are staying local.",
+    "estHours": 0.5,
+    "tips": "Call or email the daycare with your new address, updated contact info, and any changes to pickup or drop-off routines.",
+    "urgencyPercentage": 75,
+    "whyNeeded": "Daycare providers need accurate contact information and address details for safety, billing, and communication."
+  },
+  {
+    "taskId": "SETUP_VET",
+    "title": "Set Up New Veterinarian",
+    "actionCategory": "setup-establish",
+    "category": "pets",
+    "conditions": {
+      "anyPets": [
+        "Yes"
+      ],
+      "moveDistance": [
+        "Long Distance"
+      ]
+    },
+    "desc": "Find and establish care with a new veterinarian near your new home.",
+    "estHours": 2,
+    "tips": "Ask neighbors or local groups for recommendations. Check reviews and whether clinics are accepting new patients.",
+    "urgencyPercentage": 61,
+    "whyNeeded": "Having a vet lined up before an emergency happens is critical for your pet's health."
+  },
+  {
+    "taskId": "TRANSFER_VET_RECORDS",
+    "title": "Transfer Vet Records",
+    "actionCategory": "transfer-records",
+    "category": "pets",
+    "conditions": {
+      "anyPets": [
+        "Yes"
+      ],
+      "moveDistance": [
+        "Long Distance"
+      ]
+    },
+    "desc": "Request and send your pet's veterinary records to a new vet near your new home.",
+    "estHours": 1.5,
+    "tips": "Contact your current vet 2 to 3 weeks before moving. Ask for full medical records, vaccination history, and lab results.",
+    "urgencyPercentage": 63,
+    "whyNeeded": "Having complete records helps your new vet understand your pet's health history."
+  },
+  {
+    "taskId": "CANCEL_BANK",
+    "title": "Close Bank Account",
+    "actionCategory": "cancel-stop",
+    "category": "finance",
+    "conditions": {
+      "financialInstitutions": [
+        "Bank Account"
+      ],
+      "moveDistance": [
+        "Long Distance"
+      ]
+    },
+    "desc": "Close your current bank account if your financial institution does not operate in your new state or country.",
+    "estHours": 1,
+    "tips": "Before closing the account, move your direct deposits and automatic bill payments to your new bank.",
+    "urgencyPercentage": 80,
+    "whyNeeded": "If your current bank does not operate in your destination, keeping the account open can lead to transfer issues or fees."
+  },
+  {
+    "taskId": "SETUP_BANK",
+    "title": "Set Up New Bank Account",
+    "actionCategory": "setup-establish",
+    "category": "finance",
+    "conditions": {
+      "financialInstitutions": [
+        "Bank Account"
+      ],
+      "moveDistance": [
+        "Long Distance"
+      ]
+    },
+    "desc": "Open a bank account in your new location if your current bank does not operate there.",
+    "estHours": 2,
+    "tips": "Research banks near your new home. Compare fees, ATM availability, and online banking features.",
+    "urgencyPercentage": 84,
+    "whyNeeded": "Local banking access becomes important if your current bank doesn't service your new state."
+  },
+  {
+    "taskId": "UPDATE_BANK",
+    "title": "Update Bank Account Address",
+    "actionCategory": "update-notify",
+    "category": "finance",
+    "conditions": {
+      "financialInstitutions": [
+        "Bank Account"
+      ],
+      "moveDistance": [
+        "Local"
+      ]
+    },
+    "desc": "Update your primary bank with your new mailing and billing address.",
+    "estHours": 1.5,
+    "tips": "Log into online banking or visit a branch. Update your address for all accounts, debit cards, and checks.",
+    "urgencyPercentage": 64,
+    "whyNeeded": "Banks need your correct address for security, compliance, and mailing important documents."
+  },
+  {
+    "taskId": "SETUP_CREDIT_UNION",
+    "title": "Set Up New Credit Union Account",
+    "actionCategory": "setup-establish",
+    "category": "finance",
+    "conditions": {
+      "financialInstitutions": [
+        "Credit Union"
+      ],
+      "moveDistance": [
+        "Long Distance"
+      ]
+    },
+    "desc": "Open a credit union account if moving outside your current credit union's service area.",
+    "estHours": 2,
+    "tips": "Credit unions often require in-person setup or proof of eligibility. Research ones in your new region.",
+    "urgencyPercentage": 85,
+    "whyNeeded": "Many credit unions are region-specific and may not operate in your new state."
+  },
+  {
+    "taskId": "UPDATE_CREDIT_UNION",
+    "title": "Update Credit Union Address",
+    "actionCategory": "update-notify",
+    "category": "finance",
+    "conditions": {
+      "financialInstitutions": [
+        "Credit Union"
+      ],
+      "moveDistance": [
+        "Local"
+      ]
+    },
+    "desc": "Update your address with your credit union for accounts, cards, and statements.",
+    "estHours": 1,
+    "tips": "Many credit unions require in-branch updates or identity verification.",
+    "urgencyPercentage": 63,
+    "whyNeeded": "Credit unions often use physical mail for important documents."
+  },
+  {
+    "taskId": "UPDATE_CREDIT_CARD",
+    "title": "Update Credit Card Address",
+    "actionCategory": "update-notify",
+    "category": "finance",
+    "conditions": {
+      "financialInstitutions": [
+        "Credit Card"
+      ]
+    },
+    "desc": "Update the billing and mailing address for your primary credit card.",
+    "estHours": 0.5,
+    "tips": "Log into your credit card account and update your billing address. Update all authorized users and set a travel notice if moving long distance.",
+    "urgencyPercentage": 62,
+    "whyNeeded": "Credit card companies use your address for billing, fraud checks, and shipping replacement cards."
+  },
+  {
+    "taskId": "CANCEL_CONDO_INSURANCE",
+    "title": "Cancel Condo Insurance",
+    "actionCategory": "cancel-stop",
+    "category": "insurance",
+    "conditions": {
+      "newDwellingType": [
+        "Apartment",
+        "House"
+      ],
+      "currentDwellingType": [
+        "Condo"
+      ]
+    },
+    "desc": "Notify your insurer to cancel your existing condo policy and update or start a new one for your next home.",
+    "estHours": 1.5,
+    "tips": "You can set a future cancellation date for the old policy to avoid coverage gaps.",
+    "urgencyPercentage": 76,
+    "whyNeeded": "Insurance must match your physical address."
+  },
+  {
+    "taskId": "CANCEL_RENTERS_INSURANCE",
+    "title": "Cancel or Update Renter's Insurance",
+    "actionCategory": "cancel-stop",
+    "category": "insurance",
+    "conditions": {
+      "newRentOrOwn": [
+        "Own"
+      ],
+      "currentRentOrOwn": [
+        "Rent"
+      ]
+    },
+    "desc": "End your current renter's insurance policy or update it to reflect your new address.",
+    "estHours": 1,
+    "tips": "Most insurers allow you to schedule a future cancellation date so you remain covered until move-out.",
+    "urgencyPercentage": 77,
+    "whyNeeded": "Insurance must match your physical address, and improper coverage can lead to denied claims."
+  },
+  {
+    "taskId": "SETUP_CONDO_INSURANCE",
+    "title": "Set Up Condo Insurance",
+    "actionCategory": "setup-establish",
+    "category": "insurance",
+    "conditions": {
+      "newDwellingType": [
+        "Condo"
+      ],
+      "currentDwellingType": [
+        "Apartment",
+        "House"
+      ]
+    },
+    "desc": "Start or update a condo insurance policy for your new home.",
+    "estHours": 1.5,
+    "tips": "Condo associations often require specific coverage. Set the effective date to your move-in day.",
+    "urgencyPercentage": 76,
+    "whyNeeded": "Condo insurance is required by most associations."
+  },
+  {
+    "taskId": "SETUP_HOMEOWNERS_INSURANCE",
+    "title": "Set Up Homeowner's Insurance",
+    "actionCategory": "setup-establish",
+    "category": "insurance",
+    "conditions": {
+      "newDwellingType": [
+        "House"
+      ],
+      "newRentOrOwn": [
+        "Own"
+      ]
+    },
+    "desc": "Start or update a homeowner's insurance policy for your new property.",
+    "estHours": 1.5,
+    "tips": "Compare coverage and deductibles. Get the insurance binder early, as some lenders require it before closing.",
+    "urgencyPercentage": 77,
+    "whyNeeded": "Homeowner's insurance is required for mortgages and protects your property."
+  },
+  {
+    "taskId": "SETUP_RENTERS_INSURANCE",
+    "title": "Set Up Renter's Insurance",
+    "actionCategory": "setup-establish",
+    "category": "insurance",
+    "conditions": {
+      "currentRentOrOwn": [
+        "Own"
+      ],
+      "newRentOrOwn": [
+        "Rent"
+      ]
+    },
+    "desc": "Start a renter's insurance policy for your new rental home.",
+    "estHours": 1,
+    "tips": "Get quotes from a few insurers. Policies are usually quick to set up online and often cost $15 to $30 per month.",
+    "urgencyPercentage": 77,
+    "whyNeeded": "Renter's insurance protects your belongings and may be required by your new lease."
+  },
+  {
+    "taskId": "TRANSFER_CONDO_INSURANCE",
+    "title": "Transfer Condo Insurance",
+    "actionCategory": "transfer-update",
+    "category": "insurance",
+    "conditions": {
+      "currentDwellingType": [
+        "Condo"
+      ],
+      "newDwellingType": [
+        "Condo"
+      ]
+    },
+    "desc": "Move your existing condo insurance policy to your new condo.",
+    "estHours": 2,
+    "tips": "Call your agent 3 to 4 weeks before the move. Provide details of the new condo.",
+    "urgencyPercentage": 76,
+    "whyNeeded": "Transferring your existing policy can be faster and easier than starting from scratch."
+  },
+  {
+    "taskId": "TRANSFER_HOMEOWNERS_INSURANCE",
+    "title": "Transfer Homeowner's Insurance",
+    "actionCategory": "transfer-update",
+    "category": "insurance",
+    "conditions": {
+      "currentRentOrOwn": [
+        "Own"
+      ],
+      "currentDwellingType": [
+        "House"
+      ],
+      "newRentOrOwn": [
+        "Own"
+      ],
+      "newDwellingType": [
+        "House"
+      ]
+    },
+    "desc": "Move your existing homeowner's insurance policy from your current house to your new house.",
+    "estHours": 2,
+    "tips": "Contact your insurance agent 3 to 4 weeks before your move. Provide details for the new home.",
+    "urgencyPercentage": 77,
+    "whyNeeded": "Transferring your existing policy keeps coverage continuous."
+  },
+  {
+    "taskId": "TRANSFER_RENTERS_INSURANCE",
+    "title": "Transfer Renter's Insurance",
+    "actionCategory": "transfer-update",
+    "category": "insurance",
+    "conditions": {
+      "currentRentOrOwn": [
+        "Rent"
+      ],
+      "newRentOrOwn": [
+        "Rent"
+      ]
+    },
+    "desc": "Update your renter's insurance policy to cover your new rental address.",
+    "estHours": 1,
+    "tips": "Contact your insurer 1 to 2 weeks before move-in. Provide your new address and move-in date.",
+    "urgencyPercentage": 77,
+    "whyNeeded": "Transferring the policy keeps your belongings and liability covered without gaps."
+  },
+  {
+    "taskId": "UPDATE_AUTO_INSURANCE",
+    "title": "Update Auto Insurance Address",
+    "actionCategory": "update-notify",
+    "category": "insurance",
+    "conditions": {},
+    "desc": "Notify your auto insurer of your new address and update your policy details.",
+    "estHours": 1.5,
+    "tips": "Call your agent or update online. Rates can change by ZIP code, so ask for updated pricing.",
+    "urgencyPercentage": 82,
+    "whyNeeded": "Auto insurance premiums and coverage depend on where you live."
+  },
+  {
+    "taskId": "UPDATE_HEALTH_INSURANCE",
+    "title": "Update Health Insurance Address",
+    "actionCategory": "update-notify",
+    "category": "insurance",
+    "conditions": {
+      "healthcareProviders": [
+        "Health Insurance"
+      ]
+    },
+    "desc": "Notify your health insurance provider of your new address so claims and coverage remain accurate.",
+    "estHours": 2.5,
+    "tips": "Update for all family members. Verify which doctors are in-network at your new location.",
+    "urgencyPercentage": 69,
+    "whyNeeded": "Health insurance relies on accurate address information for claims and referrals."
+  },
+  {
+    "taskId": "UPDATE_DENTAL_INSURANCE",
+    "title": "Update Dental Insurance Address",
+    "actionCategory": "update-notify",
+    "category": "insurance",
+    "conditions": {
+      "healthcareProviders": [
+        "Dental Insurance"
+      ]
+    },
+    "desc": "Update your address with your dental insurance provider.",
+    "estHours": 1,
+    "tips": "Update your address for all covered family members. Check which dentists are in-network near your new home.",
+    "urgencyPercentage": 67,
+    "whyNeeded": "Dental insurance sends bills, EOBs, and ID cards by mail."
+  },
+  {
+    "taskId": "UPDATE_HSA",
+    "title": "Update HSA Account Address",
+    "actionCategory": "update-notify",
+    "category": "insurance",
+    "conditions": {
+      "healthcareProviders": [
+        "HSA"
+      ]
+    },
+    "desc": "Update your address for your Health Savings Account (HSA).",
+    "estHours": 1,
+    "tips": "Log into your HSA provider portal or call customer service to update your mailing address.",
+    "urgencyPercentage": 60,
+    "whyNeeded": "HSA providers send tax documents and statements that must reach your new home."
+  },
+  {
+    "taskId": "TRANSFER_DOCTOR_RECORDS",
+    "title": "Transfer Doctor Records",
+    "actionCategory": "transfer-records",
+    "category": "health",
+    "conditions": {
+      "healthcareProviders": [
+        "Doctor"
+      ],
+      "moveDistance": [
+        "Long Distance"
+      ]
+    },
+    "desc": "Request your medical records from your current doctor so they can be sent to your new provider.",
+    "estHours": 2,
+    "tips": "Contact your doctor's office 3 to 4 weeks before moving. Sign release forms and provide the new doctor's details.",
+    "urgencyPercentage": 68,
+    "whyNeeded": "Medical records help your new doctor understand your history."
+  },
+  {
+    "taskId": "TRANSFER_DENTIST_RECORDS",
+    "title": "Transfer Dentist Records",
+    "actionCategory": "transfer-records",
+    "category": "health",
+    "conditions": {
+      "healthcareProviders": [
+        "Dentist"
+      ],
+      "moveDistance": [
+        "Long Distance"
+      ]
+    },
+    "desc": "Request your dental records and X-rays be sent to your new dentist.",
+    "estHours": 1,
+    "tips": "Contact your current dentist 2 to 3 weeks before the move. Sign any required release forms.",
+    "urgencyPercentage": 59,
+    "whyNeeded": "Having your dental history ready makes it easier for your new dentist to continue your care."
+  },
+  {
+    "taskId": "TRANSFER_THERAPY_RECORDS",
+    "title": "Transfer Therapy Records",
+    "actionCategory": "transfer-records",
+    "category": "health",
+    "conditions": {
+      "healthcareProviders": [
+        "Therapist"
+      ],
+      "moveDistance": [
+        "Long Distance"
+      ]
+    },
+    "desc": "Coordinate with your current therapist to share key notes or summaries with a new therapist.",
+    "estHours": 1.5,
+    "tips": "Talk with your therapist 4 to 6 weeks before your move. Ask for a treatment summary and diagnoses.",
+    "urgencyPercentage": 70,
+    "whyNeeded": "Having your therapy history documented makes it easier for a new therapist to pick up where you left off."
+  },
+  {
+    "taskId": "TRANSFER_PHARMACY_RECORDS",
+    "title": "Transfer Pharmacy Records",
+    "actionCategory": "transfer-records",
+    "category": "health",
+    "conditions": {
+      "healthcareProviders": [
+        "Pharmacy"
+      ],
+      "moveDistance": [
+        "Long Distance"
+      ]
+    },
+    "desc": "Move your prescriptions and pharmacy records from your current pharmacy to one near your new home.",
+    "estHours": 1.5,
+    "tips": "Contact your current pharmacy 2 to 3 weeks before the move. Controlled medications may need new prescriptions.",
+    "urgencyPercentage": 55,
+    "whyNeeded": "Transferring prescriptions early reduces the risk of running out of medications."
+  },
+  {
+    "taskId": "TRANSFER_SPECIALISTS_RECORDS",
+    "title": "Transfer Specialist Medical Records",
+    "actionCategory": "transfer-records",
+    "category": "health",
+    "conditions": {
+      "healthcareProviders": [
+        "Specialists"
+      ],
+      "moveDistance": [
+        "Long Distance"
+      ]
+    },
+    "desc": "Request and transfer records from any specialists you see.",
+    "estHours": 2,
+    "tips": "Make a list of all specialists you currently see. Contact each office 3 to 4 weeks before your move.",
+    "urgencyPercentage": 69,
+    "whyNeeded": "Specialists often manage key parts of your health. Having records ready helps new doctors continue treatment."
+  },
+  {
+    "taskId": "UPDATE_DOCTOR",
+    "title": "Update Doctor Information",
+    "actionCategory": "update-notify",
+    "category": "health",
+    "conditions": {
+      "healthcareProviders": [
+        "Doctor"
+      ],
+      "moveDistance": [
+        "Local"
+      ]
+    },
+    "desc": "Notify your primary care doctor of your new address.",
+    "estHours": 0.5,
+    "tips": "Update your contact details, insurance information, and mailing address.",
+    "urgencyPercentage": 60,
+    "whyNeeded": "Doctors need accurate contact and insurance information for communication and billing."
+  },
+  {
+    "taskId": "UPDATE_DENTIST",
+    "title": "Update Dentist Information",
+    "actionCategory": "update-notify",
+    "category": "health",
+    "conditions": {
+      "healthcareProviders": [
+        "Dentist"
+      ],
+      "moveDistance": [
+        "Local"
+      ]
+    },
+    "desc": "Notify your dentist of your new address and update billing/contact details.",
+    "estHours": 0.5,
+    "tips": "Update your address, insurance information, and contact details.",
+    "urgencyPercentage": 56,
+    "whyNeeded": "Dentists use your address for billing, reminders, and medical correspondence."
+  },
+  {
+    "taskId": "CANCEL_YOGA",
+    "title": "Cancel Yoga Studio Membership",
+    "actionCategory": "cancel-stop",
+    "category": "fitness",
+    "conditions": {
+      "fitnessWellness": [
+        "Yoga"
+      ],
+      "moveDistance": [
+        "Long Distance"
+      ]
+    },
+    "desc": "Notify your yoga studio that you're relocating and need to end your membership.",
+    "estHours": 0.75,
+    "tips": "Review your studio's contract for cancellation rules. Most require 30-day notice.",
+    "urgencyPercentage": 87,
+    "whyNeeded": "Recurring monthly memberships will continue charging until formally canceled."
+  },
+  {
+    "taskId": "CANCEL_PILATES",
+    "title": "Cancel Pilates Membership",
+    "actionCategory": "cancel-stop",
+    "category": "fitness",
+    "conditions": {
+      "fitnessWellness": [
+        "Pilates"
+      ],
+      "moveDistance": [
+        "Long Distance"
+      ]
+    },
+    "desc": "Notify your Pilates studio that you're moving and need to end your membership.",
+    "estHours": 0.75,
+    "tips": "Review your contract for 30-day notice requirements.",
+    "urgencyPercentage": 84,
+    "whyNeeded": "Without proper cancellation, monthly fees can continue even after you move."
+  },
+  {
+    "taskId": "CANCEL_SPIN_CYCLING",
+    "title": "Cancel Spin/Cycling Studio Membership",
+    "actionCategory": "cancel-stop",
+    "category": "fitness",
+    "conditions": {
+      "fitnessWellness": [
+        "Spin/Cycling"
+      ],
+      "moveDistance": [
+        "Long Distance"
+      ]
+    },
+    "desc": "End your cycling or spin studio membership if you won't be able to attend after moving.",
+    "estHours": 0.75,
+    "tips": "Many studios require a 30-day written cancellation.",
+    "urgencyPercentage": 82,
+    "whyNeeded": "Cycling studios usually operate on monthly auto-billing."
+  },
+  {
+    "taskId": "CANCEL_MASSAGE",
+    "title": "Cancel Massage Membership",
+    "actionCategory": "cancel-stop",
+    "category": "fitness",
+    "conditions": {
+      "fitnessWellness": [
+        "Massage"
+      ],
+      "moveDistance": [
+        "Long Distance"
+      ]
+    },
+    "desc": "End your current massage or wellness membership.",
+    "estHours": 0.75,
+    "tips": "Most memberships require 30-day written notice. Check for early cancellation fees.",
+    "urgencyPercentage": 82,
+    "whyNeeded": "Canceling early prevents ongoing monthly fees."
+  },
+  {
+    "taskId": "CANCEL_SPA",
+    "title": "Cancel Spa or Wellness Membership",
+    "actionCategory": "cancel-stop",
+    "category": "fitness",
+    "conditions": {
+      "fitnessWellness": [
+        "Spa"
+      ],
+      "moveDistance": [
+        "Long Distance"
+      ]
+    },
+    "desc": "End your recurring spa or wellness subscription.",
+    "estHours": 0.75,
+    "tips": "Check for 30-day notice policies and whether cancellations must be done in person.",
+    "urgencyPercentage": 81,
+    "whyNeeded": "Spa memberships often auto-renew monthly."
+  },
+  {
+    "taskId": "CANCEL_OTHER_FITNESS",
+    "title": "Cancel Additional Fitness Membership",
+    "actionCategory": "cancel-stop",
+    "category": "fitness",
+    "conditions": {
+      "fitnessWellness": [
+        "Other"
+      ],
+      "moveDistance": [
+        "Long Distance"
+      ]
+    },
+    "desc": "End any fitness memberships not covered by other categories.",
+    "estHours": 0.75,
+    "tips": "Check the studio's cancellation policy. Many require in-person cancellation or a signed form.",
+    "urgencyPercentage": 83,
+    "whyNeeded": "Specialized fitness studios often do not transfer across cities."
+  },
+  {
+    "taskId": "SETUP_GYM",
+    "title": "Get New Gym Membership",
+    "actionCategory": "setup-establish",
+    "category": "fitness",
+    "conditions": {
+      "fitnessWellness": [
+        "Gym"
+      ],
+      "moveDistance": [
+        "Long Distance"
+      ]
+    },
+    "desc": "Find and join a gym near your new home.",
+    "estHours": 1,
+    "tips": "Compare gym options based on equipment variety, class schedules, and contract terms. Ask about trial passes.",
+    "urgencyPercentage": 74,
+    "whyNeeded": "Your old gym may not have locations in your new area."
+  },
+  {
+    "taskId": "SETUP_CROSSFIT",
+    "title": "Find and Join New CrossFit Gym",
+    "actionCategory": "setup-establish",
+    "category": "fitness",
+    "conditions": {
+      "fitnessWellness": [
+        "CrossFit"
+      ],
+      "moveDistance": [
+        "Long Distance"
+      ]
+    },
+    "desc": "Find a CrossFit gym near your new home.",
+    "estHours": 1,
+    "tips": "Search for boxes with good reviews. Many offer free trial classes.",
+    "urgencyPercentage": 72,
+    "whyNeeded": "Most CrossFit memberships cannot be transferred across regions."
+  },
+  {
+    "taskId": "SETUP_YOGA",
+    "title": "Set Up New Yoga Studio",
+    "actionCategory": "setup-establish",
+    "category": "fitness",
+    "conditions": {
+      "fitnessWellness": [
+        "Yoga"
+      ],
+      "moveDistance": [
+        "Long Distance"
+      ]
+    },
+    "desc": "Find and join a yoga studio near your new home.",
+    "estHours": 1.5,
+    "tips": "Search for studios that match your preferred style and level. Use trial classes.",
+    "urgencyPercentage": 45,
+    "whyNeeded": "Your old studio will likely be too far to use after the move."
+  },
+  {
+    "taskId": "SETUP_PILATES",
+    "title": "Set Up New Pilates Studio",
+    "actionCategory": "setup-establish",
+    "category": "fitness",
+    "conditions": {
+      "fitnessWellness": [
+        "Pilates"
+      ],
+      "moveDistance": [
+        "Long Distance"
+      ]
+    },
+    "desc": "Find and enroll at a Pilates studio near your new home.",
+    "estHours": 1.5,
+    "tips": "Search for studios that match your preferred style. Use intro offers to test a few places.",
+    "urgencyPercentage": 44,
+    "whyNeeded": "Finding a new studio early makes it easier to resume your routine."
+  },
+  {
+    "taskId": "SETUP_SPIN_CYCLING",
+    "title": "Set Up New Spin or Cycling Studio",
+    "actionCategory": "setup-establish",
+    "category": "fitness",
+    "conditions": {
+      "fitnessWellness": [
+        "Spin/Cycling"
+      ],
+      "moveDistance": [
+        "Long Distance"
+      ]
+    },
+    "desc": "Find and join a new spin or indoor cycling studio near your new home.",
+    "estHours": 1.5,
+    "tips": "Search for studios with good reviews and class times that work for you.",
+    "urgencyPercentage": 43,
+    "whyNeeded": "Cycling studios are location-based, so moving often means starting fresh."
+  },
+  {
+    "taskId": "SETUP_GOLF",
+    "title": "Set Up New Golf Membership",
+    "actionCategory": "setup-establish",
+    "category": "fitness",
+    "conditions": {
+      "fitnessWellness": [
+        "Golf"
+      ],
+      "moveDistance": [
+        "Long Distance"
+      ]
+    },
+    "desc": "Join a new golf course or club near your new home.",
+    "estHours": 1,
+    "tips": "Research membership pricing, waitlists, guest policies, and tee-time availability.",
+    "urgencyPercentage": 73,
+    "whyNeeded": "Golf memberships are tied to specific locations and rarely transfer."
+  },
+  {
+    "taskId": "SETUP_MASSAGE",
+    "title": "Set Up New Massage Membership",
+    "actionCategory": "setup-establish",
+    "category": "fitness",
+    "conditions": {
+      "fitnessWellness": [
+        "Massage"
+      ],
+      "moveDistance": [
+        "Long Distance"
+      ]
+    },
+    "desc": "Find a massage therapist or membership program near your new home.",
+    "estHours": 1,
+    "tips": "Check for locations of national chains or local studios. Ask about introductory rates.",
+    "urgencyPercentage": 72,
+    "whyNeeded": "Massage memberships rarely transfer across regions."
+  },
+  {
+    "taskId": "SETUP_SPA",
+    "title": "Set Up New Spa Membership",
+    "actionCategory": "setup-establish",
+    "category": "fitness",
+    "conditions": {
+      "fitnessWellness": [
+        "Spa"
+      ],
+      "moveDistance": [
+        "Long Distance"
+      ]
+    },
+    "desc": "Find and join a spa or wellness center near your new home.",
+    "estHours": 2,
+    "tips": "Compare membership options, included services, and hours. Consider starting with a day pass.",
+    "urgencyPercentage": 41,
+    "whyNeeded": "Spa memberships are usually tied to a specific location."
+  },
+  {
+    "taskId": "SETUP_OTHER_FITNESS",
+    "title": "Set Up Other Fitness Activities",
+    "actionCategory": "setup-establish",
+    "category": "fitness",
+    "conditions": {
+      "fitnessWellness": [
+        "Other"
+      ],
+      "moveDistance": [
+        "Long Distance"
+      ]
+    },
+    "desc": "Find and join new specialty fitness programs near your new home.",
+    "estHours": 2,
+    "tips": "List the activities you currently do, then search near your new address for similar options.",
+    "urgencyPercentage": 39,
+    "whyNeeded": "Specialty fitness memberships rarely transfer."
+  },
+  {
+    "taskId": "SETUP_COUNTRY_CLUB",
+    "title": "Set Up New Country Club Membership",
+    "actionCategory": "setup-establish",
+    "category": "fitness",
+    "conditions": {
+      "fitnessWellness": [
+        "Country Club"
+      ],
+      "moveDistance": [
+        "Long Distance"
+      ]
+    },
+    "desc": "Establish a new country club membership near your new home.",
+    "estHours": 1,
+    "tips": "Research clubs in your new area, compare membership fees, access levels, and waitlists.",
+    "urgencyPercentage": 74,
+    "whyNeeded": "Memberships rarely transfer between regions."
+  },
+  {
+    "taskId": "UPDATE_GYM",
+    "title": "Update Gym Membership Address",
+    "actionCategory": "update-notify",
+    "category": "fitness",
+    "conditions": {
+      "fitnessWellness": [
+        "Gym"
+      ],
+      "moveDistance": [
+        "Local"
+      ]
+    },
+    "desc": "Update your gym's membership records with your new address.",
+    "estHours": 0.75,
+    "tips": "Update your contact details and billing information.",
+    "urgencyPercentage": 57,
+    "whyNeeded": "Gyms use your address for billing and membership eligibility."
+  },
+  {
+    "taskId": "UPDATE_CROSSFIT",
+    "title": "Update CrossFit Membership",
+    "actionCategory": "update-notify",
+    "category": "fitness",
+    "conditions": {
+      "fitnessWellness": [
+        "CrossFit"
+      ],
+      "moveDistance": [
+        "Local"
+      ]
+    },
+    "desc": "Update your address and membership info with your local CrossFit gym.",
+    "estHours": 0.75,
+    "tips": "Contact the gym to update your address, payment information, and emergency contacts.",
+    "urgencyPercentage": 58,
+    "whyNeeded": "Gyms often send billing notices tied to your address."
+  },
+  {
+    "taskId": "UPDATE_GOLF",
+    "title": "Update Golf Membership",
+    "actionCategory": "update-notify",
+    "category": "fitness",
+    "conditions": {
+      "fitnessWellness": [
+        "Golf"
+      ],
+      "moveDistance": [
+        "Local"
+      ]
+    },
+    "desc": "Update your mailing and billing address with your golf club.",
+    "estHours": 0.75,
+    "tips": "Contact the club's membership office. Update your address and payment info.",
+    "urgencyPercentage": 52,
+    "whyNeeded": "Golf clubs rely on accurate addresses for billing and event communication."
+  },
+  {
+    "taskId": "UPDATE_COUNTRY_CLUB",
+    "title": "Update Country Club Membership Address",
+    "actionCategory": "update-notify",
+    "category": "fitness",
+    "conditions": {
+      "fitnessWellness": [
+        "Country Club"
+      ],
+      "moveDistance": [
+        "Local"
+      ]
+    },
+    "desc": "Update your mailing and billing address with your current country club.",
+    "estHours": 0.75,
+    "tips": "Contact the membership or billing office and provide your new address.",
+    "urgencyPercentage": 74,
+    "whyNeeded": "Keeping your club records current prevents missed bills or access issues."
+  }
+]

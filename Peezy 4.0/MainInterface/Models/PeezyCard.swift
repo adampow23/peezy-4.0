@@ -40,6 +40,9 @@ struct PeezyCard: Identifiable, Equatable, Codable {
 
     // Intro card briefing message (warm, conversational summary)
     var briefingMessage: String?
+
+    // Task category for icon mapping (e.g. "moving", "utilities", "packing")
+    var taskCategory: String?
     
     // MARK: - Card Types
     enum CardType: String, Codable {
@@ -172,7 +175,8 @@ struct PeezyCard: Identifiable, Equatable, Codable {
         dueDate: Date? = nil,
         snoozedUntil: Date? = nil,
         lastSnoozedAt: Date? = nil,
-        briefingMessage: String? = nil
+        briefingMessage: String? = nil,
+        taskCategory: String? = nil
     ) {
         self.id = id
         self.type = type
@@ -190,6 +194,7 @@ struct PeezyCard: Identifiable, Equatable, Codable {
         self.snoozedUntil = snoozedUntil
         self.lastSnoozedAt = lastSnoozedAt
         self.briefingMessage = briefingMessage
+        self.taskCategory = taskCategory
     }
     
     // MARK: - Factory Methods

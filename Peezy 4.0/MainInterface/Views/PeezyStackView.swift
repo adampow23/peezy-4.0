@@ -188,33 +188,9 @@ struct PeezyStackView: View {
             await viewModel.refreshCards()
         }
         .sheet(isPresented: $showChat) {
-            ChatView(userState: userState)
+            ChatView(userState: userState, card: viewModel.cards.last)
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
-        }
-        .sheet(isPresented: Binding(
-            get: { viewModel.showMiniAssessmentSheet },
-            set: { viewModel.showMiniAssessmentSheet = $0 }
-        )) {
-            if let card = viewModel.miniAssessmentCard, let taskId = card.taskId {
-                MiniAssessmentSheetView(
-                    taskId: taskId,
-                    taskTitle: card.title,
-                    onComplete: { answers in
-                        viewModel.handleMiniAssessmentComplete(card: card, answers: answers)
-                        viewModel.showMiniAssessmentSheet = false
-                        viewModel.miniAssessmentCard = nil
-                    },
-                    onCancel: {
-                        viewModel.handleMiniAssessmentCancel()
-                        viewModel.showMiniAssessmentSheet = false
-                        viewModel.miniAssessmentCard = nil
-                    }
-                )
-                .presentationDetents([.large])
-                .presentationDragIndicator(.visible)
-                .interactiveDismissDisabled()
-            }
         }
         #if DEBUG
         .sheet(isPresented: $showDebugMenu) {
@@ -225,17 +201,8 @@ struct PeezyStackView: View {
 
     // MARK: - Card Swipe Handler
 
-    /// Handle card swipe - intercept mini-assessments before passing to viewModel
+    /// Handle card swipe — passes directly to viewModel
     private func handleCardSwipe(card: PeezyCard, action: SwipeAction) {
-        // For "Do It" swipes, check if this is a mini-assessment
-        if action == .doIt && viewModel.shouldShowMiniAssessment(for: card) {
-            // Don't remove the card yet - show mini-assessment sheet
-            viewModel.miniAssessmentCard = card
-            viewModel.showMiniAssessmentSheet = true
-            return
-        }
-
-        // Otherwise, handle normally
         viewModel.handleSwipe(card: card, action: action)
     }
 

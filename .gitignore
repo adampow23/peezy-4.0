@@ -72,3 +72,4 @@ node_modules/
 **/Anthropic-API-Key.txt
 **/GoogleService-Info.plist
 *.xcuserstate
+**/serviceAccountKey.json

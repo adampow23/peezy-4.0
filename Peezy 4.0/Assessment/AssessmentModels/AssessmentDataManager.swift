@@ -1,186 +1,303 @@
-//
-//  assessmentDataManager.swift
-//  PeezyV1.0
-//
-//  Created by user285836 on 11/9/25.
-//
-
-import SwiftUI
-import Combine
-import FirebaseFirestore
+import Foundation
 import FirebaseAuth
+import FirebaseFirestore
+import CoreLocation
+import Combine
 
+@MainActor
 class AssessmentDataManager: ObservableObject {
-    // Question responses
-    @Published var UserName: String = ""
-    @Published var MoveDate: Date = Date()
-    @Published var MoveExperience: String = ""
-    @Published var MoveConcerns: [String] = []
-    @Published var HowHeard: String = ""
-    @Published var MoveDistance: String = ""
-    @Published var CurrentRentOrOwn: String = ""
-    @Published var CurrentDwellingType: String = ""
-    @Published var NewRentOrOwn: String = ""
-    @Published var NewDwellingType: String = ""
-    @Published var WhosMoving: String = ""
-    @Published var AnyPets: String = ""
-    @Published var HireMovers: String = ""
-    @Published var HirePackers: String = ""
-    @Published var HireCleaners: String = ""
     
-    // Save to backend (Firebase, UserDefaults, etc.)
-    func saveData() {
-        // TODO: Implement your backend save logic
-        print("💾 Saving assessment data...")
-    }
+    // MARK: - Identity
+    @Published var userName: String = ""
     
-    // Check if all required questions are answered
-    func isComplete() -> Bool {
-        return !UserName.isEmpty &&
-               !CurrentDwellingType.isEmpty &&
-               !NewDwellingType.isEmpty &&
-               !WhosMoving.isEmpty
-    }
+    // MARK: - Timeline
+    @Published var moveOutDate: Date = Date()
+    @Published var moveInDate: Date = Date()
+    @Published var moveFlexibility: String = ""
+    
+    // MARK: - Experience
+    @Published var moveExperience: String = ""
+    @Published var moveConcerns: [String] = []
+    
+    // MARK: - Current Home
+    @Published var currentRentOrOwn: String = ""
+    @Published var currentDwellingType: String = ""
+    @Published var currentAddress: String = ""
+    @Published var currentFloor: String = ""
+    @Published var currentElevatorAccess: String = ""
+    @Published var currentBedrooms: String = ""
+    @Published var currentSquareFootage: String = ""
+    @Published var currentFinishedSqFt: String = ""
+    @Published var currentUnfinishedSqFt: String = ""
+    
+    // MARK: - New Home
+    @Published var newRentOrOwn: String = ""
+    @Published var newDwellingType: String = ""
+    @Published var newAddress: String = ""
+    @Published var newFloor: String = ""
+    @Published var newElevatorAccess: String = ""
+    @Published var newBedrooms: String = ""
+    @Published var newSquareFootage: String = ""
+    @Published var newFinishedSqFt: String = ""
+    @Published var newUnfinishedSqFt: String = ""
+    
+    // MARK: - Household
+    @Published var anyChildren: String = ""
+    @Published var childrenAges: [String] = []
+    @Published var anyPets: String = ""
+    @Published var petSelection: [String] = []
+    
+    // MARK: - Services
+    @Published var hireMovers: String = ""
+    @Published var hirePackers: String = ""
+    @Published var hireCleaners: String = ""
+    
+    // MARK: - Accounts
+    @Published var financialInstitutions: [String] = []
+    @Published var healthcareProviders: [String] = []
+    @Published var fitnessWellness: [String] = []
+    
+    // MARK: - Attribution
+    @Published var howHeard: String = ""
+    
+    // MARK: - State
+    @Published var saveError: Error?
 
-    // Returns all assessment data as dictionary for task generation
-    // Keys MUST match Firestore condition field names exactly (case-sensitive)
-    // Reference: Schema/TaskCatalogSchema.swift
+    // MARK: - Computed Distance Fields
+    /// Computed from currentAddress vs newAddress via geocoding.
+    /// Set by computeDistanceAndInterstate() before task generation.
+    @Published var moveDistance: String = ""
+    @Published var isInterstate: String = ""
+
+    // MARK: - Get All Assessment Data
+    
+    /// Returns every raw answer + mapped keys in a single dictionary.
+    /// This is the contract for TaskGenerationService and peezyRespond.
     func getAllAssessmentData() -> [String: Any] {
-        let data: [String: Any] = [
-            // User info
-            "userName": UserName,
-            "moveDate": MoveDate,
-            "moveExperience": MoveExperience,
-            "moveConcerns": MoveConcerns,
-            "howHeard": HowHeard,
+        var data: [String: Any] = [:]
+        
+        // --- Raw answers ---
+        
+        // Identity
+        data["userName"] = userName
+        
+        // Timeline
+        data["moveOutDate"] = Timestamp(date: moveOutDate)
+        data["moveInDate"] = Timestamp(date: moveInDate)
+        data["moveFlexibility"] = moveFlexibility
+        
+        // Experience
+        data["moveExperience"] = moveExperience
+        data["moveConcerns"] = moveConcerns
+        
+        // Current home
+        data["currentRentOrOwn"] = currentRentOrOwn
+        data["currentDwellingType"] = currentDwellingType
+        data["currentAddress"] = currentAddress
+        data["currentFloor"] = currentFloor
+        data["currentElevatorAccess"] = currentElevatorAccess
+        data["currentBedrooms"] = currentBedrooms
+        data["currentSquareFootage"] = currentSquareFootage
+        data["currentFinishedSqFt"] = currentFinishedSqFt
+        data["currentUnfinishedSqFt"] = currentUnfinishedSqFt
+        
+        // New home
+        data["newRentOrOwn"] = newRentOrOwn
+        data["newDwellingType"] = newDwellingType
+        data["newAddress"] = newAddress
+        data["newFloor"] = newFloor
+        data["newElevatorAccess"] = newElevatorAccess
+        data["newBedrooms"] = newBedrooms
+        data["newSquareFootage"] = newSquareFootage
+        data["newFinishedSqFt"] = newFinishedSqFt
+        data["newUnfinishedSqFt"] = newUnfinishedSqFt
+        
+        // Household
+        data["anyChildren"] = anyChildren
+        data["childrenAges"] = childrenAges
+        data["anyPets"] = anyPets
+        data["petSelection"] = petSelection
+        
+        // Services — raw labels preserved for display/Firestore, mapped to Yes/No below
+        data["hireMoversDetail"] = hireMovers
+        data["hirePackersDetail"] = hirePackers
+        data["hireCleanersDetail"] = hireCleaners
+        
+        // Accounts
+        data["financialInstitutions"] = financialInstitutions
+        data["healthcareProviders"] = healthcareProviders
+        data["fitnessWellness"] = fitnessWellness
+        
+        // Attribution
+        data["howHeard"] = howHeard
+        
+        // --- Computed keys for TaskConditionParser ---
+        // These keys are required by taskCatalog conditions but not collected
+        // directly from UI — they are derived from raw assessment answers.
 
-            // Moving basics
-            "moveDistance": MoveDistance,
-            "currentRentOrOwn": CurrentRentOrOwn,
-            "currentDwellingType": CurrentDwellingType,
-            "newRentOrOwn": NewRentOrOwn,
-            "newDwellingType": NewDwellingType,
+        // Distance & interstate (set by computeDistanceAndInterstate())
+        data["moveDistance"] = moveDistance   // "Local" or "Long Distance"
+        data["isInterstate"] = isInterstate  // "Yes" or "No"
 
-            // Household
-            "whosMoving": WhosMoving,
-            "anyPets": AnyPets,
+        // Children age buckets (derived from childrenAges multi-select)
+        // Tile labels: "Under 5", "5-12", "13-17", "18+"
+        let schoolAge = childrenAges.filter { $0 == "5-12" || $0 == "13-17" }.count
+        let under5 = childrenAges.filter { $0 == "Under 5" }.count
+        data["schoolAgeChildren"] = schoolAge
+        data["childrenUnder5"] = under5
 
-            // Services
-            "hireMovers": HireMovers,
-            "hirePackers": HirePackers,
-            "hireCleaners": HireCleaners,
+        // Service hire mapping — UI stores descriptive labels, catalog expects "Yes"/"No"
+        // "Hire Professional Movers" / "Get Me Quotes" → "Yes"
+        // "Move Myself" → "No"
+        // "Not Sure" → "Yes" (better to over-prepare)
+        data["hireMovers"] = mapServiceToYesNo(hireMovers, yesValues: ["hire professional movers", "get me quotes", "not sure"])
+        data["hirePackers"] = mapServiceToYesNo(hirePackers, yesValues: ["hire professional packers", "get me quotes", "not sure"])
+        data["hireCleaners"] = mapServiceToYesNo(hireCleaners, yesValues: ["hire professional cleaners", "get me quotes", "not sure"])
 
-            // System flag
-            "selectedMoveDate": "true",
-
-            // Mapped keys for condition matching
-            "hasPets": AnyPets.lowercased() == "yes",
-            "hasKids": WhosMoving.lowercased().contains("kids"),
-            "destinationOwnership": NewRentOrOwn.lowercased(),
-            "originOwnership": CurrentRentOrOwn.lowercased(),
-            "destinationPropertyType": NewDwellingType.lowercased(),
-            "originPropertyType": CurrentDwellingType.lowercased()
-        ]
         return data
     }
+    
+    // MARK: - Service Value Mapping
 
-    // Save assessment to Firestore
-    func saveAssessment() async throws {
-        guard let userId = Auth.auth().currentUser?.uid else {
-            throw NSError(domain: "AssessmentDataManager", code: 1, userInfo: [NSLocalizedDescriptionKey: "No user ID"])
+    /// Maps descriptive service labels to "Yes"/"No" for task catalog conditions.
+    private func mapServiceToYesNo(_ value: String, yesValues: [String]) -> String {
+        guard !value.isEmpty else { return "" }
+        return yesValues.contains(value.lowercased()) ? "Yes" : "No"
+    }
+
+    // MARK: - Geocoding (Distance & Interstate)
+
+    /// Geocodes both addresses and computes moveDistance and isInterstate.
+    /// Call this before getAllAssessmentData() to populate the computed fields.
+    /// Defaults to "Long Distance" / "Yes" on failure (better to over-prepare).
+    func computeDistanceAndInterstate() async {
+        let geocoder = CLGeocoder()
+
+        guard !currentAddress.isEmpty, !newAddress.isEmpty else {
+            moveDistance = "Long Distance"
+            isInterstate = "Yes"
+            return
         }
 
-        let db = Firestore.firestore()
-        let assessmentData = getAllAssessmentData()
+        do {
+            // CLGeocoder requires sequential calls (shared internal state)
+            let fromPlacemarks = try await geocoder.geocodeAddressString(currentAddress)
+            let toPlacemarks = try await geocoder.geocodeAddressString(newAddress)
 
-        // 1. Save to user_assessments (legacy location)
+            guard let fromPlacemark = fromPlacemarks.first,
+                  let toPlacemark = toPlacemarks.first,
+                  let fromLocation = fromPlacemark.location,
+                  let toLocation = toPlacemark.location else {
+                moveDistance = "Long Distance"
+                isInterstate = "Yes"
+                return
+            }
+
+            // Distance in miles
+            let distanceMeters = fromLocation.distance(from: toLocation)
+            let distanceMiles = distanceMeters / 1609.34
+            moveDistance = distanceMiles >= 50 ? "Long Distance" : "Local"
+
+            // Interstate comparison
+            let fromState = fromPlacemark.administrativeArea ?? ""
+            let toState = toPlacemark.administrativeArea ?? ""
+            if fromState.isEmpty || toState.isEmpty {
+                isInterstate = "Yes"
+            } else {
+                isInterstate = fromState.lowercased() == toState.lowercased() ? "No" : "Yes"
+            }
+
+            #if DEBUG
+            print("📍 Geocoding: \(String(format: "%.1f", distanceMiles)) miles, interstate: \(isInterstate)")
+            #endif
+
+        } catch {
+            #if DEBUG
+            print("⚠️ Geocoding failed: \(error.localizedDescription) — defaulting to Long Distance / Yes")
+            #endif
+            moveDistance = "Long Distance"
+            isInterstate = "Yes"
+        }
+    }
+
+    // MARK: - Save to Firestore
+    
+    /// Saves assessment data to both Firestore paths.
+    /// Path 1: users/{uid}/user_assessments/{auto-ID}
+    /// Path 2: userKnowledge/{uid}
+    func saveAssessment() async throws {
+        guard let userId = Auth.auth().currentUser?.uid, !userId.isEmpty else {
+            throw AssessmentError.noUser
+        }
+        
+        let assessmentData = getAllAssessmentData()
+        let db = Firestore.firestore()
+        
+        // Write to user_assessments subcollection (auto-generated doc ID)
         try await db.collection("users")
             .document(userId)
             .collection("user_assessments")
             .addDocument(data: assessmentData)
-
-        // 2. Save to userKnowledge (for V2 Brain)
-        // Convert to the format the Brain expects
-        let userKnowledgeData = buildUserKnowledgeData(userId: userId)
+        
+        // Write to userKnowledge (keyed by uid — overwrites)
         try await db.collection("userKnowledge")
             .document(userId)
-            .setData(userKnowledgeData, merge: true)
-
-        print("✅ Assessment saved to Firestore (both locations)")
+            .setData(assessmentData, merge: true)
     }
+    
+    // MARK: - Reset
+    
+    func reset() {
+        userName = ""
+        moveOutDate = Date()
+        moveInDate = Date()
+        moveFlexibility = ""
+        moveExperience = ""
+        moveConcerns = []
+        currentRentOrOwn = ""
+        currentDwellingType = ""
+        currentAddress = ""
+        currentFloor = ""
+        currentElevatorAccess = ""
+        currentBedrooms = ""
+        currentSquareFootage = ""
+        currentFinishedSqFt = ""
+        currentUnfinishedSqFt = ""
+        newRentOrOwn = ""
+        newDwellingType = ""
+        newAddress = ""
+        newFloor = ""
+        newElevatorAccess = ""
+        newBedrooms = ""
+        newSquareFootage = ""
+        newFinishedSqFt = ""
+        newUnfinishedSqFt = ""
+        anyChildren = ""
+        childrenAges = []
+        anyPets = ""
+        petSelection = []
+        hireMovers = ""
+        hirePackers = ""
+        hireCleaners = ""
+        financialInstitutions = []
+        healthcareProviders = []
+        fitnessWellness = []
+        howHeard = ""
+        moveDistance = ""
+        isInterstate = ""
+        saveError = nil
+    }
+}
 
-    // Build userKnowledge format for V2 Brain
-    private func buildUserKnowledgeData(userId: String) -> [String: Any] {
-        let now = Date()
-        let isoFormatter = ISO8601DateFormatter()
+// MARK: - Errors
 
-        // Helper to create an entry
-        func entry(_ value: Any) -> [String: Any] {
-            return [
-                "value": value,
-                "source": "userStated",
-                "confidence": 1.0,
-                "collectedAt": isoFormatter.string(from: now),
-                "updatedAt": isoFormatter.string(from: now),
-                "confirmationCount": 1
-            ]
+enum AssessmentError: LocalizedError {
+    case noUser
+    
+    var errorDescription: String? {
+        switch self {
+        case .noUser:
+            return "No authenticated user found. Please sign in and try again."
         }
-
-        var entries: [String: Any] = [:]
-
-        // Map assessment fields to userKnowledge entries
-        // IMPORTANT: Keys must match AssessmentField.stableKey (snake_case)
-        if !UserName.isEmpty {
-            entries["user_name"] = entry(UserName)
-        }
-
-        entries["move_date"] = entry(isoFormatter.string(from: MoveDate))
-
-        if !MoveExperience.isEmpty {
-            entries["move_experience"] = entry(MoveExperience)
-        }
-
-        if !MoveConcerns.isEmpty {
-            entries["biggest_concern"] = entry(MoveConcerns.joined(separator: ", "))
-        }
-
-        if !MoveDistance.isEmpty {
-            entries["move_distance"] = entry(MoveDistance)
-        }
-
-        if !CurrentDwellingType.isEmpty {
-            entries["current_home_type"] = entry(CurrentDwellingType)
-        }
-
-        if !NewDwellingType.isEmpty {
-            entries["destination_home_type"] = entry(NewDwellingType)
-        }
-
-        if !WhosMoving.isEmpty {
-            entries["household_size"] = entry(WhosMoving)
-        }
-
-        if !AnyPets.isEmpty {
-            entries["has_pets"] = entry(AnyPets.lowercased() == "yes")
-        }
-
-        if !HireMovers.isEmpty {
-            entries["moving_help"] = entry(HireMovers)
-        }
-
-        if !HirePackers.isEmpty {
-            entries["packing_help"] = entry(HirePackers)
-        }
-
-        if !HireCleaners.isEmpty {
-            entries["cleaning_help"] = entry(HireCleaners.lowercased() == "yes")
-        }
-
-        return [
-            "userId": userId,
-            "entries": entries,
-            "createdAt": isoFormatter.string(from: now),
-            "lastUpdatedAt": isoFormatter.string(from: now)
-        ]
     }
 }

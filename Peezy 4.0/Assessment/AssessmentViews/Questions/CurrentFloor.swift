@@ -1,6 +1,6 @@
 import SwiftUI
 
-struct AnyPets: View {
+struct CurrentFloor: View {
     @State private var selected = ""
     @EnvironmentObject var assessmentData: AssessmentDataManager
     @EnvironmentObject var coordinator: AssessmentCoordinator
@@ -11,50 +11,45 @@ struct AnyPets: View {
     // Haptic feedback
     private let lightHaptic = UIImpactFeedbackGenerator(style: .light)
     
-    let options = ["Yes", "No"]
+    // Display label → stored value (coordinator does Int() on stored value)
+    let options: [(label: String, value: String)] = [
+        ("1st Floor", "1"),
+        ("2nd Floor", "2"),
+        ("3rd Floor", "3"),
+        ("4th-6th", "5"),
+        ("7th+", "8")
+    ]
     
     let iconMap: [String: String] = [
-        "Yes": "checkmark.circle.fill",
-        "No": "xmark.circle.fill"
+        "1st Floor": "1.circle.fill",
+        "2nd Floor": "2.circle.fill",
+        "3rd Floor": "3.circle.fill",
+        "4th-6th": "arrow.up.circle.fill",
+        "7th+": "arrow.up.to.line.circle.fill"
     ]
     
     var body: some View {
         VStack(spacing: 0) {
-            // Animated Progress Header
-            AssessmentProgressHeader(
-                currentStep: AssessmentStep.AnyPets.stepNumber,
-                totalSteps: AssessmentStep.AnyPets.totalSteps,
-                onBack: {
-                    coordinator.goBack()
-                },
-                onCompletion: {
-                    // Not used for intermediate steps
-                }
-            )
-            
-            // Content area with equal spacing
             AssessmentContentArea(
-                questionText: "Any pets tagging along?",
+                questionText: "What floor?",
                 showContent: showContent
             ) {
-                // Options grid
                 LazyVGrid(columns: [
                     GridItem(.flexible(), spacing: 16),
                     GridItem(.flexible(), spacing: 16)
                 ], spacing: 16) {
-                    ForEach(Array(options.enumerated()), id: \.element) { index, option in
+                    ForEach(Array(options.enumerated()), id: \.element.label) { index, option in
                         SelectionTile(
-                            title: option,
-                            icon: iconMap[option],
-                            isSelected: selected == option,
+                            title: option.label,
+                            icon: iconMap[option.label],
+                            isSelected: selected == option.value,
                             onTap: {
-                                selected = option
-                                assessmentData.AnyPets = option
-                                assessmentData.saveData()
+                                selected = option.value
+                                assessmentData.currentFloor = option.value
                                 
                                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                                     lightHaptic.impactOccurred()
-                                    coordinator.goToNext(from: .AnyPets)
+                                    coordinator.goToNext()
                                 }
                             }
                         )
@@ -66,10 +61,9 @@ struct AnyPets: View {
                 .padding(.horizontal, 20)
             }
         }
-        .navigationBarBackButtonHidden(true)
         .background(InteractiveBackground())
         .onAppear {
-            selected = assessmentData.AnyPets
+            selected = assessmentData.currentFloor
             withAnimation {
                 showContent = true
             }
@@ -79,9 +73,13 @@ struct AnyPets: View {
 
 #Preview {
     let manager = AssessmentDataManager()
-    NavigationStack {
-        AnyPets()
-            .environmentObject(manager)
-            .environmentObject(AssessmentCoordinator(dataManager: manager))
-    }
-}
+    CurrentFloor()
+        .environmentObject(manager)
+        .environmentObject(AssessmentCoordinator(dataManager: manager))
+}//
+//  CurrentFloor.swift
+//  Peezy 4.0
+//
+//  Created by Adam Powell on 2/10/26.
+//
+
