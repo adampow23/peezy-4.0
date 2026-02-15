@@ -18,6 +18,9 @@ struct LoginView: View {
     @State private var isLoading = false
     @State private var showError = false
     @State private var errorMessage = ""
+    @State private var showResetAlert = false
+    @State private var showResetConfirmation = false
+    @State private var resetMessage = ""
 
     private var isFormValid: Bool {
         !email.isEmpty &&
@@ -105,7 +108,12 @@ struct LoginView: View {
 
                     // Forgot Password
                     Button(action: {
-                        // TODO: Implement forgot password
+                        guard !email.isEmpty else {
+                            errorMessage = "Please enter your email address first"
+                            showError = true
+                            return
+                        }
+                        showResetAlert = true
                     }) {
                         Text("Forgot Password?")
                             .font(PeezyTheme.Typography.callout)
@@ -144,6 +152,27 @@ struct LoginView: View {
         } message: {
             Text(errorMessage)
         }
+        .alert("Reset Password", isPresented: $showResetAlert) {
+            Button("Send Reset Email") {
+                viewModel.resetPassword(email: email) { error in
+                    if let error = error {
+                        errorMessage = error.localizedDescription
+                        showError = true
+                    } else {
+                        resetMessage = "Password reset email sent to \(email)"
+                        showResetConfirmation = true
+                    }
+                }
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("Send a password reset email to \(email)?")
+        }
+        .alert("Email Sent", isPresented: $showResetConfirmation) {
+            Button("OK") { }
+        } message: {
+            Text(resetMessage)
+        }
     }
 
     private func handleLogin() {
@@ -151,15 +180,17 @@ struct LoginView: View {
         PeezyHaptics.medium()
 
         viewModel.signIn(email: email, password: password) { error in
-            isLoading = false
+            DispatchQueue.main.async {
+                isLoading = false
 
-            if let error = error {
-                PeezyHaptics.error()
-                errorMessage = error.localizedDescription
-                showError = true
-            } else {
-                PeezyHaptics.success()
-                dismiss()
+                if let error = error {
+                    PeezyHaptics.error()
+                    errorMessage = error.localizedDescription
+                    showError = true
+                } else {
+                    PeezyHaptics.success()
+                    dismiss()
+                }
             }
         }
     }

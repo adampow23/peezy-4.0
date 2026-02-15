@@ -43,27 +43,44 @@ class AssessmentDataManager: ObservableObject {
     }
 
     // Returns all assessment data as dictionary for task generation
+    // Keys MUST match Firestore condition field names exactly (case-sensitive)
+    // Reference: Schema/TaskCatalogSchema.swift
     func getAllAssessmentData() -> [String: Any] {
         let data: [String: Any] = [
-            // Convert property names to camelCase to match task conditions
+            // User info
             "userName": UserName,
             "moveDate": MoveDate,
             "moveExperience": MoveExperience,
             "moveConcerns": MoveConcerns,
             "howHeard": HowHeard,
+
+            // Moving basics
             "moveDistance": MoveDistance,
             "currentRentOrOwn": CurrentRentOrOwn,
             "currentDwellingType": CurrentDwellingType,
             "newRentOrOwn": NewRentOrOwn,
             "newDwellingType": NewDwellingType,
+
+            // Household
             "whosMoving": WhosMoving,
             "anyPets": AnyPets,
+
+            // Services
             "hireMovers": HireMovers,
             "hirePackers": HirePackers,
             "hireCleaners": HireCleaners,
-            "selectedMoveDate": true  // User completed assessment
+
+            // System flag
+            "selectedMoveDate": "true",
+
+            // Mapped keys for condition matching
+            "hasPets": AnyPets.lowercased() == "yes",
+            "hasKids": WhosMoving.lowercased().contains("kids"),
+            "destinationOwnership": NewRentOrOwn.lowercased(),
+            "originOwnership": CurrentRentOrOwn.lowercased(),
+            "destinationPropertyType": NewDwellingType.lowercased(),
+            "originPropertyType": CurrentDwellingType.lowercased()
         ]
-        
         return data
     }
 

@@ -21,8 +21,8 @@ class TaskGenerationService {
         assessment: [String: Any],
         moveDate: Date
     ) async throws -> Int {
-
-        print("🚀 Starting task generation for user: \(userId)")
+        print("🚀 TASK GEN: Starting for user \(userId)")
+        print("📅 TASK GEN: Move date is \(moveDate), today is \(DateProvider.shared.now)")
 
         // 0. Create special "Complete Assessment" task FIRST
         try await createAssessmentCompletionTask(userId: userId, moveDate: moveDate)
@@ -35,27 +35,66 @@ class TaskGenerationService {
         let catalogSnapshot = try await db.collection("taskCatalog").getDocuments()
         print("📚 Found \(catalogSnapshot.documents.count) tasks in catalog")
 
+        // 🔍 DEBUG: Print assessment data being used for condition evaluation
+        print("🔍 ASSESSMENT DATA FOR CONDITIONS:")
+        for (key, value) in assessment.sorted(by: { $0.key < $1.key }) {
+            print("   • \(key): \(value) (type: \(type(of: value)))")
+        }
+
         var tasksToCreate: [[String: Any]] = []
         
         // 3. Evaluate each task's conditions
         for document in catalogSnapshot.documents {
             let taskData = document.data()
-            
-            // Get conditions
-            let conditions = taskData["conditions"] as? String
-            
-            // Evaluate if this task should be generated for this user
-            if TaskConditionParser.evaluateConditions(conditions, against: assessment) {
-                
-                // Calculate due date based on urgency
+            let taskTitle = taskData["title"] as? String ?? "Unknown"
+
+            // Skip sub-tasks during initial generation
+            // Sub-tasks are generated when their parent mini-assessment completes
+            if let isSubTask = taskData["isSubTask"] as? Bool, isSubTask == true {
+                let parentTask = taskData["parentTask"] as? String ?? "unknown"
+                print("⏭️ Skipping sub-task '\(taskTitle)' - will generate when '\(parentTask)' completes")
+                continue
+            }
+
+            // Get conditions - Firestore stores as [String: [String]] dictionary
+            let conditions = taskData["conditions"] as? [String: Any]
+
+            // Debug logging
+            print("🔍 Evaluating conditions for '\(taskTitle)': \(conditions ?? [:])")
+
+            // Evaluate conditions against user's assessment
+            let conditionPassed = TaskConditionParser.evaluateConditions(conditions, against: assessment)
+
+            if conditionPassed {
+                print("✅ Condition PASSED for '\(taskTitle)'")
+
+                // Calculate due date based on urgency and optional bounds
                 let urgencyPercentage = taskData["urgencyPercentage"] as? Int ?? 50
-                let dueDate = calculateDueDate(moveDate: moveDate, urgencyPercentage: urgencyPercentage)
-                
+                let earliestDays = taskData["earliestDaysBeforeMove"] as? Int
+                let latestDays = taskData["latestDaysBeforeMove"] as? Int
+
+                // 📊 Debug: Log urgency distribution from catalog
+                print("📊 Task '\(taskData["title"] as? String ?? "Unknown")' urgency: \(urgencyPercentage), earliest: \(earliestDays ?? -1), latest: \(latestDays ?? -1)")
+
+                let dueDate = calculateDueDate(
+                    moveDate: moveDate,
+                    urgencyPercentage: urgencyPercentage,
+                    earliestDaysBeforeMove: earliestDays,
+                    latestDaysBeforeMove: latestDays
+                )
+
+                // 📅 DEBUG: Log calculated due date
+                let dateFormatter = DateFormatter()
+                dateFormatter.dateFormat = "MMM d"
+                print("📅 Task '\(taskData["title"] as? String ?? "")' → dueDate: \(dateFormatter.string(from: dueDate)) (urgency: \(urgencyPercentage))")
+
                 // Create task document data in MovingTask-compatible format
                 var userTask: [String: Any] = [:]
                 
                 // Copy all fields from catalog
-                userTask["id"] = taskData["pageKey"] as? String ?? document.documentID
+                // Use pageKey if non-empty, otherwise fall back to document ID
+                let pageKey = taskData["pageKey"] as? String ?? ""
+                userTask["id"] = pageKey.isEmpty ? document.documentID : pageKey
                 userTask["taskId"] = taskData["taskId"]
                 userTask["urgencyPercentage"] = urgencyPercentage
                 userTask["title"] = taskData["title"] ?? ""
@@ -78,62 +117,101 @@ class TaskGenerationService {
                 
                 tasksToCreate.append(userTask)
                 
-                print("✅ Including: \(taskData["title"] as? String ?? "Unknown")")
+                print("✅ Including: \(taskTitle)")
             } else {
-                print("⏭️ Skipping: \(taskData["title"] as? String ?? "Unknown") (conditions not met)")
+                print("❌ Condition FAILED for '\(taskTitle)' - skipping")
             }
         }
         
-        print("📝 Generating \(tasksToCreate.count) tasks for user")
-        
+        print("📋 TASK GEN: Created \(tasksToCreate.count) catalog tasks")
+
         // 4. Batch write tasks to user's collection
         let batch = db.batch()
         let userTasksRef = db.collection("users").document(userId).collection("tasks")
-        
+
         for taskData in tasksToCreate {
             // Use pageKey as document ID if available, otherwise auto-generate
-            let docId = taskData["id"] as? String ?? UUID().uuidString
+            // IMPORTANT: Skip empty IDs - Firestore requires non-empty document paths
+            let rawId = taskData["id"] as? String ?? ""
+            let docId = rawId.isEmpty ? UUID().uuidString : rawId
+
+            guard !docId.isEmpty else {
+                print("⚠️ TASK GEN: Skipping task with empty ID: \(taskData["title"] ?? "unknown")")
+                continue
+            }
+
             let taskRef = userTasksRef.document(docId)
             batch.setData(taskData, forDocument: taskRef)
         }
-        
+
         // 5. Commit batch
-        try await batch.commit()
-        
         let totalTasks = tasksToCreate.count + miniAssessmentCount + 1 // +1 for assessment complete
-        print("✨ Successfully generated \(totalTasks) total tasks!")
+        print("💾 TASK GEN: Committing \(tasksToCreate.count) tasks to Firestore...")
+
+        do {
+            try await batch.commit()
+            print("✅ TASK GEN: Successfully wrote \(tasksToCreate.count) tasks")
+        } catch {
+            print("❌ TASK GEN FAILED: \(error)")
+            throw error
+        }
+
+        print("✨ TASK GEN: Total tasks generated: \(totalTasks)")
         
         return totalTasks
     }
     
     // MARK: - Due Date Calculation
-    
-    /// Calculates task due date based on urgency percentage
-    /// Higher percentage (94%) = MORE urgent = do it SOONER (early in timeline, few days from now)
-    /// Lower percentage (1%) = LESS urgent = do it LATER (near move date)
+
+    /// Calculates task due date based on urgency percentage with optional bounds
+    /// Higher percentage (90+) = MORE urgent = do it EARLY (within first 10% of timeline)
+    /// Lower percentage (10) = LESS urgent = can wait (90% into timeline)
     /// - Parameters:
     ///   - moveDate: User's move date
     ///   - urgencyPercentage: Task urgency (1-99)
+    ///   - earliestDaysBeforeMove: Optional - can't start before this many days before move
+    ///   - latestDaysBeforeMove: Optional - must be done by this many days before move
     /// - Returns: Calculated due date
-    private func calculateDueDate(moveDate: Date, urgencyPercentage: Int) -> Date {
+    private func calculateDueDate(
+        moveDate: Date,
+        urgencyPercentage: Int,
+        earliestDaysBeforeMove: Int? = nil,
+        latestDaysBeforeMove: Int? = nil
+    ) -> Date {
         let today = Calendar.current.startOfDay(for: DateProvider.shared.now)
         let moveDateStart = Calendar.current.startOfDay(for: moveDate)
-        
-        // Calculate total days between today and move date
         let totalDays = Calendar.current.dateComponents([.day], from: today, to: moveDateStart).day ?? 0
-        
-        // Calculate days from now based on urgency percentage
-        // HIGH urgency (94%) = do it EARLY = 6% of timeline (3 days from now if move is in 54 days)
-        // LOW urgency (1%) = do it LATE = 99% of timeline (53 days from now, near move day)
+
+        // Guard against past/same-day moves
+        guard totalDays > 0 else { return today }
+
+        // Calculate ideal date from urgency
+        // HIGH urgency (90+) = do it EARLY (within first 10% of timeline)
+        // LOW urgency (10) = can wait (90% into timeline)
         let daysFromNow = Double(totalDays) * (1.0 - Double(urgencyPercentage) / 100.0)
-        
-        // Calculate due date
-        let dueDate = Calendar.current.date(
-            byAdding: .day,
-            value: Int(daysFromNow),
-            to: today
-        ) ?? moveDate
-        
+        var dueDate = Calendar.current.date(byAdding: .day, value: Int(daysFromNow), to: today) ?? moveDate
+
+        // Apply earliest bound (can't start before this many days before move)
+        if let earliest = earliestDaysBeforeMove {
+            let earliestDate = Calendar.current.date(byAdding: .day, value: -earliest, to: moveDateStart)!
+            if dueDate < earliestDate && earliestDate > today {
+                dueDate = earliestDate
+            }
+        }
+
+        // Apply latest bound (must be done by this many days before move)
+        if let latest = latestDaysBeforeMove {
+            let latestDate = Calendar.current.date(byAdding: .day, value: -latest, to: moveDateStart)!
+            if dueDate > latestDate {
+                dueDate = latestDate
+            }
+        }
+
+        // Never schedule in the past
+        if dueDate < today {
+            dueDate = today
+        }
+
         return dueDate
     }
 
@@ -267,10 +345,14 @@ class TaskGenerationService {
             let taskRef = userTasksRef.document(assessment.id)
             batch.setData(taskData, forDocument: taskRef)
         }
-        
-        try await batch.commit()
-        
-        print("✅ Created \(miniAssessments.count) mini-assessment tasks")
+
+        do {
+            try await batch.commit()
+            print("✅ TASK GEN: Created \(miniAssessments.count) mini-assessment tasks")
+        } catch {
+            print("❌ TASK GEN FAILED (mini-assessments): \(error)")
+            throw error
+        }
         return miniAssessments.count
     }
 }

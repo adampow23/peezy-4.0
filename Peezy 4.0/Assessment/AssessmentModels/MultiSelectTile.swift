@@ -32,6 +32,9 @@ struct MultiSelectTile: View {
                     .font(.system(size: 16, weight: .medium))
                     .foregroundColor(.white)
                     .multilineTextAlignment(.leading)
+                    .lineLimit(3)
+                    .minimumScaleFactor(0.8)
+                    .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
 
                 // Checkmark on right

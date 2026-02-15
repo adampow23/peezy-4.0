@@ -1,5 +1,7 @@
 import SwiftUI
 import Observation
+import FirebaseFirestore
+import FirebaseAuth
 
 // MARK: - PeezyStackViewModel
 @Observable
@@ -22,6 +24,10 @@ final class PeezyStackViewModel {
     // Snooze support
     var snoozeManager = SnoozeManager()
     var isSnoozing: Bool { snoozeManager.isSnoozing }
+
+    // Mini-assessment support
+    var showMiniAssessmentSheet = false
+    var miniAssessmentCard: PeezyCard?
 
     // Helper for workflow submission
     var currentUserId: String? {
@@ -57,61 +63,199 @@ final class PeezyStackViewModel {
     }
     
     // MARK: - Load Cards
-    
-    /// Load initial cards from backend (call on appear)
+
+    /// Load initial cards directly from Firestore (same source as Timeline)
     func loadInitialCards() async {
-        guard let userState = userState else {
+        guard userState != nil else {
             // No user state - show placeholder cards
             await MainActor.run {
                 self.cards = Self.placeholderCards()
             }
             return
         }
-        
+
         await MainActor.run {
             self.isLoading = true
             self.error = nil
         }
-        
-        do {
-            let response = try await client.getInitialCards(userState: userState)
-            
-            await MainActor.run {
-                // Convert backend cards to UI cards
-                if let cardData = response.cards, !cardData.isEmpty {
-                    self.cards = cardData.map { $0.toCard() }
-                } else {
-                    // Backend didn't return cards - generate intro
-                    self.cards = Self.introCards(for: userState)
-                }
-                
-                // Apply any state updates
-                self.applyStateUpdates(response.stateUpdates)
-                
-                self.isLoading = false
-            }
-        } catch let peezyError as PeezyError {
-            await MainActor.run {
-                self.error = peezyError
-                self.isLoading = false
-                // Use intro cards with user's name on error
-                self.cards = Self.introCards(for: userState)
-            }
-        } catch {
-            await MainActor.run {
-                self.error = .networkError(error)
-                self.isLoading = false
-                // Use intro cards with user's name on error
-                self.cards = Self.introCards(for: userState)
-            }
-        }
+
+        // Load directly from Firestore (same source as Timeline)
+        await loadCardsFromFirestore()
     }
     
     /// Refresh cards (pull to refresh or manual)
     func refreshCards() async {
-        await loadInitialCards()
+        await loadCardsFromFirestore()
     }
-    
+
+    // MARK: - Direct Firestore Loading (matches TimelineService)
+
+    /// Loads cards directly from Firestore - same source as Timeline
+    /// This ensures card stack and timeline show identical data
+    private func loadCardsFromFirestore() async {
+        guard let userId = Auth.auth().currentUser?.uid else {
+            print("❌ PeezyStackViewModel: No user ID for Firestore load")
+            await MainActor.run {
+                self.isLoading = false
+                self.cards = Self.placeholderCards()
+            }
+            return
+        }
+
+        do {
+            let db = Firestore.firestore()
+
+            // Query active tasks - same filter as TimelineService
+            let snapshot = try await db.collection("users")
+                .document(userId)
+                .collection("tasks")
+                .whereField("status", in: ["Upcoming", "InProgress", "pending", "Snoozed"])
+                .getDocuments()
+
+            print("🃏 PeezyStackViewModel: Found \(snapshot.documents.count) documents in Firestore")
+
+            var loadedCards: [PeezyCard] = []
+            let now = Date()
+
+            for document in snapshot.documents {
+                let data = document.data()
+
+                // Parse status
+                let statusString = data["status"] as? String ?? "Upcoming"
+                let status = TaskStatus(rawValue: statusString) ?? .upcoming
+
+                // Skip completed/skipped
+                if status == .completed || status == .skipped {
+                    continue
+                }
+
+                // Parse priority (same logic as TimelineService)
+                let priorityString = data["priority"] as? String ?? "Medium"
+                let priority: PeezyCard.Priority
+                switch priorityString.lowercased() {
+                case "high", "urgent":
+                    priority = .high
+                case "low":
+                    priority = .low
+                default:
+                    priority = .normal
+                }
+
+                // Parse due date from Firestore Timestamp
+                let dueDate = (data["dueDate"] as? Timestamp)?.dateValue()
+
+                // Parse snooze data
+                let snoozedUntil = (data["snoozedUntil"] as? Timestamp)?.dateValue()
+                let lastSnoozedAt = (data["lastSnoozedAt"] as? Timestamp)?.dateValue()
+
+                // Skip if currently snoozed
+                if let snoozedUntil = snoozedUntil, snoozedUntil > now {
+                    continue
+                }
+
+                // Determine card type based on task properties
+                let isVendorTask = (data["category"] as? String)?.lowercased().contains("vendor") ?? false
+                let cardType: PeezyCard.CardType = isVendorTask ? .vendor : .task
+
+                let card = PeezyCard(
+                    id: document.documentID,
+                    type: cardType,
+                    title: data["title"] as? String ?? "Untitled Task",
+                    subtitle: data["desc"] as? String ?? "",
+                    colorName: colorNameForPriority(priority),
+                    taskId: data["id"] as? String ?? document.documentID,
+                    workflowId: data["workflowId"] as? String ?? data["id"] as? String,
+                    vendorCategory: isVendorTask ? (data["category"] as? String) : nil,
+                    vendorId: nil,
+                    priority: priority,
+                    createdAt: (data["createdAt"] as? Timestamp)?.dateValue() ?? Date(),
+                    status: status,
+                    dueDate: dueDate,
+                    snoozedUntil: snoozedUntil,
+                    lastSnoozedAt: lastSnoozedAt
+                )
+
+                // Only include cards that should be shown
+                if card.shouldShow {
+                    loadedCards.append(card)
+                }
+            }
+
+            // Sort and update on main thread
+            await MainActor.run {
+                // Add intro card if we have user state
+                var allCards = loadedCards
+                if let userState = self.userState {
+                    let introCard = PeezyCard(
+                        type: .intro,
+                        title: Self.greeting(for: userState),
+                        subtitle: Self.subtitle(for: userState),
+                        colorName: "white"
+                    )
+                    allCards.append(introCard)
+                }
+
+                self.cards = Self.sortCardsForStack(allCards)
+                self.isLoading = false
+                print("✅ PeezyStackViewModel: Loaded \(self.cards.count) cards from Firestore (same source as Timeline)")
+            }
+
+        } catch {
+            print("❌ PeezyStackViewModel Firestore load error: \(error)")
+            await MainActor.run {
+                self.error = .networkError(error)
+                self.isLoading = false
+                // Fall back to intro cards
+                if let userState = self.userState {
+                    self.cards = Self.sortCardsForStack(Self.introCards(for: userState))
+                }
+            }
+        }
+    }
+
+    /// Color name for priority (matches TimelineService)
+    private func colorNameForPriority(_ priority: PeezyCard.Priority) -> String {
+        switch priority {
+        case .urgent: return "red"
+        case .high: return "orange"
+        case .normal: return "green"
+        case .low: return "gray"
+        }
+    }
+
+    /// Generate greeting for intro card
+    static func greeting(for userState: UserState) -> String {
+        let hour = Calendar.current.component(.hour, from: Date())
+        let name = userState.name.isEmpty ? "" : ", \(userState.name)"
+
+        switch hour {
+        case 5..<12:
+            return "Good morning\(name)"
+        case 12..<17:
+            return "Good afternoon\(name)"
+        case 17..<22:
+            return "Good evening\(name)"
+        default:
+            return "Hey\(name)"
+        }
+    }
+
+    /// Generate subtitle for intro card
+    static func subtitle(for userState: UserState) -> String {
+        if let days = userState.daysUntilMove {
+            if days == 0 {
+                return "Moving day is here! Let's make it smooth."
+            } else if days == 1 {
+                return "Just 1 day until your move!"
+            } else if days <= 7 {
+                return "\(days) days until your move. Let's stay on track."
+            } else {
+                return "Here's what's on your plate today."
+            }
+        }
+        return "Here's what's on your plate today."
+    }
+
     // MARK: - Handle Swipe
 
     /// Handle user swiping a card
@@ -193,14 +337,16 @@ final class PeezyStackViewModel {
             await MainActor.run {
                 // Add any new cards from response
                 if let newCards = response.cards?.map({ $0.toCard() }), !newCards.isEmpty {
-                    // Insert new cards at bottom of stack
+                    // Add new cards and re-sort to maintain correct order
+                    var updatedCards = self.cards
                     for card in newCards {
-                        if !self.cards.contains(where: { $0.id == card.id }) {
-                            self.cards.insert(card, at: 0)
+                        if !updatedCards.contains(where: { $0.id == card.id }) {
+                            updatedCards.append(card)
                         }
                     }
+                    self.cards = Self.sortCardsForStack(updatedCards)
                 }
-                
+
                 // Apply state updates
                 self.applyStateUpdates(response.stateUpdates)
             }
@@ -264,14 +410,16 @@ final class PeezyStackViewModel {
         }
     }
     
-    /// Add multiple cards
+    /// Add multiple cards and re-sort to maintain correct order
     func addCards(_ newCards: [PeezyCard]) {
         withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
+            var updatedCards = cards
             for card in newCards {
-                if !cards.contains(where: { $0.id == card.id }) {
-                    cards.insert(card, at: 0)
+                if !updatedCards.contains(where: { $0.id == card.id }) {
+                    updatedCards.append(card)
                 }
             }
+            cards = Self.sortCardsForStack(updatedCards)
         }
     }
     
@@ -389,5 +537,48 @@ final class PeezyStackViewModel {
         }
 
         return "Got a few things ready for you."
+    }
+
+    // MARK: - Card Sorting
+
+    /// Sort cards for stack display: most urgent (earliest due date) on TOP
+    /// In a card stack, the LAST item in the array is shown on TOP (visible to user).
+    /// So we sort: latest due date first, earliest due date last (end of array = top of stack).
+    /// Intro cards always go on top (end of array).
+    /// Filters out cards that are currently snoozed (snoozedUntil is in the future).
+    static func sortCardsForStack(_ cards: [PeezyCard]) -> [PeezyCard] {
+        // Separate intro cards from other cards
+        let introCards = cards.filter { $0.type == .intro }
+
+        // Filter out snoozed cards (those with snoozedUntil in the future)
+        // and separate task cards
+        let now = Date()
+        let activeCards = cards.filter { card in
+            guard card.type != .intro else { return false }
+
+            // If card has snoozedUntil in the future, filter it out
+            if let snoozedUntil = card.snoozedUntil, snoozedUntil > now {
+                return false
+            }
+            return true
+        }
+
+        // Sort non-intro cards: latest due date first, earliest last
+        // This puts earliest due date at END of array (top of stack)
+        let sortedOther = activeCards.sorted { card1, card2 in
+            // Primary sort: by due date (descending - latest first)
+            let date1 = card1.dueDate ?? Date.distantFuture
+            let date2 = card2.dueDate ?? Date.distantFuture
+
+            if date1 != date2 {
+                return date1 > date2  // Later dates first in array
+            }
+
+            // Secondary sort: by priority (lower priority first, higher priority at end/top)
+            return card1.priority < card2.priority
+        }
+
+        // Combine: sorted tasks first, then intro cards on top (end of array)
+        return sortedOther + introCards
     }
 }

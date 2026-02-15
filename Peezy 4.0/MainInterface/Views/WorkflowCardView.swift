@@ -328,7 +328,8 @@ struct WorkflowOptionTile: View {
                         .font(.system(size: 11))
                         .foregroundColor(isSelected ? .white.opacity(0.8) : .gray)
                         .multilineTextAlignment(.center)
-                        .lineLimit(1)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.8)
                 }
             }
             .frame(maxWidth: .infinity)

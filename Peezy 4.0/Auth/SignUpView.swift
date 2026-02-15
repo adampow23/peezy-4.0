@@ -168,15 +168,17 @@ struct SignUpView: View {
         PeezyHaptics.medium()
 
         viewModel.signUp(email: email, password: password) { error in
-            isLoading = false
+            DispatchQueue.main.async {
+                isLoading = false
 
-            if let error = error {
-                PeezyHaptics.error()
-                errorMessage = error.localizedDescription
-                showError = true
-            } else {
-                PeezyHaptics.success()
-                dismiss()
+                if let error = error {
+                    PeezyHaptics.error()
+                    errorMessage = error.localizedDescription
+                    showError = true
+                } else {
+                    PeezyHaptics.success()
+                    dismiss()
+                }
             }
         }
     }

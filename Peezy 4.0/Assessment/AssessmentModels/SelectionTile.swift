@@ -43,11 +43,17 @@ struct SelectionTile: View {
                     Text(title)
                         .font(.system(size: 17, weight: .medium))
                         .foregroundColor(.white)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.8)
+                        .multilineTextAlignment(.center)
 
                     if let subtitle = subtitle {
                         Text(subtitle)
                             .font(.system(size: 14, weight: .regular))
                             .foregroundColor(.white.opacity(0.6))
+                            .lineLimit(2)
+                            .minimumScaleFactor(0.8)
+                            .multilineTextAlignment(.center)
                     }
                 }
             }

@@ -83,8 +83,10 @@ class AuthViewModel: ObservableObject {
                     print("✅ Successfully signed in with Apple: \(authResult?.user.uid ?? "")")
                     completion(nil)
                 }
+            } else {
+                completion(NSError(domain: "AuthViewModel", code: 7, userInfo: [NSLocalizedDescriptionKey: "Unable to process Apple Sign-In credential"]))
             }
-            
+
         case .failure(let error):
             completion(error)
         }
@@ -175,7 +177,15 @@ class AuthViewModel: ObservableObject {
         isAuthenticated = false
         currentUser = nil
     }
-    
+
+    // MARK: - Reset Password
+
+    func resetPassword(email: String, completion: @escaping (Error?) -> Void) {
+        Auth.auth().sendPasswordReset(withEmail: email) { error in
+            completion(error)
+        }
+    }
+
     // MARK: - Helper Functions
     
     private func randomNonceString(length: Int = 32) -> String {

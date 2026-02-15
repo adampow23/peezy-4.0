@@ -7,11 +7,12 @@
 
 import SwiftUI
 import FirebaseCore
+import FirebaseAuth
 import GoogleSignIn
 
 @main
 struct PeezyV1App: App {
-    
+
     // This runs ONCE when the app launches, before any views appear
     init() {
         FirebaseApp.configure()

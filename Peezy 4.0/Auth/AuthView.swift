@@ -11,7 +11,7 @@ import AuthenticationServices
 // MARK: - AuthView
 
 struct AuthView: View {
-    @StateObject private var viewModel = AuthViewModel()
+    @EnvironmentObject var viewModel: AuthViewModel
     @State private var showSignUp = false
     @State private var showLogin = false
 

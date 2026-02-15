@@ -41,6 +41,7 @@ class AssessmentCoordinator: ObservableObject {
     @Published var isSaving = false
     @Published var saveError: Error?
     
+    private var isCompleting = false
     private let dataManager: AssessmentDataManager
     
     init(dataManager: AssessmentDataManager) {
@@ -62,62 +63,48 @@ class AssessmentCoordinator: ObservableObject {
     }
     
     @MainActor
-    private func completeAssessment() async {
-        guard let userId = Auth.auth().currentUser?.uid else {
-            print("❌ No user ID - cannot save assessment")
-            saveError = NSError(
-                domain: "AssessmentCoordinator",
-                code: 1,
-                userInfo: [NSLocalizedDescriptionKey: "No authenticated user"]
-            )
-            // Still mark complete so user isn't stuck
-            isComplete = true
-            return
-        }
-        
-        isSaving = true
+    func completeAssessment() async {
+        guard !isCompleting else { return }
+        isCompleting = true
+
+        let userId = Auth.auth().currentUser?.uid ?? ""
         print("🚀 Starting assessment completion for user: \(userId)")
-        
+
+        // Show completion screen IMMEDIATELY
+        isComplete = true
+
+        // Now do the work in background
+        isSaving = true
+
         do {
             // 1. Get assessment data
             let assessmentData = dataManager.getAllAssessmentData()
-            let moveDate = dataManager.MoveDate
-            
-            // 2. Save assessment to Firestore (both locations)
+            let moveDate = dataManager.MoveDate ?? Date()
+
+            print("⏳ ASSESSMENT: Saving to Firestore...")
+
+            // 2. Save assessment
             try await dataManager.saveAssessment()
-            print("✅ Assessment saved to Firestore")
-            
-            // 3. Generate personalized tasks
+
+            print("⏳ ASSESSMENT: Generating tasks...")
+
+            // 3. Generate tasks
             let taskService = TaskGenerationService()
             let tasksGenerated = try await taskService.generateTasksForUser(
                 userId: userId,
                 assessment: assessmentData,
                 moveDate: moveDate
             )
-            print("✅ Generated \(tasksGenerated) tasks")
-            
+
+            print("✅ ASSESSMENT: Complete! Generated \(tasksGenerated) tasks")
+
             isSaving = false
-            isComplete = true
-            
-            // Notify AppRootView to transition to main app
-            NotificationCenter.default.post(
-                name: .assessmentCompleted,
-                object: nil
-            )
-            
+
         } catch {
             print("❌ Error completing assessment: \(error.localizedDescription)")
             isSaving = false
             saveError = error
-            
-            // Still mark complete so user can proceed
-            // They can retry or data will sync later
-            isComplete = true
-            
-            NotificationCenter.default.post(
-                name: .assessmentCompleted,
-                object: nil
-            )
+            // Don't set isComplete = false - let user proceed anyway
         }
     }
     

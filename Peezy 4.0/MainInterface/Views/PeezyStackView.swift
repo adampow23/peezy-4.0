@@ -58,7 +58,7 @@ struct PeezyStackView: View {
                                 card: card,
                                 isTopCard: index == viewModel.cards.count - 1,
                                 onRemove: { action in
-                                    viewModel.handleSwipe(card: card, action: action)
+                                    handleCardSwipe(card: card, action: action)
                                 },
                                 updateCount: viewModel.updateCount,
                                 taskCount: viewModel.taskCount
@@ -170,9 +170,18 @@ struct PeezyStackView: View {
             // Pass user state to view model
             viewModel.userState = userState
 
-            // Load cards from backend
-            Task {
-                await viewModel.loadInitialCards()
+            // Only load cards if not already loaded (prevents duplicate loads when using external viewModel)
+            if viewModel.cards.isEmpty && !viewModel.isLoading {
+                print("🃏 StackView loading cards (viewModel was empty)")
+                Task {
+                    await viewModel.loadInitialCards()
+                    print("🃏 StackView loaded: \(viewModel.cards.count) cards")
+                    for card in viewModel.cards {
+                        print("   - \(card.type): \(card.title)")
+                    }
+                }
+            } else {
+                print("🃏 StackView using existing \(viewModel.cards.count) cards from shared viewModel")
             }
         }
         .refreshable {
@@ -183,13 +192,53 @@ struct PeezyStackView: View {
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
         }
+        .sheet(isPresented: Binding(
+            get: { viewModel.showMiniAssessmentSheet },
+            set: { viewModel.showMiniAssessmentSheet = $0 }
+        )) {
+            if let card = viewModel.miniAssessmentCard, let taskId = card.taskId {
+                MiniAssessmentSheetView(
+                    taskId: taskId,
+                    taskTitle: card.title,
+                    onComplete: { answers in
+                        viewModel.handleMiniAssessmentComplete(card: card, answers: answers)
+                        viewModel.showMiniAssessmentSheet = false
+                        viewModel.miniAssessmentCard = nil
+                    },
+                    onCancel: {
+                        viewModel.handleMiniAssessmentCancel()
+                        viewModel.showMiniAssessmentSheet = false
+                        viewModel.miniAssessmentCard = nil
+                    }
+                )
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+                .interactiveDismissDisabled()
+            }
+        }
         #if DEBUG
         .sheet(isPresented: $showDebugMenu) {
             DebugMenuView(viewModel: viewModel)
         }
         #endif
     }
-    
+
+    // MARK: - Card Swipe Handler
+
+    /// Handle card swipe - intercept mini-assessments before passing to viewModel
+    private func handleCardSwipe(card: PeezyCard, action: SwipeAction) {
+        // For "Do It" swipes, check if this is a mini-assessment
+        if action == .doIt && viewModel.shouldShowMiniAssessment(for: card) {
+            // Don't remove the card yet - show mini-assessment sheet
+            viewModel.miniAssessmentCard = card
+            viewModel.showMiniAssessmentSheet = true
+            return
+        }
+
+        // Otherwise, handle normally
+        viewModel.handleSwipe(card: card, action: action)
+    }
+
     // MARK: - Stack Physics
     func scale(for index: Int) -> CGFloat {
         let offset = viewModel.cards.count - 1 - index
@@ -400,14 +449,17 @@ struct CardView: View {
                 Text(card.title)
                     .font(.system(size: 48, weight: .heavy))
                     .foregroundColor(.white)
-                    .lineLimit(1)
+                    .lineLimit(2)
                     .minimumScaleFactor(0.5)
+                    .fixedSize(horizontal: false, vertical: true)
 
                 Text(card.subtitle)
                     .font(.title3)
                     .fontWeight(.medium)
                     .foregroundColor(.white.opacity(0.7))
-                    .lineLimit(3)
+                    .lineLimit(nil)
+                    .minimumScaleFactor(0.8)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .padding(.horizontal, 30)
             .frame(maxWidth: .infinity, alignment: .leading)

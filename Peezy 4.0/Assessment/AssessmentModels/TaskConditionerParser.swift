@@ -1,191 +1,191 @@
-// TaskConditionParser.swift
-// Peezy iOS - Task Condition Evaluation
-// Evaluates task conditions against user assessment data
-
 import Foundation
 
+// ============================================================================
+// FILE: TaskConditionerParser.swift
+// PURPOSE: Evaluates task conditions against user assessment data
+// FORMAT: Conditions are [String: [String]] dictionaries from Firestore
+//
+// CONDITION FORMAT (from TaskCatalogSchema.swift):
+//   - Key: Assessment field name (e.g., "AnyPets", "MoveDistance")
+//   - Value: Array of acceptable values (OR logic within array)
+//   - Multiple keys: AND logic (all must match)
+//
+// EXAMPLES:
+//   {"AnyPets": ["Yes"]} → User's AnyPets must be "Yes"
+//   {"MoveDistance": ["Long Distance", "Cross-Country"]} → Either value matches
+//   {"AnyPets": ["Yes"], "MoveDistance": ["Long Distance"]} → Both must match
+// ============================================================================
+
 class TaskConditionParser {
-    
+
+    // MARK: - Main Evaluation Function
+
     /// Evaluates whether a task's conditions match the user's assessment
     /// - Parameters:
-    ///   - conditions: The condition string from task catalog (e.g., "MoveDistance: Local, Gym: Yes")
-    ///   - userAssessment: Dictionary containing user's assessment data
-    /// - Returns: true if conditions are met (task should be generated), false otherwise
-    static func evaluateConditions(_ conditions: String?, against userAssessment: [String: Any]) -> Bool {
-        // If no conditions, always generate task
+    ///   - conditions: Dictionary of field names to acceptable values, or nil
+    ///   - userAssessment: User's assessment data dictionary
+    /// - Returns: true if task should be generated, false if conditions not met
+    static func evaluateConditions(_ conditions: [String: Any]?, against userAssessment: [String: Any]) -> Bool {
+
+        // No conditions = task is for everyone
         guard let conditions = conditions, !conditions.isEmpty else {
+            print("    ✅ No conditions - auto-pass")
             return true
         }
-        
-        // Parse conditions into field groups
-        let conditionMap = parseConditions(conditions)
-        
-        // Check each field condition (AND logic between fields)
-        for (fieldName, acceptableValues) in conditionMap {
-            let userValue = userAssessment[fieldName]
-            
-            // Check if user's value matches any acceptable value (OR logic within field)
-            var fieldMatches = false
-            for acceptableValue in acceptableValues {
-                if checkValueMatch(userValue: userValue, acceptableValue: acceptableValue) {
-                    fieldMatches = true
-                    break
-                }
+
+        print("    📋 Evaluating \(conditions.count) condition(s)...")
+
+        // ALL conditions must pass (AND logic)
+        for (fieldName, acceptableValues) in conditions {
+
+            // Get the array of acceptable values
+            guard let valuesArray = acceptableValues as? [String], !valuesArray.isEmpty else {
+                print("    ⚠️ Invalid condition format for '\(fieldName)' - skipping")
+                continue
             }
-            
-            // If any field doesn't match, return false
-            if !fieldMatches {
+
+            // Get user's value for this field
+            let userValue = userAssessment[fieldName]
+
+            // Check if user's value matches any acceptable value (OR logic within array)
+            let matches = checkValueMatches(userValue: userValue, acceptableValues: valuesArray, fieldName: fieldName)
+
+            if !matches {
+                print("    ❌ FAILED: '\(fieldName)' - user has '\(userValue ?? "nil")' but needs one of \(valuesArray)")
                 return false
             }
+
+            print("    ✅ PASSED: '\(fieldName)' = '\(userValue ?? "nil")' matches \(valuesArray)")
         }
-        
-        // All conditions met
+
+        print("    ✅ All conditions passed!")
         return true
     }
-    
-    // MARK: - Private Helpers
-    
-    /// Parses condition string into dictionary of field names and acceptable values
-    /// Example: "MoveDistance: Local, Cross-Country, Gym: Yes"
-    /// Returns: ["moveDistance": ["Local", "Cross-Country"], "gym": ["Yes"]]
-    private static func parseConditions(_ conditions: String) -> [String: [String]] {
-        var conditionMap: [String: [String]] = [:]
-        
-        // Split by comma to get individual field conditions
-        let fieldConditions = conditions.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
-        
-        for condition in fieldConditions {
-            guard condition.contains(":") else { continue }
-            
-            let parts = condition.split(separator: ":", maxSplits: 1)
-            guard parts.count == 2 else { continue }
-            
-            let fieldName = String(parts[0]).trimmingCharacters(in: .whitespaces)
-            let fieldValue = String(parts[1]).trimmingCharacters(in: .whitespaces)
-            
-            // Convert to camelCase (e.g., "MoveDistance" -> "moveDistance")
-            let assessmentFieldName = fieldName.prefix(1).lowercased() + fieldName.dropFirst()
-            
-            if conditionMap[assessmentFieldName] == nil {
-                conditionMap[assessmentFieldName] = []
-            }
-            conditionMap[assessmentFieldName]?.append(fieldValue)
-        }
-        
-        return conditionMap
-    }
-    
-    /// Checks if user's value matches an acceptable value
-    /// Handles comparison operators (>=, <=, >, <), booleans, and strings
-    private static func checkValueMatch(userValue: Any?, acceptableValue: String) -> Bool {
-        // Handle nil user values
+
+    // MARK: - Value Matching
+
+    /// Checks if user's value matches any of the acceptable values
+    private static func checkValueMatches(userValue: Any?, acceptableValues: [String], fieldName: String) -> Bool {
+
+        // Handle nil user value
         guard let userValue = userValue else {
-            return false
+            // Check if "nil" or empty is acceptable
+            return acceptableValues.contains { $0.lowercased() == "nil" || $0.isEmpty }
         }
-        
-        // Handle numeric comparisons
-        if acceptableValue.hasPrefix(">=") {
-            guard let threshold = extractNumber(from: acceptableValue, offset: 2),
-                  let userNum = toNumber(userValue) else { return false }
-            return userNum >= threshold
-        }
-        
-        if acceptableValue.hasPrefix("<=") {
-            guard let threshold = extractNumber(from: acceptableValue, offset: 2),
-                  let userNum = toNumber(userValue) else { return false }
-            return userNum <= threshold
-        }
-        
-        if acceptableValue.hasPrefix(">") && !acceptableValue.hasPrefix(">=") {
-            guard let threshold = extractNumber(from: acceptableValue, offset: 1),
-                  let userNum = toNumber(userValue) else { return false }
-            return userNum > threshold
-        }
-        
-        if acceptableValue.hasPrefix("<") && !acceptableValue.hasPrefix("<=") {
-            guard let threshold = extractNumber(from: acceptableValue, offset: 1),
-                  let userNum = toNumber(userValue) else { return false }
-            return userNum < threshold
-        }
-        
-        // Handle boolean comparisons
-        if acceptableValue.lowercased() == "true" {
-            if let boolValue = userValue as? Bool {
-                return boolValue
+
+        // Convert user value to string for comparison
+        let userValueString = stringValue(from: userValue)
+
+        // Check each acceptable value
+        for acceptable in acceptableValues {
+            if matchesValue(userString: userValueString, acceptable: acceptable) {
+                return true
             }
-            if let stringValue = userValue as? String {
-                return stringValue.lowercased() == "true"
-            }
-            return false
         }
-        
-        if acceptableValue.lowercased() == "false" {
-            if let boolValue = userValue as? Bool {
-                return !boolValue
-            }
-            if let stringValue = userValue as? String {
-                return stringValue.lowercased() == "false"
-            }
-            return false
-        }
-        
-        // Handle string comparisons (case-insensitive)
-        let userString = String(describing: userValue).lowercased()
-        let acceptableString = acceptableValue.lowercased()
-        
-        return userString == acceptableString
+
+        return false
     }
-    
-    /// Extracts number from condition string (e.g., ">=1" -> 1.0)
-    private static func extractNumber(from string: String, offset: Int) -> Double? {
-        let numString = String(string.dropFirst(offset)).trimmingCharacters(in: .whitespaces)
-        return Double(numString)
+
+    /// Converts any value to string for comparison
+    private static func stringValue(from value: Any) -> String {
+        switch value {
+        case let string as String:
+            return string
+        case let bool as Bool:
+            return bool ? "Yes" : "No"  // Convert Bool to Yes/No format
+        case let int as Int:
+            return String(int)
+        case let double as Double:
+            return String(Int(double))
+        default:
+            return String(describing: value)
+        }
     }
-    
-    /// Converts any value to number if possible
-    private static func toNumber(_ value: Any) -> Double? {
-        if let num = value as? Double {
-            return num
+
+    /// Compares user string value against an acceptable value
+    private static func matchesValue(userString: String, acceptable: String) -> Bool {
+
+        // Handle numeric comparisons (e.g., ">=1")
+        if acceptable.hasPrefix(">=") {
+            return handleNumericComparison(userString: userString, comparison: acceptable)
         }
-        if let num = value as? Int {
-            return Double(num)
+
+        if acceptable.hasPrefix("<=") {
+            return handleNumericComparison(userString: userString, comparison: acceptable)
         }
-        if let num = value as? Float {
-            return Double(num)
+
+        if acceptable.hasPrefix(">") && !acceptable.hasPrefix(">=") {
+            return handleNumericComparison(userString: userString, comparison: acceptable)
         }
-        if let string = value as? String, let num = Double(string) {
-            return num
+
+        if acceptable.hasPrefix("<") && !acceptable.hasPrefix("<=") {
+            return handleNumericComparison(userString: userString, comparison: acceptable)
         }
-        return nil
+
+        // Case-insensitive string comparison
+        return userString.lowercased() == acceptable.lowercased()
+    }
+
+    /// Handles numeric comparisons like ">=1", "<=5", ">0", "<10"
+    private static func handleNumericComparison(userString: String, comparison: String) -> Bool {
+
+        // Extract the number from comparison string
+        var operatorStr = ""
+        var numberStr = comparison
+
+        if comparison.hasPrefix(">=") {
+            operatorStr = ">="
+            numberStr = String(comparison.dropFirst(2))
+        } else if comparison.hasPrefix("<=") {
+            operatorStr = "<="
+            numberStr = String(comparison.dropFirst(2))
+        } else if comparison.hasPrefix(">") {
+            operatorStr = ">"
+            numberStr = String(comparison.dropFirst(1))
+        } else if comparison.hasPrefix("<") {
+            operatorStr = "<"
+            numberStr = String(comparison.dropFirst(1))
+        }
+
+        guard let threshold = Int(numberStr) else {
+            print("    ⚠️ Invalid numeric comparison: '\(comparison)'")
+            return false
+        }
+
+        // Try to convert user value to number
+        guard let userNumber = Int(userString) else {
+            // User value isn't a number - can't compare
+            return false
+        }
+
+        // Perform comparison
+        switch operatorStr {
+        case ">=": return userNumber >= threshold
+        case "<=": return userNumber <= threshold
+        case ">":  return userNumber > threshold
+        case "<":  return userNumber < threshold
+        default:   return false
+        }
+    }
+
+    // MARK: - Legacy Support (for string-format conditions if any remain)
+
+    /// Converts old string format conditions to new dictionary format
+    /// Old format: "fieldName: value, otherField: value"
+    /// New format: ["fieldName": ["value"], "otherField": ["value"]]
+    static func convertLegacyConditions(_ legacyString: String) -> [String: [String]] {
+        var result: [String: [String]] = [:]
+
+        let pairs = legacyString.components(separatedBy: ",")
+        for pair in pairs {
+            let parts = pair.components(separatedBy: ":").map { $0.trimmingCharacters(in: .whitespaces) }
+            if parts.count == 2 {
+                let field = parts[0]
+                let value = parts[1]
+                result[field] = [value]
+            }
+        }
+
+        return result
     }
 }
-
-// MARK: - Usage Examples
-
-/*
- 
- // Example 1: Simple match
- let conditions = "MoveDistance: Long Distance, Cross-Country"
- let assessment = ["moveDistance": "Long Distance"]
- let result = TaskConditionParser.evaluateConditions(conditions, against: assessment)
- // Returns: true
- 
- // Example 2: Multiple fields (AND logic)
- let conditions = "MoveDistance: Local, Gym: Yes"
- let assessment = ["moveDistance": "Local", "gym": "Yes"]
- let result = TaskConditionParser.evaluateConditions(conditions, against: assessment)
- // Returns: true
- 
- // Example 3: Numeric comparison
- let conditions = "SchoolAgeChildren: >=1"
- let assessment = ["schoolAgeChildren": 2]
- let result = TaskConditionParser.evaluateConditions(conditions, against: assessment)
- // Returns: true
- 
- // Example 4: Failed match
- let conditions = "MoveDistance: Local, Gym: Yes"
- let assessment = ["moveDistance": "Local", "gym": "No"]
- let result = TaskConditionParser.evaluateConditions(conditions, against: assessment)
- // Returns: false
- 
- */

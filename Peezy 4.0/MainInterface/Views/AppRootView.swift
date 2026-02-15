@@ -25,6 +25,7 @@ struct AppRootView: View {
     @State private var userState: UserState?  // Holds user context for Peezy
     
     var body: some View {
+        let _ = print("🔍 APP STATE DEBUG: appState = \(appState), currentUser = \(Auth.auth().currentUser?.uid ?? "nil")")
         Group {
             switch appState {
             case .loading:
@@ -42,7 +43,7 @@ struct AppRootView: View {
                 }
                 
             case .hasAssessment:
-                PeezyStackViewWithWorkflow(userState: userState)
+                PeezyMainContainer(userState: userState)
             }
         }
         .onAppear {
@@ -60,25 +61,38 @@ struct AppRootView: View {
                 userState = nil
             }
         }
+        #if DEBUG
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("debugForceSignOut"))) { _ in
+            print("📢 Received debugForceSignOut notification - forcing navigation to auth")
+            appState = .notAuthenticated
+            userState = nil
+        }
+        #endif
     }
     
     // MARK: - State Management
     
     private func checkAppState() {
+        print("🔍 checkAppState() called - currentUser: \(Auth.auth().currentUser?.uid ?? "nil")")
         if let user = Auth.auth().currentUser {
+            print("🔍 User found: \(user.uid) - setting isAuthenticated = true")
             authViewModel.currentUser = user
             authViewModel.isAuthenticated = true
             checkAssessmentStatus()
         } else {
+            print("🔍 No user found - setting appState = .notAuthenticated")
             appState = .notAuthenticated
         }
     }
     
     private func checkAssessmentStatus() {
+        print("🔍 checkAssessmentStatus() called - currentUser: \(Auth.auth().currentUser?.uid ?? "nil")")
         guard let userId = Auth.auth().currentUser?.uid else {
+            print("🔍 No userId in checkAssessmentStatus - setting appState = .notAuthenticated")
             appState = .notAuthenticated
             return
         }
+        print("🔍 Checking assessment for userId: \(userId)")
         
         let db = Firestore.firestore()
         db.collection("users")

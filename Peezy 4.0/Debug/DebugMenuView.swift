@@ -7,6 +7,7 @@ import FirebaseFirestore
 extension Notification.Name {
     static let debugPersonaLoaded = Notification.Name("debugPersonaLoaded")
     static let debugClearChatHistory = Notification.Name("debugClearChatHistory")
+    static let debugForceSignOut = Notification.Name("debugForceSignOut")
 }
 
 /// Debug menu for testing different user states and time travel.
@@ -472,13 +473,21 @@ struct DebugMenuView: View {
                     viewModel?.cards.removeAll()
                 }
 
-                // 4. Sign out
-                try Auth.auth().signOut()
-                print("DEBUG: Signed out")
-
-                // 5. Dismiss the debug menu
+                // 4. Dismiss the debug menu FIRST (before sign out)
                 await MainActor.run {
                     dismiss()
+                }
+
+                // 5. Small delay to let dismiss complete
+                try await Task.sleep(nanoseconds: 300_000_000) // 0.3 seconds
+
+                // 6. Sign out - this triggers AuthViewModel's listener
+                try Auth.auth().signOut()
+                print("DEBUG: Signed out - auth state listener should navigate to login")
+
+                // 7. Post notification as backup to force app state reset
+                await MainActor.run {
+                    NotificationCenter.default.post(name: .debugForceSignOut, object: nil)
                 }
 
             } catch {

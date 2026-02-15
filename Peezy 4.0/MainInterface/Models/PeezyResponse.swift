@@ -54,7 +54,11 @@ struct PeezyResponse: Codable {
         let vendorCategory: String?
         let vendorId: String?
         let priority: Int?      // 0=low, 1=normal, 2=high, 3=urgent
-        
+        let briefingMessage: String?
+        let dueDate: Date?      // Task due date for sorting
+        let status: String?     // Task status for filtering snoozed
+        let snoozedUntil: Date? // When snoozed task becomes active again
+
         /// Convert to PeezyCard
         func toCard() -> PeezyCard {
             let cardType: PeezyCard.CardType
@@ -76,6 +80,17 @@ struct PeezyResponse: Codable {
             default: cardPriority = .normal
             }
             
+            // Parse status
+            let cardStatus: TaskStatus
+            switch status?.lowercased() {
+            case "upcoming": cardStatus = .upcoming
+            case "inprogress": cardStatus = .inProgress
+            case "snoozed": cardStatus = .snoozed
+            case "completed": cardStatus = .completed
+            case "skipped": cardStatus = .skipped
+            default: cardStatus = .upcoming
+            }
+
             return PeezyCard(
                 type: cardType,
                 title: title,
@@ -85,7 +100,11 @@ struct PeezyResponse: Codable {
                 workflowId: workflowId,
                 vendorCategory: vendorCategory,
                 vendorId: vendorId,
-                priority: cardPriority
+                priority: cardPriority,
+                status: cardStatus,
+                dueDate: dueDate,
+                snoozedUntil: snoozedUntil,
+                briefingMessage: briefingMessage
             )
         }
     }
