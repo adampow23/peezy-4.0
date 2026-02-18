@@ -45,10 +45,15 @@ class AssessmentDataManager: ObservableObject {
     @Published var hirePackers: String = ""
     @Published var hireCleaners: String = ""
     
-    // MARK: - Accounts
+    // MARK: - Accounts (categories for catalog conditions)
     @Published var financialInstitutions: [String] = []
     @Published var healthcareProviders: [String] = []
     @Published var fitnessWellness: [String] = []
+
+    // MARK: - Account Details (category → business name, for personalization only)
+    @Published var financialDetails: [String: String] = [:]
+    @Published var healthcareDetails: [String: String] = [:]
+    @Published var fitnessDetails: [String: String] = [:]
     
     // MARK: - Attribution
     @Published var howHeard: String = ""
@@ -109,10 +114,15 @@ class AssessmentDataManager: ObservableObject {
         data["hirePackersDetail"] = hirePackers
         data["hireCleanersDetail"] = hireCleaners
         
-        // Accounts
+        // Accounts (categories for catalog conditions)
         data["financialInstitutions"] = financialInstitutions
         data["healthcareProviders"] = healthcareProviders
         data["fitnessWellness"] = fitnessWellness
+
+        // Account details (category → business name, for personalization only)
+        data["financialDetails"] = financialDetails
+        data["healthcareDetails"] = healthcareDetails
+        data["fitnessDetails"] = fitnessDetails
         
         // Attribution
         data["howHeard"] = howHeard
@@ -254,6 +264,9 @@ class AssessmentDataManager: ObservableObject {
         financialInstitutions = []
         healthcareProviders = []
         fitnessWellness = []
+        financialDetails = [:]
+        healthcareDetails = [:]
+        fitnessDetails = [:]
         howHeard = ""
         moveDistance = ""
         isInterstate = ""

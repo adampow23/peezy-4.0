@@ -159,8 +159,11 @@ struct AssessmentFlowView: View {
             
         // --- Section 6: Accounts ---
         case .financialInstitutions: FinancialInstitutions()
+        case .financialDetails:      FinancialDetails()
         case .healthcareProviders:   HealthcareProviders()
+        case .healthcareDetails:     HealthcareDetails()
         case .fitnessWellness:       FitnessWellness()
+        case .fitnessDetails:        FitnessDetails()
             
         // --- Wrap-up ---
         case .howHeard:              HowHeard()

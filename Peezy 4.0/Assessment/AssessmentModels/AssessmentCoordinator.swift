@@ -65,8 +65,11 @@ enum AssessmentInputStep: String, Hashable {
     
     // Section 6: Accounts
     case financialInstitutions
+    case financialDetails
     case healthcareProviders
+    case healthcareDetails
     case fitnessWellness
+    case fitnessDetails
     
     // Wrap-up
     case howHeard
@@ -299,8 +302,17 @@ class AssessmentCoordinator: ObservableObject {
         
         // Section 6: Accounts
         addStep(.financialInstitutions)
+        if !dataManager.financialInstitutions.isEmpty {
+            addStep(.financialDetails)
+        }
         addStep(.healthcareProviders)
+        if !dataManager.healthcareProviders.isEmpty {
+            addStep(.healthcareDetails)
+        }
         addStep(.fitnessWellness)
+        if !dataManager.fitnessWellness.isEmpty {
+            addStep(.fitnessDetails)
+        }
         
         // Wrap-up
         addStep(.howHeard)
@@ -317,7 +329,8 @@ class AssessmentCoordinator: ObservableObject {
     /// Steps that affect branching — trigger a sequence rebuild when answered.
     private func isBranchingStep(_ step: AssessmentInputStep) -> Bool {
         switch step {
-        case .currentDwellingType, .newDwellingType:
+        case .currentDwellingType, .newDwellingType,
+             .financialInstitutions, .healthcareProviders, .fitnessWellness:
             return true
         default:
             return false
@@ -538,18 +551,35 @@ class AssessmentCoordinator: ObservableObject {
         case .financialInstitutions:
             let count = dataManager.financialInstitutions.count
             let text = count > 0
-                ? "\(count) financial account\(count == 1 ? "" : "s") — we'll make sure every one gets updated."
+                ? "\(count) financial account\(count == 1 ? "" : "s") — let's get the specifics."
                 : "No financial accounts to update? Nice and simple."
             return InterstitialComment(text: text)
-            
+
+        case .financialDetails:
+            return InterstitialComment(
+                text: "Got it — we'll make sure every one gets updated."
+            )
+
         case .healthcareProviders:
             let count = dataManager.healthcareProviders.count
             let text = count > 0
-                ? "We'll handle those healthcare updates for you."
+                ? "\(count) healthcare provider\(count == 1 ? "" : "s") — let's nail down the names."
                 : "No healthcare updates needed — easy."
             return InterstitialComment(text: text)
-            
+
+        case .healthcareDetails:
+            return InterstitialComment(
+                text: "We'll handle those healthcare updates for you."
+            )
+
         case .fitnessWellness:
+            let count = dataManager.fitnessWellness.count
+            let text = count > 0
+                ? "\(count) membership\(count == 1 ? "" : "s") — let's get the details."
+                : "That's everything I need, \(dataManager.userName). Give me just a second to build your plan..."
+            return InterstitialComment(text: text)
+
+        case .fitnessDetails:
             return InterstitialComment(
                 text: "That's everything I need, \(dataManager.userName). Give me just a second to build your plan..."
             )
@@ -729,19 +759,37 @@ class AssessmentCoordinator: ObservableObject {
         case .financialInstitutions:
             return InputContext(
                 header: "Now let's make sure your accounts follow you.",
-                subheader: "Which financial institutions need your new address? Select each type and we'll ask for the specific names."
+                subheader: "Which types of financial accounts need your new address? Select each type and we'll ask for the specific names."
             )
-            
+
+        case .financialDetails:
+            return InputContext(
+                header: "Which specific accounts?",
+                subheader: "Type the name of each institution so we can personalize your tasks."
+            )
+
         case .healthcareProviders:
             return InputContext(
                 header: "What about healthcare?",
-                subheader: "Any doctors, dentists, or insurance providers that need your new info?"
+                subheader: "Which types of healthcare providers need your new info? Select each type."
             )
-            
+
+        case .healthcareDetails:
+            return InputContext(
+                header: "Which specific providers?",
+                subheader: "Type the name of each provider so we can personalize your tasks."
+            )
+
         case .fitnessWellness:
             return InputContext(
                 header: "Any fitness or wellness memberships?",
-                subheader: "Gym, studio, country club — we want to make sure you cancel in time and don't get hit with extra charges."
+                subheader: "Gym, studio, country club — select each type so we can make sure you cancel in time."
+            )
+
+        case .fitnessDetails:
+            return InputContext(
+                header: "Which specific memberships?",
+                subheader: "Type the name of each membership so we can personalize your tasks."
             )
             
         // --- WRAP-UP ---
