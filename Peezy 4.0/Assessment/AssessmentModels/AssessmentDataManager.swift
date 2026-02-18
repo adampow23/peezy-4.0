@@ -126,12 +126,12 @@ class AssessmentDataManager: ObservableObject {
         data["isInterstate"] = isInterstate  // "Yes" or "No"
 
         // Service hire mapping — UI stores descriptive labels, catalog expects "Yes"/"No"
-        // "Hire Professional Movers" / "Get Me Quotes" → "Yes"
-        // "Move Myself" → "No"
+        // "I'd like quotes" / "Get Me Quotes" → "Yes"
+        // "I'll handle it myself" → "No"
         // "Not Sure" → "Yes" (better to over-prepare)
-        data["hireMovers"] = mapServiceToYesNo(hireMovers, yesValues: ["hire professional movers", "get me quotes", "not sure"])
-        data["hirePackers"] = mapServiceToYesNo(hirePackers, yesValues: ["hire professional packers", "get me quotes", "not sure"])
-        data["hireCleaners"] = mapServiceToYesNo(hireCleaners, yesValues: ["hire professional cleaners", "get me quotes", "not sure"])
+        data["hireMovers"] = mapServiceToYesNo(hireMovers, yesValues: ["i'd like quotes", "get me quotes", "not sure"])
+        data["hirePackers"] = mapServiceToYesNo(hirePackers, yesValues: ["i'd like quotes", "get me quotes", "not sure"])
+        data["hireCleaners"] = mapServiceToYesNo(hireCleaners, yesValues: ["i'd like quotes", "get me quotes", "not sure"])
 
         return data
     }

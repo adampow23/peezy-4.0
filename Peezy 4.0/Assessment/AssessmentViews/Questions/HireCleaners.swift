@@ -12,11 +12,11 @@ struct HireCleaners: View {
     private let lightHaptic = UIImpactFeedbackGenerator(style: .light)
     
     // Options match coordinator tile label contract
-    let options = ["Hire Professional Cleaners", "Clean Myself", "Not Sure", "Get Me Quotes"]
-    
+    let options = ["I'd like quotes", "I'll handle it myself", "Not Sure", "Get Me Quotes"]
+
     let iconMap: [String: String] = [
-        "Hire Professional Cleaners": "sparkles",
-        "Clean Myself": "hand.raised.fill",
+        "I'd like quotes": "sparkles",
+        "I'll handle it myself": "hand.raised.fill",
         "Not Sure": "questionmark.circle.fill",
         "Get Me Quotes": "doc.text.magnifyingglass"
     ]

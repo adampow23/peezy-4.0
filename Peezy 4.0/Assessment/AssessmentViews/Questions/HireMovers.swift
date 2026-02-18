@@ -9,10 +9,10 @@ struct HireMovers: View {
     private let lightHaptic = UIImpactFeedbackGenerator(style: .light)
     
     // Options match coordinator tile label contract
-    let options = ["Hire Professional Movers", "Move Myself", "Not Sure", "Get Me Quotes"]
+    let options = ["I'd like quotes", "I'll handle it myself", "Not Sure", "Get Me Quotes"]
     let iconMap: [String: String] = [
-        "Hire Professional Movers": "truck.box.fill",
-        "Move Myself": "figure.walk",
+        "I'd like quotes": "truck.box.fill",
+        "I'll handle it myself": "figure.walk",
         "Not Sure": "questionmark.circle.fill",
         "Get Me Quotes": "doc.text.magnifyingglass"
     ]
