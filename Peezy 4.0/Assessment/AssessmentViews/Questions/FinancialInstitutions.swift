@@ -10,6 +10,7 @@ struct FinancialInstitutions: View {
     let categories = [
         ("Bank Account", "building.columns.fill"),
         ("Credit Card", "creditcard.fill"),
+        ("Credit Union", "building.2.fill"),
         ("Investment Account", "chart.line.uptrend.xyaxis"),
         ("Retirement Account", "banknote.fill"),
         ("Student Loans", "graduationcap.fill"),

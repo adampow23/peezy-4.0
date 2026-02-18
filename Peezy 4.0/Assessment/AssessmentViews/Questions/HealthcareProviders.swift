@@ -11,8 +11,10 @@ struct HealthcareProviders: View {
         ("Doctor", "stethoscope"),
         ("Dentist", "mouth.fill"),
         ("Therapist", "brain.head.profile.fill"),
-        ("Specialist", "cross.case.fill"),
+        ("Specialists", "cross.case.fill"),
         ("Health Insurance", "heart.text.clipboard.fill"),
+        ("Dental Insurance", "mouth.fill"),
+        ("HSA", "dollarsign.circle.fill"),
         ("Pharmacy", "pills.fill")
     ]
 

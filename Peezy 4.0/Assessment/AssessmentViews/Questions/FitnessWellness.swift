@@ -9,11 +9,15 @@ struct FitnessWellness: View {
 
     let categories = [
         ("Gym", "dumbbell.fill"),
-        ("Yoga / Pilates Studio", "figure.mind.and.body"),
-        ("Country Club / Pool", "figure.pool.swim"),
-        ("Sports League", "sportscourt.fill"),
-        ("Martial Arts", "figure.martial.arts"),
-        ("Other Membership", "star.fill")
+        ("CrossFit", "figure.strengthtraining.functional"),
+        ("Yoga", "figure.mind.and.body"),
+        ("Pilates", "figure.cooldown"),
+        ("Spin/Cycling", "figure.indoor.cycle"),
+        ("Massage", "hand.raised.fill"),
+        ("Spa", "sparkles"),
+        ("Golf", "figure.golf"),
+        ("Country Club", "figure.pool.swim"),
+        ("Other", "star.fill")
     ]
 
     var body: some View {
