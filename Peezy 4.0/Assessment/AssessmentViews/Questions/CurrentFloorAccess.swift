@@ -1,28 +1,29 @@
 import SwiftUI
 
-struct NewElevatorAccess: View {
+struct CurrentFloorAccess: View {
     @State private var selected = ""
     @EnvironmentObject var assessmentData: AssessmentDataManager
     @EnvironmentObject var coordinator: AssessmentCoordinator
-    
+
     @State private var showContent = false
     private let lightHaptic = UIImpactFeedbackGenerator(style: .light)
-    
-    let options = ["No Elevator", "Shared Elevator", "Reservable Elevator"]
+
+    let options = ["First Floor", "Stairs", "Elevator", "Reservable Elevator"]
     let iconMap: [String: String] = [
-        "No Elevator": "figure.stairs",
-        "Shared Elevator": "arrow.up.arrow.down.circle.fill",
+        "First Floor": "1.circle.fill",
+        "Stairs": "figure.stairs",
+        "Elevator": "arrow.up.arrow.down.circle.fill",
         "Reservable Elevator": "checkmark.circle.fill"
     ]
-    
+
     var body: some View {
         VStack(spacing: 0) {
-            AssessmentContentArea(questionText: "Elevator situation?", showContent: showContent) {
+            AssessmentContentArea(questionText: "How do you access your floor?", showContent: showContent) {
                 LazyVGrid(columns: [GridItem(.flexible(), spacing: 16), GridItem(.flexible(), spacing: 16)], spacing: 16) {
                     ForEach(Array(options.enumerated()), id: \.element) { index, option in
                         SelectionTile(title: option, icon: iconMap[option], isSelected: selected == option, onTap: {
                             selected = option
-                            assessmentData.newElevatorAccess = option
+                            assessmentData.currentFloorAccess = option
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                                 lightHaptic.impactOccurred()
                                 coordinator.goToNext()
@@ -38,7 +39,7 @@ struct NewElevatorAccess: View {
         }
         .background(InteractiveBackground())
         .onAppear {
-            selected = assessmentData.newElevatorAccess
+            selected = assessmentData.currentFloorAccess
             withAnimation { showContent = true }
         }
     }
@@ -46,13 +47,7 @@ struct NewElevatorAccess: View {
 
 #Preview {
     let manager = AssessmentDataManager()
-    NewElevatorAccess()
+    CurrentFloorAccess()
         .environmentObject(manager)
         .environmentObject(AssessmentCoordinator(dataManager: manager))
-}//
-//  NewElevatorAccess.swift
-//  Peezy 4.0
-//
-//  Created by Adam Powell on 2/10/26.
-//
-
+}

@@ -33,8 +33,7 @@ enum AssessmentInputStep: String, Hashable {
     case currentDwellingType
     case currentAddress
     // Apartment/Condo branch
-    case currentFloor
-    case currentElevatorAccess
+    case currentFloorAccess
     // Shared (both paths)
     case currentBedrooms
     // Apartment/Condo
@@ -47,8 +46,7 @@ enum AssessmentInputStep: String, Hashable {
     case newDwellingType
     case newAddress
     // Apartment/Condo branch
-    case newFloor
-    case newElevatorAccess
+    case newFloorAccess
     // Shared
     case newBedrooms
     // Apartment/Condo
@@ -266,8 +264,7 @@ class AssessmentCoordinator: ObservableObject {
         // Branch based on current dwelling type
         let currentDwelling = dataManager.currentDwellingType.lowercased()
         if currentDwelling == "apartment" || currentDwelling == "condo" {
-            addStep(.currentFloor)
-            addStep(.currentElevatorAccess)
+            addStep(.currentFloorAccess)
             addStep(.currentBedrooms)
             addStep(.currentSquareFootage)
         } else {
@@ -284,8 +281,7 @@ class AssessmentCoordinator: ObservableObject {
         // Branch based on new dwelling type
         let newDwelling = dataManager.newDwellingType.lowercased()
         if newDwelling == "apartment" || newDwelling == "condo" {
-            addStep(.newFloor)
-            addStep(.newElevatorAccess)
+            addStep(.newFloorAccess)
             addStep(.newBedrooms)
             addStep(.newSquareFootage)
         } else {
@@ -343,8 +339,8 @@ class AssessmentCoordinator: ObservableObject {
     // moveFlexibility:      "Firm Dates" | "Some Flexibility" | "Very Flexible"
     // currentRentOrOwn:     "Rent" | "Own"
     // newRentOrOwn:         "Rent" | "Own"
-    // currentElevatorAccess: "No Elevator" | "Shared Elevator" | "Reservable Elevator"
-    // newElevatorAccess:     (same as above)
+    // currentFloorAccess:   "First Floor" | "Stairs" | "Elevator" | "Reservable Elevator"
+    // newFloorAccess:       (same as above)
     // hireMovers:           "Hire Professional Movers" | "Move Myself" | "Not Sure" | "Get Me Quotes"
     // hirePackers:          "Hire Professional Packers" | "Pack Myself" | "Not Sure" | "Get Me Quotes"
     // hireCleaners:         "Hire Professional Cleaners" | "Clean Myself" | "Not Sure" | "Get Me Quotes"
@@ -440,20 +436,15 @@ class AssessmentCoordinator: ObservableObject {
                 text: "Perfect. A few more details about your place so we can plan logistics."
             )
             
-        case .currentFloor:
-            if let floor = Int(dataManager.currentFloor), floor > 3 {
-                return InterstitialComment(text: "Floor \(floor) — definitely want to plan the elevator situation carefully.")
-            } else {
-                return InterstitialComment(text: "Noted.")
-            }
-            
-        case .currentElevatorAccess:
+        case .currentFloorAccess:
             let text: String
-            switch dataManager.currentElevatorAccess.lowercased() {
-            case "no elevator":
-                text = "No elevator — we'll factor in extra time and make sure the movers know what they're getting into."
-            case "shared elevator":
-                text = "Shared elevator — we'll plan around peak times and make sure everything goes smooth."
+            switch dataManager.currentFloorAccess.lowercased() {
+            case "first floor":
+                text = "First floor — nice and easy for the movers."
+            case "stairs":
+                text = "Stairs — we'll factor in extra time and make sure the movers know what they're getting into."
+            case "elevator":
+                text = "Elevator — we'll plan around peak times and make sure everything goes smooth."
             case "reservable elevator":
                 text = "Reservable elevator — perfect. We'll remind you to book it ahead of time."
             default:
@@ -490,10 +481,7 @@ class AssessmentCoordinator: ObservableObject {
                 text: "Perfect. Same drill — a few details about the new place."
             )
             
-        case .newFloor:
-            return InterstitialComment(text: "Noted.")
-            
-        case .newElevatorAccess:
+        case .newFloorAccess:
             return InterstitialComment(text: "Got it.")
             
         case .newBedrooms:
@@ -658,16 +646,10 @@ class AssessmentCoordinator: ObservableObject {
                 subheader: "We need this for mail forwarding, change of address, and researching local utilities and services. Everything stays private."
             )
             
-        case .currentFloor:
+        case .currentFloorAccess:
             return InputContext(
-                header: "What floor are you on?",
-                subheader: "This helps us estimate move time and whether specialized equipment might be needed."
-            )
-            
-        case .currentElevatorAccess:
-            return InputContext(
-                header: "What's the elevator situation?",
-                subheader: "This can make a big difference in scheduling. Some buildings let you reserve the elevator for moving day."
+                header: "How do you access your floor?",
+                subheader: "This helps us estimate move time and plan logistics."
             )
             
         case .currentBedrooms:
@@ -708,15 +690,9 @@ class AssessmentCoordinator: ObservableObject {
                 subheader: "Same reason as before — utilities, internet, everything we need to get set up before you arrive."
             )
             
-        case .newFloor:
+        case .newFloorAccess:
             return InputContext(
-                header: "What floor will you be on?",
-                subheader: nil
-            )
-            
-        case .newElevatorAccess:
-            return InputContext(
-                header: "Elevator situation at the new place?",
+                header: "How will you access your floor at the new place?",
                 subheader: nil
             )
             

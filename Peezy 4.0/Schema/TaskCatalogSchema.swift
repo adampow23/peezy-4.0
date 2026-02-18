@@ -229,16 +229,14 @@ struct TaskCatalogSchema {
         "currentRentOrOwn",      // ★ Condition key
         "currentDwellingType",   // ★ Condition key
         "currentAddress",        // ● Used to compute moveDistance
-        "currentFloor",          // ○ Logistics
-        "currentElevatorAccess", // ○ Logistics
+        "currentFloorAccess",    // ○ Logistics
         "currentBedrooms",       // ○ Estimation
         "currentSquareFootage",  // ○ Estimation
         "currentFinishedSqFt",   // ○ Estimation (house)
         "newRentOrOwn",          // ★ Condition key
         "newDwellingType",       // ★ Condition key
         "newAddress",            // ● Used to compute moveDistance
-        "newFloor",              // ○ Logistics
-        "newElevatorAccess",     // ○ Logistics
+        "newFloorAccess",        // ○ Logistics
         "newBedrooms",           // ○ Estimation
         "newSquareFootage",      // ○ Estimation
         "newFinishedSqFt",       // ○ Estimation (house)

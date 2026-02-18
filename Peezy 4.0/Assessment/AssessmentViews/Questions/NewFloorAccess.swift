@@ -1,30 +1,29 @@
 import SwiftUI
 
-struct NewFloor: View {
+struct NewFloorAccess: View {
     @State private var selected = ""
     @EnvironmentObject var assessmentData: AssessmentDataManager
     @EnvironmentObject var coordinator: AssessmentCoordinator
-    
+
     @State private var showContent = false
     private let lightHaptic = UIImpactFeedbackGenerator(style: .light)
-    
-    let options: [(label: String, value: String)] = [
-        ("1st Floor", "1"), ("2nd Floor", "2"), ("3rd Floor", "3"),
-        ("4th-6th", "5"), ("7th+", "8")
-    ]
+
+    let options = ["First Floor", "Stairs", "Elevator", "Reservable Elevator"]
     let iconMap: [String: String] = [
-        "1st Floor": "1.circle.fill", "2nd Floor": "2.circle.fill", "3rd Floor": "3.circle.fill",
-        "4th-6th": "arrow.up.circle.fill", "7th+": "arrow.up.to.line.circle.fill"
+        "First Floor": "1.circle.fill",
+        "Stairs": "figure.stairs",
+        "Elevator": "arrow.up.arrow.down.circle.fill",
+        "Reservable Elevator": "checkmark.circle.fill"
     ]
-    
+
     var body: some View {
         VStack(spacing: 0) {
-            AssessmentContentArea(questionText: "What floor?", showContent: showContent) {
+            AssessmentContentArea(questionText: "How will you access your floor?", showContent: showContent) {
                 LazyVGrid(columns: [GridItem(.flexible(), spacing: 16), GridItem(.flexible(), spacing: 16)], spacing: 16) {
-                    ForEach(Array(options.enumerated()), id: \.element.label) { index, option in
-                        SelectionTile(title: option.label, icon: iconMap[option.label], isSelected: selected == option.value, onTap: {
-                            selected = option.value
-                            assessmentData.newFloor = option.value
+                    ForEach(Array(options.enumerated()), id: \.element) { index, option in
+                        SelectionTile(title: option, icon: iconMap[option], isSelected: selected == option, onTap: {
+                            selected = option
+                            assessmentData.newFloorAccess = option
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                                 lightHaptic.impactOccurred()
                                 coordinator.goToNext()
@@ -40,7 +39,7 @@ struct NewFloor: View {
         }
         .background(InteractiveBackground())
         .onAppear {
-            selected = assessmentData.newFloor
+            selected = assessmentData.newFloorAccess
             withAnimation { showContent = true }
         }
     }
@@ -48,13 +47,7 @@ struct NewFloor: View {
 
 #Preview {
     let manager = AssessmentDataManager()
-    NewFloor()
+    NewFloorAccess()
         .environmentObject(manager)
         .environmentObject(AssessmentCoordinator(dataManager: manager))
-}//
-//  NewFloor.swift
-//  Peezy 4.0
-//
-//  Created by Adam Powell on 2/10/26.
-//
-
+}
