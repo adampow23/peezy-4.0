@@ -39,7 +39,11 @@ class AssessmentDataManager: ObservableObject {
     @Published var childrenInSchool: String = ""
     @Published var childrenInDaycare: String = ""
     @Published var hasVet: String = ""
-    
+    @Published var hasVehicles: String = ""
+    @Published var hasStorage: String = ""
+    @Published var storageSize: String = ""
+    @Published var storageFullness: String = ""
+
     // MARK: - Services
     @Published var hireMovers: String = ""
     @Published var hirePackers: String = ""
@@ -108,7 +112,11 @@ class AssessmentDataManager: ObservableObject {
         data["childrenInSchool"] = childrenInSchool
         data["childrenInDaycare"] = childrenInDaycare
         data["hasVet"] = hasVet
-        
+        data["hasVehicles"] = hasVehicles
+        data["hasStorage"] = hasStorage
+        data["storageSize"] = storageSize
+        data["storageFullness"] = storageFullness
+
         // Services — raw labels preserved for display/Firestore, mapped to Yes/No below
         data["hireMoversDetail"] = hireMovers
         data["hirePackersDetail"] = hirePackers
@@ -258,6 +266,10 @@ class AssessmentDataManager: ObservableObject {
         childrenInSchool = ""
         childrenInDaycare = ""
         hasVet = ""
+        hasVehicles = ""
+        hasStorage = ""
+        storageSize = ""
+        storageFullness = ""
         hireMovers = ""
         hirePackers = ""
         hireCleaners = ""

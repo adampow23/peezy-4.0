@@ -126,6 +126,18 @@ struct TaskCatalogSchema {
             assessmentSource: .direct,
             assessmentQuestion: "Do you have a vet you'll need to transfer records from?"
         ),
+        "hasVehicles": ConditionFieldInfo(
+            description: "Whether user has vehicles needing registration or title updates",
+            possibleValues: ["Yes", "No"],
+            assessmentSource: .direct,
+            assessmentQuestion: "Do you have any vehicles that need registration or title updates?"
+        ),
+        "hasStorage": ConditionFieldInfo(
+            description: "Whether user has a storage unit with stuff that needs to move",
+            possibleValues: ["Yes", "No"],
+            assessmentSource: .direct,
+            assessmentQuestion: "Do you have a storage unit with stuff that needs to move too?"
+        ),
 
         // === SERVICES ===
         "hireMovers": ConditionFieldInfo(
@@ -242,6 +254,10 @@ struct TaskCatalogSchema {
         "childrenInSchool",      // ★ Condition key
         "childrenInDaycare",     // ★ Condition key
         "hasVet",                // ★ Condition key
+        "hasVehicles",           // ★ Condition key
+        "hasStorage",            // ★ Condition key
+        "storageSize",           // ○ Logistics (conditional on hasStorage)
+        "storageFullness",       // ○ Logistics (conditional on hasStorage)
         "hireMovers",            // ★ Condition key
         "hirePackers",           // ★ Condition key
         "hireCleaners",          // ★ Condition key

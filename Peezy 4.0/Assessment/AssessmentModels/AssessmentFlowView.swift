@@ -151,7 +151,11 @@ struct AssessmentFlowView: View {
         case .childrenInSchool:      ChildrenInSchool()
         case .childrenInDaycare:     ChildrenInDaycare()
         case .hasVet:                HasVet()
-            
+        case .hasVehicles:           HasVehicles()
+        case .hasStorage:            HasStorage()
+        case .storageSize:           StorageSize()
+        case .storageFullness:       StorageFullness()
+
         // --- Section 5: Services ---
         case .hireMovers:            HireMovers()
         case .hirePackers:           HirePackers()

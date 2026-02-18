@@ -57,7 +57,11 @@ enum AssessmentInputStep: String, Hashable {
     case childrenInSchool
     case childrenInDaycare
     case hasVet
-    
+    case hasVehicles
+    case hasStorage
+    case storageSize
+    case storageFullness
+
     // Section 5: Services
     case hireMovers
     case hirePackers
@@ -294,7 +298,14 @@ class AssessmentCoordinator: ObservableObject {
         addStep(.childrenInDaycare)
 
         addStep(.hasVet)
-        
+
+        addStep(.hasVehicles)
+        addStep(.hasStorage)
+        if dataManager.hasStorage.lowercased() == "yes" {
+            addStep(.storageSize)
+            addStep(.storageFullness)
+        }
+
         // Section 5: Services
         addStep(.hireMovers)
         addStep(.hirePackers)
@@ -330,6 +341,7 @@ class AssessmentCoordinator: ObservableObject {
     private func isBranchingStep(_ step: AssessmentInputStep) -> Bool {
         switch step {
         case .currentDwellingType, .newDwellingType,
+             .hasStorage,
              .financialInstitutions, .healthcareProviders, .fitnessWellness:
             return true
         default:
@@ -352,6 +364,10 @@ class AssessmentCoordinator: ObservableObject {
     // childrenInSchool:     "Yes" | "No"
     // childrenInDaycare:    "Yes" | "No"
     // hasVet:               "Yes" | "No"
+    // hasVehicles:           "Yes" | "No"
+    // hasStorage:            "Yes" | "No"
+    // storageSize:           "Small (5x5)" | "Medium (10x10)" | "Large (10x20+)"
+    // storageFullness:       "Mostly Empty" | "About Half" | "Packed Full"
     //
     // All comparisons use .lowercased() so casing doesn't matter, but spelling must match.
     
@@ -508,9 +524,29 @@ class AssessmentCoordinator: ObservableObject {
             if dataManager.hasVet.lowercased() == "yes" {
                 return InterstitialComment(text: "We'll make sure those vet records get transferred smoothly.")
             } else {
+                return InterstitialComment(text: "Got it.")
+            }
+
+        case .hasVehicles:
+            if dataManager.hasVehicles.lowercased() == "yes" {
+                return InterstitialComment(text: "We'll add registration and title updates to your plan.")
+            } else {
+                return InterstitialComment(text: "Got it.")
+            }
+
+        case .hasStorage:
+            if dataManager.hasStorage.lowercased() == "yes" {
+                return InterstitialComment(text: "No problem — let's get some details on that unit.")
+            } else {
                 return InterstitialComment(text: generateHouseholdComment())
             }
-            
+
+        case .storageSize:
+            return InterstitialComment(text: "Got it.")
+
+        case .storageFullness:
+            return InterstitialComment(text: generateHouseholdComment())
+
         // --- SECTION 5: SERVICES ---
             
         case .hireMovers:
@@ -733,7 +769,31 @@ class AssessmentCoordinator: ObservableObject {
                 header: "One more about the household.",
                 subheader: "Do you have a vet you'll need to transfer records from? We'll add it to your plan if so."
             )
-            
+
+        case .hasVehicles:
+            return InputContext(
+                header: "What about vehicles?",
+                subheader: "If you're crossing state lines, you'll need to update your registration and title. We'll handle the reminders."
+            )
+
+        case .hasStorage:
+            return InputContext(
+                header: "Any storage units?",
+                subheader: "If you've got stuff in storage that needs to come along, we'll factor it into the plan."
+            )
+
+        case .storageSize:
+            return InputContext(
+                header: "How big is the unit?",
+                subheader: "This helps us estimate how much extra moving capacity you'll need."
+            )
+
+        case .storageFullness:
+            return InputContext(
+                header: "How full is it?",
+                subheader: "A packed unit takes more time and truck space than a half-empty one."
+            )
+
         // --- SECTION 5: SERVICES ---
             
         case .hireMovers:
