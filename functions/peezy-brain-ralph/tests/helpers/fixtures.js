@@ -240,7 +240,7 @@ const fixtures = {
       moveDate: daysFromNow(34),
       daysUntilMove: 34,
       leaseEndDate: daysFromNow(20), // Feb 1
-      moveInDate: daysFromNow(34), // Feb 15
+      moveDateType: 'Out Before In',
       moveDistance: 'local',
       originCity: 'Kansas City',
       destinationCity: 'Kansas City',

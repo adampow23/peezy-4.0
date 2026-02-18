@@ -11,9 +11,8 @@ class AssessmentDataManager: ObservableObject {
     @Published var userName: String = ""
     
     // MARK: - Timeline
-    @Published var moveOutDate: Date = Date()
-    @Published var moveInDate: Date = Date()
-    @Published var moveFlexibility: String = ""
+    @Published var moveDate: Date = Date()
+    @Published var moveDateType: String = ""
     
     // MARK: - Experience
     @Published var moveConcerns: [String] = []
@@ -77,9 +76,8 @@ class AssessmentDataManager: ObservableObject {
         data["userName"] = userName
         
         // Timeline
-        data["moveOutDate"] = Timestamp(date: moveOutDate)
-        data["moveInDate"] = Timestamp(date: moveInDate)
-        data["moveFlexibility"] = moveFlexibility
+        data["moveDate"] = Timestamp(date: moveDate)
+        data["moveDateType"] = moveDateType
         
         // Experience
         data["moveConcerns"] = moveConcerns
@@ -239,9 +237,8 @@ class AssessmentDataManager: ObservableObject {
     
     func reset() {
         userName = ""
-        moveOutDate = Date()
-        moveInDate = Date()
-        moveFlexibility = ""
+        moveDate = Date()
+        moveDateType = ""
         moveConcerns = []
         currentRentOrOwn = ""
         currentDwellingType = ""

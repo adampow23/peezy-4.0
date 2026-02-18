@@ -1,22 +1,22 @@
 import SwiftUI
 
-struct MoveInDate: View {
+struct MoveDate: View {
     @State private var selectedDate = Date()
     @State private var showError = false
     @State private var showContent = false
     @EnvironmentObject var assessmentData: AssessmentDataManager
     @EnvironmentObject var coordinator: AssessmentCoordinator
-    
+
     var body: some View {
         VStack(spacing: 0) {
             // Equal spacing region
             GeometryReader { geo in
                 VStack(spacing: 0) {
                     Spacer(minLength: 0)
-                    
+
                     // Question
                     HStack {
-                        Text("Move-in date?")
+                        Text("When's your move?")
                             .font(.system(size: 34, weight: .bold))
                             .foregroundColor(.white)
                             .frame(width: geo.size.width * 0.6, alignment: .leading)
@@ -29,9 +29,9 @@ struct MoveInDate: View {
                     .opacity(showContent ? 1 : 0)
                     .offset(x: showContent ? 0 : -20)
                     .animation(.easeOut(duration: 0.5).delay(0.3), value: showContent)
-                    
+
                     Spacer(minLength: 0)
-                    
+
                     // Calendar picker
                     PeezyCalendarPicker(
                         selectedDate: $selectedDate,
@@ -42,15 +42,15 @@ struct MoveInDate: View {
                     .opacity(showContent ? 1 : 0)
                     .offset(y: showContent ? 0 : 30)
                     .animation(.easeOut(duration: 0.5).delay(0.5), value: showContent)
-                    
+
                     Spacer(minLength: 0)
                 }
             }
-            
+
             // Continue button
             PeezyAssessmentButton("Continue") {
                 if selectedDate > Date() {
-                    assessmentData.moveInDate = selectedDate
+                    assessmentData.moveDate = selectedDate
                     coordinator.goToNext()
                 } else {
                     showError = true
@@ -67,7 +67,7 @@ struct MoveInDate: View {
         }
         .background(InteractiveBackground())
         .onAppear {
-            selectedDate = assessmentData.moveInDate
+            selectedDate = assessmentData.moveDate
             withAnimation {
                 showContent = true
             }
@@ -77,13 +77,7 @@ struct MoveInDate: View {
 
 #Preview {
     let manager = AssessmentDataManager()
-    MoveInDate()
+    MoveDate()
         .environmentObject(manager)
         .environmentObject(AssessmentCoordinator(dataManager: manager))
-}//
-//  MoveInDate.swift
-//  Peezy 4.0
-//
-//  Created by Adam Powell on 2/10/26.
-//
-
+}

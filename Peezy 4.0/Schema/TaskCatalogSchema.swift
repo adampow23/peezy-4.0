@@ -222,9 +222,8 @@ struct TaskCatalogSchema {
     /// Fields marked with ○ are informational only (not used in conditions).
     static let assessmentFields: [String] = [
         "userName",              // ○ Personalization
-        "moveOutDate",           // ○ Timeline calculation
-        "moveInDate",            // ○ Timeline calculation
-        "moveFlexibility",       // ○ Planning context
+        "moveDate",              // ○ Timeline calculation
+        "moveDateType",          // ○ Timeline planning (Same Day / Out Before In / In Before Out)
         "moveConcerns",          // ○ Priority hints
         "currentRentOrOwn",      // ★ Condition key
         "currentDwellingType",   // ★ Condition key

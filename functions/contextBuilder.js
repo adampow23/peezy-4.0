@@ -136,7 +136,7 @@ async function buildContext(request) {
   // Compute derived values
   const daysUntilMove = computeDaysUntilMove(mergedState.moveDate);
   const urgencyLevel = determineUrgencyLevel(daysUntilMove);
-  const dateGap = computeDateGap(mergedState.leaseEndDate, mergedState.moveInDate);
+  const dateGap = 0; // Gap logic removed — moveDateType replaces separate move-in/out dates
   
   // Build base context
   const context = {
@@ -165,7 +165,7 @@ async function buildContext(request) {
     destinationOwnership: mergedState.destinationOwnership,
     destinationYearBuilt: mergedState.destinationYearBuilt,
     destinationNotes: mergedState.destinationNotes,
-    moveInDate: mergedState.moveInDate,
+    moveDateType: mergedState.moveDateType,
     
     // Household
     householdSize: mergedState.householdSize,
@@ -264,17 +264,19 @@ function determineUrgencyLevel(daysUntilMove) {
 
 /**
  * Compute gap between lease end and move-in
+ * Legacy — gap logic is now handled by moveDateType.
+ * Kept for backward compatibility with callers.
  */
-function computeDateGap(leaseEndDate, moveInDate) {
-  if (!leaseEndDate || !moveInDate) return 0;
-  
+function computeDateGap(leaseEndDate, moveDate) {
+  if (!leaseEndDate || !moveDate) return 0;
+
   try {
     const leaseEnd = new Date(leaseEndDate);
-    const moveIn = new Date(moveInDate);
-    
-    const diffMs = moveIn - leaseEnd;
+    const move = new Date(moveDate);
+
+    const diffMs = move - leaseEnd;
     const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
-    
+
     return diffDays > 0 ? diffDays : 0;
   } catch (e) {
     return 0;

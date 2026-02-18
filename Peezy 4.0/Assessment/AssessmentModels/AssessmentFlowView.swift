@@ -126,9 +126,8 @@ struct AssessmentFlowView: View {
         // --- Section 1: Basics ---
         case .userName:              UserName()
         case .moveConcerns:          MoveConcerns()
-        case .moveOutDate:           MoveOutDate()
-        case .moveInDate:            MoveInDate()
-        case .moveFlexibility:       MoveFlexibility()
+        case .moveDate:              MoveDate()
+        case .moveDateType:          MoveDateType()
             
         // --- Section 2: Current Home ---
         case .currentRentOrOwn:      CurrentRentOrOwn()

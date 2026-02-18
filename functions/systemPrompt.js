@@ -410,16 +410,11 @@ Budget: ${context.budget}${context.budget === 'tight' ? ' - prioritize cost-effe
 `);
   }
 
-  // Add date gap detection
-  if (context.leaseEndDate && context.moveInDate) {
-    const leaseEnd = new Date(context.leaseEndDate);
-    const moveIn = new Date(context.moveInDate);
-    const gapDays = Math.floor((moveIn - leaseEnd) / (1000 * 60 * 60 * 24));
-    if (gapDays > 0) {
-      sections.push(`
-⚠️ DATE GAP DETECTED: ${gapDays} days between lease end and move-in. User may need storage.
+  // Add move type detection
+  if (context.moveDateType === 'Out Before In') {
+    sections.push(`
+⚠️ MOVE TYPE: User moves out before moving in. May need temporary storage or housing.
 `);
-    }
   }
 
   return sections.join('\n');

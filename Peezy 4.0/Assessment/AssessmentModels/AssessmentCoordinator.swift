@@ -24,9 +24,8 @@ enum AssessmentInputStep: String, Hashable {
     // Section 1: Basics
     case userName
     case moveConcerns
-    case moveOutDate
-    case moveInDate
-    case moveFlexibility
+    case moveDate
+    case moveDateType
     
     // Section 2: Current Home
     case currentRentOrOwn
@@ -252,9 +251,8 @@ class AssessmentCoordinator: ObservableObject {
         // Section 1: Basics
         addStep(.userName)          // First interstitial: after: nil → Peezy intro
         addStep(.moveConcerns)
-        addStep(.moveOutDate)
-        addStep(.moveInDate)
-        addStep(.moveFlexibility)
+        addStep(.moveDate)
+        addStep(.moveDateType)
         
         // Section 2: Current Home
         addStep(.currentRentOrOwn)
@@ -336,7 +334,7 @@ class AssessmentCoordinator: ObservableObject {
     
     // TILE LABEL CONTRACT — question views MUST use these exact strings:
     //
-    // moveFlexibility:      "Firm Dates" | "Some Flexibility" | "Very Flexible"
+    // moveDateType:         "Same Day" | "Out Before In" | "In Before Out"
     // currentRentOrOwn:     "Rent" | "Own"
     // newRentOrOwn:         "Rent" | "Own"
     // currentFloorAccess:   "First Floor" | "Stairs" | "Elevator" | "Reservable Elevator"
@@ -380,8 +378,8 @@ class AssessmentCoordinator: ObservableObject {
             }
             return InterstitialComment(text: text)
             
-        case .moveOutDate:
-            let weeksOut = weeksUntilDate(dataManager.moveOutDate)
+        case .moveDate:
+            let weeksOut = weeksUntilDate(dataManager.moveDate)
             let text: String
             if weeksOut <= 2 {
                 text = "\(weeksOut) weeks out — that's tight, but we've done tighter. Let's make every day count."
@@ -391,28 +389,16 @@ class AssessmentCoordinator: ObservableObject {
                 text = "\(weeksOut) weeks out — you're ahead of the game. Most people don't start planning until 2 weeks before."
             }
             return InterstitialComment(text: text)
-            
-        case .moveInDate:
-            let gapDays = daysBetweenDates(from: dataManager.moveOutDate, to: dataManager.moveInDate)
+
+        case .moveDateType:
             let text: String
-            if gapDays < 0 {
-                text = "Nice — you've got overlap. That gives us room to move things gradually if you want."
-            } else if gapDays == 0 {
-                text = "Same-day transition — tight but totally doable. We'll make sure everything lines up."
-            } else {
-                text = "\(gapDays) days between places. No worries — we'll plan for storage and timing so nothing falls through the cracks."
-            }
-            return InterstitialComment(text: text)
-            
-        case .moveFlexibility:
-            let text: String
-            switch dataManager.moveFlexibility.lowercased() {
-            case "firm dates":
-                text = "Locked and loaded. We'll plan around those exact dates."
-            case "some flexibility":
-                text = "Good to know. That little cushion could save the day if anything shifts."
-            case "very flexible":
-                text = "That gives us a lot of options. We'll help you nail down the ideal timing."
+            switch dataManager.moveDateType.lowercased() {
+            case "same day":
+                text = "Same-day move — tight but totally doable. We'll make sure everything lines up."
+            case "out before in":
+                text = "Out first, then in — we'll plan for the gap so nothing falls through the cracks."
+            case "in before out":
+                text = "Nice — overlap means you can move things gradually if you want."
             default:
                 text = "Got it. We'll work with your timeline."
             }
@@ -608,22 +594,16 @@ class AssessmentCoordinator: ObservableObject {
                 subheader: "What's weighing on you most about this move? Pick as many as apply — this is how we know where to focus your plan."
             )
             
-        case .moveOutDate:
+        case .moveDate:
             return InputContext(
                 header: "Let's figure out your timeline.",
-                subheader: "When do you need to be completely out of your current place? If you don't know the exact date, a best guess works — you can always update it later."
+                subheader: "When's the big day? If you don't know the exact date, a best guess works — you can always update it later."
             )
-            
-        case .moveInDate:
-            return InputContext(
-                header: "Now the other side.",
-                subheader: "When can you actually get into the new place? The date you get keys, access, or can start moving things in."
-            )
-            
-        case .moveFlexibility:
+
+        case .moveDateType:
             return InputContext(
                 header: "One more thing on timing.",
-                subheader: "Are those dates locked in, or is there some wiggle room? If something unexpected comes up — a mover cancels, a closing gets delayed — it helps to know how much flexibility we have."
+                subheader: "Are you moving out and in on the same day, or is there a gap? This helps us plan logistics and figure out if you'll need storage."
             )
             
         // --- SECTION 2: CURRENT HOME ---
@@ -797,10 +777,6 @@ class AssessmentCoordinator: ObservableObject {
         return max(days / 7, 0)
     }
     
-    private func daysBetweenDates(from: Date, to: Date) -> Int {
-        Calendar.current.dateComponents([.day], from: from, to: to).day ?? 0
-    }
-    
     private func generatePackingBallparkComment() -> InterstitialComment {
         let bedrooms = dataManager.currentBedrooms
         let sqft = dataManager.currentSquareFootage.isEmpty
@@ -892,7 +868,7 @@ class AssessmentCoordinator: ObservableObject {
             await dataManager.computeDistanceAndInterstate()
 
             let assessmentData = dataManager.getAllAssessmentData()
-            let moveDate = dataManager.moveOutDate
+            let moveDate = dataManager.moveDate
             
             // Save assessment to Firestore
             try await dataManager.saveAssessment()

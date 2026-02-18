@@ -1,30 +1,30 @@
 import SwiftUI
 
-struct MoveFlexibility: View {
+struct MoveDateType: View {
     @State private var selected = ""
     @EnvironmentObject var assessmentData: AssessmentDataManager
     @EnvironmentObject var coordinator: AssessmentCoordinator
-    
+
     // Animation states
     @State private var showContent = false
-    
+
     // Haptic feedback
     private let lightHaptic = UIImpactFeedbackGenerator(style: .light)
-    
+
     // Options match coordinator tile label contract
-    let options = ["Firm Dates", "Some Flexibility", "Very Flexible"]
-    
+    let options = ["Same Day", "Out Before In", "In Before Out"]
+
     let iconMap: [String: String] = [
-        "Firm Dates": "lock.fill",
-        "Some Flexibility": "arrow.left.arrow.right",
-        "Very Flexible": "wind"
+        "Same Day": "arrow.left.arrow.right",
+        "Out Before In": "arrow.right.circle",
+        "In Before Out": "arrow.left.circle"
     ]
-    
+
     var body: some View {
         VStack(spacing: 0) {
             // Content area with equal spacing
             AssessmentContentArea(
-                questionText: "Any wiggle room?",
+                questionText: "What's the plan?",
                 showContent: showContent
             ) {
                 // Options grid
@@ -39,8 +39,8 @@ struct MoveFlexibility: View {
                             isSelected: selected == option,
                             onTap: {
                                 selected = option
-                                assessmentData.moveFlexibility = option
-                                
+                                assessmentData.moveDateType = option
+
                                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                                     lightHaptic.impactOccurred()
                                     coordinator.goToNext()
@@ -57,7 +57,7 @@ struct MoveFlexibility: View {
         }
         .background(InteractiveBackground())
         .onAppear {
-            selected = assessmentData.moveFlexibility
+            selected = assessmentData.moveDateType
             withAnimation {
                 showContent = true
             }
@@ -67,13 +67,7 @@ struct MoveFlexibility: View {
 
 #Preview {
     let manager = AssessmentDataManager()
-    MoveFlexibility()
+    MoveDateType()
         .environmentObject(manager)
         .environmentObject(AssessmentCoordinator(dataManager: manager))
-}//
-//  MoveFlexibility.swift
-//  Peezy 4.0
-//
-//  Created by Adam Powell on 2/10/26.
-//
-
+}

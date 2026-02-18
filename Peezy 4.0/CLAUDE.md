@@ -111,7 +111,7 @@ cd functions && firebase deploy --only functions --project peezy-1ecrdl
 
 getAllAssessmentData() outputs these keys — this is the CONTRACT that the condition parser evaluates against:
 
-**Raw answers:** userName, moveOutDate, moveInDate, moveFlexibility, moveConcerns, currentRentOrOwn, currentDwellingType, currentAddress, currentFloor, currentElevatorAccess, currentBedrooms, currentSquareFootage, currentFinishedSqFt, currentUnfinishedSqFt, newRentOrOwn, newDwellingType, newAddress, newFloor, newElevatorAccess, newBedrooms, newSquareFootage, newFinishedSqFt, newUnfinishedSqFt, anyChildren, childrenAges, anyPets, petSelection, hireMoversDetail, hirePackersDetail, hireCleanersDetail, financialInstitutions, healthcareProviders, fitnessWellness, howHeard
+**Raw answers:** userName, moveDate, moveDateType, moveConcerns, currentRentOrOwn, currentDwellingType, currentAddress, currentFloor, currentElevatorAccess, currentBedrooms, currentSquareFootage, currentFinishedSqFt, currentUnfinishedSqFt, newRentOrOwn, newDwellingType, newAddress, newFloor, newElevatorAccess, newBedrooms, newSquareFootage, newFinishedSqFt, newUnfinishedSqFt, anyChildren, childrenAges, anyPets, petSelection, hireMoversDetail, hirePackersDetail, hireCleanersDetail, financialInstitutions, healthcareProviders, fitnessWellness, howHeard
 
 **Computed/derived:** moveDistance (String), isInterstate (String), schoolAgeChildren (Int), childrenUnder5 (Int), hireMovers (String "Yes"/"No"), hirePackers (String "Yes"/"No"), hireCleaners (String "Yes"/"No")
 
