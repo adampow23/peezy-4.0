@@ -150,8 +150,7 @@ struct AssessmentFlowView: View {
         // --- Section 4: People ---
         case .childrenInSchool:      ChildrenInSchool()
         case .childrenInDaycare:     ChildrenInDaycare()
-        case .anyPets:               AnyPets()
-        case .petSelection:          PetSelection()
+        case .hasVet:                HasVet()
             
         // --- Section 5: Services ---
         case .hireMovers:            HireMovers()

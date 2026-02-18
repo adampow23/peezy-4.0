@@ -8,12 +8,12 @@ import Foundation
 // LAST UPDATED: 2026-02-12
 //
 // CONDITION FORMAT (from TaskCatalogSchema.swift):
-//   - Key: Assessment field name (e.g., "anyPets", "moveDistance")
+//   - Key: Assessment field name (e.g., "hasVet", "moveDistance")
 //   - Value: Array of acceptable values (OR logic within array)
 //   - Multiple keys: AND logic (all must match)
 //
 // EXAMPLES:
-//   {"anyPets": ["Yes"]}                          → User's anyPets must be "Yes"
+//   {"hasVet": ["Yes"]}                            → User's hasVet must be "Yes"
 //   {"moveDistance": ["Long Distance"]}            → Must be long distance
 //   {"isInterstate": ["Yes"]}                     → Must be changing states
 //   {"hireMovers": ["Yes"]}                       → Interested in professional movers

@@ -38,8 +38,7 @@ class AssessmentDataManager: ObservableObject {
     // MARK: - Household
     @Published var childrenInSchool: String = ""
     @Published var childrenInDaycare: String = ""
-    @Published var anyPets: String = ""
-    @Published var petSelection: [String] = []
+    @Published var hasVet: String = ""
     
     // MARK: - Services
     @Published var hireMovers: String = ""
@@ -103,8 +102,7 @@ class AssessmentDataManager: ObservableObject {
         // Household
         data["childrenInSchool"] = childrenInSchool
         data["childrenInDaycare"] = childrenInDaycare
-        data["anyPets"] = anyPets
-        data["petSelection"] = petSelection
+        data["hasVet"] = hasVet
         
         // Services — raw labels preserved for display/Firestore, mapped to Yes/No below
         data["hireMoversDetail"] = hireMovers
@@ -249,8 +247,7 @@ class AssessmentDataManager: ObservableObject {
         newFinishedSqFt = ""
         childrenInSchool = ""
         childrenInDaycare = ""
-        anyPets = ""
-        petSelection = []
+        hasVet = ""
         hireMovers = ""
         hirePackers = ""
         hireCleaners = ""

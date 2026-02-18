@@ -29,7 +29,7 @@ import Foundation
  │   - Multiple keys = AND logic (all must match)                              │
  │                                                                             │
  │ Examples from real Firestore data:                                          │
- │   {anyPets: ["Yes"]}                                                        │
+ │   {hasVet: ["Yes"]}                                                         │
  │   {hireMovers: ["Yes"]}                                                     │
  │   {moveDistance: ["Long Distance"]}                                         │
  │   {newDwellingType: ["Apartment", "Condo"]}                                 │
@@ -120,11 +120,11 @@ struct TaskCatalogSchema {
         ),
 
         // === HOUSEHOLD ===
-        "anyPets": ConditionFieldInfo(
-            description: "Whether user has pets",
+        "hasVet": ConditionFieldInfo(
+            description: "Whether user has a vet to transfer records from",
             possibleValues: ["Yes", "No"],
             assessmentSource: .direct,
-            assessmentQuestion: "Any pets coming along?"
+            assessmentQuestion: "Do you have a vet you'll need to transfer records from?"
         ),
 
         // === SERVICES ===
@@ -241,8 +241,7 @@ struct TaskCatalogSchema {
         "newFinishedSqFt",       // ○ Estimation (house)
         "childrenInSchool",      // ★ Condition key
         "childrenInDaycare",     // ★ Condition key
-        "anyPets",               // ★ Condition key
-        "petSelection",          // ○ Pet-specific task detail
+        "hasVet",                // ★ Condition key
         "hireMovers",            // ★ Condition key
         "hirePackers",           // ★ Condition key
         "hireCleaners",          // ★ Condition key

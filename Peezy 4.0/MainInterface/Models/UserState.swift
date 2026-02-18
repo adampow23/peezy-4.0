@@ -201,9 +201,9 @@ struct UserState: Codable {
         }
         self.kidsAges = assessment["kidsAges"] as? [Int]
 
-        // Pets - AssessmentDataManager saves as "anyPets"
-        if let pets = assessment["anyPets"] as? String {
-            self.hasPets = pets.lowercased() == "yes"
+        // Pets - AssessmentDataManager saves as "hasVet"
+        if let vet = assessment["hasVet"] as? String {
+            self.hasPets = vet.lowercased() == "yes"
         }
         self.petTypes = assessment["petTypes"] as? [String]
 

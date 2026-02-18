@@ -526,7 +526,7 @@
     "actionCategory": "setup-establish",
     "category": "pets",
     "conditions": {
-      "anyPets": [
+      "hasVet": [
         "Yes"
       ],
       "moveDistance": [
@@ -545,7 +545,7 @@
     "actionCategory": "transfer-records",
     "category": "pets",
     "conditions": {
-      "anyPets": [
+      "hasVet": [
         "Yes"
       ],
       "moveDistance": [

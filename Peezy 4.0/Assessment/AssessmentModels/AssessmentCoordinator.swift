@@ -56,8 +56,7 @@ enum AssessmentInputStep: String, Hashable {
     // Section 4: People
     case childrenInSchool
     case childrenInDaycare
-    case anyPets
-    case petSelection
+    case hasVet
     
     // Section 5: Services
     case hireMovers
@@ -291,10 +290,7 @@ class AssessmentCoordinator: ObservableObject {
         addStep(.childrenInSchool)
         addStep(.childrenInDaycare)
 
-        addStep(.anyPets)
-        if dataManager.anyPets.lowercased() == "yes" {
-            addStep(.petSelection)
-        }
+        addStep(.hasVet)
         
         // Section 5: Services
         addStep(.hireMovers)
@@ -321,7 +317,7 @@ class AssessmentCoordinator: ObservableObject {
     /// Steps that affect branching — trigger a sequence rebuild when answered.
     private func isBranchingStep(_ step: AssessmentInputStep) -> Bool {
         switch step {
-        case .currentDwellingType, .newDwellingType, .anyPets:
+        case .currentDwellingType, .newDwellingType:
             return true
         default:
             return false
@@ -342,7 +338,7 @@ class AssessmentCoordinator: ObservableObject {
     // hireCleaners:         "Hire Professional Cleaners" | "Clean Myself" | "Not Sure" | "Get Me Quotes"
     // childrenInSchool:     "Yes" | "No"
     // childrenInDaycare:    "Yes" | "No"
-    // anyPets:              "Yes" | "No"
+    // hasVet:               "Yes" | "No"
     //
     // All comparisons use .lowercased() so casing doesn't matter, but spelling must match.
     
@@ -495,15 +491,12 @@ class AssessmentCoordinator: ObservableObject {
                 return InterstitialComment(text: "Got it.")
             }
             
-        case .anyPets:
-            if dataManager.anyPets.lowercased() == "yes" {
-                return InterstitialComment(text: "We've moved plenty of pets — they're in good hands.")
+        case .hasVet:
+            if dataManager.hasVet.lowercased() == "yes" {
+                return InterstitialComment(text: "We'll make sure those vet records get transferred smoothly.")
             } else {
                 return InterstitialComment(text: generateHouseholdComment())
             }
-            
-        case .petSelection:
-            return InterstitialComment(text: generateHouseholdComment())
             
         // --- SECTION 5: SERVICES ---
             
@@ -705,16 +698,10 @@ class AssessmentCoordinator: ObservableObject {
                 subheader: "Any kids in daycare? We'll help you find options near the new place."
             )
             
-        case .anyPets:
+        case .hasVet:
             return InputContext(
-                header: "Any pets coming along?",
-                subheader: "Dogs, cats, goldfish — they all change the plan a little. Vet records, pet-friendly arrangements, the works."
-            )
-            
-        case .petSelection:
-            return InputContext(
-                header: "Which ones and how many?",
-                subheader: "Select each type and how many you have. We'll make sure every one of them is accounted for."
+                header: "One more about the household.",
+                subheader: "Do you have a vet you'll need to transfer records from? We'll add it to your plan if so."
             )
             
         // --- SECTION 5: SERVICES ---
@@ -813,9 +800,8 @@ class AssessmentCoordinator: ObservableObject {
             parts.append("kids")
         }
 
-        if dataManager.anyPets.lowercased() == "yes" && !dataManager.petSelection.isEmpty {
-            let petTypes = dataManager.petSelection.joined(separator: ", ").lowercased()
-            parts.append(petTypes)
+        if dataManager.hasVet.lowercased() == "yes" {
+            parts.append("vet records to transfer")
         }
 
         if parts.isEmpty {

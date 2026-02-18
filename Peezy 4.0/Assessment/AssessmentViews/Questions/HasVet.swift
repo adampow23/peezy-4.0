@@ -1,28 +1,28 @@
 import SwiftUI
 
-struct AnyPets: View {
+struct HasVet: View {
     @State private var selected = ""
     @EnvironmentObject var assessmentData: AssessmentDataManager
     @EnvironmentObject var coordinator: AssessmentCoordinator
-    
+
     // Animation states
     @State private var showContent = false
-    
+
     // Haptic feedback
     private let lightHaptic = UIImpactFeedbackGenerator(style: .light)
-    
+
     let options = ["Yes", "No"]
-    
+
     let iconMap: [String: String] = [
         "Yes": "checkmark.circle.fill",
         "No": "xmark.circle.fill"
     ]
-    
+
     var body: some View {
         VStack(spacing: 0) {
             // Content area with equal spacing
             AssessmentContentArea(
-                questionText: "Any pets?",
+                questionText: "Do you have a vet you'll need to transfer records from?",
                 showContent: showContent
             ) {
                 // Options grid
@@ -37,8 +37,8 @@ struct AnyPets: View {
                             isSelected: selected == option,
                             onTap: {
                                 selected = option
-                                assessmentData.anyPets = option
-                                
+                                assessmentData.hasVet = option
+
                                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                                     lightHaptic.impactOccurred()
                                     coordinator.goToNext()
@@ -55,7 +55,7 @@ struct AnyPets: View {
         }
         .background(InteractiveBackground())
         .onAppear {
-            selected = assessmentData.anyPets
+            selected = assessmentData.hasVet
             withAnimation {
                 showContent = true
             }
@@ -65,7 +65,7 @@ struct AnyPets: View {
 
 #Preview {
     let manager = AssessmentDataManager()
-    AnyPets()
+    HasVet()
         .environmentObject(manager)
         .environmentObject(AssessmentCoordinator(dataManager: manager))
 }
