@@ -54,8 +54,8 @@ enum AssessmentInputStep: String, Hashable {
     case newFinishedSqFt
     
     // Section 4: People
-    case anyChildren
-    case childrenAges
+    case childrenInSchool
+    case childrenInDaycare
     case anyPets
     case petSelection
     
@@ -288,11 +288,9 @@ class AssessmentCoordinator: ObservableObject {
         }
         
         // Section 4: People
-        addStep(.anyChildren)
-        if dataManager.anyChildren.lowercased() == "yes" {
-            addStep(.childrenAges)
-        }
-        
+        addStep(.childrenInSchool)
+        addStep(.childrenInDaycare)
+
         addStep(.anyPets)
         if dataManager.anyPets.lowercased() == "yes" {
             addStep(.petSelection)
@@ -323,7 +321,7 @@ class AssessmentCoordinator: ObservableObject {
     /// Steps that affect branching — trigger a sequence rebuild when answered.
     private func isBranchingStep(_ step: AssessmentInputStep) -> Bool {
         switch step {
-        case .currentDwellingType, .newDwellingType, .anyChildren, .anyPets:
+        case .currentDwellingType, .newDwellingType, .anyPets:
             return true
         default:
             return false
@@ -342,7 +340,8 @@ class AssessmentCoordinator: ObservableObject {
     // hireMovers:           "Hire Professional Movers" | "Move Myself" | "Not Sure" | "Get Me Quotes"
     // hirePackers:          "Hire Professional Packers" | "Pack Myself" | "Not Sure" | "Get Me Quotes"
     // hireCleaners:         "Hire Professional Cleaners" | "Clean Myself" | "Not Sure" | "Get Me Quotes"
-    // anyChildren:          "Yes" | "No"
+    // childrenInSchool:     "Yes" | "No"
+    // childrenInDaycare:    "Yes" | "No"
     // anyPets:              "Yes" | "No"
     //
     // All comparisons use .lowercased() so casing doesn't matter, but spelling must match.
@@ -482,21 +481,19 @@ class AssessmentCoordinator: ObservableObject {
             
         // --- SECTION 4: PEOPLE ---
             
-        case .anyChildren:
-            if dataManager.anyChildren.lowercased() == "yes" {
-                return InterstitialComment(text: "Got it — we'll make sure the kids' transition is as smooth as the rest.")
+        case .childrenInSchool:
+            if dataManager.childrenInSchool.lowercased() == "yes" {
+                return InterstitialComment(text: "Got it — we'll make sure school transfers and enrollment are on the list.")
             } else {
                 return InterstitialComment(text: "Got it.")
             }
-            
-        case .childrenAges:
-            let petTransition: String
-            if dataManager.anyChildren.lowercased() == "yes" {
-                petTransition = "Kids are covered. Now —"
+
+        case .childrenInDaycare:
+            if dataManager.childrenInDaycare.lowercased() == "yes" {
+                return InterstitialComment(text: "We'll help you find daycare options near the new place.")
             } else {
-                petTransition = "Got it."
+                return InterstitialComment(text: "Got it.")
             }
-            return InterstitialComment(text: petTransition)
             
         case .anyPets:
             if dataManager.anyPets.lowercased() == "yes" {
@@ -696,16 +693,16 @@ class AssessmentCoordinator: ObservableObject {
             
         // --- SECTION 4: PEOPLE ---
             
-        case .anyChildren:
+        case .childrenInSchool:
             return InputContext(
                 header: "Who's coming with you?",
-                subheader: "Any kids making the move? This changes things like school transfers, pediatrician searches, and how we plan move day."
+                subheader: "Any school-age kids? This affects school transfers, enrollment, and how we plan the transition."
             )
-            
-        case .childrenAges:
+
+        case .childrenInDaycare:
             return InputContext(
-                header: "How many in each age group?",
-                subheader: "This helps us plan for school enrollment, daycare, pediatrician transfers — the stuff that's easy to forget."
+                header: "What about little ones?",
+                subheader: "Any kids in daycare? We'll help you find options near the new place."
             )
             
         case .anyPets:
@@ -811,17 +808,16 @@ class AssessmentCoordinator: ObservableObject {
     
     private func generateHouseholdComment() -> String {
         var parts: [String] = []
-        
-        if dataManager.anyChildren.lowercased() == "yes" && !dataManager.childrenAges.isEmpty {
-            let groupCount = dataManager.childrenAges.count
-            parts.append("kids in \(groupCount) age group\(groupCount == 1 ? "" : "s")")
+
+        if dataManager.childrenInSchool.lowercased() == "yes" || dataManager.childrenInDaycare.lowercased() == "yes" {
+            parts.append("kids")
         }
-        
+
         if dataManager.anyPets.lowercased() == "yes" && !dataManager.petSelection.isEmpty {
             let petTypes = dataManager.petSelection.joined(separator: ", ").lowercased()
             parts.append(petTypes)
         }
-        
+
         if parts.isEmpty {
             return "Alright — let's talk about the move itself."
         } else {

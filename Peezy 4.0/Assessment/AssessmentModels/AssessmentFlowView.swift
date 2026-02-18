@@ -148,8 +148,8 @@ struct AssessmentFlowView: View {
         case .newFinishedSqFt:       NewFinishedSqFt()
             
         // --- Section 4: People ---
-        case .anyChildren:           AnyChildren()
-        case .childrenAges:          ChildrenAges()
+        case .childrenInSchool:      ChildrenInSchool()
+        case .childrenInDaycare:     ChildrenInDaycare()
         case .anyPets:               AnyPets()
         case .petSelection:          PetSelection()
             

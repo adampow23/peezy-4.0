@@ -431,8 +431,8 @@
     "actionCategory": "update-notify",
     "category": "children",
     "conditions": {
-      "schoolAgeChildren": [
-        ">=1"
+      "childrenInSchool": [
+        "Yes"
       ],
       "moveDistance": [
         "Long Distance"
@@ -450,8 +450,8 @@
     "actionCategory": "book-schedule",
     "category": "children",
     "conditions": {
-      "schoolAgeChildren": [
-        ">=1"
+      "childrenInSchool": [
+        "Yes"
       ],
       "moveDistance": [
         "Long Distance"
@@ -469,8 +469,8 @@
     "actionCategory": "update-notify",
     "category": "children",
     "conditions": {
-      "schoolAgeChildren": [
-        ">=1"
+      "childrenInSchool": [
+        "Yes"
       ],
       "moveDistance": [
         "Local"
@@ -488,8 +488,8 @@
     "actionCategory": "setup-establish",
     "category": "children",
     "conditions": {
-      "childrenUnder5": [
-        ">=1"
+      "childrenInDaycare": [
+        "Yes"
       ],
       "moveDistance": [
         "Long Distance"
@@ -507,8 +507,8 @@
     "actionCategory": "update-notify",
     "category": "children",
     "conditions": {
-      "childrenUnder5": [
-        ">=1"
+      "childrenInDaycare": [
+        "Yes"
       ],
       "moveDistance": [
         "Local"

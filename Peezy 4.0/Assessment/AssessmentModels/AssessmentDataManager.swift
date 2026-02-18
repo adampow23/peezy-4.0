@@ -36,8 +36,8 @@ class AssessmentDataManager: ObservableObject {
     @Published var newFinishedSqFt: String = ""
     
     // MARK: - Household
-    @Published var anyChildren: String = ""
-    @Published var childrenAges: [String] = []
+    @Published var childrenInSchool: String = ""
+    @Published var childrenInDaycare: String = ""
     @Published var anyPets: String = ""
     @Published var petSelection: [String] = []
     
@@ -101,8 +101,8 @@ class AssessmentDataManager: ObservableObject {
         data["newFinishedSqFt"] = newFinishedSqFt
         
         // Household
-        data["anyChildren"] = anyChildren
-        data["childrenAges"] = childrenAges
+        data["childrenInSchool"] = childrenInSchool
+        data["childrenInDaycare"] = childrenInDaycare
         data["anyPets"] = anyPets
         data["petSelection"] = petSelection
         
@@ -126,13 +126,6 @@ class AssessmentDataManager: ObservableObject {
         // Distance & interstate (set by computeDistanceAndInterstate())
         data["moveDistance"] = moveDistance   // "Local" or "Long Distance"
         data["isInterstate"] = isInterstate  // "Yes" or "No"
-
-        // Children age buckets (derived from childrenAges multi-select)
-        // Tile labels: "Under 5", "5-12", "13-17", "18+"
-        let schoolAge = childrenAges.filter { $0 == "5-12" || $0 == "13-17" }.count
-        let under5 = childrenAges.filter { $0 == "Under 5" }.count
-        data["schoolAgeChildren"] = schoolAge
-        data["childrenUnder5"] = under5
 
         // Service hire mapping — UI stores descriptive labels, catalog expects "Yes"/"No"
         // "Hire Professional Movers" / "Get Me Quotes" → "Yes"
@@ -254,8 +247,8 @@ class AssessmentDataManager: ObservableObject {
         newBedrooms = ""
         newSquareFootage = ""
         newFinishedSqFt = ""
-        anyChildren = ""
-        childrenAges = []
+        childrenInSchool = ""
+        childrenInDaycare = ""
         anyPets = ""
         petSelection = []
         hireMovers = ""

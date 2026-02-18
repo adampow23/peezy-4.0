@@ -1,27 +1,27 @@
 import SwiftUI
 
-struct AnyChildren: View {
+struct ChildrenInSchool: View {
     @State private var selected = ""
     @EnvironmentObject var assessmentData: AssessmentDataManager
     @EnvironmentObject var coordinator: AssessmentCoordinator
-    
+
     @State private var showContent = false
     private let lightHaptic = UIImpactFeedbackGenerator(style: .light)
-    
+
     let options = ["Yes", "No"]
     let iconMap: [String: String] = [
         "Yes": "checkmark.circle.fill",
         "No": "xmark.circle.fill"
     ]
-    
+
     var body: some View {
         VStack(spacing: 0) {
-            AssessmentContentArea(questionText: "Any kids?", showContent: showContent) {
+            AssessmentContentArea(questionText: "Any school-age kids?", showContent: showContent) {
                 LazyVGrid(columns: [GridItem(.flexible(), spacing: 16), GridItem(.flexible(), spacing: 16)], spacing: 16) {
                     ForEach(Array(options.enumerated()), id: \.element) { index, option in
                         SelectionTile(title: option, icon: iconMap[option], isSelected: selected == option, onTap: {
                             selected = option
-                            assessmentData.anyChildren = option
+                            assessmentData.childrenInSchool = option
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                                 lightHaptic.impactOccurred()
                                 coordinator.goToNext()
@@ -37,7 +37,7 @@ struct AnyChildren: View {
         }
         .background(InteractiveBackground())
         .onAppear {
-            selected = assessmentData.anyChildren
+            selected = assessmentData.childrenInSchool
             withAnimation { showContent = true }
         }
     }
@@ -45,7 +45,7 @@ struct AnyChildren: View {
 
 #Preview {
     let manager = AssessmentDataManager()
-    AnyChildren()
+    ChildrenInSchool()
         .environmentObject(manager)
         .environmentObject(AssessmentCoordinator(dataManager: manager))
 }

@@ -38,7 +38,7 @@ import Foundation
  │   {healthcareProviders: ["Doctor"], moveDistance: ["Long Distance"]}              │
  │   {financialInstitutions: ["Bank Account"], moveDistance: ["Local"]}              │
  │   {isInterstate: ["Yes"]}                                                        │
- │   {schoolAgeChildren: [">=1"], moveDistance: ["Long Distance"]}                   │
+ │   {childrenInSchool: ["Yes"], moveDistance: ["Long Distance"]}                     │
  └─────────────────────────────────────────────────────────────────────────────┘
 
  EVALUATION LOGIC:
@@ -74,8 +74,8 @@ import Foundation
      Under 50 miles = "Local", 50+ miles = "Long Distance".
    - isInterstate: Computed by comparing state in currentAddress vs newAddress.
      Different state = "Yes", same state = "No".
-   - schoolAgeChildren: Derived from childrenAges response
-   - childrenUnder5: Derived from childrenAges response
+   - childrenInSchool: Asked directly in assessment (Yes/No)
+   - childrenInDaycare: Asked directly in assessment (Yes/No)
 */
 
 struct TaskCatalogSchema {
@@ -196,18 +196,18 @@ struct TaskCatalogSchema {
             assessmentQuestion: "Computed by comparing state component of currentAddress vs newAddress. Different state = Yes."
         ),
 
-        "schoolAgeChildren": ConditionFieldInfo(
-            description: "Count of school-age children (5-18) — derived from childrenAges",
-            possibleValues: ["0", ">=1", "1", "2", "3+"],
-            assessmentSource: .computed,
-            assessmentQuestion: "Derived from childrenAges age group breakdown"
+        "childrenInSchool": ConditionFieldInfo(
+            description: "Whether user has school-age children",
+            possibleValues: ["Yes", "No"],
+            assessmentSource: .direct,
+            assessmentQuestion: "Any school-age kids?"
         ),
 
-        "childrenUnder5": ConditionFieldInfo(
-            description: "Count of children under 5 — derived from childrenAges",
-            possibleValues: ["0", ">=1", "1", "2", "3+"],
-            assessmentSource: .computed,
-            assessmentQuestion: "Derived from childrenAges age group breakdown"
+        "childrenInDaycare": ConditionFieldInfo(
+            description: "Whether user has children in daycare",
+            possibleValues: ["Yes", "No"],
+            assessmentSource: .direct,
+            assessmentQuestion: "Any kids in daycare?"
         ),
     ]
 
@@ -239,8 +239,8 @@ struct TaskCatalogSchema {
         "newBedrooms",           // ○ Estimation
         "newSquareFootage",      // ○ Estimation
         "newFinishedSqFt",       // ○ Estimation (house)
-        "anyChildren",           // ○ Branch gate only
-        "childrenAges",          // ● Used to derive schoolAgeChildren, childrenUnder5
+        "childrenInSchool",      // ★ Condition key
+        "childrenInDaycare",     // ★ Condition key
         "anyPets",               // ★ Condition key
         "petSelection",          // ○ Pet-specific task detail
         "hireMovers",            // ★ Condition key

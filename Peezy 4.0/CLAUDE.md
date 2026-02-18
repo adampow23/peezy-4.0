@@ -2,7 +2,7 @@
 
 ## What This Is
 
-iOS moving concierge app. Swift/SwiftUI + Firebase backend (Cloud Functions, Node.js). Users complete an assessment, get personalized tasks, interact via card stack with swipe gestures, chat with AI for help.
+iOS moving concierge app. Swift/SwiftUI + Firebase backend (Cloud Functions, Node.js). Users complete an assessment, get personalized tasks, interact via card stack with button actions (complete, snooze, open chat), and chat with AI for help.
 
 ## Architecture
 
@@ -18,9 +18,9 @@ Auth → Assessment → Task Generation → Main App
 ```
 AssessmentCoordinator.completeAssessment()
   → AssessmentDataManager.computeDistanceAndInterstate()
-  → AssessmentDataManager.getAllAssessmentData()  // builds 37-key [String: Any] dict
+  → AssessmentDataManager.getAllAssessmentData()
   → TaskGenerationService.generateTasksForUser(userId, assessmentData, moveDate)
-    → Firestore db.collection("taskCatalog").getDocuments()  // fetches ALL catalog tasks
+    → Firestore db.collection("taskCatalog").getDocuments()
     → FOR EACH catalog task:
         TaskConditionParser.evaluateConditions(conditions, against: assessment)
         → nil/empty conditions = AUTO-PASS (task for everyone)
@@ -48,7 +48,7 @@ AssessmentCoordinator.completeAssessment()
 
 Firestore stores conditions as maps with string array values:
 ```
-conditions: { "anyPets": ["Yes"], "moveDistance": ["Long Distance"] }
+conditions: { "hasVet": ["Yes"], "moveDistance": ["Long Distance"] }
 ```
 Swift reads as `[String: Any]` where values are `[String]`. The parser casts with `as? [String]`.
 
@@ -64,8 +64,8 @@ IMPORTANT: If a condition value is NOT `[String]` (e.g., raw string, number), th
 ## Build Commands
 
 ```bash
-# Build iOS app
-xcodebuild -project "Peezy 4.0.xcodeproj" -scheme "Peezy 4.0" -sdk iphonesimulator -destination "platform=iOS Simulator,name=iPhone 16" build
+# Build iOS app (use available simulator — iPhone 17 Pro confirmed working)
+xcodebuild -project "Peezy 4.0.xcodeproj" -scheme "Peezy 4.0" -sdk iphonesimulator -destination "platform=iOS Simulator,name=iPhone 17 Pro" build
 
 # Seed task catalog to Firestore
 cd functions && node seedTaskCatalog.js
@@ -106,19 +106,20 @@ cd functions && firebase deploy --only functions --project peezy-1ecrdl
 6. **`cancelWorkflow()` fires `onWorkflowDismissed` callback.** During demo workflows, this callback is nil (safe). But if a real workflow set it before demo triggered, it could cause state conflicts.
 7. **Single-select auto-advance timing.** In workflow cards, single-select options auto-advance after 0.3s delay via `dismissLeft → onContinue → handleWorkflowContinue()`. Demo phase tracking depends on this call chain.
 8. **Firestore numeric casting.** Use `(as? NSNumber)?.intValue` for integers from Firestore, not `as? Int`. Fixed in TaskGenerationService but watch for it elsewhere.
+9. **iPhone 16 simulator does not exist.** Use iPhone 17 Pro for xcodebuild destination.
 
 ## Assessment Data Keys (Current)
 
 getAllAssessmentData() outputs these keys — this is the CONTRACT that the condition parser evaluates against:
 
-**Raw answers:** userName, moveDate, moveDateType, moveConcerns, currentRentOrOwn, currentDwellingType, currentAddress, currentFloor, currentElevatorAccess, currentBedrooms, currentSquareFootage, currentFinishedSqFt, currentUnfinishedSqFt, newRentOrOwn, newDwellingType, newAddress, newFloor, newElevatorAccess, newBedrooms, newSquareFootage, newFinishedSqFt, newUnfinishedSqFt, anyChildren, childrenAges, anyPets, petSelection, hireMoversDetail, hirePackersDetail, hireCleanersDetail, financialInstitutions, healthcareProviders, fitnessWellness, howHeard
+**Raw answers:** userName, moveDate, moveDateType, moveConcerns, currentRentOrOwn, currentDwellingType, currentAddress, currentFloorAccess, currentBedrooms, currentSquareFootage, currentFinishedSqFt, newRentOrOwn, newDwellingType, newAddress, newFloorAccess, newBedrooms, newSquareFootage, newFinishedSqFt, childrenInSchool, childrenInDaycare, hasVet, hireMoversDetail, hirePackersDetail, hireCleanersDetail, financialInstitutions, healthcareProviders, fitnessWellness, howHeard
 
-**Computed/derived:** moveDistance (String), isInterstate (String), schoolAgeChildren (Int), childrenUnder5 (Int), hireMovers (String "Yes"/"No"), hirePackers (String "Yes"/"No"), hireCleaners (String "Yes"/"No")
+**Computed/derived:** moveDistance (String), isInterstate (String), hireMovers (String "Yes"/"No"), hirePackers (String "Yes"/"No"), hireCleaners (String "Yes"/"No")
 
 ## Condition Keys Used in Catalog
 
-These 15 keys are referenced in taskCatalogData.json conditions:
-anyPets, hireMovers, hirePackers, hireCleaners, currentDwellingType, newDwellingType, currentRentOrOwn, newRentOrOwn, moveDistance, isInterstate, schoolAgeChildren, childrenUnder5, financialInstitutions, healthcareProviders, fitnessWellness
+These keys are referenced in taskCatalogData.json conditions:
+hasVet, hireMovers, hirePackers, hireCleaners, currentDwellingType, newDwellingType, currentRentOrOwn, newRentOrOwn, moveDistance, isInterstate, childrenInSchool, childrenInDaycare, financialInstitutions, healthcareProviders, fitnessWellness
 
 ## Workflow
 
