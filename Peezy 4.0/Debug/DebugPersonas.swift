@@ -34,7 +34,6 @@ enum DebugPersona: String, CaseIterable, Identifiable {
             state.hasKids = false
             state.hasPets = false
             state.budget = .tight
-            state.moveExperience = .firstTime
             state.helpLevel = .someHelp
             state.assessmentCompletedAt = baseDate
             state.lastInteractionAt = baseDate
@@ -60,7 +59,6 @@ enum DebugPersona: String, CaseIterable, Identifiable {
             state.petTypes = ["dog"]
             state.largeItems = ["sectional sofa", "king bed"]
             state.budget = .moderate
-            state.moveExperience = .someMoves
             state.helpLevel = .fullService
             state.assessmentCompletedAt = baseDate
             state.lastInteractionAt = baseDate
@@ -84,7 +82,6 @@ enum DebugPersona: String, CaseIterable, Identifiable {
             state.hasKids = false
             state.hasPets = false
             state.budget = .moderate
-            state.moveExperience = .firstTime
             state.helpLevel = .someHelp
             state.assessmentCompletedAt = baseDate
             state.lastInteractionAt = baseDate
@@ -109,7 +106,6 @@ enum DebugPersona: String, CaseIterable, Identifiable {
             state.largeItems = ["grandfather clock"]
             state.specialItems = ["piano", "antiques", "china collection"]
             state.budget = .flexible
-            state.moveExperience = .experienced
             state.helpLevel = .fullService
             state.assessmentCompletedAt = baseDate
             state.lastInteractionAt = baseDate
@@ -133,7 +129,6 @@ enum DebugPersona: String, CaseIterable, Identifiable {
             state.hasPets = true
             state.petTypes = ["cat"]
             state.budget = .tight
-            state.moveExperience = .someMoves
             state.helpLevel = .diy
             state.assessmentCompletedAt = baseDate
             state.lastInteractionAt = baseDate
@@ -157,7 +152,6 @@ enum DebugPersona: String, CaseIterable, Identifiable {
             state.hasKids = false
             state.hasPets = false
             state.budget = .tight
-            state.moveExperience = .firstTime
             state.helpLevel = .diy
             state.assessmentCompletedAt = baseDate
             state.lastInteractionAt = baseDate

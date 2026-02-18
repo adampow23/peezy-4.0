@@ -37,7 +37,6 @@ struct UserState: Codable {
     
     // MARK: - Budget & Preferences
     var budget: Budget?
-    var moveExperience: MoveExperience?
     var helpLevel: HelpLevel?
     
     // MARK: - Task State
@@ -79,12 +78,6 @@ struct UserState: Codable {
         case tight = "tight"
         case moderate = "moderate"
         case flexible = "flexible"
-    }
-    
-    enum MoveExperience: String, Codable {
-        case firstTime = "first_time"
-        case someMoves = "some_moves"
-        case experienced = "experienced"
     }
     
     enum HelpLevel: String, Codable {
@@ -223,19 +216,6 @@ struct UserState: Codable {
             self.budget = Budget(rawValue: budget.lowercased())
         }
 
-        // Move experience - AssessmentDataManager saves as "moveExperience"
-        if let exp = assessment["moveExperience"] as? String {
-            // Map "First time", "A few times", "Many times" to enum
-            let normalized = exp.lowercased()
-            if normalized.contains("first") {
-                self.moveExperience = .firstTime
-            } else if normalized.contains("few") {
-                self.moveExperience = .someMoves
-            } else if normalized.contains("many") || normalized.contains("experienced") {
-                self.moveExperience = .experienced
-            }
-        }
-
         // Help level - derived from hireMovers, hirePackers, hireCleaners
         let hireMovers = assessment["hireMovers"] as? String ?? ""
         let hirePackers = assessment["hirePackers"] as? String ?? ""
@@ -316,9 +296,6 @@ struct UserState: Codable {
         }
         if let budget = budget {
             dict["budget"] = budget.rawValue
-        }
-        if let moveExperience = moveExperience {
-            dict["moveExperience"] = moveExperience.rawValue
         }
         if let helpLevel = helpLevel {
             dict["helpLevel"] = helpLevel.rawValue

@@ -225,7 +225,6 @@ struct TaskCatalogSchema {
         "moveOutDate",           // ○ Timeline calculation
         "moveInDate",            // ○ Timeline calculation
         "moveFlexibility",       // ○ Planning context
-        "moveExperience",        // ○ Tone calibration
         "moveConcerns",          // ○ Priority hints
         "currentRentOrOwn",      // ★ Condition key
         "currentDwellingType",   // ★ Condition key

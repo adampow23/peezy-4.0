@@ -23,7 +23,6 @@ import FirebaseAuth
 enum AssessmentInputStep: String, Hashable {
     // Section 1: Basics
     case userName
-    case moveExperience
     case moveConcerns
     case moveOutDate
     case moveInDate
@@ -256,7 +255,6 @@ class AssessmentCoordinator: ObservableObject {
         
         // Section 1: Basics
         addStep(.userName)          // First interstitial: after: nil → Peezy intro
-        addStep(.moveExperience)
         addStep(.moveConcerns)
         addStep(.moveOutDate)
         addStep(.moveInDate)
@@ -346,7 +344,6 @@ class AssessmentCoordinator: ObservableObject {
     
     // TILE LABEL CONTRACT — question views MUST use these exact strings:
     //
-    // moveExperience:       "First Time" | "Done It Before" | "Lost Count"
     // moveFlexibility:      "Firm Dates" | "Some Flexibility" | "Very Flexible"
     // currentRentOrOwn:     "Rent" | "Own"
     // newRentOrOwn:         "Rent" | "Own"
@@ -378,21 +375,7 @@ class AssessmentCoordinator: ObservableObject {
             return InterstitialComment(
                 text: "Great to meet you, \(dataManager.userName). We're going to make this the smoothest move you've ever had."
             )
-            
-        case .moveExperience:
-            let text: String
-            switch dataManager.moveExperience.lowercased() {
-            case "first time":
-                text = "Everyone starts somewhere — and honestly, that's what we're built for. We'll walk you through everything."
-            case "done it before":
-                text = "Good — you know the drill. We'll make sure nothing slips through the cracks this time."
-            case "lost count":
-                text = "A veteran! We'll skip the hand-holding and just make sure it's handled."
-            default:
-                text = "Good to know. We'll tailor everything to your comfort level."
-            }
-            return InterstitialComment(text: text)
-            
+
         case .moveConcerns:
             let concerns = dataManager.moveConcerns
             let text: String
@@ -640,13 +623,7 @@ class AssessmentCoordinator: ObservableObject {
                 header: "Let's get on a first-name basis.",
                 subheader: "First name, nickname, your old AIM screen name — whatever feels right. We're going to be talking a lot."
             )
-            
-        case .moveExperience:
-            return InputContext(
-                header: "A little about your experience.",
-                subheader: "Have you done this before? No wrong answer — it just helps us know whether to explain things or get out of your way."
-            )
-            
+
         case .moveConcerns:
             return InputContext(
                 header: "What's on your mind?",

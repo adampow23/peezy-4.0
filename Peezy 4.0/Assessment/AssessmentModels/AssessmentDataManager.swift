@@ -16,7 +16,6 @@ class AssessmentDataManager: ObservableObject {
     @Published var moveFlexibility: String = ""
     
     // MARK: - Experience
-    @Published var moveExperience: String = ""
     @Published var moveConcerns: [String] = []
     
     // MARK: - Current Home
@@ -87,7 +86,6 @@ class AssessmentDataManager: ObservableObject {
         data["moveFlexibility"] = moveFlexibility
         
         // Experience
-        data["moveExperience"] = moveExperience
         data["moveConcerns"] = moveConcerns
         
         // Current home
@@ -252,7 +250,6 @@ class AssessmentDataManager: ObservableObject {
         moveOutDate = Date()
         moveInDate = Date()
         moveFlexibility = ""
-        moveExperience = ""
         moveConcerns = []
         currentRentOrOwn = ""
         currentDwellingType = ""

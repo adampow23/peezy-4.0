@@ -125,7 +125,6 @@ struct AssessmentFlowView: View {
         switch step {
         // --- Section 1: Basics ---
         case .userName:              UserName()
-        case .moveExperience:        MoveExperience()
         case .moveConcerns:          MoveConcerns()
         case .moveOutDate:           MoveOutDate()
         case .moveInDate:            MoveInDate()

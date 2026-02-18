@@ -50,7 +50,6 @@ function flattenUserKnowledge(userKnowledge) {
   const keyMapping = {
     'user_name': 'name',
     'move_date': 'moveDate',
-    'move_experience': 'moveExperience',
     'biggest_concern': 'biggestConcern',
     'move_distance': 'moveDistance',
     'current_home_type': 'originPropertyType',
