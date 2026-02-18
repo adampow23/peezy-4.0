@@ -112,7 +112,7 @@ cd functions && firebase deploy --only functions --project peezy-1ecrdl
 
 getAllAssessmentData() outputs these keys — this is the CONTRACT that the condition parser evaluates against:
 
-**Raw answers:** userName, moveDate, moveDateType, moveConcerns, currentRentOrOwn, currentDwellingType, currentAddress, currentFloorAccess, currentBedrooms, currentSquareFootage, currentFinishedSqFt, newRentOrOwn, newDwellingType, newAddress, newFloorAccess, newBedrooms, newSquareFootage, newFinishedSqFt, childrenInSchool, childrenInDaycare, hasVet, hireMoversDetail, hirePackersDetail, hireCleanersDetail, financialInstitutions, healthcareProviders, fitnessWellness, howHeard
+**Raw answers:** userName, moveDate, moveDateType, moveConcerns, currentRentOrOwn, currentDwellingType, currentAddress, currentFloorAccess, currentBedrooms, currentSquareFootage, currentFinishedSqFt, newRentOrOwn, newDwellingType, newAddress, newFloorAccess, newBedrooms, newSquareFootage, newFinishedSqFt, childrenInSchool, childrenInDaycare, hasVet, hireMoversDetail, hirePackersDetail, hireCleanersDetail, financialInstitutions, healthcareProviders, fitnessWellness, howHeard, referralCode
 
 **Computed/derived:** moveDistance (String), isInterstate (String), hireMovers (String "Yes"/"No"), hirePackers (String "Yes"/"No"), hireCleaners (String "Yes"/"No")
 

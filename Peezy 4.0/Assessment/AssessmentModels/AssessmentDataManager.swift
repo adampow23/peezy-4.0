@@ -61,6 +61,7 @@ class AssessmentDataManager: ObservableObject {
     
     // MARK: - Attribution
     @Published var howHeard: String = ""
+    @Published var referralCode: String = ""
     
     // MARK: - State
     @Published var saveError: Error?
@@ -134,6 +135,7 @@ class AssessmentDataManager: ObservableObject {
         
         // Attribution
         data["howHeard"] = howHeard
+        data["referralCode"] = referralCode
         
         // --- Computed keys for TaskConditionParser ---
         // These keys are required by taskCatalog conditions but not collected
@@ -280,6 +282,7 @@ class AssessmentDataManager: ObservableObject {
         healthcareDetails = [:]
         fitnessDetails = [:]
         howHeard = ""
+        referralCode = ""
         moveDistance = ""
         isInterstate = ""
         saveError = nil
