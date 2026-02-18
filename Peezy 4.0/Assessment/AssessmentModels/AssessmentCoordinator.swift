@@ -41,7 +41,6 @@ enum AssessmentInputStep: String, Hashable {
     case currentSquareFootage
     // House/Townhouse
     case currentFinishedSqFt
-    case currentUnfinishedSqFt
     
     // Section 3: New Home
     case newRentOrOwn
@@ -56,7 +55,6 @@ enum AssessmentInputStep: String, Hashable {
     case newSquareFootage
     // House/Townhouse
     case newFinishedSqFt
-    case newUnfinishedSqFt
     
     // Section 4: People
     case anyChildren
@@ -276,7 +274,6 @@ class AssessmentCoordinator: ObservableObject {
             // House / Townhouse (also default if not yet answered)
             addStep(.currentBedrooms)
             addStep(.currentFinishedSqFt)
-            addStep(.currentUnfinishedSqFt)
         }
         
         // Section 3: New Home
@@ -294,7 +291,6 @@ class AssessmentCoordinator: ObservableObject {
         } else {
             addStep(.newBedrooms)
             addStep(.newFinishedSqFt)
-            addStep(.newUnfinishedSqFt)
         }
         
         // Section 4: People
@@ -474,9 +470,6 @@ class AssessmentCoordinator: ObservableObject {
             return generatePackingBallparkComment()
             
         case .currentFinishedSqFt:
-            return InterstitialComment(text: "Noted.")
-            
-        case .currentUnfinishedSqFt:
             return generatePackingBallparkComment()
             
         // --- SECTION 3: NEW HOME ---
@@ -510,9 +503,6 @@ class AssessmentCoordinator: ObservableObject {
             return InterstitialComment(text: "Got it.")
             
         case .newFinishedSqFt:
-            return InterstitialComment(text: "Got it.")
-            
-        case .newUnfinishedSqFt:
             // Distance comment — both addresses now collected
             return InterstitialComment(text: generateDistanceComment())
             
@@ -698,12 +688,6 @@ class AssessmentCoordinator: ObservableObject {
                 subheader: "The main living area — bedrooms, kitchen, living room. A rough estimate works."
             )
             
-        case .currentUnfinishedSqFt:
-            return InputContext(
-                header: "Any unfinished space?",
-                subheader: "Basement, attic, garage — anything that's got stuff in it counts. If none, just put zero."
-            )
-            
         // --- SECTION 3: NEW HOME ---
             
         case .newRentOrOwn:
@@ -752,12 +736,6 @@ class AssessmentCoordinator: ObservableObject {
             return InputContext(
                 header: "How much finished living space at the new place?",
                 subheader: nil
-            )
-            
-        case .newUnfinishedSqFt:
-            return InputContext(
-                header: "Any unfinished space at the new place?",
-                subheader: "Basement, attic, garage — good to know what storage you'll have."
             )
             
         // --- SECTION 4: PEOPLE ---

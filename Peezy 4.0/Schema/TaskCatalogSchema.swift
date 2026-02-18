@@ -234,7 +234,6 @@ struct TaskCatalogSchema {
         "currentBedrooms",       // ○ Estimation
         "currentSquareFootage",  // ○ Estimation
         "currentFinishedSqFt",   // ○ Estimation (house)
-        "currentUnfinishedSqFt", // ○ Estimation (house)
         "newRentOrOwn",          // ★ Condition key
         "newDwellingType",       // ★ Condition key
         "newAddress",            // ● Used to compute moveDistance
@@ -243,7 +242,6 @@ struct TaskCatalogSchema {
         "newBedrooms",           // ○ Estimation
         "newSquareFootage",      // ○ Estimation
         "newFinishedSqFt",       // ○ Estimation (house)
-        "newUnfinishedSqFt",     // ○ Estimation (house)
         "anyChildren",           // ○ Branch gate only
         "childrenAges",          // ● Used to derive schoolAgeChildren, childrenUnder5
         "anyPets",               // ★ Condition key

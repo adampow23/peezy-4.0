@@ -139,7 +139,6 @@ struct AssessmentFlowView: View {
         case .currentBedrooms:       CurrentBedrooms()
         case .currentSquareFootage:  CurrentSquareFootage()
         case .currentFinishedSqFt:   CurrentFinishedSqFt()
-        case .currentUnfinishedSqFt: CurrentUnfinishedSqFt()
             
         // --- Section 3: New Home ---
         case .newRentOrOwn:          NewRentOrOwn()
@@ -150,7 +149,6 @@ struct AssessmentFlowView: View {
         case .newBedrooms:           NewBedrooms()
         case .newSquareFootage:      NewSquareFootage()
         case .newFinishedSqFt:       NewFinishedSqFt()
-        case .newUnfinishedSqFt:     NewUnfinishedSqFt()
             
         // --- Section 4: People ---
         case .anyChildren:           AnyChildren()

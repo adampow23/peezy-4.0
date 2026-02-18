@@ -27,7 +27,6 @@ class AssessmentDataManager: ObservableObject {
     @Published var currentBedrooms: String = ""
     @Published var currentSquareFootage: String = ""
     @Published var currentFinishedSqFt: String = ""
-    @Published var currentUnfinishedSqFt: String = ""
     
     // MARK: - New Home
     @Published var newRentOrOwn: String = ""
@@ -38,7 +37,6 @@ class AssessmentDataManager: ObservableObject {
     @Published var newBedrooms: String = ""
     @Published var newSquareFootage: String = ""
     @Published var newFinishedSqFt: String = ""
-    @Published var newUnfinishedSqFt: String = ""
     
     // MARK: - Household
     @Published var anyChildren: String = ""
@@ -97,7 +95,6 @@ class AssessmentDataManager: ObservableObject {
         data["currentBedrooms"] = currentBedrooms
         data["currentSquareFootage"] = currentSquareFootage
         data["currentFinishedSqFt"] = currentFinishedSqFt
-        data["currentUnfinishedSqFt"] = currentUnfinishedSqFt
         
         // New home
         data["newRentOrOwn"] = newRentOrOwn
@@ -108,7 +105,6 @@ class AssessmentDataManager: ObservableObject {
         data["newBedrooms"] = newBedrooms
         data["newSquareFootage"] = newSquareFootage
         data["newFinishedSqFt"] = newFinishedSqFt
-        data["newUnfinishedSqFt"] = newUnfinishedSqFt
         
         // Household
         data["anyChildren"] = anyChildren
@@ -259,7 +255,6 @@ class AssessmentDataManager: ObservableObject {
         currentBedrooms = ""
         currentSquareFootage = ""
         currentFinishedSqFt = ""
-        currentUnfinishedSqFt = ""
         newRentOrOwn = ""
         newDwellingType = ""
         newAddress = ""
@@ -268,7 +263,6 @@ class AssessmentDataManager: ObservableObject {
         newBedrooms = ""
         newSquareFootage = ""
         newFinishedSqFt = ""
-        newUnfinishedSqFt = ""
         anyChildren = ""
         childrenAges = []
         anyPets = ""
