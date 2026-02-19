@@ -34,11 +34,11 @@ const getWorkflowQualifying = onCall(
     if (WORKFLOW_QUALIFYING[workflowId]) {
       return WORKFLOW_QUALIFYING[workflowId];
     }
-    
+
     // Check mini-assessment workflows
     if (MINI_ASSESSMENT_WORKFLOWS[workflowId]) {
       const miniWorkflow = MINI_ASSESSMENT_WORKFLOWS[workflowId];
-      
+
       // Convert to the standard format expected by iOS
       return {
         workflowId: miniWorkflow.id,
@@ -58,8 +58,60 @@ const getWorkflowQualifying = onCall(
         taskTemplate: miniWorkflow.taskTemplate
       };
     }
-    
-    throw new HttpsError('not-found', `Workflow not found: ${workflowId}`);
+
+    // Generic fallback: 3-question survey for any unrecognized workflowId
+    console.log(`No specific qualifying found for ${workflowId} — returning generic survey`);
+    const genericQuestions = [
+      {
+        id: "priority",
+        question: "What's most important to you for this?",
+        subtitle: null,
+        type: "single_select",
+        options: [
+          { id: "low_cost",       label: "Low cost",       icon: "dollarsign.circle.fill", subtitle: null, exclusive: null },
+          { id: "high_quality",   label: "High quality",   icon: "star.fill",              subtitle: null, exclusive: null },
+          { id: "fast_timeline",  label: "Fast timeline",  icon: "clock.fill",             subtitle: null, exclusive: null },
+          { id: "flexible",       label: "I'm flexible",   icon: "hand.wave.fill",         subtitle: null, exclusive: null }
+        ]
+      },
+      {
+        id: "requirements",
+        question: "Any specific requirements we should know about?",
+        subtitle: null,
+        type: "single_select",
+        options: [
+          { id: "no_req",         label: "No requirements", icon: "checkmark.circle.fill", subtitle: null, exclusive: null },
+          { id: "will_discuss",   label: "I'll explain later", icon: "bubble.left.fill",   subtitle: null, exclusive: null }
+        ]
+      },
+      {
+        id: "timeline",
+        question: "What's your preferred timeline?",
+        subtitle: null,
+        type: "single_select",
+        options: [
+          { id: "asap",           label: "ASAP",            icon: "bolt.fill",             subtitle: null, exclusive: null },
+          { id: "within_week",    label: "Within a week",   icon: "calendar.badge.clock",  subtitle: null, exclusive: null },
+          { id: "within_month",   label: "Within a month",  icon: "calendar",              subtitle: null, exclusive: null },
+          { id: "no_rush",        label: "No rush",         icon: "leaf.fill",             subtitle: null, exclusive: null }
+        ]
+      }
+    ];
+
+    return {
+      workflowId,
+      intro: {
+        title: "Quick questions",
+        subtitle: "Just a few things to help us get started."
+      },
+      questions: genericQuestions,
+      questionCount: genericQuestions.length,
+      recap: {
+        title: "Got it.",
+        closing: "We'll be in touch shortly.",
+        button: "Submit"
+      }
+    };
   }
 );
 
@@ -139,17 +191,34 @@ const submitWorkflowAnswers = onCall(
           submittedAt: admin.firestore.FieldValue.serverTimestamp(),
           status: 'pending_matching'
         });
-        
-        // Update the user's task status
+
+        // Save to user's workflowResponses for easy per-user lookup and manual review
         await db.collection('users')
           .doc(userId)
-          .collection('tasks')
+          .collection('workflowResponses')
           .doc(workflowId)
-          .update({
-            status: 'matching_in_progress',
-            qualifyingAnswers: answers,
-            qualifyingCompletedAt: admin.firestore.FieldValue.serverTimestamp()
+          .set({
+            workflowId,
+            answers,
+            submittedAt: admin.firestore.FieldValue.serverTimestamp()
           });
+
+        console.log(`Workflow submission saved — user: ${userId}, workflowId: ${workflowId}, answers:`, JSON.stringify(answers));
+
+        // Update the user's task status (best-effort: task doc may not exist for generic workflows)
+        try {
+          await db.collection('users')
+            .doc(userId)
+            .collection('tasks')
+            .doc(workflowId)
+            .update({
+              status: 'matching_in_progress',
+              qualifyingAnswers: answers,
+              qualifyingCompletedAt: admin.firestore.FieldValue.serverTimestamp()
+            });
+        } catch (updateErr) {
+          console.warn(`Could not update task status for ${workflowId} (task may not exist):`, updateErr.message);
+        }
         
         // Send booking notification (non-blocking)
         const webhookUrl = process.env.NOTIFICATION_WEBHOOK_URL;
