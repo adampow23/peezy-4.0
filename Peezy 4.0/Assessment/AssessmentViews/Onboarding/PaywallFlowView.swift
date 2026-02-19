@@ -30,11 +30,14 @@ struct PaywallFlowView: View {
 
             switch currentPage {
             case 0:
-                PaywallPage1(onContinue: { withAnimation(.easeInOut(duration: 0.35)) { currentPage = 1 } })
-                    .transition(.asymmetric(
-                        insertion: .move(edge: .trailing),
-                        removal: .move(edge: .leading)
-                    ))
+                PaywallPage1(
+                    onContinue: { withAnimation(.easeInOut(duration: 0.35)) { currentPage = 1 } },
+                    onBypass: { bypassPaywall() }
+                )
+                .transition(.asymmetric(
+                    insertion: .move(edge: .trailing),
+                    removal: .move(edge: .leading)
+                ))
             case 1:
                 PaywallPage2(
                     onBack: { withAnimation(.easeInOut(duration: 0.35)) { currentPage = 0 } },
@@ -64,6 +67,16 @@ struct PaywallFlowView: View {
     private func finishPaywall() {
         NotificationCenter.default.post(name: .assessmentCompleted, object: nil)
     }
+
+    // TODO: REMOVE BEFORE PRODUCTION
+    private func bypassPaywall() {
+        print("⚠️ DEV: Paywall bypassed via triple-tap")
+        subscriptionManager.subscriptionStatus = .subscribed(
+            productId: "dev.bypass",
+            expirationDate: Calendar.current.date(byAdding: .year, value: 1, to: Date()) ?? Date()
+        )
+        finishPaywall()
+    }
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -72,18 +85,24 @@ struct PaywallFlowView: View {
 
 struct PaywallPage1: View {
     let onContinue: () -> Void
+    // TODO: REMOVE BEFORE PRODUCTION
+    var onBypass: (() -> Void)? = nil
 
     var body: some View {
         VStack(spacing: 0) {
             Spacer()
 
             // Main headline — centered
+            // TODO: REMOVE BEFORE PRODUCTION — triple-tap bypasses paywall for dev testing
             VStack(spacing: 16) {
                 Text("We want you to\ntry Peezy for free.")
                     .font(.system(size: 32, weight: .bold))
                     .foregroundColor(.white)
                     .multilineTextAlignment(.center)
                     .lineSpacing(4)
+                    .onTapGesture(count: 3) {
+                        onBypass?()
+                    }
             }
 
             Spacer()

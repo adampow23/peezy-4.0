@@ -73,9 +73,10 @@ struct AssessmentCompleteView: View {
     @State private var userName: String = "Your"
     
     // MARK: - Completion Tracking
-    
+
     @State private var queryComplete: Bool = false
     @State private var timerComplete: Bool = false
+    @State private var generationComplete: Bool = false
     
     // MARK: - Loading Messages
     
@@ -143,6 +144,13 @@ struct AssessmentCompleteView: View {
         }
         .onDisappear {
             messageTimer?.invalidate()
+        }
+        .onChange(of: coordinator.isSaving) { _, isSaving in
+            // When generation finishes (isSaving flips false), fetch the real task count
+            if !isSaving && !generationComplete {
+                generationComplete = true
+                fetchTaskCount()
+            }
         }
     }
     
@@ -385,9 +393,14 @@ struct AssessmentCompleteView: View {
             timerComplete = true
             checkTransitionToReady()
         }
-        
-        // Query tasks from Firestore
-        fetchTaskCount()
+
+        // Don't query Firestore yet — wait until task generation finishes
+        // (observed via coordinator.isSaving in .onChange below)
+        // If generation is already done by the time we appear, kick off fetch now
+        if !coordinator.isSaving {
+            generationComplete = true
+            fetchTaskCount()
+        }
     }
     
     private func fetchTaskCount() {
