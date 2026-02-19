@@ -84,13 +84,14 @@ class TaskGenerationService {
                 #endif
 
                 // Build user task document
-                let userTask: [String: Any] = [
+                var userTask: [String: Any] = [
                     "id": document.documentID,              // e.g., "BOOK_MOVERS"
                     "taskId": taskData["taskId"] ?? document.documentID,
                     "title": taskData["title"] ?? "",
                     "desc": taskData["desc"] ?? "",
                     "category": taskData["category"] ?? "custom",
                     "actionCategory": taskData["actionCategory"] ?? "",
+                    "actionType": taskData["actionType"] ?? "off-app",
                     "urgencyPercentage": urgencyPercentage,
                     "estHours": taskData["estHours"] ?? 0,
                     "tips": taskData["tips"] ?? "",
@@ -101,6 +102,11 @@ class TaskGenerationService {
                     "userId": userId,
                     "createdAt": Timestamp(date: Date()),
                 ]
+
+                // Copy workflowId only if present (workflow tasks only)
+                if let workflowId = taskData["workflowId"] as? String {
+                    userTask["workflowId"] = workflowId
+                }
 
                 tasksToCreate.append(userTask)
             } else {

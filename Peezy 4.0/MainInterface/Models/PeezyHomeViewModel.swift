@@ -344,40 +344,14 @@ final class PeezyHomeViewModel {
         }
     }
 
-    // MARK: - Workflow Detection (from PeezyStackViewModel+Workflow)
+    // MARK: - Workflow Detection
 
     func getWorkflowId(for card: PeezyCard) -> String? {
-        // 1. Direct workflowId on the card
-        if let workflowId = card.workflowId, !workflowId.isEmpty {
-            return workflowId
+        // Read workflowId directly from the card (set from catalog field)
+        guard let workflowId = card.workflowId, !workflowId.isEmpty else {
+            return nil
         }
-
-        // 2. TaskId-based mapping (address change mini-assessments)
-        if let taskId = card.taskId, taskId.starts(with: "address_change_") {
-            return taskId
-        }
-
-        // 3. Title-based vendor workflow mapping
-        return mapCardToVendorWorkflow(card)
-    }
-
-    private func mapCardToVendorWorkflow(_ card: PeezyCard) -> String? {
-        let title = card.title.lowercased()
-
-        if title.contains("book") && title.contains("mover") {
-            return title.contains("long") || title.contains("distance")
-                ? "book_long_distance_movers"
-                : "book_movers"
-        }
-        if title.contains("clean") { return "cleaning_service" }
-        if title.contains("junk") || title.contains("removal") { return "junk_removal" }
-        if title.contains("internet") || title.contains("wifi") { return "internet_setup" }
-        if title.contains("storage") { return "storage_unit" }
-        if title.contains("pet") && title.contains("transport") { return "pet_transport" }
-        if title.contains("car") && (title.contains("ship") || title.contains("transport")) { return "auto_transport" }
-        if title.contains("pack") && title.contains("service") { return "packing_services" }
-
-        return nil
+        return workflowId
     }
 
     // MARK: - Workflow Action Forwarding

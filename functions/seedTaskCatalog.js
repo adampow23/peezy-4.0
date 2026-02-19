@@ -102,6 +102,7 @@ async function seedCollection() {
         title: task.title,
         actionCategory: task.actionCategory,
         category: task.category,
+        actionType: task.actionType,
         conditions: task.conditions, // stored as map: { key: [values] }
         desc: task.desc,
         estHours: task.estHours,
@@ -110,6 +111,11 @@ async function seedCollection() {
         whyNeeded: task.whyNeeded,
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
       };
+
+      // Only include workflowId if present (workflow tasks only)
+      if (task.workflowId) {
+        doc.workflowId = task.workflowId;
+      }
 
       batch.set(docRef, doc);
     }

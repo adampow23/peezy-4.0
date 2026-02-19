@@ -4,6 +4,7 @@
     "title": "Reserve Parking at New Home",
     "actionCategory": "book-schedule",
     "category": "moving",
+    "actionType": "off-app",
     "conditions": {
       "newDwellingType": [
         "Apartment",
@@ -21,6 +22,7 @@
     "title": "Reserve Parking at Current Home",
     "actionCategory": "book-schedule",
     "category": "moving",
+    "actionType": "off-app",
     "conditions": {
       "currentDwellingType": [
         "Apartment",
@@ -38,6 +40,8 @@
     "title": "Schedule Move-Out Cleaning Service",
     "actionCategory": "book-schedule",
     "category": "services",
+    "actionType": "workflow",
+    "workflowId": "book_cleaners",
     "conditions": {
       "hireCleaners": [
         "Yes"
@@ -54,6 +58,8 @@
     "title": "Book Professional Movers",
     "actionCategory": "book-schedule",
     "category": "moving",
+    "actionType": "workflow",
+    "workflowId": "book_movers",
     "conditions": {
       "hireMovers": [
         "Yes"
@@ -70,6 +76,8 @@
     "title": "Schedule Professional Packers",
     "actionCategory": "book-schedule",
     "category": "moving",
+    "actionType": "workflow",
+    "workflowId": "book_packers",
     "conditions": {
       "hirePackers": [
         "Yes"
@@ -86,6 +94,7 @@
     "title": "Buy Move-Out Cleaning Supplies",
     "actionCategory": "purchase-get",
     "category": "services",
+    "actionType": "off-app",
     "conditions": {
       "hireCleaners": [
         "No"
@@ -102,6 +111,7 @@
     "title": "Buy Packing Supplies",
     "actionCategory": "purchase-get",
     "category": "packing",
+    "actionType": "off-app",
     "conditions": {
       "hirePackers": [
         "No"
@@ -118,6 +128,7 @@
     "title": "Reserve Elevator at New Home",
     "actionCategory": "book-schedule",
     "category": "moving",
+    "actionType": "off-app",
     "conditions": {
       "newDwellingType": [
         "Apartment"
@@ -134,6 +145,7 @@
     "title": "Reserve Elevator at Old Home",
     "actionCategory": "book-schedule",
     "category": "moving",
+    "actionType": "off-app",
     "conditions": {
       "currentDwellingType": [
         "Apartment"
@@ -150,6 +162,7 @@
     "title": "Reserve DIY Moving Truck",
     "actionCategory": "book-schedule",
     "category": "moving",
+    "actionType": "off-app",
     "conditions": {
       "hireMovers": [
         "No"
@@ -166,6 +179,7 @@
     "title": "Create Moving Inventory",
     "actionCategory": "document-record",
     "category": "packing",
+    "actionType": "off-app",
     "conditions": {
       "hireMovers": [
         "Yes"
@@ -182,6 +196,7 @@
     "title": "Declutter and Donate Belongings",
     "actionCategory": "prepare-plan",
     "category": "packing",
+    "actionType": "off-app",
     "conditions": {},
     "desc": "Sort through your home and remove items you no longer need by selling, donating, or discarding them before packing.",
     "estHours": 8,
@@ -194,6 +209,7 @@
     "title": "Defrost and Clean Freezer",
     "actionCategory": "pack-clean",
     "category": "packing",
+    "actionType": "off-app",
     "conditions": {},
     "desc": "Prepare your refrigerator/freezer for moving by emptying, defrosting, and thoroughly cleaning it.",
     "estHours": 4,
@@ -206,6 +222,7 @@
     "title": "Deep Clean Your Home",
     "actionCategory": "pack-clean",
     "category": "services",
+    "actionType": "off-app",
     "conditions": {
       "hireCleaners": [
         "No"
@@ -222,6 +239,7 @@
     "title": "Final Walkthrough and Cleaning",
     "actionCategory": "pack-clean",
     "category": "services",
+    "actionType": "off-app",
     "conditions": {
       "hireCleaners": [
         "No"
@@ -238,6 +256,7 @@
     "title": "Submit USPS Mail Forwarding",
     "actionCategory": "update-notify",
     "category": "administrative",
+    "actionType": "off-app",
     "conditions": {},
     "desc": "File a change of address with the postal service so your mail is forwarded from your old address to your new one.",
     "estHours": 0.5,
@@ -250,6 +269,7 @@
     "title": "Request Time Off for Move",
     "actionCategory": "plan-schedule",
     "category": "administrative",
+    "actionType": "off-app",
     "conditions": {},
     "desc": "Submit PTO requests to ensure you're available for move-related tasks.",
     "estHours": 1.5,
@@ -262,6 +282,7 @@
     "title": "Update Employer HR Records",
     "actionCategory": "update-notify",
     "category": "administrative",
+    "actionType": "off-app",
     "conditions": {},
     "desc": "Update your home address with your employer's HR department.",
     "estHours": 1.5,
@@ -274,6 +295,7 @@
     "title": "Update Driver's License Address",
     "actionCategory": "update-notify",
     "category": "administrative",
+    "actionType": "off-app",
     "conditions": {
       "isInterstate": [
         "No"
@@ -290,6 +312,7 @@
     "title": "Get New Driver's License",
     "actionCategory": "update-notify",
     "category": "administrative",
+    "actionType": "off-app",
     "conditions": {
       "isInterstate": [
         "Yes"
@@ -306,6 +329,7 @@
     "title": "Register Vehicle in New State",
     "actionCategory": "update-notify",
     "category": "administrative",
+    "actionType": "off-app",
     "conditions": {
       "isInterstate": [
         "Yes"
@@ -322,6 +346,7 @@
     "title": "Photograph Empty Rental Condition",
     "actionCategory": "document-record",
     "category": "administrative",
+    "actionType": "off-app",
     "conditions": {
       "currentRentOrOwn": [
         "Rent"
@@ -338,6 +363,7 @@
     "title": "Return Keys and Remotes",
     "actionCategory": "finalize-closeout",
     "category": "administrative",
+    "actionType": "off-app",
     "conditions": {
       "currentRentOrOwn": [
         "Rent"
@@ -354,6 +380,8 @@
     "title": "Cancel Utility Accounts",
     "actionCategory": "cancel-stop",
     "category": "utilities",
+    "actionType": "workflow",
+    "workflowId": "cancel_utilities_1",
     "conditions": {
       "moveDistance": [
         "Long Distance"
@@ -370,6 +398,8 @@
     "title": "Schedule Utility Shutoffs",
     "actionCategory": "cancel-stop",
     "category": "utilities",
+    "actionType": "workflow",
+    "workflowId": "cancel_utilities_2",
     "conditions": {
       "moveDistance": [
         "Long Distance"
@@ -386,6 +416,8 @@
     "title": "Set Up New Home Utilities",
     "actionCategory": "setup-establish",
     "category": "utilities",
+    "actionType": "workflow",
+    "workflowId": "setup_utilities",
     "conditions": {
       "moveDistance": [
         "Long Distance"
@@ -402,6 +434,7 @@
     "title": "Transfer Utilities to New Home",
     "actionCategory": "transfer-update",
     "category": "utilities",
+    "actionType": "off-app",
     "conditions": {
       "moveDistance": [
         "Local"
@@ -418,6 +451,8 @@
     "title": "Schedule Internet Installation",
     "actionCategory": "book-schedule",
     "category": "utilities",
+    "actionType": "workflow",
+    "workflowId": "setup_internet",
     "conditions": {},
     "desc": "Book installation for internet service at your new home.",
     "estHours": 1.5,
@@ -430,6 +465,7 @@
     "title": "Notify Current School to Begin Transfer",
     "actionCategory": "update-notify",
     "category": "children",
+    "actionType": "off-app",
     "conditions": {
       "childrenInSchool": [
         "Yes"
@@ -449,6 +485,7 @@
     "title": "Enroll Children in New Schools",
     "actionCategory": "book-schedule",
     "category": "children",
+    "actionType": "off-app",
     "conditions": {
       "childrenInSchool": [
         "Yes"
@@ -468,6 +505,7 @@
     "title": "Update Address with Your Child's School",
     "actionCategory": "update-notify",
     "category": "children",
+    "actionType": "off-app",
     "conditions": {
       "childrenInSchool": [
         "Yes"
@@ -487,6 +525,8 @@
     "title": "Set Up New Daycare Services",
     "actionCategory": "setup-establish",
     "category": "children",
+    "actionType": "workflow",
+    "workflowId": "setup_daycare",
     "conditions": {
       "childrenInDaycare": [
         "Yes"
@@ -506,6 +546,7 @@
     "title": "Update Address With Daycare",
     "actionCategory": "update-notify",
     "category": "children",
+    "actionType": "off-app",
     "conditions": {
       "childrenInDaycare": [
         "Yes"
@@ -525,6 +566,8 @@
     "title": "Set Up New Veterinarian",
     "actionCategory": "setup-establish",
     "category": "pets",
+    "actionType": "workflow",
+    "workflowId": "setup_vet",
     "conditions": {
       "hasVet": [
         "Yes"
@@ -544,6 +587,7 @@
     "title": "Transfer Vet Records",
     "actionCategory": "transfer-records",
     "category": "pets",
+    "actionType": "off-app",
     "conditions": {
       "hasVet": [
         "Yes"
@@ -563,6 +607,8 @@
     "title": "Close Bank Account",
     "actionCategory": "cancel-stop",
     "category": "finance",
+    "actionType": "workflow",
+    "workflowId": "cancel_bank",
     "conditions": {
       "financialInstitutions": [
         "Bank Account"
@@ -582,6 +628,8 @@
     "title": "Set Up New Bank Account",
     "actionCategory": "setup-establish",
     "category": "finance",
+    "actionType": "workflow",
+    "workflowId": "setup_bank",
     "conditions": {
       "financialInstitutions": [
         "Bank Account"
@@ -601,6 +649,7 @@
     "title": "Update Bank Account Address",
     "actionCategory": "update-notify",
     "category": "finance",
+    "actionType": "off-app",
     "conditions": {
       "financialInstitutions": [
         "Bank Account"
@@ -620,6 +669,8 @@
     "title": "Set Up New Credit Union Account",
     "actionCategory": "setup-establish",
     "category": "finance",
+    "actionType": "workflow",
+    "workflowId": "setup_credit_union",
     "conditions": {
       "financialInstitutions": [
         "Credit Union"
@@ -639,6 +690,7 @@
     "title": "Update Credit Union Address",
     "actionCategory": "update-notify",
     "category": "finance",
+    "actionType": "off-app",
     "conditions": {
       "financialInstitutions": [
         "Credit Union"
@@ -658,6 +710,7 @@
     "title": "Update Credit Card Address",
     "actionCategory": "update-notify",
     "category": "finance",
+    "actionType": "off-app",
     "conditions": {
       "financialInstitutions": [
         "Credit Card"
@@ -674,6 +727,8 @@
     "title": "Cancel Condo Insurance",
     "actionCategory": "cancel-stop",
     "category": "insurance",
+    "actionType": "workflow",
+    "workflowId": "cancel_condo_insurance",
     "conditions": {
       "newDwellingType": [
         "Apartment",
@@ -694,6 +749,8 @@
     "title": "Cancel or Update Renter's Insurance",
     "actionCategory": "cancel-stop",
     "category": "insurance",
+    "actionType": "workflow",
+    "workflowId": "cancel_renters_insurance",
     "conditions": {
       "newRentOrOwn": [
         "Own"
@@ -713,6 +770,8 @@
     "title": "Set Up Condo Insurance",
     "actionCategory": "setup-establish",
     "category": "insurance",
+    "actionType": "workflow",
+    "workflowId": "setup_condo_insurance",
     "conditions": {
       "newDwellingType": [
         "Condo"
@@ -733,6 +792,8 @@
     "title": "Set Up Homeowner's Insurance",
     "actionCategory": "setup-establish",
     "category": "insurance",
+    "actionType": "workflow",
+    "workflowId": "setup_homeowners_insurance",
     "conditions": {
       "newDwellingType": [
         "House"
@@ -752,6 +813,8 @@
     "title": "Set Up Renter's Insurance",
     "actionCategory": "setup-establish",
     "category": "insurance",
+    "actionType": "workflow",
+    "workflowId": "setup_renters_insurance",
     "conditions": {
       "currentRentOrOwn": [
         "Own"
@@ -771,6 +834,7 @@
     "title": "Transfer Condo Insurance",
     "actionCategory": "transfer-update",
     "category": "insurance",
+    "actionType": "off-app",
     "conditions": {
       "currentDwellingType": [
         "Condo"
@@ -790,6 +854,7 @@
     "title": "Transfer Homeowner's Insurance",
     "actionCategory": "transfer-update",
     "category": "insurance",
+    "actionType": "off-app",
     "conditions": {
       "currentRentOrOwn": [
         "Own"
@@ -815,6 +880,7 @@
     "title": "Transfer Renter's Insurance",
     "actionCategory": "transfer-update",
     "category": "insurance",
+    "actionType": "off-app",
     "conditions": {
       "currentRentOrOwn": [
         "Rent"
@@ -834,6 +900,7 @@
     "title": "Update Auto Insurance Address",
     "actionCategory": "update-notify",
     "category": "insurance",
+    "actionType": "off-app",
     "conditions": {},
     "desc": "Notify your auto insurer of your new address and update your policy details.",
     "estHours": 1.5,
@@ -846,6 +913,7 @@
     "title": "Update Health Insurance Address",
     "actionCategory": "update-notify",
     "category": "insurance",
+    "actionType": "off-app",
     "conditions": {
       "healthcareProviders": [
         "Health Insurance"
@@ -862,6 +930,7 @@
     "title": "Update Dental Insurance Address",
     "actionCategory": "update-notify",
     "category": "insurance",
+    "actionType": "off-app",
     "conditions": {
       "healthcareProviders": [
         "Dental Insurance"
@@ -878,6 +947,7 @@
     "title": "Update HSA Account Address",
     "actionCategory": "update-notify",
     "category": "insurance",
+    "actionType": "off-app",
     "conditions": {
       "healthcareProviders": [
         "HSA"
@@ -894,6 +964,7 @@
     "title": "Transfer Doctor Records",
     "actionCategory": "transfer-records",
     "category": "health",
+    "actionType": "off-app",
     "conditions": {
       "healthcareProviders": [
         "Doctor"
@@ -913,6 +984,7 @@
     "title": "Transfer Dentist Records",
     "actionCategory": "transfer-records",
     "category": "health",
+    "actionType": "off-app",
     "conditions": {
       "healthcareProviders": [
         "Dentist"
@@ -932,6 +1004,7 @@
     "title": "Transfer Therapy Records",
     "actionCategory": "transfer-records",
     "category": "health",
+    "actionType": "off-app",
     "conditions": {
       "healthcareProviders": [
         "Therapist"
@@ -951,6 +1024,7 @@
     "title": "Transfer Pharmacy Records",
     "actionCategory": "transfer-records",
     "category": "health",
+    "actionType": "off-app",
     "conditions": {
       "healthcareProviders": [
         "Pharmacy"
@@ -970,6 +1044,7 @@
     "title": "Transfer Specialist Medical Records",
     "actionCategory": "transfer-records",
     "category": "health",
+    "actionType": "off-app",
     "conditions": {
       "healthcareProviders": [
         "Specialists"
@@ -989,6 +1064,7 @@
     "title": "Update Doctor Information",
     "actionCategory": "update-notify",
     "category": "health",
+    "actionType": "off-app",
     "conditions": {
       "healthcareProviders": [
         "Doctor"
@@ -1008,6 +1084,7 @@
     "title": "Update Dentist Information",
     "actionCategory": "update-notify",
     "category": "health",
+    "actionType": "off-app",
     "conditions": {
       "healthcareProviders": [
         "Dentist"
@@ -1027,6 +1104,7 @@
     "title": "Cancel Yoga Studio Membership",
     "actionCategory": "cancel-stop",
     "category": "fitness",
+    "actionType": "off-app",
     "conditions": {
       "fitnessWellness": [
         "Yoga"
@@ -1046,6 +1124,7 @@
     "title": "Cancel Pilates Membership",
     "actionCategory": "cancel-stop",
     "category": "fitness",
+    "actionType": "off-app",
     "conditions": {
       "fitnessWellness": [
         "Pilates"
@@ -1065,6 +1144,7 @@
     "title": "Cancel Spin/Cycling Studio Membership",
     "actionCategory": "cancel-stop",
     "category": "fitness",
+    "actionType": "off-app",
     "conditions": {
       "fitnessWellness": [
         "Spin/Cycling"
@@ -1084,6 +1164,7 @@
     "title": "Cancel Massage Membership",
     "actionCategory": "cancel-stop",
     "category": "fitness",
+    "actionType": "off-app",
     "conditions": {
       "fitnessWellness": [
         "Massage"
@@ -1103,6 +1184,7 @@
     "title": "Cancel Spa or Wellness Membership",
     "actionCategory": "cancel-stop",
     "category": "fitness",
+    "actionType": "off-app",
     "conditions": {
       "fitnessWellness": [
         "Spa"
@@ -1122,6 +1204,7 @@
     "title": "Cancel Additional Fitness Membership",
     "actionCategory": "cancel-stop",
     "category": "fitness",
+    "actionType": "off-app",
     "conditions": {
       "fitnessWellness": [
         "Other"
@@ -1141,6 +1224,8 @@
     "title": "Get New Gym Membership",
     "actionCategory": "setup-establish",
     "category": "fitness",
+    "actionType": "workflow",
+    "workflowId": "setup_gym",
     "conditions": {
       "fitnessWellness": [
         "Gym"
@@ -1160,6 +1245,8 @@
     "title": "Find and Join New CrossFit Gym",
     "actionCategory": "setup-establish",
     "category": "fitness",
+    "actionType": "workflow",
+    "workflowId": "setup_crossfit",
     "conditions": {
       "fitnessWellness": [
         "CrossFit"
@@ -1179,6 +1266,8 @@
     "title": "Set Up New Yoga Studio",
     "actionCategory": "setup-establish",
     "category": "fitness",
+    "actionType": "workflow",
+    "workflowId": "setup_yoga",
     "conditions": {
       "fitnessWellness": [
         "Yoga"
@@ -1198,6 +1287,8 @@
     "title": "Set Up New Pilates Studio",
     "actionCategory": "setup-establish",
     "category": "fitness",
+    "actionType": "workflow",
+    "workflowId": "setup_pilates",
     "conditions": {
       "fitnessWellness": [
         "Pilates"
@@ -1217,6 +1308,8 @@
     "title": "Set Up New Spin or Cycling Studio",
     "actionCategory": "setup-establish",
     "category": "fitness",
+    "actionType": "workflow",
+    "workflowId": "setup_spin_cycling",
     "conditions": {
       "fitnessWellness": [
         "Spin/Cycling"
@@ -1236,6 +1329,8 @@
     "title": "Set Up New Golf Membership",
     "actionCategory": "setup-establish",
     "category": "fitness",
+    "actionType": "workflow",
+    "workflowId": "setup_golf",
     "conditions": {
       "fitnessWellness": [
         "Golf"
@@ -1255,6 +1350,8 @@
     "title": "Set Up New Massage Membership",
     "actionCategory": "setup-establish",
     "category": "fitness",
+    "actionType": "workflow",
+    "workflowId": "setup_massage",
     "conditions": {
       "fitnessWellness": [
         "Massage"
@@ -1274,6 +1371,8 @@
     "title": "Set Up New Spa Membership",
     "actionCategory": "setup-establish",
     "category": "fitness",
+    "actionType": "workflow",
+    "workflowId": "setup_spa",
     "conditions": {
       "fitnessWellness": [
         "Spa"
@@ -1293,6 +1392,8 @@
     "title": "Set Up Other Fitness Activities",
     "actionCategory": "setup-establish",
     "category": "fitness",
+    "actionType": "workflow",
+    "workflowId": "setup_other_fitness",
     "conditions": {
       "fitnessWellness": [
         "Other"
@@ -1312,6 +1413,8 @@
     "title": "Set Up New Country Club Membership",
     "actionCategory": "setup-establish",
     "category": "fitness",
+    "actionType": "workflow",
+    "workflowId": "setup_country_club",
     "conditions": {
       "fitnessWellness": [
         "Country Club"
@@ -1331,6 +1434,7 @@
     "title": "Update Gym Membership Address",
     "actionCategory": "update-notify",
     "category": "fitness",
+    "actionType": "off-app",
     "conditions": {
       "fitnessWellness": [
         "Gym"
@@ -1350,6 +1454,7 @@
     "title": "Update CrossFit Membership",
     "actionCategory": "update-notify",
     "category": "fitness",
+    "actionType": "off-app",
     "conditions": {
       "fitnessWellness": [
         "CrossFit"
@@ -1369,6 +1474,7 @@
     "title": "Update Golf Membership",
     "actionCategory": "update-notify",
     "category": "fitness",
+    "actionType": "off-app",
     "conditions": {
       "fitnessWellness": [
         "Golf"
@@ -1388,6 +1494,7 @@
     "title": "Update Country Club Membership Address",
     "actionCategory": "update-notify",
     "category": "fitness",
+    "actionType": "off-app",
     "conditions": {
       "fitnessWellness": [
         "Country Club"

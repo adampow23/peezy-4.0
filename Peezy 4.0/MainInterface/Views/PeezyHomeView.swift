@@ -396,9 +396,16 @@ struct PeezyHomeView: View {
                             .cornerRadius(16)
                     }
 
-                    // Complete
-                    Button(action: { viewModel.completeCurrentTask() }) {
-                        Text("Complete")
+                    // Complete / Get Started
+                    let isWorkflow = task.workflowId != nil && !task.workflowId!.isEmpty
+                    Button(action: {
+                        if isWorkflow {
+                            viewModel.startNextTask()
+                        } else {
+                            viewModel.completeCurrentTask()
+                        }
+                    }) {
+                        Text(isWorkflow ? "Get Started" : "Complete")
                             .font(.system(size: 17, weight: .semibold))
                             .foregroundColor(.black)
                             .frame(maxWidth: .infinity)
