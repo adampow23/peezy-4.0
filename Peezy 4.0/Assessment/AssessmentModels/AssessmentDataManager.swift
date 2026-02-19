@@ -21,6 +21,7 @@ class AssessmentDataManager: ObservableObject {
     @Published var currentRentOrOwn: String = ""
     @Published var currentDwellingType: String = ""
     @Published var currentAddress: String = ""
+    @Published var currentUnitNumber: String = ""
     @Published var currentFloorAccess: String = ""
     @Published var currentBedrooms: String = ""
     @Published var currentSquareFootage: String = ""
@@ -30,6 +31,7 @@ class AssessmentDataManager: ObservableObject {
     @Published var newRentOrOwn: String = ""
     @Published var newDwellingType: String = ""
     @Published var newAddress: String = ""
+    @Published var newUnitNumber: String = ""
     @Published var newFloorAccess: String = ""
     @Published var newBedrooms: String = ""
     @Published var newSquareFootage: String = ""
@@ -95,6 +97,7 @@ class AssessmentDataManager: ObservableObject {
         data["currentRentOrOwn"] = currentRentOrOwn
         data["currentDwellingType"] = currentDwellingType
         data["currentAddress"] = currentAddress
+        data["currentUnitNumber"] = currentUnitNumber
         data["currentFloorAccess"] = currentFloorAccess
         data["currentBedrooms"] = currentBedrooms
         data["currentSquareFootage"] = currentSquareFootage
@@ -104,6 +107,7 @@ class AssessmentDataManager: ObservableObject {
         data["newRentOrOwn"] = newRentOrOwn
         data["newDwellingType"] = newDwellingType
         data["newAddress"] = newAddress
+        data["newUnitNumber"] = newUnitNumber
         data["newFloorAccess"] = newFloorAccess
         data["newBedrooms"] = newBedrooms
         data["newSquareFootage"] = newSquareFootage
@@ -254,6 +258,7 @@ class AssessmentDataManager: ObservableObject {
         currentRentOrOwn = ""
         currentDwellingType = ""
         currentAddress = ""
+        currentUnitNumber = ""
         currentFloorAccess = ""
         currentBedrooms = ""
         currentSquareFootage = ""
@@ -261,6 +266,7 @@ class AssessmentDataManager: ObservableObject {
         newRentOrOwn = ""
         newDwellingType = ""
         newAddress = ""
+        newUnitNumber = ""
         newFloorAccess = ""
         newBedrooms = ""
         newSquareFootage = ""

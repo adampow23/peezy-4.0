@@ -74,6 +74,11 @@ cd functions && node seedTaskCatalog.js
 cd functions && firebase deploy --only functions --project peezy-1ecrdl
 ```
 
+## MCP Servers (Active)
+
+- **XcodeBuildMCP** — Build, test, run simulators, screenshots, LLDB debugging directly from Claude. Use `mcp__XcodeBuildMCP__*` tools.
+- **Context7** — Live documentation lookup for Firebase iOS SDK, SwiftUI, Swift concurrency, etc. Invoke with "use context7" or Claude will auto-use it when referencing libraries.
+
 ## Code Style
 
 - Swift 5.9+, iOS 17+ minimum
