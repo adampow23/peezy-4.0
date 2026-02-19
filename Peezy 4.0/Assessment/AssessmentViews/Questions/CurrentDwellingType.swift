@@ -10,9 +10,13 @@ struct CurrentDwellingType: View {
     
     // Haptic feedback
     private let lightHaptic = UIImpactFeedbackGenerator(style: .light)
-    
-    let options = ["House", "Apartment", "Condo", "Townhouse"]
-    
+
+    var options: [String] {
+        assessmentData.currentRentOrOwn == "Own"
+            ? ["House", "Condo", "Townhouse"]
+            : ["House", "Apartment", "Condo", "Townhouse"]
+    }
+
     let iconMap: [String: String] = [
         "House": "house.fill",
         "Apartment": "building.2.fill",
@@ -57,6 +61,9 @@ struct CurrentDwellingType: View {
         }
         .background(InteractiveBackground())
         .onAppear {
+            if assessmentData.currentRentOrOwn == "Own" && assessmentData.currentDwellingType == "Apartment" {
+                assessmentData.currentDwellingType = ""
+            }
             selected = assessmentData.currentDwellingType
             withAnimation {
                 showContent = true

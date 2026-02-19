@@ -1,67 +1,61 @@
 import SwiftUI
 
 struct NewSquareFootage: View {
-    @State private var sqft = ""
+    @State private var selected = ""
     @EnvironmentObject var assessmentData: AssessmentDataManager
     @EnvironmentObject var coordinator: AssessmentCoordinator
-    
-    @FocusState private var isTextFieldFocused: Bool
+
     @State private var showContent = false
-    
+
+    private let lightHaptic = UIImpactFeedbackGenerator(style: .light)
+
+    let options = [
+        "Under 500 sq ft",
+        "500–800 sq ft",
+        "800–1,200 sq ft",
+        "1,200–1,800 sq ft",
+        "1,800+ sq ft"
+    ]
+
     var body: some View {
         VStack(spacing: 0) {
-            GeometryReader { geo in
-                VStack(spacing: 0) {
-                    Spacer(minLength: 0)
-                    HStack {
-                        Text("How big is it?")
-                            .font(.system(size: 34, weight: .bold))
-                            .foregroundColor(.white)
-                            .frame(width: geo.size.width * 0.6, alignment: .leading)
-                            .multilineTextAlignment(.leading)
-                            .lineLimit(nil)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .padding(.horizontal, 20)
-                        Spacer(minLength: 0)
+            AssessmentContentArea(
+                questionText: "How big is it?",
+                showContent: showContent
+            ) {
+                LazyVGrid(columns: [
+                    GridItem(.flexible(), spacing: 16),
+                    GridItem(.flexible(), spacing: 16)
+                ], spacing: 16) {
+                    ForEach(Array(options.enumerated()), id: \.element) { index, option in
+                        SelectionTile(
+                            title: option,
+                            icon: nil,
+                            isSelected: selected == option,
+                            onTap: {
+                                selected = option
+                                assessmentData.newSquareFootage = option
+
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                                    lightHaptic.impactOccurred()
+                                    coordinator.goToNext()
+                                }
+                            }
+                        )
+                        .opacity(showContent ? 1 : 0)
+                        .offset(y: showContent ? 0 : 30)
+                        .animation(.easeOut(duration: 0.5).delay(0.5 + Double(index) * 0.1), value: showContent)
                     }
-                    .opacity(showContent ? 1 : 0)
-                    .offset(x: showContent ? 0 : -20)
-                    .animation(.easeOut(duration: 0.5).delay(0.3), value: showContent)
-                    Spacer(minLength: 0)
-                    HStack(spacing: 12) {
-                        TextField("", text: $sqft, prompt: Text("e.g. 800").foregroundColor(.white.opacity(0.3)))
-                            .font(.title3).foregroundColor(.white).multilineTextAlignment(.center)
-                            .keyboardType(.numberPad).focused($isTextFieldFocused)
-                            .padding(.vertical, 16).padding(.horizontal, 24)
-                            .background(
-                                RoundedRectangle(cornerRadius: 16).fill(Color.white.opacity(0.08))
-                                    .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(isTextFieldFocused ? 0.4 : 0.15), lineWidth: 1))
-                            )
-                        Text("sq ft").font(.title3).foregroundColor(.white.opacity(0.5))
-                    }
-                    .padding(.horizontal, 24)
-                    .opacity(showContent ? 1 : 0).offset(y: showContent ? 0 : 30)
-                    .animation(.easeOut(duration: 0.5).delay(0.5), value: showContent)
-                    Spacer(minLength: 0)
                 }
+                .padding(.horizontal, 20)
             }
-            .onTapGesture { isTextFieldFocused = false }
-            
-            PeezyAssessmentButton("Continue") {
-                let trimmed = sqft.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !trimmed.isEmpty else { return }
-                assessmentData.newSquareFootage = trimmed
-                coordinator.goToNext()
-            }
-            .padding(.horizontal, 24).padding(.bottom, 32)
-            .opacity(showContent ? 1 : 0).offset(y: showContent ? 0 : 30)
-            .animation(.spring(response: 0.6, dampingFraction: 0.8).delay(0.4), value: showContent)
         }
         .background(InteractiveBackground())
         .onAppear {
-            sqft = assessmentData.newSquareFootage
-            isTextFieldFocused = true
-            withAnimation { showContent = true }
+            selected = assessmentData.newSquareFootage
+            withAnimation {
+                showContent = true
+            }
         }
     }
 }
@@ -71,10 +65,4 @@ struct NewSquareFootage: View {
     NewSquareFootage()
         .environmentObject(manager)
         .environmentObject(AssessmentCoordinator(dataManager: manager))
-}//
-//  NewSquareFootage.swift
-//  Peezy 4.0
-//
-//  Created by Adam Powell on 2/10/26.
-//
-
+}
