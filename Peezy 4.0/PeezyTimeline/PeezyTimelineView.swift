@@ -27,10 +27,6 @@ struct PeezyTaskStream: View {
     @State private var allTasks: [PeezyCard] = []
     @State private var isLoading = true
 
-    // Task tap → chat
-    @State private var selectedTask: PeezyCard? = nil
-    @State private var showChat: Bool = false
-
     // Tab selection
     @State private var selectedTab: TaskTab = .active
 
@@ -136,11 +132,6 @@ struct PeezyTaskStream: View {
             }
         }
         .edgesIgnoringSafeArea(.bottom)
-        .sheet(isPresented: $showChat) {
-            ChatView(userState: userState, card: selectedTask)
-                .presentationDetents([.medium, .large])
-                .presentationDragIndicator(.visible)
-        }
         .task {
             if let previewTasks {
                 allTasks = previewTasks
@@ -264,10 +255,6 @@ struct PeezyTaskStream: View {
                                 withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                                     expandedTaskId = expandedTaskId == task.id ? nil : task.id
                                 }
-                            },
-                            onTap: {
-                                selectedTask = task
-                                showChat = true
                             }
                         )
                     }
@@ -357,7 +344,6 @@ struct TaskListRow: View {
     let task: PeezyCard
     var isExpanded: Bool = false
     var onExpand: () -> Void = {}
-    var onTap: () -> Void
 
     private let charcoalColor = Color(red: 0.15, green: 0.15, blue: 0.17)
 
@@ -373,49 +359,53 @@ struct TaskListRow: View {
         task.status == .completed
     }
 
+    private var isInProgress: Bool {
+        task.status == .inProgress
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             // Main row
             HStack(spacing: 14) {
-                // Tappable area → opens ChatView
-                Button(action: onTap) {
-                    HStack(spacing: 14) {
-                        statusIcon
-                            .frame(width: 32, height: 32)
+                HStack(spacing: 14) {
+                    statusIcon
+                        .frame(width: 32, height: 32)
 
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(task.title)
-                                .font(.system(size: 16, weight: .semibold))
-                                .foregroundColor(.white)
-                                .strikethrough(isCompleted)
-                                .lineLimit(1)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(task.title)
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(.white)
+                            .strikethrough(isCompleted)
+                            .lineLimit(1)
 
-                            if isSnoozed, let snoozedUntil = task.snoozedUntil {
-                                Text("Until \(formattedDate(snoozedUntil))")
-                                    .font(.caption)
-                                    .foregroundColor(.orange.opacity(0.8))
-                            }
+                        if isSnoozed, let snoozedUntil = task.snoozedUntil {
+                            Text("Until \(formattedDate(snoozedUntil))")
+                                .font(.caption)
+                                .foregroundColor(.orange.opacity(0.8))
                         }
 
-                        Spacer()
+                        if isInProgress {
+                            Text("In Progress · Getting quotes...")
+                                .font(.caption)
+                                .foregroundColor(.cyan.opacity(0.8))
+                        }
                     }
-                }
-                .buttonStyle(.plain)
 
-                // Expand/collapse chevron
-                Button(action: onExpand) {
-                    Image(systemName: "chevron.right")
-                        .font(.caption2.weight(.semibold))
-                        .foregroundColor(.white.opacity(0.3))
-                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
-                        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: isExpanded)
-                        .frame(width: 32, height: 32)
-                        .contentShape(Rectangle())
+                    Spacer()
                 }
-                .buttonStyle(.plain)
+
+                // Expand/collapse chevron (visual affordance only)
+                Image(systemName: "chevron.right")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundColor(.white.opacity(0.3))
+                    .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                    .animation(.spring(response: 0.3, dampingFraction: 0.8), value: isExpanded)
+                    .frame(width: 32, height: 32)
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 14)
+            .contentShape(Rectangle())
+            .onTapGesture(perform: onExpand)
 
             // Expanded description
             if isExpanded, !task.subtitle.isEmpty {
@@ -452,6 +442,10 @@ struct TaskListRow: View {
             Image(systemName: "moon.zzz.fill")
                 .font(.system(size: 18))
                 .foregroundColor(.yellow)
+        } else if isInProgress {
+            Image(systemName: "arrow.clockwise.circle.fill")
+                .font(.system(size: 20))
+                .foregroundColor(.cyan)
         } else {
             Image(systemName: iconForCategory(task.taskCategory))
                 .font(.system(size: 18))
@@ -495,6 +489,7 @@ struct TaskListRow: View {
     // MARK: - Helpers
 
     private var borderColor: Color {
+        if isInProgress { return .cyan.opacity(0.25) }
         if isSnoozed { return .yellow.opacity(0.15) }
         if task.priority == .urgent { return .orange.opacity(0.2) }
         return .white.opacity(0.06)
