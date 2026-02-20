@@ -152,7 +152,7 @@ struct PeezyCard: Identifiable, Equatable, Codable {
             return false
         }
         // Don't show completed or skipped tasks
-        if status == .completed || status == .skipped {
+        if status == .completed || status == .skipped || status == .inProgress {
             return false
         }
         return true
