@@ -121,7 +121,7 @@ final class PeezyHomeViewModel {
             let snapshot = try await db.collection("users")
                 .document(userId)
                 .collection("tasks")
-                .whereField("status", in: ["Upcoming", "InProgress", "pending", "Snoozed"])
+                .whereField("status", in: ["Upcoming", "pending", "Snoozed"])
                 .getDocuments()
 
             var cards: [PeezyCard] = []

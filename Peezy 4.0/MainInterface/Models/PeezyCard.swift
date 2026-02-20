@@ -151,7 +151,7 @@ struct PeezyCard: Identifiable, Equatable, Codable {
         if isSnoozed {
             return false
         }
-        // Don't show completed or skipped tasks
+        // Don't show completed, skipped, or in-progress tasks
         if status == .completed || status == .skipped || status == .inProgress {
             return false
         }
