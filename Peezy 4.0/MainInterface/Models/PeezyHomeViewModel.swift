@@ -283,7 +283,7 @@ final class PeezyHomeViewModel {
             let success = await workflowManager.completeWorkflow(userId: userId)
 
             if success {
-                await markTaskCompleted(task)
+                await markTaskInProgress(task)
                 await MainActor.run {
                     self.completedThisSession += 1
                     self.currentTask = nil
@@ -341,6 +341,24 @@ final class PeezyHomeViewModel {
         } catch {
             // Log but don't block — task was already removed from queue
             print("⚠️ Failed to mark task completed in Firestore: \(error.localizedDescription)")
+        }
+    }
+
+    private func markTaskInProgress(_ task: PeezyCard) async {
+        guard let userId = Auth.auth().currentUser?.uid else { return }
+
+        let db = Firestore.firestore()
+        do {
+            try await db.collection("users")
+                .document(userId)
+                .collection("tasks")
+                .document(task.id)
+                .updateData([
+                    "status": "InProgress",
+                    "inProgressAt": FieldValue.serverTimestamp()
+                ])
+        } catch {
+            print("⚠️ Failed to mark task in progress in Firestore: \(error.localizedDescription)")
         }
     }
 
