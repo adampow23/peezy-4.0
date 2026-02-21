@@ -34,26 +34,15 @@ struct HealthcareDetails: View {
                     ScrollView {
                         VStack(spacing: 16) {
                             ForEach(assessmentData.healthcareProviders, id: \.self) { category in
-                                VStack(alignment: .leading, spacing: 6) {
-                                    Text(category)
-                                        .font(.system(size: 14, weight: .medium))
-                                        .foregroundColor(.white.opacity(0.6))
-
-                                    TextField("", text: binding(for: category), prompt: Text("e.g. Dr. Smith, Aetna...").foregroundColor(.white.opacity(0.3)))
-                                        .font(.system(size: 16))
-                                        .foregroundColor(.white)
-                                        .textInputAutocapitalization(.words)
-                                        .focused($focusedCategory, equals: category)
-                                        .padding(.vertical, 14)
-                                        .padding(.horizontal, 16)
-                                        .background(
-                                            RoundedRectangle(cornerRadius: 12)
-                                                .fill(Color.white.opacity(0.08))
-                                                .overlay(
-                                                    RoundedRectangle(cornerRadius: 12)
-                                                        .stroke(Color.white.opacity(focusedCategory == category ? 0.4 : 0.15), lineWidth: 1)
-                                                )
-                                        )
+                                SuggestiveTextField(
+                                    label: category,
+                                    placeholder: "e.g. Dr. Smith, Aetna...",
+                                    text: binding(for: category),
+                                    source: suggestionSource(for: category),
+                                    isFocused: focusedCategory == category
+                                )
+                                .onTapGesture {
+                                    focusedCategory = category
                                 }
                             }
                         }
@@ -86,6 +75,21 @@ struct HealthcareDetails: View {
                 focusedCategory = first
             }
             withAnimation { showContent = true }
+        }
+    }
+
+    private func suggestionSource(for category: String) -> SuggestionSource {
+        switch category {
+        case "Doctor":
+            return .mapSearch(category: "doctor", nearAddress: assessmentData.currentAddress)
+        case "Dentist":
+            return .mapSearch(category: "dentist", nearAddress: assessmentData.currentAddress)
+        case "Specialists":
+            return .mapSearch(category: "medical specialist", nearAddress: assessmentData.currentAddress)
+        case "Pharmacy":
+            return .mapSearch(category: "pharmacy", nearAddress: assessmentData.currentAddress)
+        default:
+            return .local([])
         }
     }
 
