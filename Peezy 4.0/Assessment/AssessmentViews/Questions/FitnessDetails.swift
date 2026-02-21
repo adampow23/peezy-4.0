@@ -34,26 +34,15 @@ struct FitnessDetails: View {
                     ScrollView {
                         VStack(spacing: 16) {
                             ForEach(assessmentData.fitnessWellness, id: \.self) { category in
-                                VStack(alignment: .leading, spacing: 6) {
-                                    Text(category)
-                                        .font(.system(size: 14, weight: .medium))
-                                        .foregroundColor(.white.opacity(0.6))
-
-                                    TextField("", text: binding(for: category), prompt: Text("e.g. Planet Fitness, YMCA...").foregroundColor(.white.opacity(0.3)))
-                                        .font(.system(size: 16))
-                                        .foregroundColor(.white)
-                                        .textInputAutocapitalization(.words)
-                                        .focused($focusedCategory, equals: category)
-                                        .padding(.vertical, 14)
-                                        .padding(.horizontal, 16)
-                                        .background(
-                                            RoundedRectangle(cornerRadius: 12)
-                                                .fill(Color.white.opacity(0.08))
-                                                .overlay(
-                                                    RoundedRectangle(cornerRadius: 12)
-                                                        .stroke(Color.white.opacity(focusedCategory == category ? 0.4 : 0.15), lineWidth: 1)
-                                                )
-                                        )
+                                SuggestiveTextField(
+                                    label: category,
+                                    placeholder: "e.g. Planet Fitness, YMCA...",
+                                    text: binding(for: category),
+                                    source: suggestionSource(for: category),
+                                    isFocused: focusedCategory == category
+                                )
+                                .onTapGesture {
+                                    focusedCategory = category
                                 }
                             }
                         }
@@ -86,6 +75,23 @@ struct FitnessDetails: View {
                 focusedCategory = first
             }
             withAnimation { showContent = true }
+        }
+    }
+
+    private func suggestionSource(for category: String) -> SuggestionSource {
+        switch category {
+        case "Gym / CrossFit":
+            return .mapSearch(category: "gym crossfit", nearAddress: assessmentData.currentAddress)
+        case "Yoga / Pilates":
+            return .mapSearch(category: "yoga pilates studio", nearAddress: assessmentData.currentAddress)
+        case "Spin / Cycling":
+            return .mapSearch(category: "cycling spin studio", nearAddress: assessmentData.currentAddress)
+        case "Massage / Spa":
+            return .mapSearch(category: "spa massage", nearAddress: assessmentData.currentAddress)
+        case "Country Club / Golf":
+            return .mapSearch(category: "golf country club", nearAddress: assessmentData.currentAddress)
+        default:
+            return .local([])
         }
     }
 
