@@ -129,9 +129,13 @@ struct AssessmentCompleteView: View {
             
             // Confetti overlay
             if showConfetti {
-                ConfettiView(isActive: $showConfetti, intensity: .high)
-                    .ignoresSafeArea()
-                    .allowsHitTesting(false)
+                ConfettiView(isActive: $showConfetti, intensity: .high, onSettling: {
+                    withAnimation(.easeIn(duration: 0.6)) {
+                        summaryOpacity = 1.0
+                    }
+                })
+                .ignoresSafeArea()
+                .allowsHitTesting(false)
             }
         }
         .interactiveDismissDisabled()
@@ -476,19 +480,11 @@ struct AssessmentCompleteView: View {
     
     private func revealSummary() {
         showConfetti = true
-        
+
         withAnimation(.easeInOut(duration: 0.5)) {
             stage = .summary
         }
-        withAnimation(.easeIn(duration: 0.6).delay(0.3)) {
-            summaryOpacity = 1.0
-        }
-        
-        DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) {
-            withAnimation(.easeOut(duration: 1.0)) {
-                showConfetti = false
-            }
-        }
+        // summaryOpacity stays at 0 — text reveal is driven by ConfettiView.onSettling
     }
     
     private func finishAndContinue() {
