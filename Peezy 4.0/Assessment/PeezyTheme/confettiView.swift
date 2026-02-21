@@ -6,25 +6,26 @@
 //
 
 import SwiftUI
+import Observation
 
 // MARK: - Confetti Particle Model
+
+enum ConfettiShape {
+    case circle(diameter: CGFloat)
+    case rectangle(width: CGFloat, height: CGFloat)
+}
 
 struct ConfettiParticle: Identifiable {
     let id = UUID()
     var position: CGPoint
     var velocity: CGVector
-    var rotation: Double
-    var rotationSpeed: Double
-    var scale: CGFloat
+    var rotation: Double          // radians
+    var rotationSpeed: Double     // radians per second
     var opacity: Double
     var color: Color
     var shape: ConfettiShape
-
-    enum ConfettiShape: CaseIterable {
-        case circle
-        case checkmark
-        case star
-    }
+    var wobbleFreq: Double        // Hz — unique per particle
+    var wobblePhase: Double       // radian offset — unique per particle
 }
 
 // MARK: - Confetti Intensity
@@ -32,19 +33,24 @@ struct ConfettiParticle: Identifiable {
 enum ConfettiIntensity {
     case low
     case high
+}
 
-    var particleCount: Int {
-        switch self {
-        case .low: return 1
-        case .high: return 1000
-        }
-    }
+// MARK: - Particle System State (class so Canvas can mutate it)
 
-    var emissionDuration: Double {
-        switch self {
-        case .low: return 0.7 // Continuous
-        case .high: return 0.8 // Burst
-        }
+@Observable
+private final class ParticleSystemState {
+    var particles: [ConfettiParticle] = []
+    var startDate: Date = Date()
+    var lastFrameDate: Date = Date()
+    var settlingFired: Bool = false
+    var nextEmitTime: Double = 0
+
+    func reset() {
+        particles = []
+        startDate = Date()
+        lastFrameDate = Date()
+        settlingFired = false
+        nextEmitTime = 0
     }
 }
 
@@ -53,161 +59,125 @@ enum ConfettiIntensity {
 struct ConfettiView: View {
     @Binding var isActive: Bool
     let intensity: ConfettiIntensity
+    var onSettling: (() -> Void)? = nil
 
-    @State private var particles: [ConfettiParticle] = []
-    @State private var timer: Timer?
+    @State private var state = ParticleSystemState()
 
-    private let yellowColor = Color(red: 0.98, green: 0.85, blue: 0.29)
+    private let colors: [Color] = [
+        Color(red: 0.98, green: 0.85, blue: 0.29), // gold
+        .white,
+        Color(red: 0.45, green: 0.78, blue: 0.98), // light blue
+        Color(red: 0.98, green: 0.50, blue: 0.45), // coral
+        Color(red: 0.45, green: 0.88, blue: 0.70), // mint
+        Color(red: 0.75, green: 0.55, blue: 0.95)  // soft purple
+    ]
 
     var body: some View {
         GeometryReader { geometry in
-            ZStack {
-                ForEach(particles) { particle in
-                    ParticleView(particle: particle)
+            TimelineView(.animation) { timeline in
+                Canvas { context, size in
+                    let now = timeline.date
+                    let elapsed = now.timeIntervalSince(state.startDate)
+                    let dt = now.timeIntervalSince(state.lastFrameDate)
+
+                    // Emit new particles during first 2 seconds
+                    if elapsed <= 2.0 && elapsed >= state.nextEmitTime {
+                        let batchCount = Int.random(in: 6...8)
+                        for _ in 0..<batchCount {
+                            state.particles.append(makeParticle(screenWidth: size.width))
+                        }
+                        state.nextEmitTime = elapsed + 0.08
+                    }
+
+                    // Fire settling callback once at t=2.2s
+                    if elapsed >= 2.2 && !state.settlingFired {
+                        state.settlingFired = true
+                        DispatchQueue.main.async { onSettling?() }
+                    }
+
+                    // Update physics
+                    let gravity: Double = 380
+                    for i in state.particles.indices {
+                        var p = state.particles[i]
+
+                        // Gravity
+                        p.velocity.dy += gravity * dt
+
+                        // Horizontal wobble
+                        let wobble = sin(elapsed * p.wobbleFreq + p.wobblePhase) * 18
+                        p.position.x += (p.velocity.dx + wobble) * dt
+                        p.position.y += p.velocity.dy * dt
+
+                        // Rotation
+                        p.rotation += p.rotationSpeed * dt
+
+                        // Fade near bottom
+                        if p.position.y > size.height * 0.75 {
+                            p.opacity -= dt * 1.8
+                        }
+
+                        state.particles[i] = p
+                    }
+
+                    // Remove dead particles
+                    state.particles.removeAll { $0.position.y > size.height + 20 || $0.opacity <= 0 }
+
+                    state.lastFrameDate = now
+
+                    // Draw particles
+                    for p in state.particles {
+                        switch p.shape {
+                        case .circle(let diameter):
+                            let rect = CGRect(
+                                x: p.position.x - diameter / 2,
+                                y: p.position.y - diameter / 2,
+                                width: diameter,
+                                height: diameter
+                            )
+                            context.fill(Path(ellipseIn: rect), with: .color(p.color.opacity(p.opacity)))
+
+                        case .rectangle(let w, let h):
+                            var ctx = context
+                            ctx.translateBy(x: p.position.x, y: p.position.y)
+                            ctx.rotate(by: .radians(p.rotation))
+                            let rect = CGRect(x: -w / 2, y: -h / 2, width: w, height: h)
+                            ctx.fill(Path(rect), with: .color(p.color.opacity(p.opacity)))
+                        }
+                    }
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .onAppear {
-                if isActive {
-                    startConfetti(in: geometry.size)
-                }
-            }
-            .onChange(of: isActive) { _, active in
-                if active {
-                    startConfetti(in: geometry.size)
-                } else {
-                    stopConfetti()
-                }
+                state.reset()
             }
         }
     }
 
-    private func startConfetti(in size: CGSize) {
-        particles.removeAll()
-
-        if intensity == .high {
-            // Burst emission
-            let emissionCenter = CGPoint(x: size.width / 2, y: size.height / 2)
-            for _ in 0..<intensity.particleCount {
-                particles.append(createParticle(from: emissionCenter, size: size))
-            }
-
-            // Animate particles
-            animateParticles(size: size)
-        } else {
-            // Continuous emission for background ambiance
-            timer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: true) { _ in
-                if particles.count < 30 {
-                    let emissionPoint = CGPoint(x: CGFloat.random(in: 0...size.width), y: -20)
-                    particles.append(createParticle(from: emissionPoint, size: size, gentle: true))
-                }
-                animateParticles(size: size)
-            }
-        }
-    }
-
-    private func stopConfetti() {
-        timer?.invalidate()
-        timer = nil
-
-        withAnimation(.easeOut(duration: 1.0)) {
-            particles.removeAll()
-        }
-    }
-
-    private func createParticle(from origin: CGPoint, size: CGSize, gentle: Bool = false) -> ConfettiParticle {
-        let colors: [Color] = [
-            yellowColor,
-            .white,
-            Color(white: 0.9),
-            yellowColor.opacity(0.8)
-        ]
-
-        let velocityMagnitude: CGFloat = gentle ? CGFloat.random(in: 50...150) : CGFloat.random(in: 300...600)
-        let angle = Double.random(in: gentle ? -Double.pi/6...Double.pi/6 : 0...(2 * .pi))
+    private func makeParticle(screenWidth: CGFloat) -> ConfettiParticle {
+        let isRect = Bool.random()
+        let shape: ConfettiShape = isRect
+            ? .rectangle(
+                width: CGFloat.random(in: 6...12),
+                height: CGFloat.random(in: 4...8)
+              )
+            : .circle(diameter: CGFloat.random(in: 4...6))
 
         return ConfettiParticle(
-            position: origin,
+            position: CGPoint(
+                x: CGFloat.random(in: 0...screenWidth),
+                y: -10
+            ),
             velocity: CGVector(
-                dx: cos(angle) * velocityMagnitude,
-                dy: gentle ? velocityMagnitude : sin(angle) * velocityMagnitude
+                dx: Double.random(in: -80...80),
+                dy: Double.random(in: 180...320)
             ),
             rotation: Double.random(in: 0...(2 * .pi)),
-            rotationSpeed: Double.random(in: -10...10),
-            scale: gentle ? CGFloat.random(in: 0.3...0.6) : CGFloat.random(in: 0.8...1.8),
+            rotationSpeed: Double.random(in: -6...6),
             opacity: 1.0,
             color: colors.randomElement()!,
-            shape: ConfettiParticle.ConfettiShape.allCases.randomElement()!
+            shape: shape,
+            wobbleFreq: Double.random(in: 1.5...3.5),
+            wobblePhase: Double.random(in: 0...(2 * .pi))
         )
-    }
-
-    private func animateParticles(size: CGSize) {
-        let updateInterval: TimeInterval = 1/60.0 // 60 FPS
-        let gravity: CGFloat = 480 // pixels per second squared
-
-        Timer.scheduledTimer(withTimeInterval: updateInterval, repeats: false) { _ in
-            for index in particles.indices {
-                var particle = particles[index]
-
-                // Update position
-                particle.position.x += particle.velocity.dx * updateInterval
-                particle.position.y += particle.velocity.dy * updateInterval
-
-                // Apply gravity
-                particle.velocity.dy += gravity * updateInterval
-
-                // Update rotation
-                particle.rotation += particle.rotationSpeed * updateInterval
-
-                // Fade out
-                if particle.position.y > size.height - 50 {
-                    particle.opacity -= 0.01
-                }
-
-                particles[index] = particle
-            }
-
-            // Remove particles that are off-screen or fully transparent
-            particles.removeAll { particle in
-                particle.position.y > size.height + 50 || particle.opacity <= 0
-            }
-
-            // Continue animation if particles exist
-            if !particles.isEmpty && isActive {
-                animateParticles(size: size)
-            }
-        }
-    }
-}
-
-// MARK: - Particle View
-
-struct ParticleView: View {
-    let particle: ConfettiParticle
-
-    var body: some View {
-        Group {
-            switch particle.shape {
-            case .circle:
-                Circle()
-                    .fill(particle.color)
-                    .frame(width: 1, height: 1)
-
-            case .checkmark:
-                Image(systemName: "checkmark")
-                    .font(.system(size: 20, weight: .bold))
-                    .foregroundStyle(particle.color)
-
-            case .star:
-                Image(systemName: "star.fill")
-                    .font(.system(size: 16))
-                    .foregroundStyle(particle.color)
-            }
-        }
-        .scaleEffect(particle.scale)
-        .rotationEffect(.degrees(particle.rotation * 180 / .pi))
-        .opacity(particle.opacity)
-        .position(particle.position)
     }
 }
 
@@ -215,9 +185,7 @@ struct ParticleView: View {
 
 #Preview {
     ZStack {
-        Color.black.opacity(0.3)
-            .ignoresSafeArea()
-
+        Color.black.ignoresSafeArea()
         ConfettiView(isActive: .constant(true), intensity: .high)
     }
 }
