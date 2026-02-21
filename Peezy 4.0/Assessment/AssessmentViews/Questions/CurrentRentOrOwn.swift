@@ -22,7 +22,7 @@ struct CurrentRentOrOwn: View {
         VStack(spacing: 0) {
             // Content area with equal spacing
             AssessmentContentArea(
-                questionText: "Rent or own?",
+                questionText: "Renting or do you own?",
                 showContent: showContent
             ) {
                 // Options grid

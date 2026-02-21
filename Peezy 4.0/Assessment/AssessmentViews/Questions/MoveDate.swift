@@ -16,7 +16,7 @@ struct MoveDate: View {
 
                     // Question
                     HStack {
-                        Text("When's your move?")
+                        Text("When are we moving?")
                             .font(.system(size: 34, weight: .bold))
                             .foregroundColor(.white)
                             .frame(width: geo.size.width * 0.6, alignment: .leading)

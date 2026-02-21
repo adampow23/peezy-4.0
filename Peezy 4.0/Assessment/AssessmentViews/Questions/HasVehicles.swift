@@ -22,7 +22,7 @@ struct HasVehicles: View {
         VStack(spacing: 0) {
             // Content area with equal spacing
             AssessmentContentArea(
-                questionText: "Do you have any vehicles that need registration or title updates?",
+                questionText: "Any vehicles that need registration or title updates?",
                 showContent: showContent
             ) {
                 // Options grid

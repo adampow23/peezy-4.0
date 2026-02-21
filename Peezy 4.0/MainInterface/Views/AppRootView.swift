@@ -42,7 +42,7 @@ struct AppRootView: View {
                 }
                 
             case .hasAssessment:
-                PeezyMainContainer(userState: userState)
+                PeezyMainContainer(userState: $userState)
             }
         }
         .onAppear {

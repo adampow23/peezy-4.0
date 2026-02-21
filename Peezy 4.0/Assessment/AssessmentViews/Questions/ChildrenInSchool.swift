@@ -16,7 +16,7 @@ struct ChildrenInSchool: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            AssessmentContentArea(questionText: "Any school-age kids?", showContent: showContent) {
+            AssessmentContentArea(questionText: "Any kids in school?", showContent: showContent) {
                 LazyVGrid(columns: [GridItem(.flexible(), spacing: 16), GridItem(.flexible(), spacing: 16)], spacing: 16) {
                     ForEach(Array(options.enumerated()), id: \.element) { index, option in
                         SelectionTile(title: option, icon: iconMap[option], isSelected: selected == option, onTap: {

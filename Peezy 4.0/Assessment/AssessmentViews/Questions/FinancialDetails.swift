@@ -31,7 +31,7 @@ struct FinancialDetails: View {
                     Spacer(minLength: 0)
 
                     HStack {
-                        Text("Which ones?")
+                        Text("Which ones specifically?")
                             .font(.system(size: 34, weight: .bold))
                             .foregroundColor(.white)
                             .frame(width: geo.size.width * 0.6, alignment: .leading)

@@ -23,7 +23,7 @@ struct FitnessWellness: View {
 
                     HStack {
                         VStack(alignment: .leading, spacing: 8) {
-                            Text("Gym or memberships?")
+                            Text("Any memberships or subscriptions?")
                                 .font(.system(size: 34, weight: .bold))
                                 .foregroundColor(.white)
                                 .frame(width: geo.size.width * 0.6, alignment: .leading)

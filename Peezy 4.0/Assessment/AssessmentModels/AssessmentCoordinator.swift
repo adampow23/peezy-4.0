@@ -2,15 +2,13 @@
 //  AssessmentCoordinator.swift
 //  Peezy
 //
-//  Manages assessment flow: navigation, branching, interstitials, and completion.
+//  Manages assessment flow: navigation, branching, and completion.
 //  Architecture: sequence-based state machine with dynamic branching.
 //
-//  Flow: interstitial (post-comment) → input (context + controls) → interstitial → input → ... → complete
+//  Flow: input → input → input → ... → complete
 //
 //  UX Model:
-//  - Interstitial: Single typewriter comment reacting to the previous answer. Tap to dismiss.
 //  - Input screen: Context header typewriters in at top, then input controls slide/fade in below.
-//  - The first interstitial is Peezy's intro (no previous answer to react to).
 //
 
 import SwiftUI
@@ -19,7 +17,7 @@ import FirebaseAuth
 
 // MARK: - Assessment Input Steps
 
-/// Every input screen in the assessment. No interstitials here — those are managed by the coordinator.
+/// Every input screen in the assessment.
 enum AssessmentInputStep: String, Hashable {
     // Section 1: Basics
     case userName
@@ -81,33 +79,16 @@ enum AssessmentInputStep: String, Hashable {
 
 // MARK: - Assessment Node
 
-/// A single node in the assessment sequence — either an interstitial or an input screen.
+/// A single node in the assessment sequence — an input screen.
 enum AssessmentNode: Hashable {
-    /// Post-comment interstitial. `after` is the step whose answer we're reacting to.
-    /// For the very first interstitial (Peezy's intro), `after` is nil.
-    case interstitial(after: AssessmentInputStep?)
     /// Input screen with built-in context animation.
     case input(AssessmentInputStep)
-    
+
     var inputStep: AssessmentInputStep? {
         switch self {
         case .input(let step): return step
-        case .interstitial: return nil
         }
     }
-    
-    var isInterstitial: Bool {
-        if case .interstitial = self { return true }
-        return false
-    }
-}
-
-// MARK: - Interstitial Comment
-
-/// Content for a post-comment interstitial — a single reaction to the previous answer.
-struct InterstitialComment {
-    /// Peezy's reaction to the user's previous answer (or intro for the first one).
-    let text: String
 }
 
 // MARK: - Input Context
@@ -146,22 +127,21 @@ class AssessmentCoordinator: ObservableObject {
         return sequence[currentIndex]
     }
     
-    /// Highest input step count seen — ensures progress bar denominator never decreases.
+    /// Highest step count seen — ensures progress bar denominator never decreases.
     @Published private var maxInputStepsSeen: Int = 0
-    
-    /// Total number of INPUT steps for progress bar.
+
+    /// Total number of steps for progress bar.
     /// Uses a watermark so the denominator only ever increases, never decreases.
     /// This prevents the progress bar from jumping backward when branches change.
     var totalInputSteps: Int {
         return maxInputStepsSeen
     }
-    
-    /// Current input step number (1-based) — for progress bar.
+
+    /// Current step number (1-based) — for progress bar.
     var currentInputStepNumber: Int {
-        let inputNodesBeforeCurrent = sequence.prefix(currentIndex + 1).filter { !$0.isInterstitial }.count
-        return max(inputNodesBeforeCurrent, 1)
+        return max(currentIndex + 1, 1)
     }
-    
+
     /// Progress fraction for the progress bar (0.0 to 1.0).
     var progress: Double {
         guard totalInputSteps > 0 else { return 0 }
@@ -207,23 +187,11 @@ class AssessmentCoordinator: ObservableObject {
         currentIndex = min(currentIndex, sequence.count - 1)
     }
     
-    /// Go back to the previous INPUT step (skipping interstitials).
-    /// Does nothing if already at or before the first input step.
+    /// Go back to the previous step.
+    /// Does nothing if already at the first step.
     func goBack() {
         guard currentIndex > 0 else { return }
-        
-        // Walk backward from one before current position
-        var targetIndex = currentIndex - 1
-        
-        // Skip interstitials — land on the previous input node
-        while targetIndex >= 0 && sequence[targetIndex].isInterstitial {
-            targetIndex -= 1
-        }
-        
-        // If no previous input exists, we're at the first question — do nothing
-        guard targetIndex >= 0 else { return }
-        
-        currentIndex = targetIndex
+        currentIndex -= 1
     }
     
     /// Reset the entire assessment.
@@ -243,19 +211,14 @@ class AssessmentCoordinator: ObservableObject {
     /// Called on init and when branching answers change.
     func buildSequence() {
         var nodes: [AssessmentNode] = []
-        
-        /// Track the previous input step so interstitials know what they're reacting to.
-        var previousStep: AssessmentInputStep? = nil
-        
-        // Helper to add an interstitial (reacting to previous) + input pair
+
+        // Helper to add an input step
         func addStep(_ step: AssessmentInputStep) {
-            nodes.append(.interstitial(after: previousStep))
             nodes.append(.input(step))
-            previousStep = step
         }
-        
+
         // Section 1: Basics
-        addStep(.userName)          // First interstitial: after: nil → Peezy intro
+        addStep(.userName)
         addStep(.moveConcerns)
         addStep(.moveDate)
         addStep(.moveDateType)
@@ -331,9 +294,9 @@ class AssessmentCoordinator: ObservableObject {
         addStep(.howHeard)
         
         sequence = nodes
-        
+
         // Update watermark for progress bar stability
-        let inputCount = nodes.filter { !$0.isInterstitial }.count
+        let inputCount = nodes.count
         if inputCount > maxInputStepsSeen {
             maxInputStepsSeen = inputCount
         }
@@ -351,286 +314,6 @@ class AssessmentCoordinator: ObservableObject {
         }
     }
     
-    // MARK: - Interstitial Comments (Post-Answer Reactions)
-    
-    // TILE LABEL CONTRACT — question views MUST use these exact strings:
-    //
-    // moveDateType:         "Same Day" | "Out Before In" | "In Before Out"
-    // currentRentOrOwn:     "Rent" | "Own"
-    // newRentOrOwn:         "Rent" | "Own"
-    // currentFloorAccess:   "First Floor" | "Stairs" | "Elevator" | "Reservable Elevator"
-    // newFloorAccess:       (same as above)
-    // hireMovers:           "Hire Professional Movers" | "Move Myself" | "Not Sure" | "Get Me Quotes"
-    // hirePackers:          "Hire Professional Packers" | "Pack Myself" | "Not Sure" | "Get Me Quotes"
-    // hireCleaners:         "Hire Professional Cleaners" | "Clean Myself" | "Not Sure" | "Get Me Quotes"
-    // childrenInSchool:     "Yes" | "No"
-    // childrenInDaycare:    "Yes" | "No"
-    // hasVet:               "Yes" | "No"
-    // hasVehicles:           "Yes" | "No"
-    // hasStorage:            "Yes" | "No"
-    // storageSize:           "Small (5x5)" | "Medium (10x10)" | "Large (10x20+)"
-    // storageFullness:       "Mostly Empty" | "About Half" | "Packed Full"
-    //
-    // All comparisons use .lowercased() so casing doesn't matter, but spelling must match.
-    
-    /// Returns the post-comment for an interstitial that reacts to the given step's answer.
-    /// If `afterStep` is nil, this is the first interstitial (Peezy's intro).
-    func interstitialComment(after afterStep: AssessmentInputStep?) -> InterstitialComment {
-        guard let step = afterStep else {
-            // First interstitial — Peezy's introduction
-            return InterstitialComment(
-                text: "Hey there 👋 I'm Peezy, your moving concierge. I'm going to ask you some questions about your move so I can start handling things for you. The more you tell me, the more I can take off your plate."
-            )
-        }
-        
-        switch step {
-            
-        // --- SECTION 1: BASICS ---
-            
-        case .userName:
-            return InterstitialComment(
-                text: "Great to meet you, \(dataManager.userName). We're going to make this the smoothest move you've ever had."
-            )
-
-        case .moveConcerns:
-            let concerns = dataManager.moveConcerns
-            let text: String
-            if concerns.isEmpty {
-                text = "No worries at all? We love the confidence. Let's keep that energy going."
-            } else if concerns.count == 1 {
-                text = "Just \(concerns.first ?? "that")? We've got you covered. That's one of the biggest reasons people come to us."
-            } else {
-                text = "\(concerns.joined(separator: ", "))? Totally normal. Every one of those is something we handle every day. You're in good hands."
-            }
-            return InterstitialComment(text: text)
-            
-        case .moveDate:
-            let weeksOut = weeksUntilDate(dataManager.moveDate)
-            let text: String
-            if weeksOut <= 2 {
-                text = "\(weeksOut) weeks out — that's tight, but we've done tighter. Let's make every day count."
-            } else if weeksOut <= 4 {
-                text = "\(weeksOut) weeks — solid timeline. Plenty of room to get everything handled right."
-            } else {
-                text = "\(weeksOut) weeks out — you're ahead of the game. Most people don't start planning until 2 weeks before."
-            }
-            return InterstitialComment(text: text)
-
-        case .moveDateType:
-            let text: String
-            switch dataManager.moveDateType.lowercased() {
-            case "same day":
-                text = "Same-day move — tight but totally doable. We'll make sure everything lines up."
-            case "out before in":
-                text = "Out first, then in — we'll plan for the gap so nothing falls through the cracks."
-            case "in before out":
-                text = "Nice — overlap means you can move things gradually if you want."
-            default:
-                text = "Got it. We'll work with your timeline."
-            }
-            return InterstitialComment(text: text)
-            
-        // --- SECTION 2: CURRENT HOME ---
-            
-        case .currentRentOrOwn:
-            let text = dataManager.currentRentOrOwn.lowercased() == "own"
-                ? "Homeowner — nice. We'll make sure things like closing details and property prep are on the list."
-                : "Renting — got it. We'll handle things like lease notifications, security deposit recovery, and move-out requirements."
-            return InterstitialComment(text: text)
-            
-        case .currentDwellingType:
-            return InterstitialComment(
-                text: "Got it — \(dataManager.currentDwellingType.lowercased()) it is."
-            )
-            
-        case .currentAddress:
-            return InterstitialComment(
-                text: "Perfect. A few more details about your place so we can plan logistics."
-            )
-            
-        case .currentFloorAccess:
-            let text: String
-            switch dataManager.currentFloorAccess.lowercased() {
-            case "first floor":
-                text = "First floor — nice and easy for the movers."
-            case "stairs":
-                text = "Stairs — we'll factor in extra time and make sure the movers know what they're getting into."
-            case "elevator":
-                text = "Elevator — we'll plan around peak times and make sure everything goes smooth."
-            case "reservable elevator":
-                text = "Reservable elevator — perfect. We'll remind you to book it ahead of time."
-            default:
-                text = "Got it."
-            }
-            return InterstitialComment(text: text)
-            
-        case .currentBedrooms:
-            return InterstitialComment(
-                text: "\(dataManager.currentBedrooms) bedroom\(dataManager.currentBedrooms == "1" ? "" : "s") — got it."
-            )
-            
-        case .currentSquareFootage:
-            return generatePackingBallparkComment()
-            
-        case .currentFinishedSqFt:
-            return generatePackingBallparkComment()
-            
-        // --- SECTION 3: NEW HOME ---
-            
-        case .newRentOrOwn:
-            let text = dataManager.newRentOrOwn.lowercased() == "own"
-                ? "Congrats on the new place! We'll make sure utilities, insurance, and everything else is set up before you get there."
-                : "Got it — renting at the new spot. We'll make sure you've got everything lined up with the new landlord."
-            return InterstitialComment(text: text)
-            
-        case .newDwellingType:
-            return InterstitialComment(
-                text: "A \(dataManager.newDwellingType.lowercased()) — nice."
-            )
-            
-        case .newAddress:
-            return InterstitialComment(
-                text: "Perfect. Same drill — a few details about the new place."
-            )
-            
-        case .newFloorAccess:
-            return InterstitialComment(text: "Got it.")
-            
-        case .newBedrooms:
-            return InterstitialComment(text: "Nice.")
-            
-        case .newSquareFootage:
-            return InterstitialComment(text: "Got it.")
-            
-        case .newFinishedSqFt:
-            // Distance comment — both addresses now collected
-            return InterstitialComment(text: generateDistanceComment())
-            
-        // --- SECTION 4: PEOPLE ---
-            
-        case .childrenInSchool:
-            if dataManager.childrenInSchool.lowercased() == "yes" {
-                return InterstitialComment(text: "Got it — we'll make sure school transfers and enrollment are on the list.")
-            } else {
-                return InterstitialComment(text: "Got it.")
-            }
-
-        case .childrenInDaycare:
-            if dataManager.childrenInDaycare.lowercased() == "yes" {
-                return InterstitialComment(text: "We'll help you find daycare options near the new place.")
-            } else {
-                return InterstitialComment(text: "Got it.")
-            }
-            
-        case .hasVet:
-            if dataManager.hasVet.lowercased() == "yes" {
-                return InterstitialComment(text: "We'll make sure those vet records get transferred smoothly.")
-            } else {
-                return InterstitialComment(text: "Got it.")
-            }
-
-        case .hasVehicles:
-            if dataManager.hasVehicles.lowercased() == "yes" {
-                return InterstitialComment(text: "We'll add registration and title updates to your plan.")
-            } else {
-                return InterstitialComment(text: "Got it.")
-            }
-
-        case .hasStorage:
-            if dataManager.hasStorage.lowercased() == "yes" {
-                return InterstitialComment(text: "No problem — let's get some details on that unit.")
-            } else {
-                return InterstitialComment(text: generateHouseholdComment())
-            }
-
-        case .storageSize:
-            return InterstitialComment(text: "Got it.")
-
-        case .storageFullness:
-            return InterstitialComment(text: generateHouseholdComment())
-
-        // --- SECTION 5: SERVICES ---
-            
-        case .hireMovers:
-            let text: String
-            switch dataManager.hireMovers.lowercased() {
-            case "hire professional movers":
-                text = "Smart move. We'll make sure you get matched with top-rated, vetted movers — and they know they're accountable to us."
-            case "move myself":
-                text = "Respect the hustle. We'll make sure you've got the right truck size, equipment, and a solid game plan."
-            case "not sure":
-                text = "No pressure. We'll get you some quotes so you can decide with real numbers."
-            case "get me quotes":
-                text = "On it. We'll get you 3 competitive quotes from vetted pros so you can compare without the hassle."
-            default:
-                text = "Got it."
-            }
-            return InterstitialComment(text: text)
-            
-        case .hirePackers:
-            let text: String
-            switch dataManager.hirePackers.lowercased() {
-            case "hire professional packers":
-                text = "Professional packing is honestly one of the best investments in a move. We'll find the right crew."
-            case "pack myself":
-                text = "We'll build you a packing schedule so it doesn't all pile up on the last day."
-            case "not sure", "get me quotes":
-                text = "We'll get you options so you can decide."
-            default:
-                text = "Got it."
-            }
-            return InterstitialComment(text: text)
-            
-        case .hireCleaners:
-            return InterstitialComment(text: generateServicesSummary())
-            
-        // --- SECTION 6: ACCOUNTS ---
-            
-        case .financialInstitutions:
-            let count = dataManager.financialInstitutions.count
-            let text = count > 0
-                ? "\(count) financial account\(count == 1 ? "" : "s") — let's get the specifics."
-                : "No financial accounts to update? Nice and simple."
-            return InterstitialComment(text: text)
-
-        case .financialDetails:
-            return InterstitialComment(
-                text: "Got it — we'll make sure every one gets updated."
-            )
-
-        case .healthcareProviders:
-            let count = dataManager.healthcareProviders.count
-            let text = count > 0
-                ? "\(count) healthcare provider\(count == 1 ? "" : "s") — let's nail down the names."
-                : "No healthcare updates needed — easy."
-            return InterstitialComment(text: text)
-
-        case .healthcareDetails:
-            return InterstitialComment(
-                text: "We'll handle those healthcare updates for you."
-            )
-
-        case .fitnessWellness:
-            let count = dataManager.fitnessWellness.count
-            let text = count > 0
-                ? "\(count) membership\(count == 1 ? "" : "s") — let's get the details."
-                : "That's everything I need, \(dataManager.userName). Give me just a second to build your plan..."
-            return InterstitialComment(text: text)
-
-        case .fitnessDetails:
-            return InterstitialComment(
-                text: "That's everything I need, \(dataManager.userName). Give me just a second to build your plan..."
-            )
-            
-        // --- WRAP-UP ---
-            
-        case .howHeard:
-            return InterstitialComment(
-                text: "Thanks! Alright, your plan is ready. Let me show you what we've got."
-            )
-        }
-    }
-    
     // MARK: - Input Context (Header + Subheader for Input Screens)
     
     /// Returns the context that appears at the top of an input screen.
@@ -642,52 +325,69 @@ class AssessmentCoordinator: ObservableObject {
             
         case .userName:
             return InputContext(
-                header: "Let's get on a first-name basis.",
-                subheader: "First name, nickname, your old AIM screen name — whatever feels right. We're going to be talking a lot."
+                header: "Love it. Let's get to know each other. What's your first name?",
+                subheader: nil
             )
 
         case .moveConcerns:
             return InputContext(
-                header: "What's on your mind?",
-                subheader: "What's weighing on you most about this move? Pick as many as apply — this is how we know where to focus your plan."
+                header: "Nice to meet you, \(dataManager.userName). I'm Peezy! I'll be handling the entire move so you don't have to, but I want to know where your head is at. What's taking up the most mental energy right now?",
+                subheader: "Pick your biggest headaches below."
             )
             
         case .moveDate:
+            let firstLine: String
+            if dataManager.moveConcerns.isEmpty {
+                firstLine = "No major stress? I like your style, \(dataManager.userName). Let's keep it that way."
+            } else {
+                firstLine = "Say no more. That is exactly the stuff I'm built to take off your plate. Take a deep breath—I've got it from here."
+            }
             return InputContext(
-                header: "Let's figure out your timeline.",
-                subheader: "When's the big day? If you don't know the exact date, a best guess works — you can always update it later."
+                header: firstLine,
+                subheader: "Next up: when are we moving? If it's not 100% official yet, just drop your best guess below!"
             )
 
         case .moveDateType:
+            let days = Calendar.current.dateComponents([.day], from: Date(), to: dataManager.moveDate).day ?? 0
+            let firstLine: String
+            if days < 7 {
+                firstLine = "Less than a week? No sweat. This is exactly why I'm here. Let's put this into high gear."
+            } else if days <= 14 {
+                firstLine = "Two weeks out! That's the perfect amount of time for me to get everything locked in without a scramble."
+            } else if days <= 30 {
+                firstLine = "A month away! I love it. We're going to have this whole thing handled with plenty of time to spare."
+            } else {
+                firstLine = "Awesome, we've got loads of time. Getting this sorted early means zero stress as the big day gets closer."
+            }
             return InputContext(
-                header: "One more thing on timing.",
-                subheader: "Are you moving out and in on the same day, or is there a gap? This helps us plan logistics and figure out if you'll need storage."
+                header: firstLine,
+                subheader: "Now, how set in stone is that date?"
             )
             
         // --- SECTION 2: CURRENT HOME ---
             
         case .currentRentOrOwn:
             return InputContext(
-                header: "Let's start with where you're living now.",
-                subheader: "Are you renting or do you own? This affects things like security deposits, lease termination, and what needs to happen before you leave."
+                header: "Alright, let's talk about your current place. Are you renting or do you own?",
+                subheader: "This helps me figure out things like lease breaks, security deposits, or listing prep."
             )
             
         case .currentDwellingType:
             return InputContext(
-                header: "What type of place is it?",
+                header: "What kind of place is it?",
                 subheader: nil
             )
             
         case .currentAddress:
             return InputContext(
                 header: "What's the address?",
-                subheader: "We need this for mail forwarding, change of address, and researching local utilities and services. Everything stays private."
+                subheader: "I'll use this for mail forwarding, utilities, change of address—all the stuff you'd normally have to chase down yourself."
             )
             
         case .currentFloorAccess:
             return InputContext(
-                header: "How do you access your floor?",
-                subheader: "This helps us estimate move time and plan logistics."
+                header: "What floor are you on?",
+                subheader: "This helps me plan the move-out logistics."
             )
             
         case .currentBedrooms:
@@ -699,39 +399,39 @@ class AssessmentCoordinator: ObservableObject {
         case .currentSquareFootage:
             return InputContext(
                 header: "Roughly how big is the place?",
-                subheader: "Square footage helps us estimate packing time and how much moving capacity you'll need. A rough guess is fine."
+                subheader: "Don't overthink it—a ballpark is perfect."
             )
             
         case .currentFinishedSqFt:
             return InputContext(
-                header: "How much finished living space?",
-                subheader: "The main living area — bedrooms, kitchen, living room. A rough estimate works."
+                header: "How much finished living space are we working with?",
+                subheader: "Ballpark is totally fine."
             )
             
         // --- SECTION 3: NEW HOME ---
             
         case .newRentOrOwn:
             return InputContext(
-                header: "Now let's talk about where you're headed.",
-                subheader: "Renting or buying at the new place?"
+                header: "Now let's talk about where you're headed. Renting or buying?",
+                subheader: nil
             )
             
         case .newDwellingType:
             return InputContext(
-                header: "What kind of place?",
+                header: "What kind of place is the new one?",
                 subheader: nil
             )
             
         case .newAddress:
             return InputContext(
                 header: "What's the new address?",
-                subheader: "Same reason as before — utilities, internet, everything we need to get set up before you arrive."
+                subheader: "Same deal—I'll use it to get utilities, internet, and everything else set up before you even walk in the door."
             )
             
         case .newFloorAccess:
             return InputContext(
-                header: "How will you access your floor at the new place?",
-                subheader: nil
+                header: "What floor is the new place?",
+                subheader: "Helps me plan the move-in side."
             )
             
         case .newBedrooms:
@@ -743,7 +443,7 @@ class AssessmentCoordinator: ObservableObject {
         case .newSquareFootage:
             return InputContext(
                 header: "Roughly how big is the new place?",
-                subheader: "This helps us figure out if everything will fit and what kind of setup you'll need."
+                subheader: nil
             )
             
         case .newFinishedSqFt:
@@ -756,176 +456,111 @@ class AssessmentCoordinator: ObservableObject {
             
         case .childrenInSchool:
             return InputContext(
-                header: "Who's coming with you?",
-                subheader: "Any school-age kids? This affects school transfers, enrollment, and how we plan the transition."
+                header: "Any kids in school?",
+                subheader: "I'll handle the enrollment transfers and records requests so you don't have to sit on hold."
             )
 
         case .childrenInDaycare:
             return InputContext(
-                header: "What about little ones?",
-                subheader: "Any kids in daycare? We'll help you find options near the new place."
+                header: "Any little ones in daycare?",
+                subheader: "I'll help with the provider search at the new place."
             )
             
         case .hasVet:
             return InputContext(
-                header: "One more about the household.",
-                subheader: "Do you have a vet you'll need to transfer records from? We'll add it to your plan if so."
+                header: "Got any pets that see a vet?",
+                subheader: "I'll transfer records and find a new vet near the new place if you need one."
             )
 
         case .hasVehicles:
             return InputContext(
-                header: "What about vehicles?",
-                subheader: "If you're crossing state lines, you'll need to update your registration and title. We'll handle the reminders."
+                header: "Any vehicles that need registration or title updates?",
+                subheader: "State lines mean paperwork—I'll handle it."
             )
 
         case .hasStorage:
             return InputContext(
-                header: "Any storage units?",
-                subheader: "If you've got stuff in storage that needs to come along, we'll factor it into the plan."
+                header: "Do you have a storage unit that needs to be dealt with?",
+                subheader: nil
             )
 
         case .storageSize:
             return InputContext(
                 header: "How big is the unit?",
-                subheader: "This helps us estimate how much extra moving capacity you'll need."
+                subheader: nil
             )
 
         case .storageFullness:
             return InputContext(
                 header: "How full is it?",
-                subheader: "A packed unit takes more time and truck space than a half-empty one."
+                subheader: nil
             )
 
         // --- SECTION 5: SERVICES ---
             
         case .hireMovers:
             return InputContext(
-                header: "Professional movers?",
-                subheader: "Are you thinking about hiring pros to handle the heavy lifting, or going the DIY route? If you're not sure, we can get you quotes to compare."
+                header: "Are you interested in getting quotes for professional movers, or are you planning to handle the move yourself?",
+                subheader: "Either way works—I'll build the plan around your choice."
             )
             
         case .hirePackers:
             return InputContext(
-                header: "What about packing?",
-                subheader: "Want pros to handle it, or are you more of a 'I know where everything is if I pack it myself' person?"
+                header: "Would you like quotes for professional packing help, or are you planning to pack everything yourself?",
+                subheader: "Pro tip: packers can do a full house in a day. Just saying."
             )
             
         case .hireCleaners:
             return InputContext(
-                header: "Last one on services — cleaning.",
-                subheader: "Want a professional move-out clean, or handling that yourself? A good clean can make a big difference for security deposit recovery."
+                header: "Would you like quotes for a professional move-out cleaning, or are you going to handle that yourself?",
+                subheader: "A good deep clean can be the difference between getting your deposit back and leaving money on the table."
             )
             
         // --- SECTION 6: ACCOUNTS ---
             
         case .financialInstitutions:
             return InputContext(
-                header: "Now let's make sure your accounts follow you.",
-                subheader: "Which types of financial accounts need your new address? Select each type and we'll ask for the specific names."
+                header: "Let's make sure your money follows you. Which of these do you need to update your address with?",
+                subheader: "Tap all that apply."
             )
 
         case .financialDetails:
             return InputContext(
-                header: "Which specific accounts?",
-                subheader: "Type the name of each institution so we can personalize your tasks."
+                header: "Which ones specifically?",
+                subheader: "Start typing and I'll help you find them."
             )
 
         case .healthcareProviders:
             return InputContext(
-                header: "What about healthcare?",
-                subheader: "Which types of healthcare providers need your new info? Select each type."
+                header: "What about healthcare? Who needs your new info?",
+                subheader: "Tap all that apply."
             )
 
         case .healthcareDetails:
             return InputContext(
-                header: "Which specific providers?",
-                subheader: "Type the name of each provider so we can personalize your tasks."
+                header: "Which ones specifically?",
+                subheader: nil
             )
 
         case .fitnessWellness:
             return InputContext(
-                header: "Any fitness or wellness memberships?",
-                subheader: "Gym, studio, country club — select each type so we can make sure you cancel in time."
+                header: "Any memberships or subscriptions we should cancel or transfer?",
+                subheader: "Gyms love to keep charging after you leave. Tap all that apply."
             )
 
         case .fitnessDetails:
             return InputContext(
-                header: "Which specific memberships?",
-                subheader: "Type the name of each membership so we can personalize your tasks."
+                header: "Which ones specifically?",
+                subheader: nil
             )
             
         // --- WRAP-UP ---
             
         case .howHeard:
             return InputContext(
-                header: "One last quick one.",
-                subheader: "How'd you find us? This just helps us know what's working."
+                header: "Last one, \(dataManager.userName)—how'd you find us?",
+                subheader: nil
             )
-        }
-    }
-    
-    // MARK: - Dynamic Comment Helpers
-    
-    private func weeksUntilDate(_ date: Date) -> Int {
-        let days = Calendar.current.dateComponents([.day], from: Date(), to: date).day ?? 0
-        return max(days / 7, 0)
-    }
-    
-    private func generatePackingBallparkComment() -> InterstitialComment {
-        let bedrooms = dataManager.currentBedrooms
-        let sqft = dataManager.currentSquareFootage.isEmpty
-            ? dataManager.currentFinishedSqFt
-            : dataManager.currentSquareFootage
-        
-        if !bedrooms.isEmpty && !sqft.isEmpty {
-            return InterstitialComment(
-                text: "\(bedrooms) bedroom\(bedrooms == "1" ? "" : "s"), \(sqft) sq ft — for a place that size, most people need about 3-5 days to pack if they do a couple hours a day. We'll build that into your timeline."
-            )
-        } else if !bedrooms.isEmpty {
-            return InterstitialComment(
-                text: "\(bedrooms) bedroom\(bedrooms == "1" ? "" : "s") — we've got a good picture of what we're working with."
-            )
-        } else {
-            return InterstitialComment(
-                text: "Good — we've got a solid picture of your current place."
-            )
-        }
-    }
-    
-    private func generateDistanceComment() -> String {
-        let currentAddr = dataManager.currentAddress
-        let newAddr = dataManager.newAddress
-        
-        if !currentAddr.isEmpty && !newAddr.isEmpty {
-            return "Alright — we've got both addresses locked in. We'll use those to handle mail forwarding, utilities, and everything that needs to switch over."
-        } else {
-            return "Let's talk about who's making this move with you."
-        }
-    }
-    
-    private func generateHouseholdComment() -> String {
-        return "Got it. Now let's talk about who's coming with you."
-    }
-    
-    private func generateServicesSummary() -> String {
-        var choices: [String] = []
-        
-        if dataManager.hireMovers.lowercased().contains("hire") || dataManager.hireMovers.lowercased().contains("quotes") {
-            choices.append("movers")
-        }
-        if dataManager.hirePackers.lowercased().contains("hire") || dataManager.hirePackers.lowercased().contains("quotes") {
-            choices.append("packers")
-        }
-        if dataManager.hireCleaners.lowercased().contains("hire") || dataManager.hireCleaners.lowercased().contains("quotes") {
-            choices.append("cleaners")
-        }
-        
-        if choices.isEmpty {
-            return "DIY across the board — we respect that. Let's make sure your accounts are all set."
-        } else if choices.count == 3 {
-            return "Full service — movers, packers, and cleaners. We'll get you matched with the best. Now let's handle your accounts."
-        } else {
-            return "We'll get you set up with \(choices.joined(separator: " and ")). Now let's make sure your accounts follow you to the new place."
         }
     }
     

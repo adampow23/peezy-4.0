@@ -20,7 +20,7 @@ struct CurrentSquareFootage: View {
     var body: some View {
         VStack(spacing: 0) {
             AssessmentContentArea(
-                questionText: "How big is it?",
+                questionText: "Roughly how big is the place?",
                 showContent: showContent
             ) {
                 LazyVGrid(columns: [

@@ -19,7 +19,7 @@ struct AssessmentIntroView: View {
             Spacer()
 
             // Icon with breathing animation and entrance
-            Image(systemName: "list.clipboard.fill")
+            Image(systemName: "wand.and.stars")
                 .font(.system(size: 80))
                 .foregroundColor(.white)
                 .padding(.bottom, 32)
@@ -34,7 +34,7 @@ struct AssessmentIntroView: View {
                 }
 
             // Header with entrance animation
-            Text("Let's build your moving plan")
+            Text("Welcome to the easy part")
                 .font(.system(size: 28, weight: .semibold))
                 .multilineTextAlignment(.center)
                 .foregroundColor(.white)
@@ -45,7 +45,7 @@ struct AssessmentIntroView: View {
                 .animation(.easeOut(duration: 0.6).delay(0.4), value: showContent)
 
             // Description with entrance animation
-            Text("Answer 15 quick questions and we'll generate a personalized task list to guide you through every step of your move.")
+            Text("You're in! Take a deep breath—we've got the heavy lifting from here. To build your perfect game plan, we just need to grab a few quick details about your move.")
                 .font(.system(size: 17))
                 .multilineTextAlignment(.center)
                 .foregroundColor(.white.opacity(0.7))
@@ -58,7 +58,7 @@ struct AssessmentIntroView: View {
             HStack(spacing: 8) {
                 Image(systemName: "clock")
                     .font(.system(size: 14))
-                Text("Takes about 2 minutes")
+                Text("Just a quick 90 second setup")
                     .font(.system(size: 15))
             }
             .foregroundColor(.white.opacity(0.6))
@@ -68,7 +68,7 @@ struct AssessmentIntroView: View {
             Spacer()
 
             // Continue button
-            PeezyAssessmentButton("Start Assessment") {
+            PeezyAssessmentButton("Take the first step") {
                 showAssessment = true
             }
             .padding(.horizontal, 24)

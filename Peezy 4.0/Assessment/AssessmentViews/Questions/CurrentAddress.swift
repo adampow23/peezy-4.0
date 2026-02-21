@@ -29,7 +29,7 @@ struct CurrentAddress: View {
                     Spacer(minLength: 0)
 
                     HStack {
-                        Text("Current address?")
+                        Text("What's the address?")
                             .font(.system(size: 34, weight: .bold))
                             .foregroundColor(.white)
                             .frame(width: geo.size.width * 0.6, alignment: .leading)

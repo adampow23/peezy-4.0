@@ -22,7 +22,7 @@ struct HasVet: View {
         VStack(spacing: 0) {
             // Content area with equal spacing
             AssessmentContentArea(
-                questionText: "Do you have a vet you'll need to transfer records from?",
+                questionText: "Got any pets that see a vet?",
                 showContent: showContent
             ) {
                 // Options grid

@@ -23,7 +23,7 @@ struct StorageSize: View {
         VStack(spacing: 0) {
             // Content area with equal spacing
             AssessmentContentArea(
-                questionText: "How big is the storage unit?",
+                questionText: "How big is the unit?",
                 showContent: showContent
             ) {
                 // Options grid

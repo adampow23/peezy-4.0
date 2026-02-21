@@ -19,7 +19,7 @@ import FirebaseFirestore
 struct PeezySettingsView: View {
     
     // User state from parent
-    var userState: UserState?
+    @Binding var userState: UserState?
     
     // Auth — injected by AppRootView up the chain
     @EnvironmentObject var authViewModel: AuthViewModel
@@ -122,7 +122,10 @@ struct PeezySettingsView: View {
         }
         .edgesIgnoringSafeArea(.bottom)
         .sheet(isPresented: $showEditProfile) {
-            EditProfileSheet(userState: userState) { updatedName in
+            EditProfileSheet(userState: userState) { updatedName, updatedMoveDate in
+                if let date = updatedMoveDate {
+                    userState?.moveDate = date
+                }
                 toastMessage = "Profile updated"
             }
         }
@@ -532,13 +535,15 @@ struct PeezySettingsView: View {
 
 struct EditProfileSheet: View {
     var userState: UserState?
-    var onSave: (String) -> Void
+    var onSave: (String, Date?) -> Void
     
     @Environment(\.dismiss) private var dismiss
     
     @State private var name: String = ""
     @State private var currentAddress: String = ""
     @State private var newAddress: String = ""
+    @State private var moveDate: Date = Date()
+    @State private var hasMoveDate: Bool = false
     @State private var isSaving = false
     @State private var error: String? = nil
     
@@ -556,6 +561,18 @@ struct EditProfileSheet: View {
                         fieldGroup(label: "Name") {
                             TextField("Your name", text: $name)
                                 .textContentType(.name)
+                        }
+                        
+                        // Move date
+                        fieldGroup(label: "Move Date") {
+                            DatePicker(
+                                "",
+                                selection: $moveDate,
+                                displayedComponents: .date
+                            )
+                            .datePickerStyle(.compact)
+                            .labelsHidden()
+                            .tint(.cyan)
                         }
                         
                         // Current address
@@ -662,6 +679,13 @@ struct EditProfileSheet: View {
                 await MainActor.run {
                     currentAddress = data["currentAddress"] as? String ?? ""
                     newAddress = data["newAddress"] as? String ?? ""
+                    if let timestamp = data["moveDate"] as? Timestamp {
+                        self.moveDate = timestamp.dateValue()
+                        self.hasMoveDate = true
+                    } else if let dateValue = data["moveDate"] as? Date {
+                        self.moveDate = dateValue
+                        self.hasMoveDate = true
+                    }
                 }
             } catch {
                 // Silently fail — fields just stay empty
@@ -700,7 +724,10 @@ struct EditProfileSheet: View {
                 }
                 
                 // Build update dictionary — only include non-empty fields
-                var updates: [String: Any] = ["userName": trimmedName]
+                var updates: [String: Any] = [
+                    "userName": trimmedName,
+                    "moveDate": Timestamp(date: moveDate)
+                ]
                 if !currentAddress.trimmingCharacters(in: .whitespaces).isEmpty {
                     updates["currentAddress"] = currentAddress.trimmingCharacters(in: .whitespaces)
                 }
@@ -716,7 +743,7 @@ struct EditProfileSheet: View {
                 
                 await MainActor.run {
                     isSaving = false
-                    onSave(trimmedName)
+                    onSave(trimmedName, moveDate)
                     dismiss()
                 }
             } catch {
@@ -733,7 +760,7 @@ struct EditProfileSheet: View {
 
 #Preview {
     PeezySettingsView(
-        userState: UserState(userId: "preview", name: "Adam")
+        userState: .constant(UserState(userId: "preview", name: "Adam"))
     )
     .environmentObject(AuthViewModel())
     .environmentObject(SubscriptionManager.shared)

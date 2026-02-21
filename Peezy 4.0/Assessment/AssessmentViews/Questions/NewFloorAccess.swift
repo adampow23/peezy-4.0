@@ -18,7 +18,7 @@ struct NewFloorAccess: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            AssessmentContentArea(questionText: "How will you access your floor?", showContent: showContent) {
+            AssessmentContentArea(questionText: "What floor is the new place?", showContent: showContent) {
                 LazyVGrid(columns: [GridItem(.flexible(), spacing: 16), GridItem(.flexible(), spacing: 16)], spacing: 16) {
                     ForEach(Array(options.enumerated()), id: \.element) { index, option in
                         SelectionTile(title: option, icon: iconMap[option], isSelected: selected == option, onTap: {

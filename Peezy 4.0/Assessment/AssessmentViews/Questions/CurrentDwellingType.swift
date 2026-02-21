@@ -28,7 +28,7 @@ struct CurrentDwellingType: View {
         VStack(spacing: 0) {
             // Content area with equal spacing
             AssessmentContentArea(
-                questionText: "Type of place?",
+                questionText: "What kind of place is it?",
                 showContent: showContent
             ) {
                 // Options grid

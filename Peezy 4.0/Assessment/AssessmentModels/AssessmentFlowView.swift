@@ -3,9 +3,7 @@
 //  Peezy
 //
 //  The container view that hosts the entire assessment flow.
-//  Renders the correct view based on the coordinator's current node:
-//  - Interstitial nodes → ConversationalInterstitialView (comment only, tap to dismiss)
-//  - Input nodes → AssessmentInputWrapper (context typewriter + reveal) wrapping the question view
+//  Renders AssessmentInputWrapper (context typewriter + reveal) for each question step.
 //
 //  Progress bar visible throughout. Completion sheet on finish.
 //
@@ -30,8 +28,8 @@ struct AssessmentFlowView: View {
             Color.black.ignoresSafeArea()
             
             VStack(spacing: 0) {
-                // Progress bar — visible on input screens, hidden on interstitials
-                if let node = coordinator.currentNode, !node.isInterstitial {
+                // Progress bar
+                if coordinator.currentNode != nil {
                     assessmentProgressBar
                         .transition(.opacity)
                 }
@@ -102,12 +100,6 @@ struct AssessmentFlowView: View {
     @ViewBuilder
     private func nodeView(for node: AssessmentNode) -> some View {
         switch node {
-        case .interstitial(let afterStep):
-            let comment = coordinator.interstitialComment(after: afterStep)
-            ConversationalInterstitialView(commentText: comment.text) {
-                coordinator.goToNext()
-            }
-            
         case .input(let step):
             AssessmentInputWrapper(step: step, coordinator: coordinator) {
                 questionView(for: step)

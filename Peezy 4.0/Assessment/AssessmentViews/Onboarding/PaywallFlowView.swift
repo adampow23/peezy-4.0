@@ -233,6 +233,7 @@ struct PaywallPage3: View {
                         .padding(.horizontal, 24)
                         .padding(.bottom, 24)
                 }
+                .frame(maxWidth: .infinity)
             }
 
             // Bottom section
@@ -366,36 +367,49 @@ struct PaywallPage3: View {
     // MARK: - Timeline
 
     private var timelineSection: some View {
-        VStack(spacing: 0) {
-            // Step 1: Today
-            timelineStep(
-                icon: "lock.open.fill",
-                iconBackground: Color.green,
-                title: "Today",
-                subtitle: "Unlock all features — your AI moving concierge, personalized task list, vendor coordination, and more.",
-                isFirst: true,
-                isLast: false
-            )
+        let iconSize: CGFloat = 36
+        let iconColumnWidth: CGFloat = 36
 
-            // Step 2: In 2 Days
-            timelineStep(
-                icon: "bell.fill",
-                iconBackground: Color.orange,
-                title: "In 2 Days — Reminder",
-                subtitle: "We'll send you a reminder that your trial is ending soon.",
-                isFirst: false,
-                isLast: false
-            )
+        return ZStack(alignment: .topLeading) {
+            // Continuous vertical line — positioned at horizontal center of icon column
+            GeometryReader { geo in
+                Rectangle()
+                    .fill(Color.white.opacity(0.15))
+                    .frame(width: 2)
+                    // Inset top/bottom by half icon height so line runs center-to-center
+                    .padding(.top, iconSize / 2)
+                    .padding(.bottom, iconSize / 2)
+                    .frame(height: geo.size.height)
+                    // Center the line within the icon column
+                    .offset(x: (iconColumnWidth - 2) / 2)
+            }
 
-            // Step 3: In 3 Days
-            timelineStep(
-                icon: "crown.fill",
-                iconBackground: Color.yellow,
-                title: "In 3 Days — Billing Starts",
-                subtitle: "You'll be charged unless you cancel anytime before.",
-                isFirst: false,
-                isLast: true
-            )
+            // Steps layered on top of the line
+            VStack(spacing: 0) {
+                timelineStep(
+                    icon: "lock.open.fill",
+                    iconBackground: Color.green,
+                    title: "Today",
+                    subtitle: "Unlock all features — your AI moving concierge, personalized task list, vendor coordination, and more.",
+                    isLast: false
+                )
+
+                timelineStep(
+                    icon: "bell.fill",
+                    iconBackground: Color.orange,
+                    title: "In 2 Days — Reminder",
+                    subtitle: "We'll send you a reminder that your trial is ending soon.",
+                    isLast: false
+                )
+
+                timelineStep(
+                    icon: "crown.fill",
+                    iconBackground: Color.yellow,
+                    title: "In 3 Days — Billing Starts",
+                    subtitle: "You'll be charged unless you cancel anytime before.",
+                    isLast: true
+                )
+            }
         }
     }
 
@@ -404,33 +418,18 @@ struct PaywallPage3: View {
         iconBackground: Color,
         title: String,
         subtitle: String,
-        isFirst: Bool,
         isLast: Bool
     ) -> some View {
         HStack(alignment: .top, spacing: 16) {
-            // Timeline track + icon
-            VStack(spacing: 0) {
-                // Line above (invisible for first)
-                Rectangle()
-                    .fill(isFirst ? Color.clear : Color.white.opacity(0.15))
-                    .frame(width: 2, height: 12)
+            // Icon circle — sits on top of the continuous background line
+            ZStack {
+                Circle()
+                    .fill(iconBackground.opacity(0.2))
+                    .frame(width: 36, height: 36)
 
-                // Icon circle
-                ZStack {
-                    Circle()
-                        .fill(iconBackground.opacity(0.2))
-                        .frame(width: 36, height: 36)
-
-                    Image(systemName: icon)
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(iconBackground)
-                }
-
-                // Line below (invisible for last)
-                Rectangle()
-                    .fill(isLast ? Color.clear : Color.white.opacity(0.15))
-                    .frame(width: 2)
-                    .frame(maxHeight: .infinity)
+                Image(systemName: icon)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(iconBackground)
             }
             .frame(width: 36)
 
@@ -630,7 +629,7 @@ private func bottomSection(
 
 // MARK: - Preview
 
-#Preview("Page 1") {
+#Preview("Page 3") {
     PaywallFlowView()
         .environmentObject(SubscriptionManager.shared)
 }

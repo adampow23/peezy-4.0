@@ -22,7 +22,7 @@ struct FinancialInstitutions: View {
 
                     HStack {
                         VStack(alignment: .leading, spacing: 8) {
-                            Text("Financial accounts?")
+                            Text("Which of these do you need to update your address with?")
                                 .font(.system(size: 34, weight: .bold))
                                 .foregroundColor(.white)
                                 .frame(width: geo.size.width * 0.6, alignment: .leading)

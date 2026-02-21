@@ -20,7 +20,7 @@ struct NewFinishedSqFt: View {
     var body: some View {
         VStack(spacing: 0) {
             AssessmentContentArea(
-                questionText: "Finished living space?",
+                questionText: "How much finished living space at the new place?",
                 showContent: showContent
             ) {
                 LazyVGrid(columns: [

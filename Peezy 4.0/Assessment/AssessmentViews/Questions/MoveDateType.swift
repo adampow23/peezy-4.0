@@ -12,19 +12,18 @@ struct MoveDateType: View {
     private let lightHaptic = UIImpactFeedbackGenerator(style: .light)
 
     // Options match coordinator tile label contract
-    let options = ["Same Day", "Out Before In", "In Before Out"]
+    let options = ["Strict (same-day swap)", "Flexible (I have wiggle room)"]
 
     let iconMap: [String: String] = [
-        "Same Day": "arrow.left.arrow.right",
-        "Out Before In": "arrow.right.circle",
-        "In Before Out": "arrow.left.circle"
+        "Strict (same-day swap)": "arrow.left.arrow.right",
+        "Flexible (I have wiggle room)": "checkmark.circle"
     ]
 
     var body: some View {
         VStack(spacing: 0) {
             // Content area with equal spacing
             AssessmentContentArea(
-                questionText: "What's the plan?",
+                questionText: "Now, how set in stone is that date?",
                 showContent: showContent
             ) {
                 // Options grid

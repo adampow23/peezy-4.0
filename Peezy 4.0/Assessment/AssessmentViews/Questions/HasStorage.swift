@@ -22,7 +22,7 @@ struct HasStorage: View {
         VStack(spacing: 0) {
             // Content area with equal spacing
             AssessmentContentArea(
-                questionText: "Do you have a storage unit with stuff that needs to move too?",
+                questionText: "Do you have a storage unit that needs to be dealt with?",
                 showContent: showContent
             ) {
                 // Options grid

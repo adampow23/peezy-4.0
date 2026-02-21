@@ -22,7 +22,7 @@ struct PeezyMainContainer: View {
     @State private var selectedDestination: PeezyDestination = .home
 
     // User state passed from AppRootView
-    var userState: UserState?
+    @Binding var userState: UserState?
 
     // Timeline still uses PeezyStackViewModel for its data loading
     @State private var timelineViewModel = PeezyStackViewModel()
@@ -44,7 +44,7 @@ struct PeezyMainContainer: View {
                         PeezyTaskStream(viewModel: timelineViewModel, userState: userState)
 
                     case .settings:
-                        SettingsPlaceholderView()
+                        PeezySettingsView(userState: $userState)
 
                     case .account:
                         AccountPlaceholderView()
@@ -160,5 +160,5 @@ struct AccountPlaceholderView: View {
 }
 
 #Preview {
-    PeezyMainContainer(userState: UserState(userId: "preview", name: "Adam"))
+    PeezyMainContainer(userState: .constant(UserState(userId: "preview", name: "Adam")))
 }

@@ -22,7 +22,7 @@ struct HealthcareProviders: View {
 
                     HStack {
                         VStack(alignment: .leading, spacing: 8) {
-                            Text("Healthcare providers?")
+                            Text("Who needs your new info?")
                                 .font(.system(size: 34, weight: .bold))
                                 .foregroundColor(.white)
                                 .frame(width: geo.size.width * 0.6, alignment: .leading)
