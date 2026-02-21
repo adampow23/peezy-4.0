@@ -161,13 +161,16 @@ struct ConfettiView: View {
               )
             : .circle(diameter: CGFloat.random(in: 4...6))
 
+        let dxMag = Double.random(in: 30...80)
+        let dx = Bool.random() ? dxMag : -dxMag
+
         return ConfettiParticle(
             position: CGPoint(
                 x: CGFloat.random(in: 0...screenWidth),
                 y: -10
             ),
             velocity: CGVector(
-                dx: Double.random(in: -80...80),
+                dx: dx,
                 dy: Double.random(in: 180...320)
             ),
             rotation: Double.random(in: 0...(2 * .pi)),
