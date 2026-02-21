@@ -125,7 +125,7 @@ struct AssessmentCompleteView: View {
             case .summary:
                 summaryView
                     .transition(.opacity)
-                    .allowsHitTesting(summaryOpacity > 0)
+                    .allowsHitTesting(summaryOpacity >= 1.0)
             }
             
             // Confetti overlay
@@ -134,7 +134,9 @@ struct AssessmentCompleteView: View {
                     withAnimation(.easeIn(duration: 0.6)) {
                         summaryOpacity = 1.0
                     }
-                    showConfetti = false
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                        showConfetti = false
+                    }
                 })
                 .ignoresSafeArea()
                 .allowsHitTesting(false)
