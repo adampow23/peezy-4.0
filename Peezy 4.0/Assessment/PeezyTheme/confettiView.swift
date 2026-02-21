@@ -186,8 +186,11 @@ struct ConfettiView: View {
 // MARK: - Preview
 
 #Preview {
+    // Note: TimelineView(.animation) hangs Xcode Canvas previews.
+    // Test ConfettiView in the simulator via AssessmentCompleteView.
     ZStack {
         Color.black.ignoresSafeArea()
-        ConfettiView(isActive: .constant(true), intensity: .high)
+        Text("Run in simulator to preview")
+            .foregroundStyle(.white.opacity(0.4))
     }
 }
