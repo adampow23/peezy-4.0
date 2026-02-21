@@ -11,10 +11,10 @@ import SwiftUI
 // MARK: - Task Tab
 
 enum TaskTab: String, CaseIterable {
-    case active = "Active"
+    case active = "To-Do"
     case inProgress = "In Progress"
-    case snoozed = "Snoozed"
-    case completed = "Completed"
+    case snoozed = "Later"
+    case completed = "Done"
 }
 
 // MARK: - Main View
@@ -159,15 +159,9 @@ struct PeezyTaskStream: View {
 
     private var headerView: some View {
         HStack {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Task List")
-                    .font(.title2.bold())
-                    .foregroundColor(.white)
-
-                Text(taskSummary)
-                    .font(.subheadline)
-                    .foregroundColor(.white.opacity(0.6))
-            }
+            Text("Task List")
+                .font(.title2.bold())
+                .foregroundColor(.white)
 
             Spacer()
 
@@ -219,7 +213,9 @@ struct PeezyTaskStream: View {
                     }
                 } label: {
                     Text("\(tab.rawValue) (\(count))")
-                        .font(.system(size: 13, weight: isSelected ? .semibold : .medium))
+                        .font(.system(size: 12, weight: isSelected ? .semibold : .medium))
+                        .minimumScaleFactor(0.7)
+                        .lineLimit(1)
                         .foregroundColor(isSelected ? .white : .white.opacity(0.4))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 10)
@@ -309,11 +305,11 @@ struct PeezyTaskStream: View {
             let (icon, message): (String, String) = {
                 switch selectedTab {
                 case .active:
-                    return ("checkmark.seal.fill", "No active tasks — you're all caught up!")
+                    return ("checkmark.seal.fill", "Nothing on your to-do list — you're all caught up!")
                 case .inProgress:
                     return ("clock.arrow.circlepath", "Nothing in progress yet. Complete a workflow and we'll handle the rest.")
                 case .snoozed:
-                    return ("moon.zzz.fill", "No snoozed tasks")
+                    return ("moon.zzz.fill", "Nothing saved for later")
                 case .completed:
                     return ("trophy.fill", "No completed tasks yet")
                 }
