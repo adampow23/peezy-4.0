@@ -380,8 +380,7 @@
     "title": "Cancel Utility Accounts",
     "actionCategory": "cancel-stop",
     "category": "utilities",
-    "actionType": "workflow",
-    "workflowId": "cancel_utilities_1",
+    "actionType": "off-app",
     "conditions": {
       "moveDistance": [
         "Long Distance"
@@ -398,8 +397,7 @@
     "title": "Schedule Utility Shutoffs",
     "actionCategory": "cancel-stop",
     "category": "utilities",
-    "actionType": "workflow",
-    "workflowId": "cancel_utilities_2",
+    "actionType": "off-app",
     "conditions": {
       "moveDistance": [
         "Long Distance"
@@ -416,8 +414,7 @@
     "title": "Set Up New Home Utilities",
     "actionCategory": "setup-establish",
     "category": "utilities",
-    "actionType": "workflow",
-    "workflowId": "setup_utilities",
+    "actionType": "off-app",
     "conditions": {
       "moveDistance": [
         "Long Distance"
@@ -525,8 +522,7 @@
     "title": "Set Up New Daycare Services",
     "actionCategory": "setup-establish",
     "category": "children",
-    "actionType": "workflow",
-    "workflowId": "setup_daycare",
+    "actionType": "off-app",
     "conditions": {
       "childrenInDaycare": [
         "Yes"
@@ -566,8 +562,7 @@
     "title": "Set Up New Veterinarian",
     "actionCategory": "setup-establish",
     "category": "pets",
-    "actionType": "workflow",
-    "workflowId": "setup_vet",
+    "actionType": "off-app",
     "conditions": {
       "hasVet": [
         "Yes"
@@ -607,11 +602,10 @@
     "title": "Close Bank Account",
     "actionCategory": "cancel-stop",
     "category": "finance",
-    "actionType": "workflow",
-    "workflowId": "cancel_bank",
+    "actionType": "off-app",
     "conditions": {
       "financialInstitutions": [
-        "Bank Account"
+        "Bank / Credit Union"
       ],
       "moveDistance": [
         "Long Distance"
@@ -628,11 +622,10 @@
     "title": "Set Up New Bank Account",
     "actionCategory": "setup-establish",
     "category": "finance",
-    "actionType": "workflow",
-    "workflowId": "setup_bank",
+    "actionType": "off-app",
     "conditions": {
       "financialInstitutions": [
-        "Bank Account"
+        "Bank / Credit Union"
       ],
       "moveDistance": [
         "Long Distance"
@@ -652,7 +645,7 @@
     "actionType": "off-app",
     "conditions": {
       "financialInstitutions": [
-        "Bank Account"
+        "Bank / Credit Union"
       ],
       "moveDistance": [
         "Local"
@@ -669,11 +662,10 @@
     "title": "Set Up New Credit Union Account",
     "actionCategory": "setup-establish",
     "category": "finance",
-    "actionType": "workflow",
-    "workflowId": "setup_credit_union",
+    "actionType": "off-app",
     "conditions": {
       "financialInstitutions": [
-        "Credit Union"
+        "Bank / Credit Union"
       ],
       "moveDistance": [
         "Long Distance"
@@ -693,7 +685,7 @@
     "actionType": "off-app",
     "conditions": {
       "financialInstitutions": [
-        "Credit Union"
+        "Bank / Credit Union"
       ],
       "moveDistance": [
         "Local"
@@ -727,8 +719,7 @@
     "title": "Cancel Condo Insurance",
     "actionCategory": "cancel-stop",
     "category": "insurance",
-    "actionType": "workflow",
-    "workflowId": "cancel_condo_insurance",
+    "actionType": "off-app",
     "conditions": {
       "newDwellingType": [
         "Apartment",
@@ -749,8 +740,7 @@
     "title": "Cancel or Update Renter's Insurance",
     "actionCategory": "cancel-stop",
     "category": "insurance",
-    "actionType": "workflow",
-    "workflowId": "cancel_renters_insurance",
+    "actionType": "off-app",
     "conditions": {
       "newRentOrOwn": [
         "Own"
@@ -770,8 +760,7 @@
     "title": "Set Up Condo Insurance",
     "actionCategory": "setup-establish",
     "category": "insurance",
-    "actionType": "workflow",
-    "workflowId": "setup_condo_insurance",
+    "actionType": "off-app",
     "conditions": {
       "newDwellingType": [
         "Condo"
@@ -792,8 +781,7 @@
     "title": "Set Up Homeowner's Insurance",
     "actionCategory": "setup-establish",
     "category": "insurance",
-    "actionType": "workflow",
-    "workflowId": "setup_homeowners_insurance",
+    "actionType": "off-app",
     "conditions": {
       "newDwellingType": [
         "House"
@@ -813,8 +801,7 @@
     "title": "Set Up Renter's Insurance",
     "actionCategory": "setup-establish",
     "category": "insurance",
-    "actionType": "workflow",
-    "workflowId": "setup_renters_insurance",
+    "actionType": "off-app",
     "conditions": {
       "currentRentOrOwn": [
         "Own"
@@ -1107,7 +1094,7 @@
     "actionType": "off-app",
     "conditions": {
       "fitnessWellness": [
-        "Yoga"
+        "Yoga / Pilates"
       ],
       "moveDistance": [
         "Long Distance"
@@ -1127,7 +1114,7 @@
     "actionType": "off-app",
     "conditions": {
       "fitnessWellness": [
-        "Pilates"
+        "Yoga / Pilates"
       ],
       "moveDistance": [
         "Long Distance"
@@ -1147,7 +1134,7 @@
     "actionType": "off-app",
     "conditions": {
       "fitnessWellness": [
-        "Spin/Cycling"
+        "Spin / Cycling"
       ],
       "moveDistance": [
         "Long Distance"
@@ -1167,7 +1154,7 @@
     "actionType": "off-app",
     "conditions": {
       "fitnessWellness": [
-        "Massage"
+        "Massage / Spa"
       ],
       "moveDistance": [
         "Long Distance"
@@ -1187,7 +1174,7 @@
     "actionType": "off-app",
     "conditions": {
       "fitnessWellness": [
-        "Spa"
+        "Massage / Spa"
       ],
       "moveDistance": [
         "Long Distance"
@@ -1207,7 +1194,7 @@
     "actionType": "off-app",
     "conditions": {
       "fitnessWellness": [
-        "Other"
+        "REMOVED_OTHER"
       ],
       "moveDistance": [
         "Long Distance"
@@ -1224,11 +1211,10 @@
     "title": "Get New Gym Membership",
     "actionCategory": "setup-establish",
     "category": "fitness",
-    "actionType": "workflow",
-    "workflowId": "setup_gym",
+    "actionType": "off-app",
     "conditions": {
       "fitnessWellness": [
-        "Gym"
+        "Gym / CrossFit"
       ],
       "moveDistance": [
         "Long Distance"
@@ -1245,11 +1231,10 @@
     "title": "Find and Join New CrossFit Gym",
     "actionCategory": "setup-establish",
     "category": "fitness",
-    "actionType": "workflow",
-    "workflowId": "setup_crossfit",
+    "actionType": "off-app",
     "conditions": {
       "fitnessWellness": [
-        "CrossFit"
+        "Gym / CrossFit"
       ],
       "moveDistance": [
         "Long Distance"
@@ -1266,11 +1251,10 @@
     "title": "Set Up New Yoga Studio",
     "actionCategory": "setup-establish",
     "category": "fitness",
-    "actionType": "workflow",
-    "workflowId": "setup_yoga",
+    "actionType": "off-app",
     "conditions": {
       "fitnessWellness": [
-        "Yoga"
+        "Yoga / Pilates"
       ],
       "moveDistance": [
         "Long Distance"
@@ -1287,11 +1271,10 @@
     "title": "Set Up New Pilates Studio",
     "actionCategory": "setup-establish",
     "category": "fitness",
-    "actionType": "workflow",
-    "workflowId": "setup_pilates",
+    "actionType": "off-app",
     "conditions": {
       "fitnessWellness": [
-        "Pilates"
+        "Yoga / Pilates"
       ],
       "moveDistance": [
         "Long Distance"
@@ -1308,11 +1291,10 @@
     "title": "Set Up New Spin or Cycling Studio",
     "actionCategory": "setup-establish",
     "category": "fitness",
-    "actionType": "workflow",
-    "workflowId": "setup_spin_cycling",
+    "actionType": "off-app",
     "conditions": {
       "fitnessWellness": [
-        "Spin/Cycling"
+        "Spin / Cycling"
       ],
       "moveDistance": [
         "Long Distance"
@@ -1329,11 +1311,10 @@
     "title": "Set Up New Golf Membership",
     "actionCategory": "setup-establish",
     "category": "fitness",
-    "actionType": "workflow",
-    "workflowId": "setup_golf",
+    "actionType": "off-app",
     "conditions": {
       "fitnessWellness": [
-        "Golf"
+        "Country Club / Golf"
       ],
       "moveDistance": [
         "Long Distance"
@@ -1350,11 +1331,10 @@
     "title": "Set Up New Massage Membership",
     "actionCategory": "setup-establish",
     "category": "fitness",
-    "actionType": "workflow",
-    "workflowId": "setup_massage",
+    "actionType": "off-app",
     "conditions": {
       "fitnessWellness": [
-        "Massage"
+        "Massage / Spa"
       ],
       "moveDistance": [
         "Long Distance"
@@ -1371,11 +1351,10 @@
     "title": "Set Up New Spa Membership",
     "actionCategory": "setup-establish",
     "category": "fitness",
-    "actionType": "workflow",
-    "workflowId": "setup_spa",
+    "actionType": "off-app",
     "conditions": {
       "fitnessWellness": [
-        "Spa"
+        "Massage / Spa"
       ],
       "moveDistance": [
         "Long Distance"
@@ -1392,11 +1371,10 @@
     "title": "Set Up Other Fitness Activities",
     "actionCategory": "setup-establish",
     "category": "fitness",
-    "actionType": "workflow",
-    "workflowId": "setup_other_fitness",
+    "actionType": "off-app",
     "conditions": {
       "fitnessWellness": [
-        "Other"
+        "REMOVED_OTHER"
       ],
       "moveDistance": [
         "Long Distance"
@@ -1413,11 +1391,10 @@
     "title": "Set Up New Country Club Membership",
     "actionCategory": "setup-establish",
     "category": "fitness",
-    "actionType": "workflow",
-    "workflowId": "setup_country_club",
+    "actionType": "off-app",
     "conditions": {
       "fitnessWellness": [
-        "Country Club"
+        "Country Club / Golf"
       ],
       "moveDistance": [
         "Long Distance"
@@ -1437,7 +1414,7 @@
     "actionType": "off-app",
     "conditions": {
       "fitnessWellness": [
-        "Gym"
+        "Gym / CrossFit"
       ],
       "moveDistance": [
         "Local"
@@ -1457,7 +1434,7 @@
     "actionType": "off-app",
     "conditions": {
       "fitnessWellness": [
-        "CrossFit"
+        "Gym / CrossFit"
       ],
       "moveDistance": [
         "Local"
@@ -1477,7 +1454,7 @@
     "actionType": "off-app",
     "conditions": {
       "fitnessWellness": [
-        "Golf"
+        "Country Club / Golf"
       ],
       "moveDistance": [
         "Local"
@@ -1497,7 +1474,7 @@
     "actionType": "off-app",
     "conditions": {
       "fitnessWellness": [
-        "Country Club"
+        "Country Club / Golf"
       ],
       "moveDistance": [
         "Local"

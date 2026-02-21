@@ -8,13 +8,10 @@ struct FinancialInstitutions: View {
     @State private var showContent = false
 
     let categories = [
-        ("Bank Account", "building.columns.fill"),
+        ("Bank / Credit Union", "building.columns.fill"),
         ("Credit Card", "creditcard.fill"),
-        ("Credit Union", "building.2.fill"),
         ("Investment Account", "chart.line.uptrend.xyaxis"),
-        ("Retirement Account", "banknote.fill"),
-        ("Student Loans", "graduationcap.fill"),
-        ("Insurance", "shield.lefthalf.filled")
+        ("Student Loans", "graduationcap.fill")
     ]
 
     var body: some View {

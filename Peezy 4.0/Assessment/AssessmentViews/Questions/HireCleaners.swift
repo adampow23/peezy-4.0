@@ -12,20 +12,18 @@ struct HireCleaners: View {
     private let lightHaptic = UIImpactFeedbackGenerator(style: .light)
     
     // Options match coordinator tile label contract
-    let options = ["I'd like quotes", "I'll handle it myself", "Not Sure", "Get Me Quotes"]
+    let options = ["Get me quotes", "I'll handle it myself"]
 
     let iconMap: [String: String] = [
-        "I'd like quotes": "sparkles",
-        "I'll handle it myself": "hand.raised.fill",
-        "Not Sure": "questionmark.circle.fill",
-        "Get Me Quotes": "doc.text.magnifyingglass"
+        "Get me quotes": "doc.text.magnifyingglass",
+        "I'll handle it myself": "hand.raised.fill"
     ]
-    
+
     var body: some View {
         VStack(spacing: 0) {
             // Content area with equal spacing
             AssessmentContentArea(
-                questionText: "Professional cleaning?",
+                questionText: "Would you like quotes for a professional move-out cleaning, or are you going to handle that yourself?",
                 showContent: showContent
             ) {
                 // Options grid

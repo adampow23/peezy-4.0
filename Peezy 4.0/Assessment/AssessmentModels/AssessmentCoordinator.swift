@@ -292,7 +292,14 @@ class AssessmentCoordinator: ObservableObject {
             addStep(.newBedrooms)
             addStep(.newFinishedSqFt)
         }
-        
+
+        // Storage — belongs with home details
+        addStep(.hasStorage)
+        if dataManager.hasStorage.lowercased() == "yes" {
+            addStep(.storageSize)
+            addStep(.storageFullness)
+        }
+
         // Section 4: People
         addStep(.childrenInSchool)
         addStep(.childrenInDaycare)
@@ -300,11 +307,6 @@ class AssessmentCoordinator: ObservableObject {
         addStep(.hasVet)
 
         addStep(.hasVehicles)
-        addStep(.hasStorage)
-        if dataManager.hasStorage.lowercased() == "yes" {
-            addStep(.storageSize)
-            addStep(.storageFullness)
-        }
 
         // Section 5: Services
         addStep(.hireMovers)
@@ -902,21 +904,7 @@ class AssessmentCoordinator: ObservableObject {
     }
     
     private func generateHouseholdComment() -> String {
-        var parts: [String] = []
-
-        if dataManager.childrenInSchool.lowercased() == "yes" || dataManager.childrenInDaycare.lowercased() == "yes" {
-            parts.append("kids")
-        }
-
-        if dataManager.hasVet.lowercased() == "yes" {
-            parts.append("vet records to transfer")
-        }
-
-        if parts.isEmpty {
-            return "Alright — let's talk about the move itself."
-        } else {
-            return "You, \(parts.joined(separator: ", and ")) — we've got the full picture. Now let's talk about the move itself."
-        }
+        return "Got it. Now let's talk about who's coming with you."
     }
     
     private func generateServicesSummary() -> String {

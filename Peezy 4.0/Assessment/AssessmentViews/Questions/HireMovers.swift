@@ -9,17 +9,15 @@ struct HireMovers: View {
     private let lightHaptic = UIImpactFeedbackGenerator(style: .light)
     
     // Options match coordinator tile label contract
-    let options = ["I'd like quotes", "I'll handle it myself", "Not Sure", "Get Me Quotes"]
+    let options = ["Get me quotes", "I'll handle it myself"]
     let iconMap: [String: String] = [
-        "I'd like quotes": "truck.box.fill",
-        "I'll handle it myself": "figure.walk",
-        "Not Sure": "questionmark.circle.fill",
-        "Get Me Quotes": "doc.text.magnifyingglass"
+        "Get me quotes": "doc.text.magnifyingglass",
+        "I'll handle it myself": "figure.walk"
     ]
-    
+
     var body: some View {
         VStack(spacing: 0) {
-            AssessmentContentArea(questionText: "Professional movers?", showContent: showContent) {
+            AssessmentContentArea(questionText: "Are you interested in getting quotes for professional movers, or are you planning to handle the move yourself?", showContent: showContent) {
                 LazyVGrid(columns: [GridItem(.flexible(), spacing: 16), GridItem(.flexible(), spacing: 16)], spacing: 16) {
                     ForEach(Array(options.enumerated()), id: \.element) { index, option in
                         SelectionTile(title: option, icon: iconMap[option], isSelected: selected == option, onTap: {

@@ -8,16 +8,11 @@ struct FitnessWellness: View {
     @State private var showContent = false
 
     let categories = [
-        ("Gym", "dumbbell.fill"),
-        ("CrossFit", "figure.strengthtraining.functional"),
-        ("Yoga", "figure.mind.and.body"),
-        ("Pilates", "figure.cooldown"),
-        ("Spin/Cycling", "figure.indoor.cycle"),
-        ("Massage", "hand.raised.fill"),
-        ("Spa", "sparkles"),
-        ("Golf", "figure.golf"),
-        ("Country Club", "figure.pool.swim"),
-        ("Other", "star.fill")
+        ("Gym / CrossFit", "dumbbell.fill"),
+        ("Yoga / Pilates", "figure.mind.and.body"),
+        ("Spin / Cycling", "figure.indoor.cycle"),
+        ("Massage / Spa", "hand.raised.fill"),
+        ("Country Club / Golf", "figure.golf")
     ]
 
     var body: some View {

@@ -244,16 +244,10 @@ struct AssessmentCompleteView: View {
                 }
                 .scaleEffect(checkmarkScale)
                 
-                VStack(spacing: 8) {
-                    Text("Your task list is ready")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundColor(.white)
-                    
-                    Text("\(totalTasks) tasks customized for your move")
-                        .font(.system(size: 14))
-                        .foregroundColor(.white.opacity(0.5))
-                }
-                .opacity(readyTextOpacity)
+                Text("Your task list is ready")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundColor(.white)
+                    .opacity(readyTextOpacity)
                 
                 Button(action: revealSummary) {
                     Text("See Your Custom Plan")

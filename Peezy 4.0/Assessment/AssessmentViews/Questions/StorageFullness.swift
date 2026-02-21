@@ -11,12 +11,13 @@ struct StorageFullness: View {
     // Haptic feedback
     private let lightHaptic = UIImpactFeedbackGenerator(style: .light)
 
-    let options = ["Mostly Empty", "About Half", "Packed Full"]
+    let options = ["1/4 Full", "1/2 Full", "3/4 Full", "Full"]
 
     let iconMap: [String: String] = [
-        "Mostly Empty": "square.dashed",
-        "About Half": "square.split.2x1",
-        "Packed Full": "square.fill"
+        "1/4 Full": "square.dashed",
+        "1/2 Full": "square.split.2x1",
+        "3/4 Full": "square.split.2x2",
+        "Full": "square.fill"
     ]
 
     var body: some View {

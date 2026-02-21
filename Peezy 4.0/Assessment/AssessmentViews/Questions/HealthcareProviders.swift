@@ -10,11 +10,7 @@ struct HealthcareProviders: View {
     let categories = [
         ("Doctor", "stethoscope"),
         ("Dentist", "mouth.fill"),
-        ("Therapist", "brain.head.profile.fill"),
         ("Specialists", "cross.case.fill"),
-        ("Health Insurance", "heart.text.clipboard.fill"),
-        ("Dental Insurance", "mouth.fill"),
-        ("HSA", "dollarsign.circle.fill"),
         ("Pharmacy", "pills.fill")
     ]
 
