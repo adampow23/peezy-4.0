@@ -15,8 +15,7 @@ enum ConfettiShape {
     case rectangle(width: CGFloat, height: CGFloat)
 }
 
-struct ConfettiParticle: Identifiable {
-    let id = UUID()
+struct ConfettiParticle {
     var position: CGPoint
     var velocity: CGVector
     var rotation: Double          // radians
@@ -78,7 +77,7 @@ struct ConfettiView: View {
                 Canvas { context, size in
                     let now = timeline.date
                     let elapsed = now.timeIntervalSince(state.startDate)
-                    let dt = now.timeIntervalSince(state.lastFrameDate)
+                    let dt = min(now.timeIntervalSince(state.lastFrameDate), 1.0 / 30.0)
 
                     // Emit new particles during first 2 seconds
                     if elapsed <= 2.0 && elapsed >= state.nextEmitTime {
@@ -176,7 +175,7 @@ struct ConfettiView: View {
             rotation: Double.random(in: 0...(2 * .pi)),
             rotationSpeed: Double.random(in: -6...6),
             opacity: 1.0,
-            color: colors.randomElement()!,
+            color: colors.randomElement() ?? .white,
             shape: shape,
             wobbleFreq: Double.random(in: 1.5...3.5),
             wobblePhase: Double.random(in: 0...(2 * .pi))
