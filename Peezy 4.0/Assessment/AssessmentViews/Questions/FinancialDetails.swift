@@ -1,5 +1,21 @@
 import SwiftUI
 
+private let creditCardSuggestions = [
+    "Chase", "American Express", "Capital One", "Citi", "Discover",
+    "Bank of America", "Wells Fargo", "Barclays", "US Bank", "Synchrony"
+]
+
+private let investmentSuggestions = [
+    "Fidelity", "Charles Schwab", "Vanguard", "E*TRADE", "TD Ameritrade",
+    "Merrill Lynch", "Morgan Stanley", "Edward Jones", "Robinhood",
+    "Wealthfront", "Betterment", "Northwestern Mutual", "Raymond James"
+]
+
+private let studentLoanSuggestions = [
+    "Navient", "Nelnet", "Great Lakes", "FedLoan", "SoFi", "Earnest",
+    "CommonBond", "Mohela", "Aidvantage", "EdFinancial"
+]
+
 struct FinancialDetails: View {
     @State private var details: [String: String] = [:]
     @EnvironmentObject var assessmentData: AssessmentDataManager
@@ -34,26 +50,15 @@ struct FinancialDetails: View {
                     ScrollView {
                         VStack(spacing: 16) {
                             ForEach(assessmentData.financialInstitutions, id: \.self) { category in
-                                VStack(alignment: .leading, spacing: 6) {
-                                    Text(category)
-                                        .font(.system(size: 14, weight: .medium))
-                                        .foregroundColor(.white.opacity(0.6))
-
-                                    TextField("", text: binding(for: category), prompt: Text("e.g. Chase, Amex...").foregroundColor(.white.opacity(0.3)))
-                                        .font(.system(size: 16))
-                                        .foregroundColor(.white)
-                                        .textInputAutocapitalization(.words)
-                                        .focused($focusedCategory, equals: category)
-                                        .padding(.vertical, 14)
-                                        .padding(.horizontal, 16)
-                                        .background(
-                                            RoundedRectangle(cornerRadius: 12)
-                                                .fill(Color.white.opacity(0.08))
-                                                .overlay(
-                                                    RoundedRectangle(cornerRadius: 12)
-                                                        .stroke(Color.white.opacity(focusedCategory == category ? 0.4 : 0.15), lineWidth: 1)
-                                                )
-                                        )
+                                SuggestiveTextField(
+                                    label: category,
+                                    placeholder: "e.g. Chase, Amex...",
+                                    text: binding(for: category),
+                                    source: suggestionSource(for: category),
+                                    isFocused: focusedCategory == category
+                                )
+                                .onTapGesture {
+                                    focusedCategory = category
                                 }
                             }
                         }
@@ -89,6 +94,21 @@ struct FinancialDetails: View {
         }
     }
 
+    private func suggestionSource(for category: String) -> SuggestionSource {
+        switch category {
+        case "Bank / Credit Union":
+            return .mapSearch(category: "bank", nearAddress: assessmentData.currentAddress)
+        case "Credit Card":
+            return .local(creditCardSuggestions)
+        case "Investment Account":
+            return .local(investmentSuggestions)
+        case "Student Loans":
+            return .local(studentLoanSuggestions)
+        default:
+            return .local([])
+        }
+    }
+
     private func binding(for category: String) -> Binding<String> {
         Binding(
             get: { details[category] ?? "" },
@@ -99,7 +119,7 @@ struct FinancialDetails: View {
 
 #Preview {
     let manager = AssessmentDataManager()
-    manager.financialInstitutions = ["Bank Account", "Credit Card"]
+    manager.financialInstitutions = ["Bank / Credit Union", "Credit Card"]
     return FinancialDetails()
         .environmentObject(manager)
         .environmentObject(AssessmentCoordinator(dataManager: manager))
