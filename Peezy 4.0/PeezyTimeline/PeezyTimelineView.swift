@@ -12,6 +12,7 @@ import SwiftUI
 
 enum TaskTab: String, CaseIterable {
     case active = "Active"
+    case inProgress = "In Progress"
     case snoozed = "Snoozed"
     case completed = "Completed"
 }
@@ -61,7 +62,7 @@ struct PeezyTaskStream: View {
 
     private var activeTasks: [PeezyCard] {
         allTasks.filter { card in
-            card.status != .completed && card.status != .skipped && !isSnoozed(card)
+            card.status != .completed && card.status != .skipped && card.status != .inProgress && !isSnoozed(card)
         }
         .sorted { a, b in
             if a.priority.rawValue != b.priority.rawValue {
@@ -69,6 +70,16 @@ struct PeezyTaskStream: View {
             }
             return (a.dueDate ?? .distantFuture) < (b.dueDate ?? .distantFuture)
         }
+    }
+
+    private var inProgressTasks: [PeezyCard] {
+        allTasks.filter { $0.status == .inProgress }
+            .sorted { a, b in
+                if a.priority.rawValue != b.priority.rawValue {
+                    return a.priority.rawValue > b.priority.rawValue
+                }
+                return (a.dueDate ?? .distantFuture) < (b.dueDate ?? .distantFuture)
+            }
     }
 
     private var snoozedTasks: [PeezyCard] {
@@ -94,6 +105,7 @@ struct PeezyTaskStream: View {
     private var tasksForSelectedTab: [PeezyCard] {
         switch selectedTab {
         case .active: return activeTasks
+        case .inProgress: return inProgressTasks
         case .snoozed: return snoozedTasks
         case .completed: return completedTasks
         }
@@ -102,6 +114,7 @@ struct PeezyTaskStream: View {
     private func countForTab(_ tab: TaskTab) -> Int {
         switch tab {
         case .active: return activeTasks.count
+        case .inProgress: return inProgressTasks.count
         case .snoozed: return snoozedTasks.count
         case .completed: return completedTasks.count
         }
@@ -174,15 +187,17 @@ struct PeezyTaskStream: View {
 
     private var taskSummary: String {
         let active = activeTasks.count
+        let inProgress = inProgressTasks.count
         let snoozed = snoozedTasks.count
         let completed = completedTasks.count
 
-        if active == 0 && snoozed == 0 {
+        if active == 0 && inProgress == 0 && snoozed == 0 {
             return completed > 0 ? "\(completed) completed" : "No tasks yet"
         }
 
         var parts: [String] = []
         if active > 0 { parts.append("\(active) active") }
+        if inProgress > 0 { parts.append("\(inProgress) in progress") }
         if snoozed > 0 { parts.append("\(snoozed) snoozed") }
         if completed > 0 { parts.append("\(completed) done") }
         return parts.joined(separator: " · ")
@@ -295,6 +310,8 @@ struct PeezyTaskStream: View {
                 switch selectedTab {
                 case .active:
                     return ("checkmark.seal.fill", "No active tasks — you're all caught up!")
+                case .inProgress:
+                    return ("clock.arrow.circlepath", "Nothing in progress yet. Complete a workflow and we'll handle the rest.")
                 case .snoozed:
                     return ("moon.zzz.fill", "No snoozed tasks")
                 case .completed:
