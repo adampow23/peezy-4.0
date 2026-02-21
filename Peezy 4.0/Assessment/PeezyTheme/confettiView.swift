@@ -29,6 +29,7 @@ struct ConfettiParticle {
 
 // MARK: - Confetti Intensity
 
+/// Controls the particle emission rate. `.high` emits 6–8 particles per batch; `.low` emits 2–3.
 enum ConfettiIntensity {
     case low
     case high
@@ -72,23 +73,24 @@ struct ConfettiView: View {
     ]
 
     var body: some View {
-        GeometryReader { geometry in
-            TimelineView(.animation) { timeline in
-                Canvas { context, size in
+        TimelineView(.animation(paused: !isActive)) { timeline in
+            Canvas { context, size in
                     let now = timeline.date
                     let elapsed = now.timeIntervalSince(state.startDate)
                     let dt = min(now.timeIntervalSince(state.lastFrameDate), 1.0 / 30.0)
 
                     // Emit new particles during first 2 seconds
                     if elapsed <= 2.0 && elapsed >= state.nextEmitTime {
-                        let batchCount = Int.random(in: 6...8)
+                        let batchCount = intensity == .low ? Int.random(in: 2...3) : Int.random(in: 6...8)
                         for _ in 0..<batchCount {
                             state.particles.append(makeParticle(screenWidth: size.width))
                         }
                         state.nextEmitTime = elapsed + 0.08
                     }
 
-                    // Fire settling callback once at t=2.2s
+                    // Fire settling callback once at t=2.2s.
+                    // Deferred to next run loop via async to avoid mutating view state
+                    // mid-draw-pass (Canvas closure runs synchronously on main thread).
                     if elapsed >= 2.2 && !state.settlingFired {
                         state.settlingFired = true
                         DispatchQueue.main.async { onSettling?() }
@@ -144,10 +146,9 @@ struct ConfettiView: View {
                         }
                     }
                 }
-            }
-            .onAppear {
-                state.reset()
-            }
+        }
+        .onAppear {
+            state.reset()
         }
     }
 
