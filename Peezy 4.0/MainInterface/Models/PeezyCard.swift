@@ -38,6 +38,9 @@ struct PeezyCard: Identifiable, Equatable, Codable {
     var snoozedUntil: Date?
     var lastSnoozedAt: Date?
 
+    // Daily Dose — task urgency from catalog (0–99, higher = more urgent)
+    var urgencyPercentage: Int?
+
     // Intro card briefing message (warm, conversational summary)
     var briefingMessage: String?
 
@@ -176,7 +179,8 @@ struct PeezyCard: Identifiable, Equatable, Codable {
         snoozedUntil: Date? = nil,
         lastSnoozedAt: Date? = nil,
         briefingMessage: String? = nil,
-        taskCategory: String? = nil
+        taskCategory: String? = nil,
+        urgencyPercentage: Int? = nil
     ) {
         self.id = id
         self.type = type
@@ -195,6 +199,7 @@ struct PeezyCard: Identifiable, Equatable, Codable {
         self.lastSnoozedAt = lastSnoozedAt
         self.briefingMessage = briefingMessage
         self.taskCategory = taskCategory
+        self.urgencyPercentage = urgencyPercentage
     }
     
     // MARK: - Factory Methods
