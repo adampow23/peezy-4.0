@@ -383,6 +383,7 @@ final class PeezyHomeViewModel {
         }
 
         completedThisSession += 1
+        dailyDoseCompletedCount += 1
         currentTask = nil
         state = .done
     }
@@ -414,6 +415,7 @@ final class PeezyHomeViewModel {
                 await markTaskInProgress(task)
                 await MainActor.run {
                     self.completedThisSession += 1
+                    self.dailyDoseCompletedCount += 1
                     self.currentTask = nil
                     self.state = .done
                 }
@@ -422,6 +424,26 @@ final class PeezyHomeViewModel {
                     self.error = self.workflowManager.error ?? "Workflow submission failed"
                 }
             }
+        }
+    }
+
+    // MARK: - Get Ahead
+
+    /// Called when user taps "Want to get ahead?" or "Keep going?"
+    /// Loads the next day's batch of tasks into taskQueue.
+    func getAhead() {
+        currentBatchOffset += 1
+        gettingAhead = true
+
+        let startIndex = dailyTarget * currentBatchOffset
+        let nextBatch = Array(allActiveTasks.dropFirst(startIndex).prefix(dailyTarget))
+
+        if nextBatch.isEmpty {
+            // No more tasks — show all-done state
+            state = .done
+        } else {
+            taskQueue = nextBatch
+            state = .welcome
         }
     }
 
