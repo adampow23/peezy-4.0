@@ -122,6 +122,98 @@ final class PeezyHomeViewModel {
         return "\(count) tasks ready"
     }
 
+    var welcomeSubtitleForDailyDose: String {
+        if gettingAhead {
+            return "Here's your next batch."
+        }
+        return welcomeSubtitle
+    }
+
+    // MARK: - Daily Dose Computed Properties
+
+    private var daysUntilMoveValue: Int {
+        userState?.daysUntilMove ?? 30
+    }
+
+    private var bufferDays: Int {
+        if daysUntilMoveValue <= 10 { return 0 }
+        if daysUntilMoveValue <= 14 { return 3 }
+        return 7
+    }
+
+    private var workingDays: Int {
+        max(daysUntilMoveValue - bufferDays, 1)
+    }
+
+    var dailyTarget: Int {
+        guard !allActiveTasks.isEmpty else { return 0 }
+        return max(Int(ceil(Double(allActiveTasks.count) / Double(workingDays))), 1)
+    }
+
+    var isTodayComplete: Bool {
+        dailyDoseCompletedCount >= dailyTarget && dailyTarget > 0
+    }
+
+    /// Calendar day number we're on in the plan (1-indexed)
+    var dayNumber: Int {
+        let firstLaunchStr = UserDefaults.standard.string(forKey: kDailyDoseFirstLaunchDate) ?? todayISOString()
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withFullDate]
+        guard let firstDate = formatter.date(from: firstLaunchStr) else { return 1 }
+        let cal = Calendar.current
+        let days = cal.dateComponents([.day], from: firstDate, to: Date()).day ?? 0
+        return days + 1
+    }
+
+    /// Approximate total plan days (elapsed + remaining)
+    var totalPlanDays: Int {
+        dayNumber + daysUntilMoveValue
+    }
+
+    /// "Today: X of Y done" — shown on welcome card
+    var progressText: String {
+        let done = min(dailyDoseCompletedCount, dailyTarget)
+        return "Today: \(done) of \(dailyTarget) done"
+    }
+
+    /// "Z tasks remaining · X days until move" — shown on welcome card
+    var dayProgressText: String {
+        "\(allActiveTasks.count) tasks remaining · \(daysUntilMoveValue) days until move"
+    }
+
+    /// Subtext for the daily celebration card
+    var celebrationSubtext: String {
+        let aheadDays = currentBatchOffset
+        if aheadDays > 0 {
+            let unit = aheadDays == 1 ? "day" : "days"
+            return "You're \(aheadDays) \(unit) ahead — nice work."
+        }
+        if daysUntilMoveValue <= bufferDays + 2 {
+            return "You're in great shape for move day."
+        }
+        return "Right on schedule. Enjoy the rest of your day."
+    }
+
+    /// Drives which done-card variant is shown
+    enum DailyDoseViewState {
+        case batchComplete(aheadDays: Int)  // today's batch done, or a get-ahead batch done
+        case allTasksDone                   // no active tasks remain
+        case normalDone                     // mid-batch completion
+    }
+
+    var dailyDoseViewState: DailyDoseViewState {
+        if allActiveTasks.isEmpty {
+            return .allTasksDone
+        }
+        if isTodayComplete && !gettingAhead {
+            return .batchComplete(aheadDays: currentBatchOffset)
+        }
+        if gettingAhead && taskQueue.isEmpty {
+            return .batchComplete(aheadDays: currentBatchOffset)
+        }
+        return .normalDone
+    }
+
     // MARK: - Load Tasks from Firestore
 
     func loadTasks() async {
