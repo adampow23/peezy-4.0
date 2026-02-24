@@ -467,7 +467,7 @@ struct PeezyHomeView: View {
 
                     Spacer()
 
-                    if viewModel.allActiveTasks.count > viewModel.dailyTarget * (viewModel.currentBatchOffset + 1) {
+                    if viewModel.allActiveTasks.count >= viewModel.dailyTarget * (viewModel.currentBatchOffset + 1) {
                         Button(action: {
                             confettiActive = false
                             viewModel.getAhead()

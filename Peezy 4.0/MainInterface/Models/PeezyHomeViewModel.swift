@@ -238,6 +238,7 @@ final class PeezyHomeViewModel {
                 .getDocuments()
 
             var cards: [PeezyCard] = []
+            var inProgressBuffer: [PeezyCard] = []
             let now = Date()
 
             for document in snapshot.documents {
@@ -288,14 +289,16 @@ final class PeezyHomeViewModel {
                     urgencyPercentage: urgencyPercentage
                 )
 
-                if card.shouldShow {
+                if card.status == .inProgress {
+                    inProgressBuffer.append(card)
+                } else if card.shouldShow {
                     cards.append(card)
                 }
             }
 
             // Separate InProgress tasks (counted but not queued)
-            let inProgressCards = cards.filter { $0.status == .inProgress }
-            let activeCards = cards.filter { $0.status != .inProgress }
+            let inProgressCards = inProgressBuffer
+            let activeCards = cards
 
             // Sort active tasks: urgencyPercentage DESC, then title ASC for tiebreak
             let sorted = activeCards.sorted { a, b in
@@ -384,6 +387,7 @@ final class PeezyHomeViewModel {
 
         completedThisSession += 1
         dailyDoseCompletedCount += 1
+        allActiveTasks.removeAll { $0.id == task.id }
         currentTask = nil
         state = .done
     }
@@ -416,6 +420,7 @@ final class PeezyHomeViewModel {
                 await MainActor.run {
                     self.completedThisSession += 1
                     self.dailyDoseCompletedCount += 1
+                    self.allActiveTasks.removeAll { $0.id == task.id }
                     self.currentTask = nil
                     self.state = .done
                 }
