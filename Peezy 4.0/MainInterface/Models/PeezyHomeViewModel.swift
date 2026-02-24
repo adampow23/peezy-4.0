@@ -92,6 +92,8 @@ final class PeezyHomeViewModel {
 
     var hasMoreTasks: Bool { !taskQueue.isEmpty }
     var totalTaskCount: Int { taskQueue.count }
+    var hasMoreTasksOverall: Bool { !allActiveTasks.isEmpty }
+    var totalActiveTaskCount: Int { allActiveTasks.count }
 
     var greetingText: String {
         let hour = Calendar.current.component(.hour, from: Date())
@@ -223,6 +225,7 @@ final class PeezyHomeViewModel {
         }
 
         await MainActor.run { self.state = .loading }
+        resetDailyCountIfNeeded()
 
         do {
             let db = Firestore.firestore()
@@ -303,8 +306,17 @@ final class PeezyHomeViewModel {
             }
 
             await MainActor.run {
-                self.taskQueue = sorted
-                self.state = .welcome
+                self.allActiveTasks = sorted
+                self.inProgressTaskCount = inProgressCards.count
+                // Slice to today's batch only
+                let batch = Array(sorted.prefix(self.dailyTarget))
+                self.taskQueue = batch
+                // If today's batch was already completed (app re-opened same day), skip to done
+                if self.isTodayComplete {
+                    self.state = .done
+                } else {
+                    self.state = .welcome
+                }
             }
 
         } catch {
