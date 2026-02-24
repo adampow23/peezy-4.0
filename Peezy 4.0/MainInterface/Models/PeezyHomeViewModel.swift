@@ -64,9 +64,9 @@ final class PeezyHomeViewModel {
     var userState: UserState?
     // MARK: - UserDefaults Keys (private)
 
-    private let kDailyDoseCompletedCount = "dailyDoseCompletedCount"
-    private let kDailyDoseLastDate = "dailyDoseLastDate"
-    private let kDailyDoseFirstLaunchDate = "dailyDoseFirstLaunchDate"
+    private let kDailyDoseCompletedCount = "peezy.dailyDose.completedCount"
+    private let kDailyDoseLastDate = "peezy.dailyDose.lastDate"
+    private let kDailyDoseFirstLaunchDate = "peezy.dailyDose.firstLaunchDate"
 
     // MARK: - Workflow Support
 
