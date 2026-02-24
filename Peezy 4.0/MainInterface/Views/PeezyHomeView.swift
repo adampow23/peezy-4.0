@@ -46,8 +46,8 @@ struct PeezyHomeView: View {
     @State private var showDebugMenu = false
     #endif
 
-    // Charcoal glass color (matches existing CardView)
-    private let charcoalColor = Color(red: 0.15, green: 0.15, blue: 0.17)
+    // Deep ink text color for light theme
+    private let deepInk = PeezyTheme.Colors.deepInk
 
     var body: some View {
         GeometryReader { geometry in
@@ -105,7 +105,7 @@ struct PeezyHomeView: View {
                     Text("peezy")
                         .font(.system(size: 18, weight: .light, design: .default))
                         .tracking(6)
-                        .foregroundStyle(.white.opacity(0.9))
+                        .foregroundStyle(deepInk.opacity(0.8))
                         .frame(maxWidth: .infinity)
                         .padding(.top, 4)
                         #if DEBUG
@@ -124,13 +124,13 @@ struct PeezyHomeView: View {
                         VStack(spacing: 4) {
                             Image(systemName: "chevron.up")
                                 .font(.caption)
-                                .foregroundStyle(.white.opacity(0.3))
+                                .foregroundStyle(Color.gray.opacity(0.5))
                             Capsule()
-                                .fill(.ultraThinMaterial)
+                                .fill(.regularMaterial)
                                 .frame(width: 60, height: 6)
                             Text("Swipe up to chat")
                                 .font(.caption2)
-                                .foregroundStyle(.white.opacity(0.4))
+                                .foregroundStyle(Color.gray)
                         }
                         .padding(.bottom, 10)
                     }
@@ -215,31 +215,30 @@ struct PeezyHomeView: View {
                     // Greeting
                     Text(viewModel.greetingText)
                         .font(.system(size: 44, weight: .heavy))
-                        .foregroundColor(.white)
+                        .foregroundColor(PeezyTheme.Colors.deepInk)
                         .lineLimit(2)
                         .minimumScaleFactor(0.5)
 
                     // Thin accent divider
                     Rectangle()
-                        .fill(Color.white.opacity(0.3))
+                        .fill(Color.black.opacity(0.15))
                         .frame(width: 50, height: 2)
 
                     // Subtitle
-                    Text(viewModel.welcomeSubtitle)
+                    Text(viewModel.welcomeSubtitleForDailyDose)
                         .font(.title3)
                         .fontWeight(.medium)
-                        .foregroundColor(.white.opacity(0.7))
+                        .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.6))
 
-                    // Task count
-                    HStack(spacing: 12) {
-                        Image(systemName: "checklist")
-                            .font(.system(size: 18, weight: .semibold))
-                            .foregroundColor(.white.opacity(0.6))
-                            .frame(width: 24)
-
-                        Text(viewModel.taskReadyText)
+                    // Daily progress
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(viewModel.progressText)
                             .font(.system(size: 18, weight: .medium))
-                            .foregroundColor(.white.opacity(0.8))
+                            .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.8))
+
+                        Text(viewModel.dayProgressText)
+                            .font(.system(size: 14, weight: .regular))
+                            .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.45))
                     }
                     .padding(.top, 8)
                 }
@@ -281,10 +280,10 @@ struct PeezyHomeView: View {
             VStack(spacing: 20) {
                 ProgressView()
                     .scaleEffect(1.5)
-                    .tint(.white)
+                    .tint(PeezyTheme.Colors.deepInk)
                 Text("Loading your task...")
                     .font(.headline)
-                    .foregroundStyle(.white.opacity(0.8))
+                    .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.8))
             }
         } else if viewModel.isInWorkflow {
             // Workflow card (existing WorkflowCardView, unchanged)
@@ -328,7 +327,7 @@ struct PeezyHomeView: View {
             Button(action: { viewModel.skipCurrentTask() }) {
                 Text("Skip for now")
                     .font(.subheadline)
-                    .foregroundStyle(.white.opacity(0.5))
+                    .foregroundStyle(Color.gray)
             }
             .padding(.top, 4)
 
@@ -355,7 +354,7 @@ struct PeezyHomeView: View {
                     Spacer()
                 }
                 .font(.caption).bold()
-                .foregroundColor(.white.opacity(0.5))
+                .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.5))
                 .padding(.top, 30)
                 .padding(.horizontal, 30)
 
@@ -365,7 +364,7 @@ struct PeezyHomeView: View {
                 VStack(alignment: .leading, spacing: 15) {
                     Text(task.title)
                         .font(.system(size: 44, weight: .heavy))
-                        .foregroundColor(.white)
+                        .foregroundColor(PeezyTheme.Colors.deepInk)
                         .lineLimit(2)
                         .minimumScaleFactor(0.5)
                         .fixedSize(horizontal: false, vertical: true)
@@ -373,7 +372,7 @@ struct PeezyHomeView: View {
                     Text(task.subtitle)
                         .font(.title3)
                         .fontWeight(.medium)
-                        .foregroundColor(.white.opacity(0.7))
+                        .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.6))
                         .lineLimit(nil)
                         .minimumScaleFactor(0.8)
                         .fixedSize(horizontal: false, vertical: true)
@@ -389,10 +388,10 @@ struct PeezyHomeView: View {
                     Button(action: { viewModel.skipCurrentTask() }) {
                         Text("Skip")
                             .font(.system(size: 15, weight: .medium))
-                            .foregroundColor(.white.opacity(0.6))
+                            .foregroundColor(Color.gray)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 16)
-                            .background(Color.white.opacity(0.1))
+                            .background(Color.black.opacity(0.06))
                             .cornerRadius(16)
                     }
 
@@ -436,19 +435,19 @@ struct PeezyHomeView: View {
                     // Message
                     Text(doneHeadline)
                         .font(.system(size: 40, weight: .heavy))
-                        .foregroundColor(.white)
+                        .foregroundColor(PeezyTheme.Colors.deepInk)
                         .lineLimit(2)
                         .minimumScaleFactor(0.5)
 
                     // Thin accent divider
                     Rectangle()
-                        .fill(Color.white.opacity(0.3))
+                        .fill(Color.black.opacity(0.15))
                         .frame(width: 50, height: 2)
 
                     Text(doneSubtitle)
                         .font(.title3)
                         .fontWeight(.medium)
-                        .foregroundColor(.white.opacity(0.7))
+                        .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.6))
                         .lineLimit(3)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -505,17 +504,17 @@ struct PeezyHomeView: View {
             // Glass stack
             ZStack {
                 RoundedRectangle(cornerRadius: 36, style: .continuous)
-                    .foregroundStyle(.ultraThinMaterial)
+                    .foregroundStyle(.regularMaterial)
 
                 RoundedRectangle(cornerRadius: 36, style: .continuous)
-                    .fill(charcoalColor.opacity(0.6))
+                    .fill(Color.white.opacity(0.5))
             }
             .overlay(
                 RoundedRectangle(cornerRadius: 36, style: .continuous)
-                    .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                    .stroke(Color.black.opacity(0.05), lineWidth: 1)
                     .padding(1)
             )
-            .shadow(color: Color.black.opacity(0.4), radius: 20, x: 0, y: 15)
+            .shadow(color: Color.black.opacity(0.1), radius: 20, x: 0, y: 15)
 
             // Content
             content()
@@ -547,19 +546,19 @@ private struct DemoTooltipView: View {
         VStack(spacing: 8) {
             Text(message)
                 .font(.subheadline)
-                .foregroundColor(.white)
+                .foregroundColor(PeezyTheme.Colors.deepInk)
                 .multilineTextAlignment(.center)
 
             Button("Got it") {
                 onDismiss()
             }
             .font(.caption.bold())
-            .foregroundColor(.white.opacity(0.7))
+            .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.6))
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 14)
-        .background(.ultraThinMaterial)
-        .background(Color.black.opacity(0.5))
+        .background(.regularMaterial)
+        .background(Color.white.opacity(0.7))
         .clipShape(RoundedRectangle(cornerRadius: 16))
     }
 }
