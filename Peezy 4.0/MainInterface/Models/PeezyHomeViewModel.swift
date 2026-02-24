@@ -45,10 +45,28 @@ final class PeezyHomeViewModel {
 
     /// How many tasks completed in this session (for done screen messaging)
     var completedThisSession: Int = 0
+    // MARK: - Daily Dose State
+
+    /// All active tasks (not InProgress) sorted by urgency — full list, not sliced
+    var allActiveTasks: [PeezyCard] = []
+
+    /// Count of InProgress tasks for the "all done" screen
+    var inProgressTaskCount: Int = 0
+
+    /// Whether the user has opted to get ahead of schedule
+    var gettingAhead: Bool = false
+
+    /// Which batch offset we're on: 0 = today, 1 = +1 day ahead, etc.
+    var currentBatchOffset: Int = 0
 
     // MARK: - User Context
 
     var userState: UserState?
+    // MARK: - UserDefaults Keys (private)
+
+    private let kDailyDoseCompletedCount = "dailyDoseCompletedCount"
+    private let kDailyDoseLastDate = "dailyDoseLastDate"
+    private let kDailyDoseFirstLaunchDate = "dailyDoseFirstLaunchDate"
 
     // MARK: - Workflow Support
 
@@ -462,7 +480,33 @@ final class PeezyHomeViewModel {
         state = .activeTask
     }
 
-    // MARK: - Helpers
+    // MARK: - Daily Dose UserDefaults
+
+    private var dailyDoseCompletedCount: Int {
+        get { UserDefaults.standard.integer(forKey: kDailyDoseCompletedCount) }
+        set { UserDefaults.standard.set(newValue, forKey: kDailyDoseCompletedCount) }
+    }
+
+    private func todayISOString() -> String {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withFullDate]
+        return f.string(from: Date())
+    }
+
+    private func resetDailyCountIfNeeded() {
+        let today = todayISOString()
+        let lastDate = UserDefaults.standard.string(forKey: kDailyDoseLastDate) ?? ""
+        if today != lastDate {
+            dailyDoseCompletedCount = 0
+            UserDefaults.standard.set(today, forKey: kDailyDoseLastDate)
+        }
+        // Set first launch date once
+        if UserDefaults.standard.string(forKey: kDailyDoseFirstLaunchDate) == nil {
+            UserDefaults.standard.set(today, forKey: kDailyDoseFirstLaunchDate)
+        }
+    }
+
+        // MARK: - Helpers
 
     private func colorNameForPriority(_ priority: PeezyCard.Priority) -> String {
         switch priority {
