@@ -121,7 +121,7 @@ final class PeezyHomeViewModel {
             let snapshot = try await db.collection("users")
                 .document(userId)
                 .collection("tasks")
-                .whereField("status", in: ["Upcoming", "pending", "Snoozed"])
+                .whereField("status", in: ["Upcoming", "pending", "Snoozed", "InProgress"])
                 .getDocuments()
 
             var cards: [PeezyCard] = []
@@ -149,6 +149,7 @@ final class PeezyHomeViewModel {
                 let dueDate = (data["dueDate"] as? Timestamp)?.dateValue()
                 let snoozedUntil = (data["snoozedUntil"] as? Timestamp)?.dateValue()
                 let lastSnoozedAt = (data["lastSnoozedAt"] as? Timestamp)?.dateValue()
+                let urgencyPercentage = (data["urgencyPercentage"] as? NSNumber)?.intValue
 
                 // Skip currently snoozed tasks
                 if let snoozedUntil = snoozedUntil, snoozedUntil > now { continue }
@@ -170,7 +171,8 @@ final class PeezyHomeViewModel {
                     status: status,
                     dueDate: dueDate,
                     snoozedUntil: snoozedUntil,
-                    lastSnoozedAt: lastSnoozedAt
+                    lastSnoozedAt: lastSnoozedAt,
+                    urgencyPercentage: urgencyPercentage
                 )
 
                 if card.shouldShow {
@@ -178,12 +180,16 @@ final class PeezyHomeViewModel {
                 }
             }
 
-            // Sort by urgency: earliest due date first, then highest priority
-            let sorted = cards.sorted { a, b in
-                let dateA = a.dueDate ?? Date.distantFuture
-                let dateB = b.dueDate ?? Date.distantFuture
-                if dateA != dateB { return dateA < dateB }
-                return a.priority > b.priority
+            // Separate InProgress tasks (counted but not queued)
+            let inProgressCards = cards.filter { $0.status == .inProgress }
+            let activeCards = cards.filter { $0.status != .inProgress }
+
+            // Sort active tasks: urgencyPercentage DESC, then title ASC for tiebreak
+            let sorted = activeCards.sorted { a, b in
+                let ua = a.urgencyPercentage ?? 0
+                let ub = b.urgencyPercentage ?? 0
+                if ua != ub { return ua > ub }
+                return a.title < b.title
             }
 
             await MainActor.run {
