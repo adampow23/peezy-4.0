@@ -42,6 +42,9 @@ struct PeezyHomeView: View {
     // Demo tooltip visibility
     @State private var showDemoTooltip = false
 
+    // Confetti state for batch-complete celebration card
+    @State private var confettiActive = false
+
     #if DEBUG
     @State private var showDebugMenu = false
     #endif
@@ -419,27 +422,145 @@ struct PeezyHomeView: View {
         }
     }
 
-    // MARK: - Done Card
+    // MARK: - Done Card (dispatches to appropriate variant)
 
+    @ViewBuilder
     private var doneCard: some View {
+        switch viewModel.dailyDoseViewState {
+        case .batchComplete(let aheadDays):
+            dailyCelebrationCard(aheadDays: aheadDays)
+        case .allTasksDone:
+            allTasksDoneCard
+        case .normalDone:
+            normalDoneCard
+        }
+    }
+
+    // MARK: - Daily Celebration Card (STATE 2 / 3)
+
+    private func dailyCelebrationCard(aheadDays: Int) -> some View {
+        ZStack {
+            glassCard {
+                VStack(alignment: .leading, spacing: 0) {
+                    Spacer()
+
+                    VStack(alignment: .leading, spacing: 15) {
+                        Text("You're all done for today!")
+                            .font(.system(size: 36, weight: .heavy))
+                            .foregroundColor(PeezyTheme.Colors.deepInk)
+                            .lineLimit(2)
+                            .minimumScaleFactor(0.5)
+
+                        Rectangle()
+                            .fill(Color.black.opacity(0.15))
+                            .frame(width: 50, height: 2)
+
+                        Text(viewModel.celebrationSubtext)
+                            .font(.title3)
+                            .fontWeight(.medium)
+                            .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.6))
+                            .lineLimit(3)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding(.horizontal, 30)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                    Spacer()
+
+                    if viewModel.allActiveTasks.count > viewModel.dailyTarget * (viewModel.currentBatchOffset + 1) {
+                        Button(action: {
+                            confettiActive = false
+                            viewModel.getAhead()
+                        }) {
+                            Text(aheadDays > 0 ? "Keep going?" : "Want to get ahead?")
+                                .font(.system(size: 17, weight: .semibold))
+                                .foregroundColor(.black)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 16)
+                                .background(Color.white)
+                                .cornerRadius(16)
+                        }
+                        .padding(.horizontal, 30)
+                        .padding(.bottom, 30)
+                    }
+                }
+            }
+
+            ConfettiView(isActive: $confettiActive, intensity: .high)
+                .frame(width: 340, height: 500)
+                .allowsHitTesting(false)
+        }
+        .onAppear { confettiActive = true }
+        .onDisappear { confettiActive = false }
+    }
+
+    // MARK: - All Tasks Done Card (STATE 4)
+
+    private var allTasksDoneCard: some View {
         glassCard {
             VStack(alignment: .leading, spacing: 0) {
                 Spacer()
 
                 VStack(alignment: .leading, spacing: 15) {
-                    // Celebration icon
+                    Image(systemName: "checkmark.seal.fill")
+                        .font(.system(size: 56))
+                        .foregroundStyle(.green)
+
+                    Text("You're all set!")
+                        .font(.system(size: 40, weight: .heavy))
+                        .foregroundColor(PeezyTheme.Colors.deepInk)
+
+                    Rectangle()
+                        .fill(Color.black.opacity(0.15))
+                        .frame(width: 50, height: 2)
+
+                    if let days = viewModel.userState?.daysUntilMove {
+                        Text("Your move is in \(days) \(days == 1 ? "day" : "days") and Peezy is handling the rest.")
+                            .font(.title3)
+                            .fontWeight(.medium)
+                            .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.6))
+                            .lineLimit(3)
+                            .fixedSize(horizontal: false, vertical: true)
+                    } else {
+                        Text("Peezy is handling the rest.")
+                            .font(.title3)
+                            .fontWeight(.medium)
+                            .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.6))
+                    }
+
+                    if viewModel.inProgressTaskCount > 0 {
+                        Text("We're working on \(viewModel.inProgressTaskCount) \(viewModel.inProgressTaskCount == 1 ? "thing" : "things") for you.")
+                            .font(.subheadline)
+                            .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.5))
+                            .padding(.top, 4)
+                    }
+                }
+                .padding(.horizontal, 30)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                Spacer()
+            }
+        }
+    }
+
+    // MARK: - Normal Done Card (mid-batch, task completed)
+
+    private var normalDoneCard: some View {
+        glassCard {
+            VStack(alignment: .leading, spacing: 0) {
+                Spacer()
+
+                VStack(alignment: .leading, spacing: 15) {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: 56))
                         .foregroundStyle(.green)
 
-                    // Message
                     Text(doneHeadline)
                         .font(.system(size: 40, weight: .heavy))
                         .foregroundColor(PeezyTheme.Colors.deepInk)
                         .lineLimit(2)
                         .minimumScaleFactor(0.5)
 
-                    // Thin accent divider
                     Rectangle()
                         .fill(Color.black.opacity(0.15))
                         .frame(width: 50, height: 2)
@@ -456,7 +577,6 @@ struct PeezyHomeView: View {
 
                 Spacer()
 
-                // Next task button (if available)
                 if viewModel.hasMoreTasks {
                     Button(action: { viewModel.startNextTask() }) {
                         Text("Start next task")
