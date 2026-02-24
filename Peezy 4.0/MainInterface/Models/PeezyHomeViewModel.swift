@@ -92,7 +92,6 @@ final class PeezyHomeViewModel {
 
     var hasMoreTasks: Bool { !taskQueue.isEmpty }
     var totalTaskCount: Int { taskQueue.count }
-    var hasMoreTasksOverall: Bool { !allActiveTasks.isEmpty }
     var totalActiveTaskCount: Int { allActiveTasks.count }
 
     var greetingText: String {
@@ -635,6 +634,11 @@ final class PeezyHomeViewModel {
         if UserDefaults.standard.string(forKey: kDailyDoseFirstLaunchDate) == nil {
             UserDefaults.standard.set(today, forKey: kDailyDoseFirstLaunchDate)
         }
+    }
+
+    /// Called from onAppear to handle the overnight case (app was not restarted between days)
+    func resetDailyCountIfNeededPublic() {
+        resetDailyCountIfNeeded()
     }
 
         // MARK: - Helpers

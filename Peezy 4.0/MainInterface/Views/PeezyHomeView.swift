@@ -175,6 +175,7 @@ struct PeezyHomeView: View {
         }
         .onAppear {
             viewModel.userState = userState
+            viewModel.resetDailyCountIfNeededPublic()
             if viewModel.taskQueue.isEmpty && viewModel.state == .loading {
                 Task { await viewModel.loadTasks() }
             }
