@@ -59,7 +59,7 @@ struct MultiSelectTile: View {
                         RoundedRectangle(cornerRadius: 16, style: .continuous)
                             .fill(.regularMaterial)
                         RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .fill(Color.black.opacity(0.06))
+                            .fill(Color.white.opacity(0.15))
                     }
                 }
             )
@@ -68,17 +68,17 @@ struct MultiSelectTile: View {
                     .stroke(
                         isSelected
                             ? Color.clear
-                            : Color.black.opacity(0.06),
+                            : Color.black.opacity(0.05),
                         lineWidth: 1
                     )
             )
             .shadow(
                 color: isSelected
                     ? PeezyTheme.Colors.deepInk.opacity(0.25)
-                    : Color.black.opacity(0.15),
+                    : Color.black.opacity(0.1),
                 radius: isPressed ? 3 : (isSelected ? 10 : 12),
                 x: 0,
-                y: isPressed ? 1 : (isSelected ? 4 : 6)
+                y: isPressed ? 1 : (isSelected ? 4 : 8)
             )
             .scaleEffect(isPressed ? 0.98 : 1.0)
             .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isPressed)

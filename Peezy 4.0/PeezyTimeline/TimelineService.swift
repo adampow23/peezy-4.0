@@ -79,7 +79,7 @@ class TimelineService {
                 subtitle: data["desc"] as? String ?? "",
                 colorName: colorNameForPriority(priority),
                 taskId: data["id"] as? String ?? document.documentID,
-                workflowId: data["workflowId"] as? String ?? data["id"] as? String,
+                workflowId: data["workflowId"] as? String,
                 vendorCategory: isVendorTask ? categoryRaw : nil,
                 vendorId: nil,
                 priority: priority,

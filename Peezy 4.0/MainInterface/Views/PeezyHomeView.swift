@@ -38,6 +38,9 @@ struct PeezyHomeView: View {
     // Confetti state for batch-complete celebration card
     @State private var confettiActive = false
 
+    // Onboarding pagination — tracks current welcome page (0, 1, 2)
+    @State private var welcomePage: Int = 0
+
     #if DEBUG
     @State private var showDebugMenu = false
     #endif
@@ -188,23 +191,21 @@ struct PeezyHomeView: View {
 
     private var firstTimeWelcomeCard: some View {
         glassCard {
-            ScrollView(.vertical, showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 0) {
+            VStack(spacing: 0) {
+                // Scrollable page content — keyed by page so identity changes trigger opacity transition
+                ScrollView(.vertical, showsIndicators: false) {
                     VStack(alignment: .leading, spacing: 15) {
-                        // Greeting
-                        Text(viewModel.firstTimeWelcomeGreeting)
+                        Text(welcomePageHeadline)
                             .font(.system(size: 38, weight: .heavy))
                             .foregroundColor(PeezyTheme.Colors.deepInk)
                             .lineLimit(2)
                             .minimumScaleFactor(0.5)
 
-                        // Thin accent divider
                         Rectangle()
                             .fill(Color.black.opacity(0.15))
                             .frame(width: 50, height: 2)
 
-                        // Body text
-                        Text(viewModel.firstTimeWelcomeText)
+                        Text(welcomePageBody)
                             .font(.subheadline)
                             .fontWeight(.medium)
                             .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.6))
@@ -212,23 +213,68 @@ struct PeezyHomeView: View {
                     }
                     .padding(.horizontal, 30)
                     .padding(.top, 30)
+                    .padding(.bottom, 10)
                     .frame(maxWidth: .infinity, alignment: .leading)
-
-                    // "Let's do this" button
-                    Button(action: { viewModel.dismissFirstTimeWelcome() }) {
-                        Text("Let's do this")
-                            .font(.system(size: 17, weight: .semibold))
-                            .foregroundColor(.black)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 16)
-                            .background(Color.white)
-                            .cornerRadius(16)
-                    }
-                    .padding(.horizontal, 30)
-                    .padding(.top, 20)
-                    .padding(.bottom, 30)
                 }
+                .id(welcomePage)
+                .transition(.opacity)
+
+                // Dot indicators
+                HStack(spacing: 8) {
+                    ForEach(0..<3, id: \.self) { i in
+                        Circle()
+                            .fill(i == welcomePage ? Color.black.opacity(0.4) : Color.black.opacity(0.12))
+                            .frame(width: 7, height: 7)
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+
+                // Action button
+                Button(action: {
+                    if welcomePage < 2 {
+                        withAnimation(.easeInOut(duration: 0.3)) {
+                            welcomePage += 1
+                        }
+                    } else {
+                        viewModel.dismissFirstTimeWelcome()
+                    }
+                }) {
+                    Text(welcomePage < 2 ? "Continue" : "Start My First Task")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundColor(.black)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 16)
+                        .background(Color.white)
+                        .cornerRadius(16)
+                }
+                .padding(.horizontal, 30)
+                .padding(.bottom, 30)
             }
+        }
+    }
+
+    private var welcomePageHeadline: String {
+        switch welcomePage {
+        case 0: return "Here's how Peezy works"
+        case 1: return "Everything in one place"
+        default: return "Got questions? Just ask."
+        }
+    }
+
+    private var welcomePageBody: String {
+        let daily = viewModel.dailyTarget
+        switch welcomePage {
+        case 0:
+            if daily > 0 {
+                return "We break your move into bite-sized daily tasks based on your timeline.\n\nWe've got about \(daily) tasks per day to keep you on track — just work through each day's batch and you're golden."
+            } else {
+                return "We break your move into bite-sized daily tasks based on your timeline. Each day you'll get a small batch to knock out — just work through them and you're golden."
+            }
+        case 1:
+            return "The task list tab has everything — upcoming, in progress, and done. You can also start tasks ahead of schedule from there.\n\nNeed to update your move details? Tap the menu in the top left."
+        default:
+            return "Tap the chat icon on any task to get help from Peezy. It knows the context of that specific task and can walk you through it step by step."
         }
     }
 
@@ -536,7 +582,7 @@ struct PeezyHomeView: View {
                             confettiActive = false
                             viewModel.getAhead()
                         }) {
-                            Text(viewModel.gettingAhead ? "Keep going?" : "Get ahead")
+                            Text("Keep Going")
                                 .font(.system(size: 17, weight: .semibold))
                                 .foregroundColor(.black)
                                 .frame(maxWidth: .infinity)

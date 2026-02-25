@@ -423,80 +423,110 @@ struct TaskListRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Collapsed row — always visible
-            HStack {
-                // Task icon
-                Image(systemName: iconForCategory(task.taskCategory))
-                    .foregroundColor(.gray)
-                    .frame(width: 32)
-
-                Text(task.title)
-                    .font(.body.weight(.medium))
-                    .foregroundColor(PeezyTheme.Colors.deepInk)
-                    .lineLimit(1)
-
-                Spacer()
-
-                // Status badge for non-upcoming tasks
-                if isUserInProgress {
-                    Text("You're on it")
-                        .font(.caption2)
-                        .foregroundColor(.cyan)
-                } else if isInProgress {
-                    Text("Peezy is on it")
-                        .font(.caption2)
-                        .foregroundColor(.blue)
-                } else if isSnoozed {
-                    Text("Later")
-                        .font(.caption2)
-                        .foregroundColor(.gray)
+            HStack(alignment: .top, spacing: 18) {
+                ZStack {
+                    Circle()
+                        .fill(PeezyTheme.Colors.deepInk.opacity(0.05))
+                        .frame(width: 48, height: 48)
+                    Image(systemName: iconForCategory(task.taskCategory))
+                        .font(.system(size: 20, weight: .regular))
+                        .foregroundColor(isCompleted ? .gray : PeezyTheme.Colors.deepInk.opacity(0.8))
                 }
+                .padding(.top, 4)
 
-                Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                    .font(.caption)
-                    .foregroundColor(.gray)
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(alignment: .top) {
+                        Text(task.title)
+                            .font(.system(size: 18, weight: .medium, design: .rounded))
+                            .foregroundColor(isCompleted ? .gray : PeezyTheme.Colors.deepInk)
+                            .strikethrough(isCompleted, color: .gray)
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        Spacer()
+
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(.gray.opacity(0.4))
+                            .rotationEffect(.degrees(isExpanded ? -180 : 0))
+                            .animation(.spring(response: 0.4, dampingFraction: 0.75, blendDuration: 0), value: isExpanded)
+                            .padding(.top, 4)
+                    }
+
+                    if !task.subtitle.isEmpty {
+                        Text(task.subtitle)
+                            .font(.system(size: 15, weight: .regular))
+                            .foregroundColor(.gray.opacity(0.9))
+                            .lineSpacing(4)
+                            .lineLimit(isExpanded ? nil : 2)
+                    }
+
+                    // Status badge for non-upcoming tasks
+                    if isUserInProgress || isInProgress || isSnoozed {
+                        HStack {
+                            if isUserInProgress {
+                                Text("You're on it")
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundColor(.cyan)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 4)
+                                    .background(Color.cyan.opacity(0.1))
+                                    .clipShape(Capsule())
+                            } else if isInProgress {
+                                Text("Peezy is on it")
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundColor(.blue)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 4)
+                                    .background(Color.blue.opacity(0.1))
+                                    .clipShape(Capsule())
+                            } else if isSnoozed {
+                                Text("Snoozed")
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundColor(.orange)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 4)
+                                    .background(Color.orange.opacity(0.1))
+                                    .clipShape(Capsule())
+                            }
+                        }
+                        .padding(.top, 4)
+                    }
+                }
             }
-            .padding(.vertical, 12)
-            .padding(.horizontal, 16)
+            .padding(.vertical, 24)
+            .padding(.horizontal, 20)
             .contentShape(Rectangle())
             .onTapGesture {
-                withAnimation(.easeInOut(duration: 0.2)) {
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.75, blendDuration: 0)) {
                     onExpand()
                 }
             }
 
-            // Expanded content — only when tapped
+            // Start button — expanded state only
             if isExpanded {
-                VStack(alignment: .leading, spacing: 12) {
-                    if !task.subtitle.isEmpty {
-                        Text(task.subtitle)
-                            .font(.subheadline)
-                            .foregroundColor(.gray)
+                // Start button (hide for Completed, InProgress, and UserInProgress tasks)
+                if !isCompleted && !isInProgress && !isUserInProgress, let onStart {
+                    Button(action: onStart) {
+                        Text("Start Task")
+                            .font(.system(size: 16, weight: .semibold, design: .rounded))
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 16)
+                            .background(PeezyTheme.Colors.deepInk)
+                            .cornerRadius(14)
                     }
-
-                    // Start button (hide for Completed, InProgress, and UserInProgress tasks)
-                    if !isCompleted && !isInProgress && !isUserInProgress, let onStart {
-                        Button(action: onStart) {
-                            Text("Start Task")
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundColor(.white)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 12)
-                                .background(PeezyTheme.Colors.deepInk)
-                                .cornerRadius(12)
-                        }
-                    }
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 24)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
                 }
-                .padding(.horizontal, 16)
-                .padding(.bottom, 12)
-                .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
         .background(Color.white)
-        .cornerRadius(12)
-        .shadow(color: .black.opacity(0.04), radius: 4, y: 2)
-        .opacity(isCompleted ? 0.5 : 1.0)
-        .padding(.vertical, 3)
+        .cornerRadius(20)
+        .shadow(color: PeezyTheme.Colors.deepInk.opacity(0.04), radius: 12, x: 0, y: 6)
+        .opacity(isCompleted ? 0.6 : 1.0)
+        .padding(.vertical, 8)
     }
 
     // MARK: - Category Icon

@@ -420,6 +420,29 @@ final class PeezyHomeViewModel {
         }
     }
 
+    // MARK: - Advance After Task
+
+    /// Called after any task action (complete, snooze, I'm on it).
+    /// If the daily quota is met, returns to dailyComplete instead of auto-serving the next task.
+    private func advanceAfterTask() {
+        if allActiveTasks.isEmpty {
+            currentTask = nil
+            isFocusedTask = false
+            state = .allComplete
+        } else if dailyDoseCompletedCount >= dailyTarget {
+            // Quota met — return to celebration/keep-going screen
+            currentTask = nil
+            isFocusedTask = false
+            state = .dailyComplete
+        } else if !taskQueue.isEmpty {
+            // Still working through daily dose
+            startNextTask()
+        } else {
+            // Queue empty but quota not met — recalculate
+            determineHomeState()
+        }
+    }
+
     /// Start or restart the workflow for currentTask — does NOT dequeue from taskQueue.
     /// Used both by startNextTask() and by the simpleTaskCard retry button.
     func startWorkflowForCurrentTask() {
@@ -482,17 +505,7 @@ final class PeezyHomeViewModel {
         currentTask = nil
         isFocusedTask = false
 
-        // Determine next state
-        if taskQueue.isEmpty {
-            if allActiveTasks.isEmpty {
-                state = .allComplete
-            } else {
-                state = .dailyComplete
-            }
-        } else {
-            // More tasks in today's batch — load next one automatically
-            startNextTask()
-        }
+        advanceAfterTask()
     }
 
     // MARK: - Mark Task User In Progress ("I'm on it")
@@ -514,16 +527,7 @@ final class PeezyHomeViewModel {
         currentTask = nil
         isFocusedTask = false
 
-        // Determine next state
-        if taskQueue.isEmpty {
-            if allActiveTasks.isEmpty {
-                state = .allComplete
-            } else {
-                state = .dailyComplete
-            }
-        } else {
-            startNextTask()
-        }
+        advanceAfterTask()
     }
 
     // MARK: - Focus Task (from Task List)
@@ -574,16 +578,7 @@ final class PeezyHomeViewModel {
                     self.allActiveTasks.removeAll { $0.id == task.id }
                     self.currentTask = nil
                     self.isFocusedTask = false
-                    // Determine next state
-                    if self.taskQueue.isEmpty {
-                        if self.allActiveTasks.isEmpty {
-                            self.state = .allComplete
-                        } else {
-                            self.state = .dailyComplete
-                        }
-                    } else {
-                        self.startNextTask()
-                    }
+                    self.advanceAfterTask()
                 }
             } else {
                 await MainActor.run {
@@ -646,16 +641,7 @@ final class PeezyHomeViewModel {
             dailyDoseCompletedCount += 1
             currentTask = nil
             isFocusedTask = false
-            // Move to next task or determine state
-            if taskQueue.isEmpty {
-                if allActiveTasks.isEmpty {
-                    state = .allComplete
-                } else {
-                    state = .dailyComplete
-                }
-            } else {
-                startNextTask()
-            }
+            advanceAfterTask()
         }
     }
 
