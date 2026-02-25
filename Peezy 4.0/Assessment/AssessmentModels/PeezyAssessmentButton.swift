@@ -12,7 +12,7 @@ struct PeezyAssessmentButton: View {
     private let mediumHaptic = UIImpactFeedbackGenerator(style: .medium)
 
     // Charcoal glass color
-    private let charcoalColor = PeezyTheme.Colors.charcoalGlass
+    private let deepInk = PeezyTheme.Colors.deepInk
 
     init(_ title: String, disabled: Bool = false, action: @escaping () -> Void) {
         self.title = title
@@ -35,11 +35,11 @@ struct PeezyAssessmentButton: View {
                     ZStack {
                         // Glass blur effect
                         RoundedRectangle(cornerRadius: 28, style: .continuous)
-                            .fill(.ultraThinMaterial)
+                            .fill(.regularMaterial)
 
                         // Charcoal tint
                         RoundedRectangle(cornerRadius: 28, style: .continuous)
-                            .fill(charcoalColor.opacity(disabled ? 0.4 : 0.6))
+                            .fill(deepInk.opacity(disabled ? 0.4 : 0.6))
                     }
                 )
                 .overlay(

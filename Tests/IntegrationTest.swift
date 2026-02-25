@@ -95,7 +95,7 @@ let userScenario1: [String: Any] = [
     "WhosMoving": "Just Me",
     "AnyPets": "Yes",
     "HireMovers": "Hire Movers",
-    "HirePackers": "Pack myself",
+    "packingPreference": "none",
     "HireCleaners": "Hire Cleaners",
     "selectedMoveDate": "true"
 ]
@@ -117,7 +117,7 @@ let userScenario2: [String: Any] = [
     "WhosMoving": "Family",
     "AnyPets": "No",
     "HireMovers": "Move Myself",
-    "HirePackers": "Hire packers",
+    "packingPreference": "full",
     "HireCleaners": "Clean myself",
     "selectedMoveDate": "true",
     "SchoolAgeChildren": "2"  // From children mini-assessment
@@ -163,8 +163,7 @@ let realTaskCatalog: [TaskData] = [
     // Service-based tasks
     TaskData(id: "BOOK_MOVERS", title: "Book Professional Movers", conditions: ["HireMovers": ["Hire Movers"]]),
     TaskData(id: "RESERVE_MOVING_TRUCK", title: "Reserve DIY Moving Truck", conditions: ["HireMovers": ["Move Myself"]]),
-    TaskData(id: "BUY_PACKING_SUPPLIES", title: "Buy Packing Supplies", conditions: ["HirePackers": ["Pack myself"]]),
-    TaskData(id: "BOOK_PACKERS", title: "Schedule Professional Packers", conditions: ["HirePackers": ["Hire packers"]]),
+    TaskData(id: "BUY_PACKING_SUPPLIES", title: "Buy Packing Supplies", conditions: [:]),
     TaskData(id: "BOOK_CLEANERS", title: "Schedule Move-Out Cleaning Service", conditions: ["HireCleaners": ["Hire Cleaners"]]),
     TaskData(id: "DIY_DEEP_CLEANING", title: "Deep Clean Your Home", conditions: ["HireCleaners": ["Clean myself"]]),
 
@@ -205,7 +204,7 @@ let integrationScenarios: [IntegrationTestScenario] = [
             "SETUP_HOMEOWNERS_INSURANCE",   // newDwellingType: House + newRentOrOwn: Own
             "CANCEL_RENTERS_INSURANCE",     // currentRentOrOwn: Rent + newRentOrOwn: Own
             "BOOK_MOVERS",                  // HireMovers: Hire Movers
-            "BUY_PACKING_SUPPLIES",         // HirePackers: Pack myself
+            "BUY_PACKING_SUPPLIES",         // No conditions - generates for everyone
             "BOOK_CLEANERS",                // HireCleaners: Hire Cleaners
             "TRANSFER_UTILITIES",           // MoveDistance: Local
             "UPDATE_DRIVERS_LICENSE"        // MoveDistance: Local
@@ -220,7 +219,6 @@ let integrationScenarios: [IntegrationTestScenario] = [
             "RESERVE_ELEVATORS_NEW",        // newDwellingType ≠ Apartment
             "ARRANGE_PARKING_NEW",          // newDwellingType ≠ Apartment/Condo
             "RESERVE_MOVING_TRUCK",         // HireMovers ≠ Move Myself
-            "BOOK_PACKERS",                 // HirePackers ≠ Hire packers
             "DIY_DEEP_CLEANING",            // HireCleaners ≠ Clean myself
             "NEW_DRIVERS_LICENSE",          // MoveDistance ≠ Long Distance
             "REGISTER_VEHICLE",             // MoveDistance ≠ Long Distance
@@ -241,7 +239,7 @@ let integrationScenarios: [IntegrationTestScenario] = [
             "RESERVE_ELEVATORS_NEW",        // newDwellingType: Apartment
             "ARRANGE_PARKING_NEW",          // newDwellingType: Apartment
             "RESERVE_MOVING_TRUCK",         // HireMovers: Move Myself
-            "BOOK_PACKERS",                 // HirePackers: Hire packers
+            "BUY_PACKING_SUPPLIES",         // No conditions - generates for everyone
             "DIY_DEEP_CLEANING",            // HireCleaners: Clean myself
             "NEW_DRIVERS_LICENSE",          // MoveDistance: Long Distance
             "REGISTER_VEHICLE",             // MoveDistance: Long Distance
@@ -261,7 +259,6 @@ let integrationScenarios: [IntegrationTestScenario] = [
             "SETUP_HOMEOWNERS_INSURANCE",   // newRentOrOwn ≠ Own
             "CANCEL_RENTERS_INSURANCE",     // currentRentOrOwn ≠ Rent
             "BOOK_MOVERS",                  // HireMovers ≠ Hire Movers
-            "BUY_PACKING_SUPPLIES",         // HirePackers ≠ Pack myself
             "BOOK_CLEANERS",                // HireCleaners ≠ Hire Cleaners
             "TRANSFER_UTILITIES",           // MoveDistance ≠ Local
             "UPDATE_DRIVERS_LICENSE"        // MoveDistance ≠ Local

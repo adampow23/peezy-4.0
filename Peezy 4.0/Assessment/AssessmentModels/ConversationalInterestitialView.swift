@@ -46,7 +46,7 @@ struct ConversationalInterstitialView: View {
                 Text(displayedText)
                     .font(.title3)
                     .fontWeight(.medium)
-                    .foregroundColor(.white)
+                    .foregroundColor(PeezyTheme.Colors.deepInk)
                     .multilineTextAlignment(.center)
                     .lineSpacing(6)
                     .padding(.horizontal, 32)
@@ -55,7 +55,7 @@ struct ConversationalInterstitialView: View {
                 if showTapHint {
                     Text("tap to continue")
                         .font(.caption)
-                        .foregroundColor(.white.opacity(0.3))
+                        .foregroundColor(Color.gray.opacity(0.6))
                         .transition(.opacity)
                 }
                 

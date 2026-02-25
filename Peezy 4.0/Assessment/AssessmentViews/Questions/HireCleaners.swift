@@ -22,10 +22,7 @@ struct HireCleaners: View {
     var body: some View {
         VStack(spacing: 0) {
             // Content area with equal spacing
-            AssessmentContentArea(
-                questionText: "Would you like quotes for a professional move-out cleaning, or are you going to handle that yourself?",
-                showContent: showContent
-            ) {
+            AssessmentContentArea {
                 // Options grid
                 LazyVGrid(columns: [
                     GridItem(.flexible(), spacing: 16),
@@ -54,7 +51,6 @@ struct HireCleaners: View {
                 .padding(.horizontal, 20)
             }
         }
-        .background(InteractiveBackground())
         .onAppear {
             selected = assessmentData.hireCleaners
             withAnimation {

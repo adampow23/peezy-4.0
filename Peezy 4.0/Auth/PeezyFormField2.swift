@@ -23,8 +23,8 @@ struct PeezyFormField2: View {
 
     @FocusState private var isFocused: Bool
 
-    // Charcoal glass colors
-    private let charcoalColor = PeezyTheme.Colors.charcoalGlass
+    // Deep ink colors
+    private let deepInk = PeezyTheme.Colors.deepInk
     private let accentBlue = PeezyTheme.Colors.accentBlue
 
     private var hasError: Bool { !(error ?? "").isEmpty }
@@ -32,7 +32,7 @@ struct PeezyFormField2: View {
     private var strokeColor: Color {
         if hasError { return PeezyTheme.Colors.emotionalRed }
         if isFocused { return accentBlue.opacity(0.6) }
-        return Color.white.opacity(0.1)
+        return Color.black.opacity(0.1)
     }
 
     private var shadowColor: Color {
@@ -46,14 +46,14 @@ struct PeezyFormField2: View {
             if let label = label, !label.isEmpty {
                 Text(label)
                     .font(PeezyTheme.Typography.callout)
-                    .foregroundColor(.white.opacity(0.6))
+                    .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.6))
             }
 
             HStack(spacing: 12) {
                 if let icon = leadingIcon {
                     Image(systemName: icon)
                         .font(.system(size: 16, weight: .semibold))
-                        .foregroundColor(isFocused ? accentBlue : .white.opacity(0.5))
+                        .foregroundColor(isFocused ? accentBlue : PeezyTheme.Colors.deepInk.opacity(0.5))
                 }
 
                 Group {
@@ -74,7 +74,7 @@ struct PeezyFormField2: View {
                     }
                 }
                 .font(PeezyTheme.Typography.body)
-                .foregroundColor(.white)
+                .foregroundColor(PeezyTheme.Colors.deepInk)
                 .tint(accentBlue)
             }
             .padding(.horizontal, 16)
@@ -84,11 +84,11 @@ struct PeezyFormField2: View {
                 ZStack {
                     // Glass blur effect
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(.ultraThinMaterial)
+                        .fill(.regularMaterial)
 
                     // Charcoal tint
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(charcoalColor.opacity(0.6))
+                        .fill(Color.black.opacity(0.06))
                 }
             )
             .overlay(
@@ -104,7 +104,7 @@ struct PeezyFormField2: View {
             } else if let helper = helper, !helper.isEmpty {
                 Text(helper)
                     .font(PeezyTheme.Typography.footnote)
-                    .foregroundColor(.white.opacity(0.5))
+                    .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.5))
             }
         }
     }

@@ -23,7 +23,7 @@ struct NewDwellingType: View {
     
     var body: some View {
         VStack(spacing: 0) {
-            AssessmentContentArea(questionText: "What kind of place is the new one?", showContent: showContent) {
+            AssessmentContentArea {
                 LazyVGrid(columns: [GridItem(.flexible(), spacing: 16), GridItem(.flexible(), spacing: 16)], spacing: 16) {
                     ForEach(Array(options.enumerated()), id: \.element) { index, option in
                         SelectionTile(title: option, icon: iconMap[option], isSelected: selected == option, onTap: {
@@ -42,7 +42,6 @@ struct NewDwellingType: View {
                 .padding(.horizontal, 20)
             }
         }
-        .background(InteractiveBackground())
         .onAppear {
             if assessmentData.newRentOrOwn == "Own" && assessmentData.newDwellingType == "Apartment" {
                 assessmentData.newDwellingType = ""

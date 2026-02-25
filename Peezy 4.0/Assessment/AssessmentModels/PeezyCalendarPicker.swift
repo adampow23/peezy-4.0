@@ -122,7 +122,7 @@ struct PeezyCalendarPicker: View {
     }
 
     // Charcoal glass color
-    private let charcoalColor = PeezyTheme.Colors.charcoalGlass
+    private let deepInk = PeezyTheme.Colors.deepInk
 
     var body: some View {
         VStack(spacing: 12) {
@@ -132,20 +132,12 @@ struct PeezyCalendarPicker: View {
         }
         .padding(PeezyTheme.Layout.cardPadding)
         .background(
-            ZStack {
-                // Glass blur effect
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .fill(.ultraThinMaterial)
-
-                // Charcoal tint
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .fill(charcoalColor.opacity(0.6))
-            }
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .fill(Color(white: 0.15))
         )
         .overlay(
-            // Edge highlight
             RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                .stroke(Color.white.opacity(0.08), lineWidth: 1)
         )
         .shadow(color: Color.black.opacity(0.3), radius: 15, x: 0, y: 8)
     }
@@ -170,7 +162,7 @@ struct PeezyCalendarPicker: View {
                 } label: {
                     Image(systemName: "chevron.left")
                         .font(.system(size: 16, weight: .semibold))
-                        .foregroundColor(.white.opacity(0.7))
+                        .foregroundColor(Color.white.opacity(0.7))
                         .frame(width: 36, height: 36)
                         .background(Color.white.opacity(0.1))
                         .clipShape(Circle())
@@ -185,7 +177,7 @@ struct PeezyCalendarPicker: View {
                 } label: {
                     Image(systemName: "chevron.right")
                         .font(.system(size: 16, weight: .semibold))
-                        .foregroundColor(.white.opacity(0.7))
+                        .foregroundColor(Color.white.opacity(0.7))
                         .frame(width: 36, height: 36)
                         .background(Color.white.opacity(0.1))
                         .clipShape(Circle())
@@ -200,7 +192,7 @@ struct PeezyCalendarPicker: View {
                 Text(symbol)
                     .font(.system(size: 12, weight: .semibold))
                     .frame(maxWidth: .infinity)
-                    .foregroundColor(.white.opacity(0.5))
+                    .foregroundColor(Color.white.opacity(0.5))
                     .textCase(.uppercase)
             }
         }

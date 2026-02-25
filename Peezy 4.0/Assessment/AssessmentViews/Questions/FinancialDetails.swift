@@ -21,58 +21,55 @@ struct FinancialDetails: View {
     @EnvironmentObject var assessmentData: AssessmentDataManager
     @EnvironmentObject var coordinator: AssessmentCoordinator
 
-    @FocusState private var focusedCategory: String?
+    @FocusState private var focusedKey: String?
     @State private var showContent = false
+
+    /// Builds the list of (detailKey, label, category) for all fields.
+    private var fieldEntries: [(key: String, label: String, category: String)] {
+        var entries: [(String, String, String)] = []
+        for category in assessmentData.financialInstitutions {
+            let count = assessmentData.financialCounts[category] ?? 1
+            if count <= 1 {
+                entries.append((category, category, category))
+            } else {
+                for i in 1...count {
+                    let key = "\(category) \(i)"
+                    entries.append((key, "\(category) \(i)", category))
+                }
+            }
+        }
+        return entries
+    }
 
     var body: some View {
         VStack(spacing: 0) {
-            GeometryReader { geo in
-                VStack(spacing: 0) {
-                    Spacer(minLength: 0)
+            VStack(spacing: 0) {
+                Spacer(minLength: 0)
 
-                    HStack {
-                        Text("Which ones specifically?")
-                            .font(.system(size: 34, weight: .bold))
-                            .foregroundColor(.white)
-                            .frame(width: geo.size.width * 0.6, alignment: .leading)
-                            .multilineTextAlignment(.leading)
-                            .lineLimit(nil)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .padding(.horizontal, 20)
-                        Spacer(minLength: 0)
-                    }
-                    .opacity(showContent ? 1 : 0)
-                    .offset(x: showContent ? 0 : -20)
-                    .animation(.easeOut(duration: 0.5).delay(0.3), value: showContent)
-
-                    Spacer(minLength: 0)
-
-                    ScrollView {
-                        VStack(spacing: 16) {
-                            ForEach(assessmentData.financialInstitutions, id: \.self) { category in
-                                SuggestiveTextField(
-                                    label: category,
-                                    placeholder: "e.g. Chase, Amex...",
-                                    text: binding(for: category),
-                                    source: suggestionSource(for: category),
-                                    isFocused: focusedCategory == category
-                                )
-                                .onTapGesture {
-                                    focusedCategory = category
-                                }
+                ScrollView {
+                    VStack(spacing: 16) {
+                        ForEach(fieldEntries, id: \.key) { entry in
+                            SuggestiveTextField(
+                                label: entry.label,
+                                placeholder: placeholderText(for: entry.category),
+                                text: binding(for: entry.key),
+                                source: suggestionSource(for: entry.category),
+                                isFocused: focusedKey == entry.key
+                            )
+                            .onTapGesture {
+                                focusedKey = entry.key
                             }
                         }
                     }
-                    .frame(maxHeight: 300)
-                    .padding(.horizontal, 24)
-                    .opacity(showContent ? 1 : 0)
-                    .offset(y: showContent ? 0 : 30)
-                    .animation(.easeOut(duration: 0.5).delay(0.5), value: showContent)
-
-                    Spacer(minLength: 0)
                 }
+                .padding(.horizontal, 24)
+                .opacity(showContent ? 1 : 0)
+                .offset(y: showContent ? 0 : 30)
+                .animation(.easeOut(duration: 0.5).delay(0.3), value: showContent)
+
+                Spacer(minLength: 0)
             }
-            .onTapGesture { focusedCategory = nil }
+            .onTapGesture { focusedKey = nil }
 
             PeezyAssessmentButton("Continue") {
                 assessmentData.financialDetails = details
@@ -84,13 +81,27 @@ struct FinancialDetails: View {
             .offset(y: showContent ? 0 : 30)
             .animation(.spring(response: 0.6, dampingFraction: 0.8).delay(0.4), value: showContent)
         }
-        .background(InteractiveBackground())
         .onAppear {
             details = assessmentData.financialDetails
-            if let first = assessmentData.financialInstitutions.first {
-                focusedCategory = first
+            if let first = fieldEntries.first {
+                focusedKey = first.key
             }
             withAnimation { showContent = true }
+        }
+    }
+
+    private func placeholderText(for category: String) -> String {
+        switch category {
+        case "Bank / Credit Union":
+            return "e.g. Chase, Bank of America, Wells Fargo"
+        case "Credit Card":
+            return "e.g. Amex, Capital One, Discover"
+        case "Investment Account":
+            return "e.g. Fidelity, Schwab, Vanguard"
+        case "Student Loans":
+            return "e.g. Navient, SoFi, Nelnet"
+        default:
+            return "e.g. enter provider name"
         }
     }
 
@@ -109,10 +120,10 @@ struct FinancialDetails: View {
         }
     }
 
-    private func binding(for category: String) -> Binding<String> {
+    private func binding(for key: String) -> Binding<String> {
         Binding(
-            get: { details[category] ?? "" },
-            set: { details[category] = $0 }
+            get: { details[key] ?? "" },
+            set: { details[key] = $0 }
         )
     }
 }
@@ -120,6 +131,7 @@ struct FinancialDetails: View {
 #Preview {
     let manager = AssessmentDataManager()
     manager.financialInstitutions = ["Bank / Credit Union", "Credit Card"]
+    manager.financialCounts = ["Bank / Credit Union": 2, "Credit Card": 1]
     return FinancialDetails()
         .environmentObject(manager)
         .environmentObject(AssessmentCoordinator(dataManager: manager))

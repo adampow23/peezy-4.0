@@ -1,25 +1,28 @@
 import SwiftUI
 
-struct CurrentSquareFootage: View {
+struct WantToSell: View {
     @State private var selected = ""
     @EnvironmentObject var assessmentData: AssessmentDataManager
     @EnvironmentObject var coordinator: AssessmentCoordinator
 
+    // Animation states
     @State private var showContent = false
 
+    // Haptic feedback
     private let lightHaptic = UIImpactFeedbackGenerator(style: .light)
 
-    let options = [
-        "Under 500 sq ft",
-        "500–800 sq ft",
-        "800–1,200 sq ft",
-        "1,200–1,800 sq ft",
-        "1,800+ sq ft"
+    let options = ["Yes", "No"]
+
+    let iconMap: [String: String] = [
+        "Yes": "checkmark.circle.fill",
+        "No": "xmark.circle.fill"
     ]
 
     var body: some View {
         VStack(spacing: 0) {
+            // Content area with equal spacing
             AssessmentContentArea {
+                // Options grid
                 LazyVGrid(columns: [
                     GridItem(.flexible(), spacing: 16),
                     GridItem(.flexible(), spacing: 16)
@@ -27,11 +30,11 @@ struct CurrentSquareFootage: View {
                     ForEach(Array(options.enumerated()), id: \.element) { index, option in
                         SelectionTile(
                             title: option,
-                            icon: nil,
+                            icon: iconMap[option],
                             isSelected: selected == option,
                             onTap: {
                                 selected = option
-                                assessmentData.currentSquareFootage = option
+                                assessmentData.wantToSell = option
 
                                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                                     lightHaptic.impactOccurred()
@@ -48,7 +51,7 @@ struct CurrentSquareFootage: View {
             }
         }
         .onAppear {
-            selected = assessmentData.currentSquareFootage
+            selected = assessmentData.wantToSell
             withAnimation {
                 showContent = true
             }
@@ -58,7 +61,7 @@ struct CurrentSquareFootage: View {
 
 #Preview {
     let manager = AssessmentDataManager()
-    CurrentSquareFootage()
+    WantToSell()
         .environmentObject(manager)
         .environmentObject(AssessmentCoordinator(dataManager: manager))
 }

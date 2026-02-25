@@ -28,7 +28,7 @@ struct SignUpView: View {
     }
 
     // Charcoal glass color
-    private let charcoalColor = PeezyTheme.Colors.charcoalGlass
+    private let deepInk = PeezyTheme.Colors.deepInk
 
     var body: some View {
         NavigationStack {
@@ -41,11 +41,11 @@ struct SignUpView: View {
                     VStack(spacing: 8) {
                         Text("Create Account")
                             .font(PeezyTheme.Typography.largeTitle)
-                            .foregroundColor(.white)
+                            .foregroundColor(PeezyTheme.Colors.deepInk)
 
                         Text("Sign up to get started with Peezy")
                             .font(PeezyTheme.Typography.callout)
-                            .foregroundColor(.white.opacity(0.6))
+                            .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.6))
                     }
                     .padding(.top, 40)
                     .padding(.bottom, 20)
@@ -100,16 +100,16 @@ struct SignUpView: View {
                         }
                         .frame(maxWidth: .infinity)
                         .frame(height: 50)
-                        .foregroundColor(.white)
+                        .foregroundColor(PeezyTheme.Colors.deepInk)
                         .background(
                             ZStack {
                                 // Glass blur effect
                                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                    .fill(.ultraThinMaterial)
+                                    .fill(.regularMaterial)
 
                                 // Charcoal tint (or accent blue when valid)
                                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                    .fill(isFormValid ? PeezyTheme.Colors.accentBlue : charcoalColor.opacity(0.6))
+                                    .fill(isFormValid ? PeezyTheme.Colors.accentBlue : Color.black.opacity(0.06))
                             }
                         )
                         .overlay(
@@ -128,7 +128,7 @@ struct SignUpView: View {
                     Button(action: { dismiss() }) {
                         HStack(spacing: 4) {
                             Text("Already have an account?")
-                                .foregroundColor(.white.opacity(0.6))
+                                .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.6))
                             Text("Log in")
                                 .foregroundColor(PeezyTheme.Colors.accentBlue)
                                 .fontWeight(.medium)
@@ -143,7 +143,7 @@ struct SignUpView: View {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button(action: { dismiss() }) {
                         Image(systemName: "xmark")
-                            .foregroundColor(.white)
+                            .foregroundColor(PeezyTheme.Colors.deepInk)
                     }
                 }
             }

@@ -103,7 +103,7 @@ struct PeezyStackView: View {
                     Text("peezy")
                         .font(.system(size: 18, weight: .light, design: .default))
                         .tracking(6)
-                        .foregroundStyle(.white.opacity(0.9))
+                        .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.8))
                         .frame(maxWidth: .infinity)
                         .padding(.top, 4)
                         #if DEBUG
@@ -119,7 +119,7 @@ struct PeezyStackView: View {
                             Button(action: { viewModel.undoLastAction() }) {
                                 Image(systemName: "arrow.uturn.backward.circle.fill")
                                     .font(.title2)
-                                    .foregroundStyle(.white.opacity(0.6))
+                                    .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.5))
                             }
                             .padding(.trailing, 16)
                             .padding(.top, 8)
@@ -136,13 +136,13 @@ struct PeezyStackView: View {
                         VStack(spacing: 4) {
                             Image(systemName: "chevron.up")
                                 .font(.caption)
-                                .foregroundStyle(.white.opacity(0.3))
+                                .foregroundStyle(Color.gray.opacity(0.5))
                             Capsule()
-                                .fill(.ultraThinMaterial)
+                                .fill(.regularMaterial)
                                 .frame(width: 60, height: 6)
                             Text("Swipe up to chat")
                                 .font(.caption2)
-                                .foregroundStyle(.white.opacity(0.4))
+                                .foregroundStyle(Color.gray)
                         }
                         .padding(.bottom, 10)
                     }
@@ -231,7 +231,7 @@ struct CardView: View {
     @State private var offset: CGSize = .zero
 
     // The specific "Text Input" Charcoal Gray
-    private let charcoalColor = Color(red: 0.15, green: 0.15, blue: 0.17)
+    private let deepInk = PeezyTheme.Colors.deepInk
 
     var body: some View {
         GeometryReader { geometry in
@@ -244,12 +244,12 @@ struct CardView: View {
 
                     // B. The Charcoal Tint (Semi-transparent)
                     RoundedRectangle(cornerRadius: 36, style: .continuous)
-                        .fill(charcoalColor.opacity(isTopCard ? 0.6 : 0.8))
+                        .fill(Color.white.opacity(0.6))
                 }
                 // C. The Edge Highlight (Makes it look premium)
                 .overlay(
                     RoundedRectangle(cornerRadius: 36, style: .continuous)
-                        .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                        .stroke(Color.black.opacity(0.05), lineWidth: 1)
                     // Inset slightly to avoid harsh edges
                         .padding(1)
                 )
@@ -300,20 +300,20 @@ struct CardView: View {
                 // Greeting as main title (same style as "Internet")
                 Text(greetingText)
                     .font(.system(size: 48, weight: .heavy))
-                    .foregroundColor(.white)
+                    .foregroundColor(PeezyTheme.Colors.deepInk)
                     .lineLimit(2)
                     .minimumScaleFactor(0.5)
 
                 // Thin accent divider
                 Rectangle()
-                    .fill(Color.white.opacity(0.3))
+                    .fill(Color.black.opacity(0.12))
                     .frame(width: 50, height: 2)
 
                 // Task summary as subtitle (warm briefing message)
                 Text(taskSummaryText)
                     .font(.title3)
                     .fontWeight(.medium)
-                    .foregroundColor(.white.opacity(0.7))
+                    .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.6))
                     .lineLimit(4)
                     .minimumScaleFactor(0.8)
                     .fixedSize(horizontal: false, vertical: true)
@@ -386,7 +386,7 @@ struct CardView: View {
                         Spacer()
                     }
                     .font(.caption).bold()
-                    .foregroundColor(.white.opacity(0.5))
+                    .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.5))
                     .padding(.top, 30)
                     .padding(.horizontal, 30)
                 }
@@ -415,7 +415,7 @@ struct CardView: View {
             VStack(alignment: .leading, spacing: 15) {
                 Text(card.title)
                     .font(.system(size: 48, weight: .heavy))
-                    .foregroundColor(.white)
+                    .foregroundColor(PeezyTheme.Colors.deepInk)
                     .lineLimit(2)
                     .minimumScaleFactor(0.5)
                     .fixedSize(horizontal: false, vertical: true)
@@ -423,7 +423,7 @@ struct CardView: View {
                 Text(card.subtitle)
                     .font(.title3)
                     .fontWeight(.medium)
-                    .foregroundColor(.white.opacity(0.7))
+                    .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.6))
                     .lineLimit(nil)
                     .minimumScaleFactor(0.8)
                     .fixedSize(horizontal: false, vertical: true)
@@ -481,12 +481,12 @@ struct SummaryRow: View {
         HStack(spacing: 12) {
             Image(systemName: icon)
                 .font(.system(size: 18, weight: .semibold))
-                .foregroundColor(.white.opacity(0.6))
+                .foregroundColor(Color.gray)
                 .frame(width: 24)
 
             Text("\(count) \(label)\(count == 1 ? "" : "s")")
                 .font(.system(size: 18, weight: .medium))
-                .foregroundColor(.white.opacity(0.8))
+                .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.8))
         }
     }
 }
@@ -497,10 +497,10 @@ struct LoadingView: View {
         VStack(spacing: 20) {
             ProgressView()
                 .scaleEffect(1.5)
-                .tint(.white)
+                .tint(PeezyTheme.Colors.deepInk)
             Text("Loading your tasks...")
                 .font(.headline)
-                .foregroundStyle(.white.opacity(0.8))
+                .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.8))
         }
     }
 }
@@ -518,11 +518,11 @@ struct EmptyStateView: View {
             // Time-dependent headline
             Text(timeOfDay.emptyStateHeadline)
                 .font(.largeTitle).bold()
-                .foregroundStyle(.white)
+                .foregroundStyle(PeezyTheme.Colors.deepInk)
 
             Text("You're all caught up.")
                 .font(.subheadline)
-                .foregroundStyle(.white.opacity(0.6))
+                .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.5))
         }
     }
 }
@@ -554,79 +554,28 @@ struct ErrorToast: View {
 struct InteractiveBackground: View {
     @State private var animate = false
 
-    // Time-dependent colors
-    private var timeOfDay: TimeOfDay { TimeOfDay.current }
-    private var baseColor: Color { timeOfDay.baseColor }
-    private var orbColors: (primary: Color, secondary: Color, accent: Color) { timeOfDay.orbColors }
-
     var body: some View {
         ZStack {
-            // 1. The Deep Space Base (time-dependent)
-            baseColor
+            // Off-white opal base
+            PeezyTheme.Colors.lightBase
                 .ignoresSafeArea()
 
-            // 2. The Moving Orbs (Atmosphere) - colors vary by time of day
+            // Soft animated orbs
             GeometryReader { geo in
                 ZStack {
-                    // Orb 1: Primary color
+                    // Orb 1: Ice blue
                     Circle()
-                        .fill(
-                            RadialGradient(
-                                colors: [
-                                    orbColors.primary.opacity(0.6),
-                                    orbColors.primary.opacity(0)
-                                ],
-                                center: .center,
-                                startRadius: 0,
-                                endRadius: geo.size.width * 0.5
-                            )
-                        )
-                        .frame(width: geo.size.width * 1.2)
+                        .fill(PeezyTheme.Colors.iceBlue.opacity(0.8))
+                        .frame(width: geo.size.width * 0.9)
                         .blur(radius: 60)
-                        .offset(
-                            x: animate ? -80 : 80,
-                            y: animate ? -150 : 100
-                        )
+                        .offset(x: animate ? -30 : 30, y: animate ? -80 : 40)
 
-                    // Orb 2: Secondary color
+                    // Orb 2: Soft lavender
                     Circle()
-                        .fill(
-                            RadialGradient(
-                                colors: [
-                                    orbColors.secondary.opacity(0.5),
-                                    orbColors.secondary.opacity(0)
-                                ],
-                                center: .center,
-                                startRadius: 0,
-                                endRadius: geo.size.width * 0.5
-                            )
-                        )
-                        .frame(width: geo.size.width * 1.0)
-                        .blur(radius: 50)
-                        .offset(
-                            x: animate ? 120 : -120,
-                            y: animate ? 250 : -80
-                        )
-
-                    // Orb 3: Accent color
-                    Circle()
-                        .fill(
-                            RadialGradient(
-                                colors: [
-                                    orbColors.accent.opacity(0.3),
-                                    orbColors.accent.opacity(0)
-                                ],
-                                center: .center,
-                                startRadius: 0,
-                                endRadius: geo.size.width * 0.4
-                            )
-                        )
-                        .frame(width: geo.size.width * 0.8)
-                        .blur(radius: 40)
-                        .offset(
-                            x: animate ? -50 : 100,
-                            y: animate ? 400 : 200
-                        )
+                        .fill(PeezyTheme.Colors.softLavender.opacity(0.6))
+                        .frame(width: geo.size.width * 0.9)
+                        .blur(radius: 60)
+                        .offset(x: animate ? 80 : -80, y: animate ? 150 : -20)
                 }
             }
         }

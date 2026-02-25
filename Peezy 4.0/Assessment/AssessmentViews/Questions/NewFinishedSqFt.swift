@@ -19,10 +19,7 @@ struct NewFinishedSqFt: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            AssessmentContentArea(
-                questionText: "How much finished living space at the new place?",
-                showContent: showContent
-            ) {
+            AssessmentContentArea {
                 LazyVGrid(columns: [
                     GridItem(.flexible(), spacing: 16),
                     GridItem(.flexible(), spacing: 16)
@@ -50,7 +47,6 @@ struct NewFinishedSqFt: View {
                 .padding(.horizontal, 20)
             }
         }
-        .background(InteractiveBackground())
         .onAppear {
             selected = assessmentData.newFinishedSqFt
             withAnimation {

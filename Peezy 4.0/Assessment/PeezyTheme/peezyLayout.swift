@@ -41,7 +41,7 @@ extension View {
         self.background(
             ZStack {
                 RoundedRectangle(cornerRadius: cornerRadius)
-                    .fill(.ultraThinMaterial)
+                    .fill(.regularMaterial)
 
                 RoundedRectangle(cornerRadius: cornerRadius)
                     .stroke(Color.white.opacity(0.2), lineWidth: 1)

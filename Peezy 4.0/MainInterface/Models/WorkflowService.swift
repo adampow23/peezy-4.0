@@ -34,10 +34,8 @@ class WorkflowService {
 
         // Parse response
         let qualifying = try parseQualifying(from: data)
-
         // Cache it
         cache[workflowId] = qualifying
-
         return qualifying
     }
 

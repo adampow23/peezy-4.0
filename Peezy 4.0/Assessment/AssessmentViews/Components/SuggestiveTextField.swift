@@ -19,28 +19,27 @@ struct SuggestiveTextField: View {
 
     @State private var suggestions: [String] = []
     @State private var showSuggestions = false
+    @State private var justSelected = false
     @State private var mapManager = BusinessSearchManager()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(label)
                 .font(.system(size: 14, weight: .medium))
-                .foregroundColor(.white.opacity(0.6))
+                .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.5))
 
-            TextField("", text: $text, prompt: Text(placeholder).foregroundColor(.white.opacity(0.3)))
+            TextField("", text: $text, prompt: Text(placeholder).foregroundColor(Color.gray.opacity(0.6)))
                 .font(.system(size: 16))
-                .foregroundColor(.white)
+                .foregroundColor(PeezyTheme.Colors.deepInk)
                 .textInputAutocapitalization(.words)
-                .padding(.vertical, 14)
-                .padding(.horizontal, 16)
-                .background(
+                .padding(16)
+                .background(Color.white)
+                .cornerRadius(12)
+                .overlay(
                     RoundedRectangle(cornerRadius: 12)
-                        .fill(Color.white.opacity(0.08))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 12)
-                                .stroke(Color.white.opacity(isFocused ? 0.4 : 0.15), lineWidth: 1)
-                        )
+                        .stroke(Color.gray.opacity(0.25), lineWidth: 1)
                 )
+                .shadow(color: .black.opacity(0.04), radius: 4, y: 2)
                 .onChange(of: text) { _, newValue in
                     handleTextChange(newValue)
                 }
@@ -75,6 +74,7 @@ struct SuggestiveTextField: View {
         VStack(spacing: 0) {
             ForEach(Array(suggestions.enumerated()), id: \.element) { index, suggestion in
                 Button {
+                    justSelected = true
                     text = suggestion
                     suggestions = []
                     showSuggestions = false
@@ -83,27 +83,27 @@ struct SuggestiveTextField: View {
                     HStack {
                         Text(suggestion)
                             .font(.system(size: 15))
-                            .foregroundColor(.white)
+                            .foregroundColor(PeezyTheme.Colors.deepInk)
                             .frame(maxWidth: .infinity, alignment: .leading)
                         Image(systemName: "arrow.up.left")
                             .font(.system(size: 11))
-                            .foregroundColor(.white.opacity(0.4))
+                            .foregroundColor(Color.gray)
                     }
                     .padding(.vertical, 12)
                     .padding(.horizontal, 16)
                 }
                 if index < suggestions.count - 1 {
                     Divider()
-                        .background(Color.white.opacity(0.1))
+                        .background(PeezyTheme.Colors.deepInk.opacity(0.08))
                 }
             }
         }
         .background(
             RoundedRectangle(cornerRadius: 10)
-                .fill(Color(white: 0.12))
+                .fill(Color.white)
                 .overlay(
                     RoundedRectangle(cornerRadius: 10)
-                        .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                        .stroke(PeezyTheme.Colors.deepInk.opacity(0.1), lineWidth: 1)
                 )
         )
         .padding(.top, 2)
@@ -112,6 +112,10 @@ struct SuggestiveTextField: View {
     // MARK: - Text change handler
 
     private func handleTextChange(_ newValue: String) {
+        if justSelected {
+            justSelected = false
+            return
+        }
         switch source {
         case .local(let list):
             if newValue.count >= 2 {

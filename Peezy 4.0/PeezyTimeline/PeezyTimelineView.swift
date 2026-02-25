@@ -2,19 +2,19 @@
 //  PeezyTimelineView.swift
 //  Peezy
 //
-//  Simple grouped task list: Active → Snoozed → Completed
+//  Tabbed task list: To-Do | In Progress | Later | Done
 //  Data source: TimelineService (unchanged)
 //
 
 import SwiftUI
 
-// MARK: - Task Tab
+// MARK: - Tab Enum
 
 enum TaskTab: String, CaseIterable {
-    case active = "To-Do"
+    case todo = "To-Do"
     case inProgress = "In Progress"
-    case snoozed = "Later"
-    case completed = "Done"
+    case later = "Later"
+    case done = "Done"
 }
 
 // MARK: - Main View
@@ -24,15 +24,18 @@ struct PeezyTaskStream: View {
     var viewModel: PeezyStackViewModel?
     var userState: UserState?
 
+    // Navigation callback — switches to Home tab with focused task
+    var onNavigateToTask: ((PeezyCard) -> Void)?
+
     // Task data from Firestore
     @State private var allTasks: [PeezyCard] = []
     @State private var isLoading = true
 
-    // Tab selection
-    @State private var selectedTab: TaskTab = .active
-
     // Expandable row tracking
     @State private var expandedTaskId: String? = nil
+
+    // Active tab
+    @State private var selectedTab: TaskTab = .todo
 
     // Preview/test data injection
     private var previewTasks: [PeezyCard]?
@@ -41,13 +44,15 @@ struct PeezyTaskStream: View {
     init() {
         self.viewModel = nil
         self.userState = nil
+        self.onNavigateToTask = nil
         self.previewTasks = nil
     }
 
     // Init for integrated use
-    init(viewModel: PeezyStackViewModel?, userState: UserState?) {
+    init(viewModel: PeezyStackViewModel?, userState: UserState?, onNavigateToTask: ((PeezyCard) -> Void)? = nil) {
         self.viewModel = viewModel
         self.userState = userState
+        self.onNavigateToTask = onNavigateToTask
         self.previewTasks = nil
     }
 
@@ -55,23 +60,34 @@ struct PeezyTaskStream: View {
     init(previewTasks: [PeezyCard]) {
         self.viewModel = nil
         self.userState = nil
+        self.onNavigateToTask = nil
         self.previewTasks = previewTasks
     }
 
-    // MARK: - Grouped Tasks
+    // MARK: - Grouped Tasks (4 sections)
 
-    private var activeTasks: [PeezyCard] {
+    /// Section 1: "To-Do" — status = Upcoming (the full todo list)
+    private var allUpcomingTasks: [PeezyCard] {
         allTasks.filter { card in
-            card.status != .completed && card.status != .skipped && card.status != .inProgress && !isSnoozed(card)
+            card.status != .completed && card.status != .skipped
+            && card.status != .inProgress && card.status != .userInProgress
+            && !isSnoozed(card)
         }
         .sorted { a, b in
-            if a.priority.rawValue != b.priority.rawValue {
-                return a.priority.rawValue > b.priority.rawValue
-            }
-            return (a.dueDate ?? .distantFuture) < (b.dueDate ?? .distantFuture)
+            let ua = a.urgencyPercentage ?? 0
+            let ub = b.urgencyPercentage ?? 0
+            if ua != ub { return ua > ub }
+            return a.title < b.title
         }
     }
 
+    /// Section 2a: "You're on it" — status = UserInProgress
+    private var userInProgressTasks: [PeezyCard] {
+        allTasks.filter { $0.status == .userInProgress }
+            .sorted { ($0.userInProgressReturnDate ?? .distantFuture) < ($1.userInProgressReturnDate ?? .distantFuture) }
+    }
+
+    /// Section 2b: "Peezy is on it" — status = InProgress
     private var inProgressTasks: [PeezyCard] {
         allTasks.filter { $0.status == .inProgress }
             .sorted { a, b in
@@ -82,11 +98,13 @@ struct PeezyTaskStream: View {
             }
     }
 
+    /// Section 3: "Later" — status = Snoozed
     private var snoozedTasks: [PeezyCard] {
         allTasks.filter { isSnoozed($0) }
             .sorted { ($0.snoozedUntil ?? .distantFuture) < ($1.snoozedUntil ?? .distantFuture) }
     }
 
+    /// Section 4: "Done" — status = Completed
     private var completedTasks: [PeezyCard] {
         allTasks.filter { $0.status == .completed }
     }
@@ -100,23 +118,14 @@ struct PeezyTaskStream: View {
         return false
     }
 
-    // MARK: - Filtered Tasks
+    // MARK: - Tab Counts
 
-    private var tasksForSelectedTab: [PeezyCard] {
-        switch selectedTab {
-        case .active: return activeTasks
-        case .inProgress: return inProgressTasks
-        case .snoozed: return snoozedTasks
-        case .completed: return completedTasks
-        }
-    }
-
-    private func countForTab(_ tab: TaskTab) -> Int {
+    private func taskCount(for tab: TaskTab) -> Int {
         switch tab {
-        case .active: return activeTasks.count
-        case .inProgress: return inProgressTasks.count
-        case .snoozed: return snoozedTasks.count
-        case .completed: return completedTasks.count
+        case .todo:       return allUpcomingTasks.count
+        case .inProgress: return userInProgressTasks.count + inProgressTasks.count
+        case .later:      return snoozedTasks.count
+        case .done:       return completedTasks.count
         }
     }
 
@@ -128,19 +137,19 @@ struct PeezyTaskStream: View {
 
             VStack(spacing: 0) {
                 headerView
-                tabBar
 
                 if isLoading {
                     Spacer()
                     ProgressView()
-                        .tint(.white)
+                        .tint(PeezyTheme.Colors.deepInk)
                     Spacer()
                 } else if allTasks.isEmpty {
                     Spacer()
                     emptyState
                     Spacer()
                 } else {
-                    taskList
+                    tabBar
+                    tabContent
                 }
             }
         }
@@ -161,113 +170,140 @@ struct PeezyTaskStream: View {
         HStack {
             Text("Task List")
                 .font(.title2.bold())
-                .foregroundColor(.white)
+                .foregroundColor(PeezyTheme.Colors.deepInk)
 
             Spacer()
-
-            if let daysLeft = userState?.daysUntilMove, daysLeft > 0 {
-                Text("\(daysLeft)d")
-                    .font(.system(size: 15, weight: .bold))
-                    .foregroundColor(.cyan)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(Capsule().fill(.white.opacity(0.1)))
-            }
         }
         .padding(.horizontal, 20)
         .padding(.top, 56)
         .padding(.bottom, 16)
     }
 
-    private var taskSummary: String {
-        let active = activeTasks.count
-        let inProgress = inProgressTasks.count
-        let snoozed = snoozedTasks.count
-        let completed = completedTasks.count
-
-        if active == 0 && inProgress == 0 && snoozed == 0 {
-            return completed > 0 ? "\(completed) completed" : "No tasks yet"
-        }
-
-        var parts: [String] = []
-        if active > 0 { parts.append("\(active) active") }
-        if inProgress > 0 { parts.append("\(inProgress) in progress") }
-        if snoozed > 0 { parts.append("\(snoozed) snoozed") }
-        if completed > 0 { parts.append("\(completed) done") }
-        return parts.joined(separator: " · ")
-    }
-
     // MARK: - Tab Bar
 
     private var tabBar: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 0) {
             ForEach(TaskTab.allCases, id: \.self) { tab in
-                let isSelected = selectedTab == tab
-                let count = countForTab(tab)
-
                 Button {
-                    PeezyHaptics.light()
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                    withAnimation(.easeInOut(duration: 0.2)) {
                         selectedTab = tab
                         expandedTaskId = nil
                     }
                 } label: {
-                    Text("\(tab.rawValue) (\(count))")
-                        .font(.system(size: 12, weight: isSelected ? .semibold : .medium))
-                        .minimumScaleFactor(0.7)
-                        .lineLimit(1)
-                        .foregroundColor(isSelected ? .white : .white.opacity(0.4))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
-                        .background(
-                            Group {
-                                if isSelected {
-                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                        .fill(.white.opacity(0.12))
-                                }
+                    VStack(spacing: 6) {
+                        HStack(spacing: 5) {
+                            Text(tab.rawValue)
+                                .font(.system(size: 13, weight: selectedTab == tab ? .bold : .regular))
+                                .foregroundColor(selectedTab == tab ? PeezyTheme.Colors.deepInk : .gray)
+
+                            let count = taskCount(for: tab)
+                            if count > 0 {
+                                Text("\(count)")
+                                    .font(.system(size: 11, weight: .medium))
+                                    .foregroundColor(selectedTab == tab ? PeezyTheme.Colors.deepInk : .gray)
+                                    .padding(.horizontal, 5)
+                                    .padding(.vertical, 2)
+                                    .background(
+                                        Capsule()
+                                            .fill(selectedTab == tab
+                                                  ? PeezyTheme.Colors.deepInk.opacity(0.1)
+                                                  : Color.gray.opacity(0.1))
+                                    )
                             }
-                        )
+                        }
+
+                        // Underline indicator
+                        Rectangle()
+                            .fill(selectedTab == tab ? PeezyTheme.Colors.deepInk : Color.clear)
+                            .frame(height: 2)
+                            .cornerRadius(1)
+                    }
+                    .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.plain)
             }
         }
-        .padding(4)
-        .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(.ultraThinMaterial)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(Color(red: 0.15, green: 0.15, blue: 0.17).opacity(0.5))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .stroke(.white.opacity(0.06), lineWidth: 0.5)
-                )
-        )
         .padding(.horizontal, 16)
-        .padding(.bottom, 8)
+        .padding(.bottom, 4)
+        .overlay(alignment: .bottom) {
+            Divider()
+        }
     }
 
-    // MARK: - Task List
+    // MARK: - Tab Content
 
-    private var taskList: some View {
+    private var tabContent: some View {
         ScrollView(.vertical, showsIndicators: false) {
             LazyVStack(spacing: 0) {
-                let tasks = tasksForSelectedTab
+                switch selectedTab {
+                case .todo:
+                    if allUpcomingTasks.isEmpty {
+                        tabEmptyState(message: "All caught up!")
+                    } else {
+                        ForEach(allUpcomingTasks) { task in
+                            TaskListRow(
+                                task: task,
+                                isExpanded: expandedTaskId == task.id,
+                                onExpand: { toggleExpand(task.id) },
+                                onStart: onNavigateToTask != nil ? { onNavigateToTask?(task) } : nil
+                            )
+                        }
+                    }
 
-                if tasks.isEmpty {
-                    tabEmptyState
-                } else {
-                    ForEach(tasks) { task in
-                        TaskListRow(
-                            task: task,
-                            isExpanded: expandedTaskId == task.id,
-                            onExpand: {
-                                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                                    expandedTaskId = expandedTaskId == task.id ? nil : task.id
-                                }
+                case .inProgress:
+                    if userInProgressTasks.isEmpty && inProgressTasks.isEmpty {
+                        tabEmptyState(message: "No tasks in progress")
+                    } else {
+                        if !userInProgressTasks.isEmpty {
+                            subsectionHeader(title: "You're on it")
+                            ForEach(userInProgressTasks) { task in
+                                TaskListRow(
+                                    task: task,
+                                    isExpanded: expandedTaskId == task.id,
+                                    onExpand: { toggleExpand(task.id) },
+                                    onStart: nil
+                                )
                             }
-                        )
+                        }
+                        if !inProgressTasks.isEmpty {
+                            subsectionHeader(title: "Peezy is on it")
+                            ForEach(inProgressTasks) { task in
+                                TaskListRow(
+                                    task: task,
+                                    isExpanded: expandedTaskId == task.id,
+                                    onExpand: { toggleExpand(task.id) },
+                                    onStart: nil
+                                )
+                            }
+                        }
+                    }
+
+                case .later:
+                    if snoozedTasks.isEmpty {
+                        tabEmptyState(message: "Nothing snoozed")
+                    } else {
+                        ForEach(snoozedTasks) { task in
+                            TaskListRow(
+                                task: task,
+                                isExpanded: expandedTaskId == task.id,
+                                onExpand: { toggleExpand(task.id) },
+                                onStart: onNavigateToTask != nil ? { onNavigateToTask?(task) } : nil
+                            )
+                        }
+                    }
+
+                case .done:
+                    if completedTasks.isEmpty {
+                        tabEmptyState(message: "No completed tasks yet")
+                    } else {
+                        ForEach(completedTasks) { task in
+                            TaskListRow(
+                                task: task,
+                                isExpanded: expandedTaskId == task.id,
+                                onExpand: { toggleExpand(task.id) },
+                                onStart: nil
+                            )
+                        }
                     }
                 }
 
@@ -280,51 +316,57 @@ struct PeezyTaskStream: View {
         }
     }
 
-    // MARK: - Empty State
+    // MARK: - Subsection Header
+
+    private func subsectionHeader(title: String) -> some View {
+        HStack(spacing: 6) {
+            Text(title)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.5))
+
+            Spacer()
+        }
+        .padding(.horizontal, 8)
+        .padding(.top, 12)
+        .padding(.bottom, 4)
+    }
+
+    // MARK: - Tab Empty State
+
+    private func tabEmptyState(message: String) -> some View {
+        Text(message)
+            .font(.subheadline)
+            .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.4))
+            .frame(maxWidth: .infinity)
+            .padding(.top, 60)
+    }
+
+    // MARK: - Helpers
+
+    private func toggleExpand(_ id: String) {
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+            expandedTaskId = expandedTaskId == id ? nil : id
+        }
+    }
+
+    // MARK: - Empty State (no tasks at all)
 
     private var emptyState: some View {
         VStack(spacing: 16) {
             Image(systemName: "checklist")
                 .font(.system(size: 50))
-                .foregroundStyle(.white.opacity(0.4))
+                .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.4))
 
             Text("No tasks yet")
                 .font(.title3.bold())
-                .foregroundStyle(.white)
+                .foregroundStyle(PeezyTheme.Colors.deepInk)
 
             Text("Tasks will appear here after your assessment.")
                 .font(.subheadline)
-                .foregroundStyle(.white.opacity(0.5))
+                .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.5))
                 .multilineTextAlignment(.center)
         }
         .padding(.horizontal, 40)
-    }
-
-    private var tabEmptyState: some View {
-        VStack(spacing: 12) {
-            let (icon, message): (String, String) = {
-                switch selectedTab {
-                case .active:
-                    return ("checkmark.seal.fill", "Nothing on your to-do list — you're all caught up!")
-                case .inProgress:
-                    return ("clock.arrow.circlepath", "Nothing in progress yet. Complete a workflow and we'll handle the rest.")
-                case .snoozed:
-                    return ("moon.zzz.fill", "Nothing saved for later")
-                case .completed:
-                    return ("trophy.fill", "No completed tasks yet")
-                }
-            }()
-
-            Image(systemName: icon)
-                .font(.system(size: 32))
-                .foregroundStyle(.white.opacity(0.3))
-
-            Text(message)
-                .font(.subheadline)
-                .foregroundStyle(.white.opacity(0.4))
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.top, 60)
     }
 
     // MARK: - Data Loading
@@ -357,8 +399,7 @@ struct TaskListRow: View {
     let task: PeezyCard
     var isExpanded: Bool = false
     var onExpand: () -> Void = {}
-
-    private let charcoalColor = Color(red: 0.15, green: 0.15, blue: 0.17)
+    var onStart: (() -> Void)?
 
     private var isSnoozed: Bool {
         if task.status == .snoozed { return true }
@@ -376,95 +417,89 @@ struct TaskListRow: View {
         task.status == .inProgress
     }
 
+    private var isUserInProgress: Bool {
+        task.status == .userInProgress
+    }
+
     var body: some View {
-        VStack(spacing: 0) {
-            // Main row
-            HStack(spacing: 14) {
-                HStack(spacing: 14) {
-                    statusIcon
-                        .frame(width: 32, height: 32)
+        VStack(alignment: .leading, spacing: 0) {
+            // Collapsed row — always visible
+            HStack {
+                // Task icon
+                Image(systemName: iconForCategory(task.taskCategory))
+                    .foregroundColor(.gray)
+                    .frame(width: 32)
 
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(task.title)
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundColor(.white)
-                            .strikethrough(isCompleted)
-                            .lineLimit(1)
+                Text(task.title)
+                    .font(.body.weight(.medium))
+                    .foregroundColor(PeezyTheme.Colors.deepInk)
+                    .lineLimit(1)
 
-                        if isSnoozed, let snoozedUntil = task.snoozedUntil {
-                            Text("Until \(formattedDate(snoozedUntil))")
-                                .font(.caption)
-                                .foregroundColor(.orange.opacity(0.8))
-                        }
+                Spacer()
 
-                        if isInProgress {
-                            Text("In Progress · Getting quotes...")
-                                .font(.caption)
-                                .foregroundColor(.cyan.opacity(0.8))
-                        }
-                    }
-
-                    Spacer()
+                // Status badge for non-upcoming tasks
+                if isUserInProgress {
+                    Text("You're on it")
+                        .font(.caption2)
+                        .foregroundColor(.cyan)
+                } else if isInProgress {
+                    Text("Peezy is on it")
+                        .font(.caption2)
+                        .foregroundColor(.blue)
+                } else if isSnoozed {
+                    Text("Later")
+                        .font(.caption2)
+                        .foregroundColor(.gray)
                 }
 
-                // Expand/collapse chevron (visual affordance only)
-                Image(systemName: "chevron.right")
-                    .font(.caption2.weight(.semibold))
-                    .foregroundColor(.white.opacity(0.3))
-                    .rotationEffect(.degrees(isExpanded ? 90 : 0))
-                    .animation(.spring(response: 0.3, dampingFraction: 0.8), value: isExpanded)
-                    .frame(width: 32, height: 32)
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 14)
-            .contentShape(Rectangle())
-            .onTapGesture(perform: onExpand)
-
-            // Expanded description
-            if isExpanded, !task.subtitle.isEmpty {
-                Rectangle()
-                    .fill(Color.white.opacity(0.06))
-                    .frame(height: 0.5)
-                    .padding(.horizontal, 16)
-
-                Text(task.subtitle)
+                Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
                     .font(.caption)
-                    .foregroundColor(.white.opacity(0.6))
-                    .multilineTextAlignment(.leading)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 12)
-                    .transition(.opacity.combined(with: .move(edge: .top)))
+                    .foregroundColor(.gray)
+            }
+            .padding(.vertical, 12)
+            .padding(.horizontal, 16)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    onExpand()
+                }
+            }
+
+            // Expanded content — only when tapped
+            if isExpanded {
+                VStack(alignment: .leading, spacing: 12) {
+                    if !task.subtitle.isEmpty {
+                        Text(task.subtitle)
+                            .font(.subheadline)
+                            .foregroundColor(.gray)
+                    }
+
+                    // Start button (hide for Completed, InProgress, and UserInProgress tasks)
+                    if !isCompleted && !isInProgress && !isUserInProgress, let onStart {
+                        Button(action: onStart) {
+                            Text("Start Task")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundColor(.white)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 12)
+                                .background(PeezyTheme.Colors.deepInk)
+                                .cornerRadius(12)
+                        }
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.bottom, 12)
+                .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
-        .background(rowBackground)
-        .opacity(isCompleted ? 0.5 : (isSnoozed ? 0.7 : 1.0))
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .padding(.vertical, 4)
+        .background(Color.white)
+        .cornerRadius(12)
+        .shadow(color: .black.opacity(0.04), radius: 4, y: 2)
+        .opacity(isCompleted ? 0.5 : 1.0)
+        .padding(.vertical, 3)
     }
 
     // MARK: - Category Icon
-
-    @ViewBuilder
-    private var statusIcon: some View {
-        if isCompleted {
-            Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 20))
-                .foregroundColor(.green)
-        } else if isSnoozed {
-            Image(systemName: "moon.zzz.fill")
-                .font(.system(size: 18))
-                .foregroundColor(.yellow)
-        } else if isInProgress {
-            Image(systemName: "arrow.clockwise.circle.fill")
-                .font(.system(size: 20))
-                .foregroundColor(.cyan)
-        } else {
-            Image(systemName: iconForCategory(task.taskCategory))
-                .font(.system(size: 18))
-                .foregroundColor(.white.opacity(0.5))
-        }
-    }
 
     private func iconForCategory(_ category: String?) -> String {
         switch (category ?? "").lowercased() {
@@ -479,39 +514,8 @@ struct TaskListRow: View {
         case "insurance":       return "shield.checkered"
         case "health":          return "heart.fill"
         case "fitness":         return "figure.run"
-        default:                return "list.bullet.circle.fill"
+        default:                return "checklist"
         }
-    }
-
-    // MARK: - Row Background
-
-    private var rowBackground: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(.ultraThinMaterial)
-
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(charcoalColor.opacity(isCompleted ? 0.3 : 0.5))
-        }
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(borderColor, lineWidth: 0.5)
-        )
-    }
-
-    // MARK: - Helpers
-
-    private var borderColor: Color {
-        if isInProgress { return .cyan.opacity(0.25) }
-        if isSnoozed { return .yellow.opacity(0.15) }
-        if task.priority == .urgent { return .orange.opacity(0.2) }
-        return .white.opacity(0.06)
-    }
-
-    private func formattedDate(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "MMM d"
-        return formatter.string(from: date)
     }
 }
 
@@ -534,37 +538,41 @@ struct TaskListRow: View {
             id: "2",
             type: .task,
             title: "Set Up Mail Forwarding",
-            subtitle: "Visit USPS.com or your local post office to forward mail from your current address to your new one. This ensures you don't miss important documents during the transition.",
+            subtitle: "Visit USPS.com or your local post office to forward mail from your current address to your new one.",
             priority: .normal,
             status: .upcoming,
             dueDate: Calendar.current.date(byAdding: .day, value: 10, to: Date()),
             taskCategory: "administrative"
         ),
+        // User in progress
+        PeezyCard(
+            id: "3a",
+            type: .task,
+            title: "Pack Kitchen Items",
+            subtitle: "Wrap dishes, glasses, and small appliances. Use plenty of padding.",
+            priority: .normal,
+            status: .userInProgress,
+            taskCategory: "packing",
+            userInProgressDate: Date(),
+            userInProgressReturnDate: Calendar.current.date(byAdding: .day, value: 3, to: Date())
+        ),
+        // Peezy in progress
         PeezyCard(
             id: "3",
             type: .task,
             title: "Transfer Utilities",
-            subtitle: "Contact your electric, gas, water, and internet providers to schedule disconnection at your old address and activation at your new one.",
+            subtitle: "Contact your electric, gas, water, and internet providers.",
             priority: .urgent,
             status: .inProgress,
             dueDate: Date(),
             taskCategory: "utilities"
-        ),
-        PeezyCard(
-            id: "4",
-            type: .task,
-            title: "Update Vehicle Registration",
-            subtitle: "Visit your local DMV or go online to update your vehicle registration and driver's license with your new address.",
-            priority: .normal,
-            status: .upcoming,
-            taskCategory: "administrative"
         ),
         // Snoozed task
         PeezyCard(
             id: "5",
             type: .task,
             title: "Hire a Cleaning Service",
-            subtitle: "Schedule a deep clean of your old place before move-out to ensure you get your security deposit back.",
+            subtitle: "Schedule a deep clean of your old place before move-out.",
             priority: .normal,
             status: .snoozed,
             snoozedUntil: Calendar.current.date(byAdding: .day, value: 3, to: Date()),
@@ -575,7 +583,7 @@ struct TaskListRow: View {
             id: "6",
             type: .task,
             title: "Declutter & Donate",
-            subtitle: "Go room by room and sort items into keep, donate, and discard piles. Schedule a donation pickup or drop-off.",
+            subtitle: "Go room by room and sort items into keep, donate, and discard piles.",
             priority: .normal,
             status: .completed,
             taskCategory: "packing"
@@ -584,7 +592,7 @@ struct TaskListRow: View {
             id: "7",
             type: .task,
             title: "Gather Packing Supplies",
-            subtitle: "Stock up on boxes, tape, bubble wrap, and markers. Check local stores or community groups for free moving boxes.",
+            subtitle: "Stock up on boxes, tape, bubble wrap, and markers.",
             priority: .low,
             status: .completed,
             taskCategory: "packing"

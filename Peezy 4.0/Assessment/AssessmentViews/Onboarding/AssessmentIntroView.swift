@@ -21,7 +21,7 @@ struct AssessmentIntroView: View {
             // Icon with breathing animation and entrance
             Image(systemName: "wand.and.stars")
                 .font(.system(size: 80))
-                .foregroundColor(.white)
+                .foregroundColor(PeezyTheme.Colors.deepInk)
                 .padding(.bottom, 32)
                 .scaleEffect(showContent ? iconScale : 0.5)
                 .opacity(showContent ? 1 : 0)
@@ -37,7 +37,7 @@ struct AssessmentIntroView: View {
             Text("Welcome to the easy part")
                 .font(.system(size: 28, weight: .semibold))
                 .multilineTextAlignment(.center)
-                .foregroundColor(.white)
+                .foregroundColor(PeezyTheme.Colors.deepInk)
                 .padding(.horizontal, 40)
                 .padding(.bottom, 16)
                 .opacity(showContent ? 1 : 0)
@@ -48,7 +48,7 @@ struct AssessmentIntroView: View {
             Text("You're in! Take a deep breath—we've got the heavy lifting from here. To build your perfect game plan, we just need to grab a few quick details about your move.")
                 .font(.system(size: 17))
                 .multilineTextAlignment(.center)
-                .foregroundColor(.white.opacity(0.7))
+                .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.6))
                 .padding(.horizontal, 40)
                 .padding(.bottom, 8)
                 .opacity(showContent ? 1 : 0)
@@ -61,7 +61,7 @@ struct AssessmentIntroView: View {
                 Text("Just a quick 90 second setup")
                     .font(.system(size: 15))
             }
-            .foregroundColor(.white.opacity(0.6))
+            .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.5))
             .opacity(showContent ? 1 : 0)
             .animation(.easeOut(duration: 0.5).delay(0.7), value: showContent)
 

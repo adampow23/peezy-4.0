@@ -89,7 +89,7 @@ final class PeezyStackViewModel {
             let snapshot = try await db.collection("users")
                 .document(userId)
                 .collection("tasks")
-                .whereField("status", in: ["Upcoming", "InProgress", "pending", "Snoozed"])
+                .whereField("status", in: ["Upcoming", "InProgress", "UserInProgress", "pending", "Snoozed"])
                 .getDocuments()
 
             print("🃏 PeezyStackViewModel: Found \(snapshot.documents.count) documents in Firestore")

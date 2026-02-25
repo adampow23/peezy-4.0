@@ -42,6 +42,16 @@ enum PeezyTheme {
         static let confidenceGeneral = Color(red: 0.98, green: 0.85, blue: 0.29)
         static let confidenceEscalate = Color(red: 0.8, green: 0.3, blue: 0.3)
 
+        // Light Theme
+        /// Primary text color for light backgrounds — deep navy ink
+        static let deepInk = Color(red: 0.05, green: 0.1, blue: 0.2)
+        /// Off-white base background color
+        static let lightBase = Color(red: 0.96, green: 0.97, blue: 0.98)
+        /// Soft ice blue orb color for light background
+        static let iceBlue = Color(red: 0.85, green: 0.9, blue: 0.98)
+        /// Soft lavender orb color for light background
+        static let softLavender = Color(red: 0.92, green: 0.88, blue: 0.96)
+
         // Backgrounds
         static let backgroundPrimary = Color(uiColor: .systemGroupedBackground)
         static let backgroundSecondary = Color(uiColor: .systemGray6)

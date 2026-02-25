@@ -4,7 +4,6 @@ enum PeezyDestination: String, CaseIterable, Identifiable {
     case home = "Home"
     case timeline = "Task List"
     case settings = "Settings"
-    case account = "Account"
 
     var id: String { rawValue }
 
@@ -13,7 +12,6 @@ enum PeezyDestination: String, CaseIterable, Identifiable {
         case .home: return "square.stack.3d.up.fill"
         case .timeline: return "calendar.badge.clock"
         case .settings: return "gearshape.fill"
-        case .account: return "person.circle.fill"
         }
     }
 }
@@ -22,9 +20,10 @@ struct PeezyMenuView: View {
     @Binding var isOpen: Bool
     @Binding var selectedDestination: PeezyDestination
     let userName: String
+    var onEditProfile: (() -> Void)? = nil
 
     // Charcoal color matching app theme
-    private let charcoalColor = Color(red: 0.12, green: 0.12, blue: 0.14)
+    private let menuBackground = Color(red: 0.96, green: 0.97, blue: 0.98)
 
     var body: some View {
         ZStack(alignment: .leading) {
@@ -42,23 +41,43 @@ struct PeezyMenuView: View {
             // Menu drawer
             HStack(spacing: 0) {
                 VStack(alignment: .leading, spacing: 0) {
-                    // Header
-                    VStack(alignment: .leading, spacing: 8) {
-                        Image(systemName: "shippingbox.fill")
-                            .font(.system(size: 40))
-                            .foregroundStyle(.white.opacity(0.9))
+                    // Header — tappable to edit profile
+                    Button {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                            isOpen = false
+                        }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                            onEditProfile?()
+                        }
+                    } label: {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Image(systemName: "shippingbox.fill")
+                                .font(.system(size: 40))
+                                .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.9))
 
-                        Text("peezy")
-                            .font(.system(size: 24, weight: .light))
-                            .tracking(4)
-                            .foregroundStyle(.white.opacity(0.9))
+                            HStack(alignment: .bottom) {
+                                Text("peezy")
+                                    .font(.system(size: 24, weight: .light))
+                                    .tracking(4)
+                                    .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.9))
 
-                        if !userName.isEmpty {
-                            Text("Hi, \(userName)")
-                                .font(.subheadline)
-                                .foregroundStyle(.white.opacity(0.6))
+                                Spacer()
+
+                                if !userName.isEmpty {
+                                    Image(systemName: "pencil.circle.fill")
+                                        .font(.system(size: 18))
+                                        .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.3))
+                                }
+                            }
+
+                            if !userName.isEmpty {
+                                Text("Hi, \(userName)")
+                                    .font(.subheadline)
+                                    .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.6))
+                            }
                         }
                     }
+                    .buttonStyle(.plain)
                     .padding(.top, 60)
                     .padding(.horizontal, 24)
                     .padding(.bottom, 40)
@@ -85,14 +104,14 @@ struct PeezyMenuView: View {
                     // Version footer
                     Text("Version 1.0")
                         .font(.caption2)
-                        .foregroundStyle(.white.opacity(0.3))
+                        .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.3))
                         .padding(.horizontal, 24)
                         .padding(.bottom, 30)
                 }
                 .frame(width: 280)
                 .background(
                     ZStack {
-                        charcoalColor
+                        menuBackground
 
                         // Subtle gradient overlay
                         LinearGradient(
@@ -136,12 +155,12 @@ struct MenuRow: View {
                         .frame(width: 8, height: 8)
                 }
             }
-            .foregroundStyle(isSelected ? .white : .white.opacity(0.7))
+            .foregroundStyle(isSelected ? PeezyTheme.Colors.deepInk : PeezyTheme.Colors.deepInk.opacity(0.55))
             .padding(.horizontal, 16)
             .padding(.vertical, 14)
             .background(
                 RoundedRectangle(cornerRadius: 12)
-                    .fill(isSelected ? Color.white.opacity(0.1) : Color.clear)
+                    .fill(isSelected ? PeezyTheme.Colors.deepInk.opacity(0.08) : Color.clear)
             )
         }
     }
@@ -153,7 +172,8 @@ struct MenuRow: View {
         PeezyMenuView(
             isOpen: .constant(true),
             selectedDestination: .constant(.home),
-            userName: "Adam"
+            userName: "Adam",
+            onEditProfile: { }
         )
     }
 }

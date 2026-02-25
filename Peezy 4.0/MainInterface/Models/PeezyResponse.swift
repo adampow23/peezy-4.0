@@ -85,6 +85,7 @@ struct PeezyResponse: Codable {
             switch status?.lowercased() {
             case "upcoming": cardStatus = .upcoming
             case "inprogress": cardStatus = .inProgress
+            case "userinprogress": cardStatus = .userInProgress
             case "snoozed": cardStatus = .snoozed
             case "completed": cardStatus = .completed
             case "skipped": cardStatus = .skipped

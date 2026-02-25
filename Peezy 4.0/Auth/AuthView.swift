@@ -32,8 +32,6 @@ struct AuthView: View {
     private var isGoogleLoading: Bool { loadingState == .google }
 
     // Charcoal glass color
-    private let charcoalColor = PeezyTheme.Colors.charcoalGlass
-
     var body: some View {
         ZStack {
             // Animated orb background matching the rest of the app
@@ -46,7 +44,7 @@ struct AuthView: View {
                 TypewriterText(
                     phrases: ["F*ck moving.", "Moving made Peezy.", "Your move, on autopilot."],
                     font: .system(size: 32, weight: .semibold),
-                    foregroundColor: .white
+                    foregroundColor: PeezyTheme.Colors.deepInk
                 )
                     .opacity(showContent ? 1 : 0)
                     .offset(y: showContent ? 0 : 20)
@@ -72,7 +70,7 @@ struct AuthView: View {
                                 }
                             }
                         )
-                        .signInWithAppleButtonStyle(.black)
+                        .signInWithAppleButtonStyle(.white)
                         .frame(height: 50)
                         .cornerRadius(PeezyTheme.Layout.cornerRadiusSmall)
                         .disabled(isAnyLoading)
@@ -80,7 +78,7 @@ struct AuthView: View {
 
                         if isAppleLoading {
                             ProgressView()
-                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                .progressViewStyle(CircularProgressViewStyle(tint: PeezyTheme.Colors.deepInk))
                         }
                     }
                     .opacity(showContent ? 1 : 0)
@@ -91,11 +89,10 @@ struct AuthView: View {
                     AuthButton(
                         title: "Continue with Google",
                         icon: "g.circle.fill",
-                        backgroundColor: .white,
-                        textColor: .black,
+                        backgroundColor: PeezyTheme.Colors.deepInk,
+                        textColor: .white,
                         isLoading: isGoogleLoading,
-                        isDisabled: isAnyLoading,
-                        hasBorder: true
+                        isDisabled: isAnyLoading
                     ) {
                         PeezyHaptics.light()
                         loadingState = .google
@@ -114,8 +111,8 @@ struct AuthView: View {
                     AuthButton(
                         title: "Continue with Email",
                         icon: "envelope.fill",
-                        backgroundColor: Color.gray.opacity(0.15),
-                        textColor: .white.opacity(0.8),
+                        backgroundColor: PeezyTheme.Colors.deepInk,
+                        textColor: .white,
                         isLoading: false,
                         isDisabled: isAnyLoading
                     ) {
@@ -133,7 +130,7 @@ struct AuthView: View {
                     } label: {
                         HStack(spacing: 4) {
                             Text("Already have an account?")
-                                .foregroundColor(.white.opacity(0.6))
+                                .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.6))
                             Text("Log in")
                                 .foregroundColor(PeezyTheme.Colors.accentBlue)
                                 .fontWeight(.semibold)
@@ -156,14 +153,14 @@ struct AuthView: View {
                             topLeadingRadius: 30,
                             topTrailingRadius: 30
                         )
-                        .fill(.ultraThinMaterial)
+                        .fill(.regularMaterial)
 
-                        // Charcoal tint
+                        // Light grey tint matching assessment tiles
                         UnevenRoundedRectangle(
                             topLeadingRadius: 30,
                             topTrailingRadius: 30
                         )
-                        .fill(charcoalColor.opacity(0.6))
+                        .fill(Color.black.opacity(0.06))
                     }
                 )
                 .overlay(
@@ -172,7 +169,7 @@ struct AuthView: View {
                         topLeadingRadius: 30,
                         topTrailingRadius: 30
                     )
-                    .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                    .stroke(Color.black.opacity(0.05), lineWidth: 1)
                 )
                 .opacity(showContent ? 1 : 0)
                 .offset(y: showContent ? 0 : 50)
@@ -224,8 +221,6 @@ struct AuthView: View {
 
 private struct AuthErrorToast: View {
     let message: String
-    private let charcoalColor = PeezyTheme.Colors.charcoalGlass
-
     var body: some View {
         VStack {
             HStack(spacing: 12) {
@@ -241,7 +236,7 @@ private struct AuthErrorToast: View {
 
                 Text(message)
                     .font(PeezyTheme.Typography.calloutMedium)
-                    .foregroundColor(.white)
+                    .foregroundColor(PeezyTheme.Colors.deepInk)
                     .multilineTextAlignment(.leading)
 
                 Spacer()
@@ -251,17 +246,17 @@ private struct AuthErrorToast: View {
                 ZStack {
                     // Glass blur effect
                     RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadius, style: .continuous)
-                        .fill(.ultraThinMaterial)
+                        .fill(.regularMaterial)
 
-                    // Charcoal tint
+                    // Light tint
                     RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadius, style: .continuous)
-                        .fill(charcoalColor.opacity(0.6))
+                        .fill(Color.white.opacity(0.6))
 
                     // Red border for error
                     RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadius, style: .continuous)
                         .strokeBorder(PeezyTheme.Colors.emotionalRed.opacity(0.4), lineWidth: 1)
                 }
-                .shadow(color: Color.black.opacity(0.3), radius: 12, x: 0, y: 6)
+                .shadow(color: Color.black.opacity(0.1), radius: 12, x: 0, y: 6)
             )
             .padding(.horizontal, PeezyTheme.Layout.horizontalPadding)
             .padding(.top, 60)

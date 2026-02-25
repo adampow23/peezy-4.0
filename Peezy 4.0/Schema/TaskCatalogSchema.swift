@@ -146,11 +146,11 @@ struct TaskCatalogSchema {
             assessmentSource: .direct,
             assessmentQuestion: "Are you interested in getting quotes from a moving company, or planning to handle moving yourself?"
         ),
-        "hirePackers": ConditionFieldInfo(
-            description: "Interested in professional packers",
-            possibleValues: ["Yes", "No"],
+        "packingPreference": ConditionFieldInfo(
+            description: "Packing preference (conditional on hiring movers)",
+            possibleValues: ["none", "full", "kitchen", "both"],
             assessmentSource: .direct,
-            assessmentQuestion: "Would you like help from a professional packing team, or are you planning to pack everything yourself?"
+            assessmentQuestion: "Most moving companies also offer packing services. Interested in getting packing quotes too?"
         ),
         "hireCleaners": ConditionFieldInfo(
             description: "Interested in professional cleaning",
@@ -167,25 +167,31 @@ struct TaskCatalogSchema {
 
         "financialInstitutions": ConditionFieldInfo(
             description: "Financial accounts that need address updates",
-            possibleValues: ["Bank Account", "Credit Union", "Credit Card"],
+            possibleValues: ["Bank / Credit Union", "Credit Card", "Investment Account", "Student Loans"],
             assessmentSource: .multiSelect,
             assessmentQuestion: "Which financial institutions do you need to update your address with?"
         ),
 
         "healthcareProviders": ConditionFieldInfo(
-            description: "Healthcare providers and insurance that need updates or record transfers",
-            possibleValues: ["Doctor", "Dentist", "Therapist", "Pharmacy", "Specialists",
-                             "Health Insurance", "Dental Insurance", "HSA"],
+            description: "Healthcare providers that need updates or record transfers",
+            possibleValues: ["Doctor", "Dentist", "Specialists", "Pharmacy"],
             assessmentSource: .multiSelect,
             assessmentQuestion: "Any doctors, dentists, or insurance providers that need your new info?"
         ),
 
         "fitnessWellness": ConditionFieldInfo(
             description: "Fitness and wellness memberships that need cancellation, transfer, or setup",
-            possibleValues: ["Gym", "CrossFit", "Yoga", "Pilates", "Spin/Cycling",
-                             "Golf", "Massage", "Spa", "Other", "Country Club"],
+            possibleValues: ["Gym / CrossFit", "Yoga / Pilates", "Spin / Cycling",
+                             "Massage / Spa", "Country Club / Golf"],
             assessmentSource: .multiSelect,
             assessmentQuestion: "Any gym memberships, studios, or clubs?"
+        ),
+
+        "wantsTruckRental": ConditionFieldInfo(
+            description: "Whether user wants truck rental quotes (only asked if not hiring movers)",
+            possibleValues: ["yes", "no"],
+            assessmentSource: .direct,
+            assessmentQuestion: "Are you planning to rent a moving truck, or do you have that covered?"
         ),
 
         // ═══════════════════════════════════════════════════
@@ -259,7 +265,8 @@ struct TaskCatalogSchema {
         "storageSize",           // ○ Logistics (conditional on hasStorage)
         "storageFullness",       // ○ Logistics (conditional on hasStorage)
         "hireMovers",            // ★ Condition key
-        "hirePackers",           // ★ Condition key
+        "packingPreference",     // ★ Condition key
+        "wantsTruckRental",      // ★ Condition key (conditional on hireMovers = No)
         "hireCleaners",          // ★ Condition key
         "financialInstitutions", // ★ Condition key (multi-select)
         "healthcareProviders",   // ★ Condition key (multi-select)

@@ -1,25 +1,24 @@
 import SwiftUI
 
-struct UserName: View {
-    @State private var name = ""
+struct PromoCode: View {
+    @State private var code = ""
     @EnvironmentObject var assessmentData: AssessmentDataManager
     @EnvironmentObject var coordinator: AssessmentCoordinator
-    
+
     @FocusState private var isTextFieldFocused: Bool
     @State private var showContent = false
-    
+
     var body: some View {
         VStack(spacing: 0) {
             VStack(spacing: 0) {
                 Spacer(minLength: 0)
 
-                TextField("", text: $name, prompt: Text("First name").foregroundColor(Color.gray.opacity(0.5)))
+                TextField("", text: $code, prompt: Text("Promo code").foregroundColor(Color.gray.opacity(0.5)))
                     .font(.system(size: 22, weight: .medium))
                     .foregroundColor(PeezyTheme.Colors.deepInk)
                     .multilineTextAlignment(.center)
-                    .textInputAutocapitalization(.words)
+                    .textInputAutocapitalization(.characters)
                     .autocorrectionDisabled()
-                    .textContentType(.givenName)
                     .focused($isTextFieldFocused)
                     .padding(16)
                     .background(Color.white)
@@ -38,10 +37,9 @@ struct UserName: View {
             }
             .onTapGesture { isTextFieldFocused = false }
 
-            PeezyAssessmentButton("Continue") {
-                let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !trimmed.isEmpty else { return }
-                assessmentData.userName = trimmed
+            PeezyAssessmentButton(code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "No code — Skip" : "Apply") {
+                let trimmed = code.trimmingCharacters(in: .whitespacesAndNewlines)
+                assessmentData.promoCode = trimmed
                 coordinator.goToNext()
             }
             .padding(.horizontal, 24)
@@ -51,7 +49,7 @@ struct UserName: View {
             .animation(.spring(response: 0.6, dampingFraction: 0.8).delay(0.4), value: showContent)
         }
         .onAppear {
-            name = assessmentData.userName
+            code = assessmentData.promoCode
             isTextFieldFocused = true
             withAnimation { showContent = true }
         }
@@ -60,7 +58,7 @@ struct UserName: View {
 
 #Preview {
     let manager = AssessmentDataManager()
-    UserName()
+    PromoCode()
         .environmentObject(manager)
         .environmentObject(AssessmentCoordinator(dataManager: manager))
 }

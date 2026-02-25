@@ -6,6 +6,7 @@ import FirebaseFirestore
 enum TaskStatus: String, Codable {
     case upcoming = "Upcoming"
     case inProgress = "InProgress"
+    case userInProgress = "UserInProgress"
     case completed = "Completed"
     case snoozed = "Snoozed"
     case skipped = "Skipped"
@@ -37,6 +38,10 @@ struct PeezyCard: Identifiable, Equatable, Codable {
     var dueDate: Date?
     var snoozedUntil: Date?
     var lastSnoozedAt: Date?
+
+    // UserInProgress support (user-initiated "I'm on it")
+    var userInProgressDate: Date?
+    var userInProgressReturnDate: Date?
 
     // Daily Dose — task urgency from catalog (0–99, higher = more urgent)
     var urgencyPercentage: Int?
@@ -154,8 +159,8 @@ struct PeezyCard: Identifiable, Equatable, Codable {
         if isSnoozed {
             return false
         }
-        // Don't show completed, skipped, or in-progress tasks
-        if status == .completed || status == .skipped || status == .inProgress {
+        // Don't show completed, skipped, in-progress, or user-in-progress tasks
+        if status == .completed || status == .skipped || status == .inProgress || status == .userInProgress {
             return false
         }
         return true
@@ -180,7 +185,9 @@ struct PeezyCard: Identifiable, Equatable, Codable {
         lastSnoozedAt: Date? = nil,
         briefingMessage: String? = nil,
         taskCategory: String? = nil,
-        urgencyPercentage: Int? = nil
+        urgencyPercentage: Int? = nil,
+        userInProgressDate: Date? = nil,
+        userInProgressReturnDate: Date? = nil
     ) {
         self.id = id
         self.type = type
@@ -200,6 +207,8 @@ struct PeezyCard: Identifiable, Equatable, Codable {
         self.briefingMessage = briefingMessage
         self.taskCategory = taskCategory
         self.urgencyPercentage = urgencyPercentage
+        self.userInProgressDate = userInProgressDate
+        self.userInProgressReturnDate = userInProgressReturnDate
     }
     
     // MARK: - Factory Methods

@@ -20,13 +20,15 @@ import StoreKit
 
 struct PaywallFlowView: View {
 
+    var onComplete: (() -> Void)?
+
     @EnvironmentObject var subscriptionManager: SubscriptionManager
     @State private var currentPage: Int = 0
 
     var body: some View {
         ZStack {
             // Background
-            Color.black.ignoresSafeArea()
+            PeezyTheme.Colors.lightBase.ignoresSafeArea()
 
             switch currentPage {
             case 0:
@@ -65,7 +67,7 @@ struct PaywallFlowView: View {
     }
 
     private func finishPaywall() {
-        NotificationCenter.default.post(name: .assessmentCompleted, object: nil)
+        onComplete?()
     }
 
     // TODO: REMOVE BEFORE PRODUCTION
@@ -97,7 +99,7 @@ struct PaywallPage1: View {
             VStack(spacing: 16) {
                 Text("We want you to\ntry Peezy for free.")
                     .font(.system(size: 32, weight: .bold))
-                    .foregroundColor(.white)
+                    .foregroundColor(PeezyTheme.Colors.deepInk)
                     .multilineTextAlignment(.center)
                     .lineSpacing(4)
                     .onTapGesture(count: 3) {
@@ -137,7 +139,7 @@ struct PaywallPage2: View {
             VStack(spacing: 24) {
                 Text("We'll send you\na reminder before\nyour free trial ends")
                     .font(.system(size: 32, weight: .bold))
-                    .foregroundColor(.white)
+                    .foregroundColor(PeezyTheme.Colors.deepInk)
                     .multilineTextAlignment(.center)
                     .lineSpacing(4)
 
@@ -145,7 +147,7 @@ struct PaywallPage2: View {
                 ZStack(alignment: .topTrailing) {
                     Image(systemName: "bell.fill")
                         .font(.system(size: 64))
-                        .foregroundColor(.white.opacity(0.15))
+                        .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.2))
 
                     // Notification badge
                     ZStack {
@@ -155,7 +157,7 @@ struct PaywallPage2: View {
 
                         Text("1")
                             .font(.system(size: 16, weight: .bold))
-                            .foregroundColor(.white)
+                            .foregroundColor(PeezyTheme.Colors.deepInk)
                     }
                     .offset(x: 8, y: -4)
                 }
@@ -164,7 +166,7 @@ struct PaywallPage2: View {
                 // Reassurance copy
                 Text("We genuinely want Peezy to provide value for your move. Try everything free — if it's not for you, cancel anytime before the trial ends and you won't be charged a thing.")
                     .font(.system(size: 15))
-                    .foregroundColor(.white.opacity(0.5))
+                    .foregroundColor(Color.gray)
                     .multilineTextAlignment(.center)
                     .lineSpacing(4)
                     .padding(.horizontal, 32)
@@ -215,7 +217,7 @@ struct PaywallPage3: View {
                          ? "Start your 3-day\nFREE trial to continue."
                          : "Subscribe to\ncontinue.")
                         .font(.system(size: 30, weight: .bold))
-                        .foregroundColor(.white)
+                        .foregroundColor(PeezyTheme.Colors.deepInk)
                         .multilineTextAlignment(.center)
                         .lineSpacing(4)
                         .padding(.top, 16)
@@ -236,20 +238,20 @@ struct PaywallPage3: View {
                 .frame(maxWidth: .infinity)
             }
 
-            // Bottom section
-            VStack(spacing: 12) {
+            // Bottom section — pinned below scroll
+            VStack(spacing: 8) {
                 // Checkmark (only if trial eligible)
                 if isTrialEligible {
                     HStack(spacing: 8) {
                         Image(systemName: "checkmark")
                             .font(.system(size: 14, weight: .bold))
-                            .foregroundColor(.white)
+                            .foregroundColor(PeezyTheme.Colors.deepInk)
 
                         Text("No Payment Due Now")
                             .font(.system(size: 15, weight: .medium))
-                            .foregroundColor(.white)
+                            .foregroundColor(PeezyTheme.Colors.deepInk)
                     }
-                    .padding(.bottom, 4)
+                    .padding(.bottom, 2)
                 }
 
                 // CTA Button
@@ -258,48 +260,48 @@ struct PaywallPage3: View {
                 }) {
                     if subscriptionManager.isPurchasing {
                         ProgressView()
-                            .tint(.black)
+                            .tint(.white)
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 18)
+                            .padding(.vertical, 16)
                             .background(
                                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                    .fill(Color.white.opacity(0.7))
+                                    .fill(PeezyTheme.Colors.deepInk.opacity(0.7))
                             )
                     } else {
                         Text(isTrialEligible ? "Start My 3-Day Free Trial" : "Subscribe Now")
                             .font(.system(size: 18, weight: .bold))
-                            .foregroundColor(.black)
+                            .foregroundColor(.white)
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 18)
+                            .padding(.vertical, 16)
                             .background(
                                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                    .fill(Color.white)
+                                    .fill(PeezyTheme.Colors.deepInk)
                             )
                     }
                 }
                 .disabled(subscriptionManager.isPurchasing)
                 .padding(.horizontal, 24)
 
-                // Price detail
-                Text(priceDetailText)
-                    .font(.system(size: 13))
-                    .foregroundColor(.white.opacity(0.35))
-                    .padding(.top, 4)
+                // Price detail + restore on same line
+                VStack(spacing: 4) {
+                    Text(priceDetailText)
+                        .font(.system(size: 13))
+                        .foregroundColor(Color.gray)
 
-                // Restore purchases
-                Button("Restore Purchases") {
-                    Task {
-                        await subscriptionManager.restorePurchases()
-                        if subscriptionManager.subscriptionStatus.isActive {
-                            onComplete()
+                    Button("Restore Purchases") {
+                        Task {
+                            await subscriptionManager.restorePurchases()
+                            if subscriptionManager.subscriptionStatus.isActive {
+                                onComplete()
+                            }
                         }
                     }
+                    .font(.system(size: 13))
+                    .foregroundColor(Color.gray)
                 }
-                .font(.system(size: 13))
-                .foregroundColor(.white.opacity(0.35))
-                .padding(.top, 2)
+                .padding(.top, 4)
             }
-            .padding(.bottom, 40)
+            .padding(.bottom, 24)
         }
         .task {
             if let yearly = subscriptionManager.product(for: .yearly) {
@@ -335,8 +337,8 @@ struct PaywallPage3: View {
             errorMessage = "Your purchase is pending approval. You'll get access once it's approved."
             showError = true
         case .failed:
-            if let error = subscriptionManager.purchaseError, error.errorDescription != nil {
-                errorMessage = error.errorDescription!
+            if let error = subscriptionManager.purchaseError, let desc = error.errorDescription {
+                errorMessage = desc
             } else {
                 errorMessage = "Purchase failed. Please try again."
             }
@@ -374,7 +376,7 @@ struct PaywallPage3: View {
             // Continuous vertical line — positioned at horizontal center of icon column
             GeometryReader { geo in
                 Rectangle()
-                    .fill(Color.white.opacity(0.15))
+                    .fill(PeezyTheme.Colors.deepInk.opacity(0.1))
                     .frame(width: 2)
                     // Inset top/bottom by half icon height so line runs center-to-center
                     .padding(.top, iconSize / 2)
@@ -437,16 +439,16 @@ struct PaywallPage3: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
                     .font(.system(size: 16, weight: .bold))
-                    .foregroundColor(.white)
+                    .foregroundColor(PeezyTheme.Colors.deepInk)
 
                 Text(subtitle)
                     .font(.system(size: 14))
-                    .foregroundColor(.white.opacity(0.45))
+                    .foregroundColor(Color.gray)
                     .lineSpacing(2)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            .padding(.bottom, isLast ? 0 : 20)
         }
+        .padding(.bottom, isLast ? 0 : 24)
     }
 
     // MARK: - Plan Selector
@@ -520,32 +522,32 @@ struct PaywallPage3: View {
 
                 Text(label)
                     .font(.system(size: 15, weight: .medium))
-                    .foregroundColor(.white)
+                    .foregroundColor(PeezyTheme.Colors.deepInk)
 
                 HStack(alignment: .firstTextBaseline, spacing: 2) {
                     Text(price)
                         .font(.system(size: 22, weight: .bold))
-                        .foregroundColor(.white)
+                        .foregroundColor(PeezyTheme.Colors.deepInk)
 
                     Text(priceUnit)
                         .font(.system(size: 13))
-                        .foregroundColor(.white.opacity(0.5))
+                        .foregroundColor(Color.gray)
                 }
 
                 // Selection indicator
                 ZStack {
                     Circle()
-                        .stroke(isSelected ? Color.white : Color.white.opacity(0.2), lineWidth: 2)
+                        .stroke(isSelected ? PeezyTheme.Colors.deepInk : Color.gray.opacity(0.3), lineWidth: 2)
                         .frame(width: 24, height: 24)
 
                     if isSelected {
                         Circle()
-                            .fill(Color.white)
+                            .fill(PeezyTheme.Colors.deepInk)
                             .frame(width: 24, height: 24)
 
                         Image(systemName: "checkmark")
                             .font(.system(size: 12, weight: .bold))
-                            .foregroundColor(.black)
+                            .foregroundColor(.white)
                     }
                 }
                 .padding(.top, 4)
@@ -554,11 +556,12 @@ struct PaywallPage3: View {
             .padding(.vertical, 16)
             .background(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(isSelected ? Color.white.opacity(0.08) : Color.white.opacity(0.03))
+                    .fill(Color.white)
                     .overlay(
                         RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .stroke(isSelected ? Color.white.opacity(0.3) : Color.white.opacity(0.08), lineWidth: 1.5)
+                            .stroke(isSelected ? PeezyTheme.Colors.deepInk.opacity(0.3) : Color.gray.opacity(0.15), lineWidth: 1.5)
                     )
+                    .shadow(color: Color.black.opacity(isSelected ? 0.08 : 0.03), radius: 4, x: 0, y: 2)
             )
         }
         .buttonStyle(.plain)
@@ -575,7 +578,7 @@ private func backButton(action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: "chevron.left")
                 .font(.system(size: 18, weight: .medium))
-                .foregroundColor(.white.opacity(0.6))
+                .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.5))
                 .frame(width: 44, height: 44)
         }
         Spacer()
@@ -596,11 +599,11 @@ private func bottomSection(
         HStack(spacing: 8) {
             Image(systemName: "checkmark")
                 .font(.system(size: 14, weight: .bold))
-                .foregroundColor(.white)
+                .foregroundColor(PeezyTheme.Colors.deepInk)
 
             Text(checkmarkText)
                 .font(.system(size: 15, weight: .medium))
-                .foregroundColor(.white)
+                .foregroundColor(PeezyTheme.Colors.deepInk)
         }
         .padding(.bottom, 4)
 
@@ -608,12 +611,12 @@ private func bottomSection(
         Button(action: action) {
             Text(buttonText)
                 .font(.system(size: 18, weight: .bold))
-                .foregroundColor(.black)
+                .foregroundColor(.white)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 18)
                 .background(
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(Color.white)
+                        .fill(PeezyTheme.Colors.deepInk)
                 )
         }
         .padding(.horizontal, 24)
@@ -621,7 +624,7 @@ private func bottomSection(
         // Price line
         Text(priceText)
             .font(.system(size: 13))
-            .foregroundColor(.white.opacity(0.35))
+            .foregroundColor(Color.gray)
             .padding(.top, 4)
     }
     .padding(.bottom, 40)

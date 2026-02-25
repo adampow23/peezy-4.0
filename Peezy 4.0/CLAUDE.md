@@ -40,9 +40,9 @@ AssessmentCoordinator.completeAssessment()
 | `Peezy 4.0/MainInterface/Models/PeezyHomeViewModel.swift` | Home tab state machine, card stack logic |
 | `Peezy 4.0/MainInterface/Models/WorkflowManager.swift` | Vendor workflow card progression |
 | `Peezy 4.0/MainInterface/Views/PeezyHomeView.swift` | Home tab UI |
-| `Peezy 4.0/MainInterface/Views/PeezyMainContainer.swift` | Tab container, walkthrough host |
+| `Peezy 4.0/MainInterface/Views/PeezyMainContainer.swift` | Tab container |
 | `functions/seedTaskCatalog.js` | Wipes and reseeds Firestore taskCatalog |
-| `functions/taskCatalogData.json` | 80 task definitions (source of truth for catalog) |
+| `functions/taskCatalogData.json` | 70 task definitions (source of truth for catalog) |
 
 ### Condition Format
 
@@ -52,7 +52,7 @@ conditions: { "hasVet": ["Yes"], "moveDistance": ["Long Distance"] }
 ```
 Swift reads as `[String: Any]` where values are `[String]`. The parser casts with `as? [String]`.
 
-IMPORTANT: If a condition value is NOT `[String]` (e.g., raw string, number), the parser SKIPS it (silent `continue`, not fail). This is a known bug — malformed conditions pass instead of blocking.
+If a condition value is NOT `[String]` (e.g., raw string, number), the parser returns `false` — the task does NOT generate. (Fixed: previously used `continue` which silently passed.)
 
 ### View Model Ownership
 
@@ -84,7 +84,7 @@ cd functions && firebase deploy --only functions --project peezy-1ecrdl
 - Swift 5.9+, iOS 17+ minimum
 - `@Observable` (Observation framework), NOT `ObservableObject`/`@Published` (Combine)
 - `async/await` for all async operations
-- SwiftUI views, no UIKit except PeezyWalkthrough overlay (legacy UIWindow)
+- SwiftUI views, no UIKit
 - Firebase Firestore for all persistence
 - Node.js for Cloud Functions (functions/ directory)
 
@@ -107,8 +107,7 @@ cd functions && firebase deploy --only functions --project peezy-1ecrdl
 2. **Assessment value mismatch.** `getAllAssessmentData()` must map hiring question labels to "Yes"/"No" for catalog conditions. Raw labels like "Hire Professional Movers" won't match.
 3. **Multi-select fields must output categories, not brands.** `financialInstitutions` should contain `["Bank Account"]`, not `["Chase"]`. Business names stored separately in detail fields.
 4. **`computeDistanceAndInterstate()` needs real addresses.** Test addresses like "11" and "12" can't be geocoded. ~40 catalog tasks depend on `moveDistance` and `isInterstate`.
-5. **Walkthrough overlay (tag 1009) blocks touches.** The PeezyWalkthrough uses a separate UIWindow. If it doesn't dismiss properly, the entire app is unresponsive. Defensive cleanup exists in PeezyMainContainer `.onAppear`.
-6. **`cancelWorkflow()` fires `onWorkflowDismissed` callback.** During demo workflows, this callback is nil (safe). But if a real workflow set it before demo triggered, it could cause state conflicts.
+5. **`cancelWorkflow()` fires `onWorkflowDismissed` callback.** During demo workflows, this callback is nil (safe). But if a real workflow set it before demo triggered, it could cause state conflicts.
 7. **Single-select auto-advance timing.** In workflow cards, single-select options auto-advance after 0.3s delay via `dismissLeft → onContinue → handleWorkflowContinue()`. Demo phase tracking depends on this call chain.
 8. **Firestore numeric casting.** Use `(as? NSNumber)?.intValue` for integers from Firestore, not `as? Int`. Fixed in TaskGenerationService but watch for it elsewhere.
 9. **iPhone 16 simulator does not exist.** Use iPhone 17 Pro for xcodebuild destination.
@@ -117,14 +116,14 @@ cd functions && firebase deploy --only functions --project peezy-1ecrdl
 
 getAllAssessmentData() outputs these keys — this is the CONTRACT that the condition parser evaluates against:
 
-**Raw answers:** userName, moveDate, moveDateType, moveConcerns, currentRentOrOwn, currentDwellingType, currentAddress, currentFloorAccess, currentBedrooms, currentSquareFootage, currentFinishedSqFt, newRentOrOwn, newDwellingType, newAddress, newFloorAccess, newBedrooms, newSquareFootage, newFinishedSqFt, childrenInSchool, childrenInDaycare, hasVet, hireMoversDetail, hirePackersDetail, hireCleanersDetail, financialInstitutions, healthcareProviders, fitnessWellness, howHeard, referralCode
+**Raw answers:** userName, moveDate, moveDateType, moveConcerns, currentRentOrOwn, currentDwellingType, currentAddress, currentFloorAccess, currentBedrooms, currentSquareFootage, currentFinishedSqFt, newRentOrOwn, newDwellingType, newAddress, newFloorAccess, newBedrooms, newSquareFootage, newFinishedSqFt, childrenInSchool, childrenInDaycare, hasVet, hireMoversDetail, packingPreference, wantsTruckRental, hireCleanersDetail, hasDeclutter, wantToSell, financialInstitutions, healthcareProviders, fitnessWellness, howHeard, referralCode
 
-**Computed/derived:** moveDistance (String), isInterstate (String), hireMovers (String "Yes"/"No"), hirePackers (String "Yes"/"No"), hireCleaners (String "Yes"/"No")
+**Computed/derived:** moveDistance (String), isInterstate (String), hireMovers (String "Yes"/"No"), hireCleaners (String "Yes"/"No")
 
 ## Condition Keys Used in Catalog
 
 These keys are referenced in taskCatalogData.json conditions:
-hasVet, hireMovers, hirePackers, hireCleaners, currentDwellingType, newDwellingType, currentRentOrOwn, newRentOrOwn, moveDistance, isInterstate, childrenInSchool, childrenInDaycare, financialInstitutions, healthcareProviders, fitnessWellness
+hasVet, hasVehicles, hireMovers, packingPreference, wantsTruckRental, hireCleaners, hasDeclutter, wantToSell, currentDwellingType, newDwellingType, currentRentOrOwn, newRentOrOwn, moveDistance, isInterstate, childrenInSchool, childrenInDaycare, financialInstitutions, healthcareProviders, fitnessWellness
 
 ## Workflow
 

@@ -27,10 +27,7 @@ struct CurrentDwellingType: View {
     var body: some View {
         VStack(spacing: 0) {
             // Content area with equal spacing
-            AssessmentContentArea(
-                questionText: "What kind of place is it?",
-                showContent: showContent
-            ) {
+            AssessmentContentArea {
                 // Options grid
                 LazyVGrid(columns: [
                     GridItem(.flexible(), spacing: 16),
@@ -59,7 +56,6 @@ struct CurrentDwellingType: View {
                 .padding(.horizontal, 20)
             }
         }
-        .background(InteractiveBackground())
         .onAppear {
             if assessmentData.currentRentOrOwn == "Own" && assessmentData.currentDwellingType == "Apartment" {
                 assessmentData.currentDwellingType = ""

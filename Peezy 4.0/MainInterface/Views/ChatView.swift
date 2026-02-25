@@ -84,7 +84,7 @@ struct ChatView: View {
                 // AI disclaimer
                 Text("Peezy can make mistakes")
                     .font(.caption2)
-                    .foregroundColor(.white.opacity(0.3))
+                    .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.3))
                     .frame(maxWidth: .infinity)
                     .padding(.top, 4)
 
@@ -299,17 +299,17 @@ struct ChatHeader: View {
     @Environment(\.dismiss) private var dismiss
 
     // Charcoal color for glass tint
-    private let charcoalColor = Color(red: 0.15, green: 0.15, blue: 0.17)
+    private let deepInk = PeezyTheme.Colors.deepInk
 
     var body: some View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Peezy")
                     .font(.headline)
-                    .foregroundColor(.white)
+                    .foregroundColor(PeezyTheme.Colors.deepInk)
                 Text("Your moving concierge")
                     .font(.caption)
-                    .foregroundColor(.white.opacity(0.5))
+                    .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.5))
             }
 
             Spacer()
@@ -317,7 +317,7 @@ struct ChatHeader: View {
             Button(action: { dismiss() }) {
                 Image(systemName: "xmark.circle.fill")
                     .font(.title2)
-                    .foregroundStyle(.white.opacity(0.5))
+                    .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.5))
             }
         }
         .padding(.horizontal, 20)
@@ -326,16 +326,16 @@ struct ChatHeader: View {
             ZStack {
                 // Glass blur effect
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .fill(.ultraThinMaterial)
+                    .fill(.regularMaterial)
 
                 // Charcoal tint
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .fill(charcoalColor.opacity(0.6))
+                    .fill(Color.white.opacity(0.5))
             }
         )
         .overlay(
             RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                .stroke(Color.black.opacity(0.1), lineWidth: 1)
         )
         .shadow(color: Color.black.opacity(0.3), radius: 10, x: 0, y: 5)
         .padding(.horizontal, 16)
@@ -353,7 +353,7 @@ struct MessageBubble: View {
     var onFeedback: ((Bool?) -> Void)? = nil
 
     // Charcoal color for assistant bubbles
-    private let charcoalColor = Color(red: 0.15, green: 0.15, blue: 0.17)
+    private let deepInk = PeezyTheme.Colors.deepInk
 
     private var displayedText: String {
         if isAnimating {
@@ -391,19 +391,19 @@ struct MessageBubble: View {
                                 // Assistant bubble: Charcoal glass
                                 ZStack {
                                     RoundedRectangle(cornerRadius: 20, style: .continuous)
-                                        .fill(.ultraThinMaterial)
+                                        .fill(.regularMaterial)
 
                                     RoundedRectangle(cornerRadius: 20, style: .continuous)
-                                        .fill(charcoalColor.opacity(0.6))
+                                        .fill(Color.white.opacity(0.5))
                                 }
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 20, style: .continuous)
-                                        .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                                        .stroke(Color.black.opacity(0.1), lineWidth: 1)
                                 )
                             }
                         }
                     )
-                    .foregroundColor(.white)
+                    .foregroundColor(PeezyTheme.Colors.deepInk)
 
                 // Feedback buttons for non-welcome assistant messages
                 if showFeedback && message.role == .assistant {
@@ -417,7 +417,7 @@ struct MessageBubble: View {
                         } label: {
                             Image(systemName: feedback == true ? "hand.thumbsup.fill" : "hand.thumbsup")
                                 .font(.system(size: 13))
-                                .foregroundColor(feedback == true ? .white.opacity(0.9) : .white.opacity(0.35))
+                                .foregroundColor(feedback == true ? PeezyTheme.Colors.deepInk.opacity(0.9) : PeezyTheme.Colors.deepInk.opacity(0.35))
                         }
                         .buttonStyle(.plain)
 
@@ -430,7 +430,7 @@ struct MessageBubble: View {
                         } label: {
                             Image(systemName: feedback == false ? "hand.thumbsdown.fill" : "hand.thumbsdown")
                                 .font(.system(size: 13))
-                                .foregroundColor(feedback == false ? .white.opacity(0.9) : .white.opacity(0.35))
+                                .foregroundColor(feedback == false ? PeezyTheme.Colors.deepInk.opacity(0.9) : PeezyTheme.Colors.deepInk.opacity(0.35))
                         }
                         .buttonStyle(.plain)
                     }
@@ -454,26 +454,26 @@ struct ChatInputBar: View {
     let onSend: () -> Void
 
     // Charcoal color for glass tint
-    private let charcoalColor = Color(red: 0.15, green: 0.15, blue: 0.17)
+    private let deepInk = PeezyTheme.Colors.deepInk
 
     var body: some View {
         HStack(spacing: 12) {
             // Text field with charcoal glass background
             TextField("Ask Peezy anything...", text: $text, axis: .vertical)
                 .textFieldStyle(.plain)
-                .foregroundColor(.white)
-                .tint(.white)
+                .foregroundColor(PeezyTheme.Colors.deepInk)
+                .tint(PeezyTheme.Colors.deepInk)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
                 .background(
                     ZStack {
                         RoundedRectangle(cornerRadius: 20, style: .continuous)
-                            .fill(charcoalColor.opacity(0.4))
+                            .fill(Color.white.opacity(0.5))
                     }
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                        .stroke(Color.black.opacity(0.1), lineWidth: 1)
                 )
                 .lineLimit(1...5)
                 .focused(isFocused)
@@ -483,7 +483,7 @@ struct ChatInputBar: View {
             Button(action: onSend) {
                 Image(systemName: "arrow.up.circle.fill")
                     .font(.system(size: 32))
-                    .foregroundStyle(canSend ? Color(red: 0.2, green: 0.5, blue: 1.0) : .white.opacity(0.3))
+                    .foregroundStyle(canSend ? Color(red: 0.2, green: 0.5, blue: 1.0) : PeezyTheme.Colors.deepInk.opacity(0.3))
             }
             .disabled(!canSend)
         }
@@ -493,16 +493,16 @@ struct ChatInputBar: View {
             ZStack {
                 // Glass blur effect
                 RoundedRectangle(cornerRadius: 28, style: .continuous)
-                    .fill(.ultraThinMaterial)
+                    .fill(.regularMaterial)
 
                 // Charcoal tint
                 RoundedRectangle(cornerRadius: 28, style: .continuous)
-                    .fill(charcoalColor.opacity(0.6))
+                    .fill(Color.white.opacity(0.5))
             }
         )
         .overlay(
             RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                .stroke(Color.black.opacity(0.1), lineWidth: 1)
         )
         .shadow(color: Color.black.opacity(0.3), radius: 10, x: 0, y: -5)
         .padding(.horizontal, 16)
@@ -519,7 +519,7 @@ struct TypingIndicator: View {
     @State private var animating = false
 
     // Charcoal color for glass tint
-    private let charcoalColor = Color(red: 0.15, green: 0.15, blue: 0.17)
+    private let deepInk = PeezyTheme.Colors.deepInk
 
     var body: some View {
         HStack(spacing: 4) {
@@ -541,15 +541,15 @@ struct TypingIndicator: View {
         .background(
             ZStack {
                 RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .fill(.ultraThinMaterial)
+                    .fill(.regularMaterial)
 
                 RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .fill(charcoalColor.opacity(0.6))
+                    .fill(Color.white.opacity(0.5))
             }
         )
         .overlay(
             RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                .stroke(Color.black.opacity(0.1), lineWidth: 1)
         )
         .onAppear { animating = true }
     }
@@ -561,7 +561,7 @@ struct ErrorBanner: View {
     let onDismiss: () -> Void
 
     // Charcoal color for glass tint
-    private let charcoalColor = Color(red: 0.15, green: 0.15, blue: 0.17)
+    private let deepInk = PeezyTheme.Colors.deepInk
 
     var body: some View {
         HStack {
@@ -569,22 +569,22 @@ struct ErrorBanner: View {
                 .foregroundColor(.orange)
             Text(message)
                 .font(.subheadline)
-                .foregroundColor(.white)
+                .foregroundColor(PeezyTheme.Colors.deepInk)
             Spacer()
             Button(action: onDismiss) {
                 Image(systemName: "xmark")
                     .font(.caption)
-                    .foregroundColor(.white.opacity(0.5))
+                    .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.5))
             }
         }
         .padding()
         .background(
             ZStack {
                 Rectangle()
-                    .fill(.ultraThinMaterial)
+                    .fill(.regularMaterial)
 
                 Rectangle()
-                    .fill(charcoalColor.opacity(0.6))
+                    .fill(Color.white.opacity(0.5))
             }
         )
     }

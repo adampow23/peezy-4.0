@@ -23,10 +23,7 @@ struct StorageFullness: View {
     var body: some View {
         VStack(spacing: 0) {
             // Content area with equal spacing
-            AssessmentContentArea(
-                questionText: "How full is it?",
-                showContent: showContent
-            ) {
+            AssessmentContentArea {
                 // Options grid
                 LazyVGrid(columns: [
                     GridItem(.flexible(), spacing: 16),
@@ -55,7 +52,6 @@ struct StorageFullness: View {
                 .padding(.horizontal, 20)
             }
         }
-        .background(InteractiveBackground())
         .onAppear {
             selected = assessmentData.storageFullness
             withAnimation {

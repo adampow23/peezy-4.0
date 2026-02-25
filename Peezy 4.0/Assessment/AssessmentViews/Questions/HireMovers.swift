@@ -17,7 +17,7 @@ struct HireMovers: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            AssessmentContentArea(questionText: "Are you interested in getting quotes for professional movers, or are you planning to handle the move yourself?", showContent: showContent) {
+            AssessmentContentArea {
                 LazyVGrid(columns: [GridItem(.flexible(), spacing: 16), GridItem(.flexible(), spacing: 16)], spacing: 16) {
                     ForEach(Array(options.enumerated()), id: \.element) { index, option in
                         SelectionTile(title: option, icon: iconMap[option], isSelected: selected == option, onTap: {
@@ -36,7 +36,6 @@ struct HireMovers: View {
                 .padding(.horizontal, 20)
             }
         }
-        .background(InteractiveBackground())
         .onAppear {
             selected = assessmentData.hireMovers
             withAnimation { showContent = true }

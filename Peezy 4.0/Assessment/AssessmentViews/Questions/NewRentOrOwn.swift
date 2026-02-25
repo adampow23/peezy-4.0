@@ -8,17 +8,19 @@ struct NewRentOrOwn: View {
     @State private var showContent = false
     private let lightHaptic = UIImpactFeedbackGenerator(style: .light)
     
-    let options = ["Rent", "Own"]
-    let iconMap: [String: String] = ["Rent": "key.fill", "Own": "house.fill"]
-    
+    let options: [(display: String, value: String, icon: String)] = [
+        ("Renting", "Rent", "key.fill"),
+        ("Buying", "Own", "house.fill")
+    ]
+
     var body: some View {
         VStack(spacing: 0) {
-            AssessmentContentArea(questionText: "Renting or buying?", showContent: showContent) {
+            AssessmentContentArea {
                 LazyVGrid(columns: [GridItem(.flexible(), spacing: 16), GridItem(.flexible(), spacing: 16)], spacing: 16) {
-                    ForEach(Array(options.enumerated()), id: \.element) { index, option in
-                        SelectionTile(title: option, icon: iconMap[option], isSelected: selected == option, onTap: {
-                            selected = option
-                            assessmentData.newRentOrOwn = option
+                    ForEach(Array(options.enumerated()), id: \.element.value) { index, option in
+                        SelectionTile(title: option.display, icon: option.icon, isSelected: selected == option.value, onTap: {
+                            selected = option.value
+                            assessmentData.newRentOrOwn = option.value
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                                 lightHaptic.impactOccurred()
                                 coordinator.goToNext()
@@ -32,7 +34,6 @@ struct NewRentOrOwn: View {
                 .padding(.horizontal, 20)
             }
         }
-        .background(InteractiveBackground())
         .onAppear {
             selected = assessmentData.newRentOrOwn
             withAnimation { showContent = true }

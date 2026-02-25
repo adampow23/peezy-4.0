@@ -25,7 +25,7 @@ struct AssessmentFlowView: View {
     
     var body: some View {
         ZStack {
-            Color.black.ignoresSafeArea()
+            InteractiveBackground()
             
             VStack(spacing: 0) {
                 // Progress bar
@@ -43,10 +43,8 @@ struct AssessmentFlowView: View {
         }
         .environmentObject(coordinator)
         .environmentObject(dataManager)
-        .sheet(isPresented: $coordinator.isComplete) {
-            AssessmentCompleteView()
-                .environmentObject(coordinator)
-                .environmentObject(dataManager)
+        .fullScreenCover(isPresented: $coordinator.isComplete) {
+            CompletionFlowView(coordinator: coordinator)
         }
     }
     
@@ -62,7 +60,7 @@ struct AssessmentFlowView: View {
                     } label: {
                         Image(systemName: "chevron.left")
                             .font(.body.weight(.semibold))
-                            .foregroundColor(.white.opacity(0.6))
+                            .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.5))
                     }
                 }
                 
@@ -71,7 +69,7 @@ struct AssessmentFlowView: View {
                 // Step counter
                 Text("\(coordinator.currentInputStepNumber) of \(coordinator.totalInputSteps)")
                     .font(.caption)
-                    .foregroundColor(.white.opacity(0.4))
+                    .foregroundColor(Color.gray)
             }
             .padding(.horizontal, 24)
             .padding(.top, 8)
@@ -80,11 +78,11 @@ struct AssessmentFlowView: View {
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
                     RoundedRectangle(cornerRadius: 2)
-                        .fill(Color.white.opacity(0.1))
+                        .fill(PeezyTheme.Colors.deepInk.opacity(0.1))
                         .frame(height: 4)
-                    
+
                     RoundedRectangle(cornerRadius: 2)
-                        .fill(Color.white)
+                        .fill(PeezyTheme.Colors.deepInk.opacity(0.4))
                         .frame(width: geo.size.width * coordinator.progress, height: 4)
                         .animation(.easeInOut(duration: 0.3), value: coordinator.progress)
                 }
@@ -150,7 +148,10 @@ struct AssessmentFlowView: View {
 
         // --- Section 5: Services ---
         case .hireMovers:            HireMovers()
-        case .hirePackers:           HirePackers()
+        case .packingPreference:     PackingPreference()
+        case .truckRental:           TruckRental()
+        case .hasDeclutter:          HasDeclutter()
+        case .wantToSell:            WantToSell()
         case .hireCleaners:          HireCleaners()
             
         // --- Section 6: Accounts ---
@@ -163,6 +164,7 @@ struct AssessmentFlowView: View {
             
         // --- Wrap-up ---
         case .howHeard:              HowHeard()
+        case .promoCode:             PromoCode()
         }
     }
 }

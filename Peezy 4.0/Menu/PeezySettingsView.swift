@@ -25,11 +25,17 @@ struct PeezySettingsView: View {
     @EnvironmentObject var authViewModel: AuthViewModel
     @EnvironmentObject var subscriptionManager: SubscriptionManager
     
-    // Edit profile sheet
-    @State private var showEditProfile = false
-    
     // Retake assessment confirmation
     @State private var showRetakeAlert = false
+
+    // Move details editing
+    @State private var moveDetailDate: Date = Date()
+    @State private var moveDetailCurrentAddress: String = ""
+    @State private var moveDetailNewAddress: String = ""
+    @State private var showEditMoveDate = false
+    @State private var showEditCurrentAddress = false
+    @State private var showEditNewAddress = false
+    @State private var moveDetailsLoaded = false
     
     // Sign out confirmation
     @State private var showSignOutAlert = false
@@ -42,7 +48,7 @@ struct PeezySettingsView: View {
     @State private var toastMessage: String? = nil
     
     // Theme
-    private let charcoalColor = Color(red: 0.15, green: 0.15, blue: 0.17)
+    private let deepInk = PeezyTheme.Colors.deepInk
     
     var body: some View {
         ZStack {
@@ -56,9 +62,9 @@ struct PeezySettingsView: View {
                     // Profile card
                     profileCard
                         .padding(.top, 24)
-                    
-                    // Actions
-                    actionsSection
+
+                    // Move details
+                    moveDetailsSection
                         .padding(.top, 20)
 
                     // Subscription
@@ -88,10 +94,10 @@ struct PeezySettingsView: View {
                 VStack(spacing: 16) {
                     ProgressView()
                         .scaleEffect(1.5)
-                        .tint(.white)
+                        .tint(deepInk)
                     Text(processingMessage)
                         .font(.subheadline)
-                        .foregroundColor(.white.opacity(0.8))
+                        .foregroundColor(deepInk.opacity(0.8))
                 }
             }
             
@@ -101,13 +107,13 @@ struct PeezySettingsView: View {
                     Spacer()
                     Text(toast)
                         .font(.subheadline.weight(.medium))
-                        .foregroundColor(.white)
+                        .foregroundColor(deepInk)
                         .padding(.horizontal, 20)
                         .padding(.vertical, 12)
                         .background(
                             Capsule()
-                                .fill(charcoalColor.opacity(0.9))
-                                .overlay(Capsule().stroke(.white.opacity(0.1), lineWidth: 0.5))
+                                .fill(Color.white.opacity(0.9))
+                                .overlay(Capsule().stroke(Color.black.opacity(0.1), lineWidth: 0.5))
                         )
                         .padding(.bottom, 40)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -121,12 +127,27 @@ struct PeezySettingsView: View {
             }
         }
         .edgesIgnoringSafeArea(.bottom)
-        .sheet(isPresented: $showEditProfile) {
-            EditProfileSheet(userState: userState) { updatedName, updatedMoveDate in
-                if let date = updatedMoveDate {
-                    userState?.moveDate = date
-                }
-                toastMessage = "Profile updated"
+        .onAppear { loadMoveDetails() }
+        .sheet(isPresented: $showEditMoveDate) {
+            EditMoveDateSheet(currentDate: moveDetailDate) { newDate in
+                moveDetailDate = newDate
+                userState?.moveDate = newDate
+                saveMoveDetailField("moveDate", value: Timestamp(date: newDate))
+                toastMessage = "Move date updated"
+            }
+        }
+        .sheet(isPresented: $showEditCurrentAddress) {
+            EditAddressSheet(title: "Current Address", currentValue: moveDetailCurrentAddress) { newValue in
+                moveDetailCurrentAddress = newValue
+                saveMoveDetailField("currentAddress", value: newValue)
+                toastMessage = "Current address updated"
+            }
+        }
+        .sheet(isPresented: $showEditNewAddress) {
+            EditAddressSheet(title: "New Address", currentValue: moveDetailNewAddress) { newValue in
+                moveDetailNewAddress = newValue
+                saveMoveDetailField("newAddress", value: newValue)
+                toastMessage = "New address updated"
             }
         }
         .alert("Retake Assessment?", isPresented: $showRetakeAlert) {
@@ -153,7 +174,7 @@ struct PeezySettingsView: View {
         HStack {
             Text("Settings")
                 .font(.title2.bold())
-                .foregroundColor(.white)
+                .foregroundColor(deepInk)
             Spacer()
         }
         .padding(.top, 56)
@@ -179,75 +200,72 @@ struct PeezySettingsView: View {
                     
                     Text(initials)
                         .font(.system(size: 22, weight: .bold))
-                        .foregroundColor(.white)
+                        .foregroundColor(deepInk)
                 }
                 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(userState?.name ?? "Peezy User")
                         .font(.title3.bold())
-                        .foregroundColor(.white)
+                        .foregroundColor(deepInk)
                     
                     if let email = Auth.auth().currentUser?.email {
                         Text(email)
                             .font(.subheadline)
-                            .foregroundColor(.white.opacity(0.5))
+                            .foregroundColor(Color.gray)
                     }
                 }
                 
                 Spacer()
             }
             .padding(20)
-            
-            Divider()
-                .background(Color.white.opacity(0.1))
-            
-            // Move date info
-            if let moveDate = userState?.moveDate {
-                HStack {
-                    Image(systemName: "calendar")
-                        .foregroundColor(.cyan.opacity(0.8))
-                        .frame(width: 24)
-                    
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Move Date")
-                            .font(.caption)
-                            .foregroundColor(.white.opacity(0.5))
-                        Text(formattedDate(moveDate))
-                            .font(.subheadline.weight(.medium))
-                            .foregroundColor(.white)
-                    }
-                    
-                    Spacer()
-                    
-                    if let days = userState?.daysUntilMove, days > 0 {
-                        Text("\(days) days")
-                            .font(.caption.weight(.semibold))
-                            .foregroundColor(.cyan)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 4)
-                            .background(Capsule().fill(.cyan.opacity(0.15)))
-                    }
-                }
-                .padding(.horizontal, 20)
-                .padding(.vertical, 14)
-            }
         }
         .background(glassBackground)
     }
     
-    // MARK: - Actions Section
-    
-    private var actionsSection: some View {
+    // MARK: - Move Details Section
+
+    private var moveDetailsSection: some View {
         VStack(spacing: 0) {
-            sectionLabel("Account")
-            
+            sectionLabel("Edit Move Details")
+
             VStack(spacing: 0) {
-                settingsRow(icon: "person.crop.circle", label: "Edit Profile", color: .blue) {
-                    showEditProfile = true
+                // Move Date
+                settingsValueRow(
+                    icon: "calendar",
+                    label: "Move Date",
+                    value: formattedDate(moveDetailDate),
+                    color: .blue
+                ) {
+                    showEditMoveDate = true
                 }
-                
-                Divider().background(Color.white.opacity(0.1))
-                
+
+                Divider().background(Color.black.opacity(0.08))
+
+                // Current Address
+                settingsValueRow(
+                    icon: "house",
+                    label: "Current Address",
+                    value: moveDetailCurrentAddress.isEmpty ? "Not set" : truncated(moveDetailCurrentAddress),
+                    color: .green
+                ) {
+                    showEditCurrentAddress = true
+                }
+
+                Divider().background(Color.black.opacity(0.08))
+
+                // New Address
+                settingsValueRow(
+                    icon: "house.fill",
+                    label: "New Address",
+                    value: moveDetailNewAddress.isEmpty ? "Not set" : truncated(moveDetailNewAddress),
+                    color: .purple
+                ) {
+                    showEditNewAddress = true
+                }
+
+                Divider().background(Color.black.opacity(0.08))
+
+                // Retake Assessment
                 settingsRow(icon: "arrow.counterclockwise", label: "Retake Assessment", color: .orange) {
                     showRetakeAlert = true
                 }
@@ -274,12 +292,12 @@ struct PeezySettingsView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(subscriptionStatusLabel)
                             .font(.system(size: 16, weight: .medium))
-                            .foregroundColor(.white)
+                            .foregroundColor(deepInk)
 
                         if !subscriptionDetailLabel.isEmpty {
                             Text(subscriptionDetailLabel)
                                 .font(.caption)
-                                .foregroundColor(.white.opacity(0.5))
+                                .foregroundColor(Color.gray)
                         }
                     }
 
@@ -288,7 +306,7 @@ struct PeezySettingsView: View {
                 .padding(.horizontal, 20)
                 .padding(.vertical, 14)
 
-                Divider().background(Color.white.opacity(0.1))
+                Divider().background(Color.black.opacity(0.08))
 
                 settingsRow(icon: "creditcard", label: "Manage Subscription", color: .cyan) {
                     if let url = URL(string: "https://apps.apple.com/account/subscriptions") {
@@ -296,9 +314,9 @@ struct PeezySettingsView: View {
                     }
                 }
 
-                Divider().background(Color.white.opacity(0.1))
+                Divider().background(Color.black.opacity(0.08))
 
-                settingsRow(icon: "arrow.triangle.2.circlepath", label: "Restore Purchases", color: .white.opacity(0.6)) {
+                settingsRow(icon: "arrow.triangle.2.circlepath", label: "Restore Purchases", color: Color.gray) {
                     Task { await subscriptionManager.restorePurchases() }
                 }
             }
@@ -348,15 +366,15 @@ struct PeezySettingsView: View {
                     openSupportEmail()
                 }
                 
-                Divider().background(Color.white.opacity(0.1))
+                Divider().background(Color.black.opacity(0.08))
                 
-                settingsRow(icon: "doc.text", label: "Privacy Policy", color: .white.opacity(0.6)) {
+                settingsRow(icon: "doc.text", label: "Privacy Policy", color: Color.gray) {
                     openURL("https://peezy.move/privacy")
                 }
                 
-                Divider().background(Color.white.opacity(0.1))
+                Divider().background(Color.black.opacity(0.08))
                 
-                settingsRow(icon: "doc.text", label: "Terms of Service", color: .white.opacity(0.6)) {
+                settingsRow(icon: "doc.text", label: "Terms of Service", color: Color.gray) {
                     openURL("https://peezy.move/terms")
                 }
             }
@@ -387,11 +405,11 @@ struct PeezySettingsView: View {
         VStack(spacing: 4) {
             Text("Peezy")
                 .font(.caption.weight(.medium))
-                .foregroundColor(.white.opacity(0.3))
+                .foregroundColor(Color.gray.opacity(0.4))
             
             Text("Version \(appVersion)")
                 .font(.caption2)
-                .foregroundColor(.white.opacity(0.2))
+                .foregroundColor(Color.gray.opacity(0.4))
         }
     }
     
@@ -412,13 +430,13 @@ struct PeezySettingsView: View {
                 
                 Text(label)
                     .font(.system(size: 16, weight: .medium))
-                    .foregroundColor(label == "Sign Out" ? .red : .white)
+                    .foregroundColor(label == "Sign Out" ? .red : deepInk)
                 
                 Spacer()
                 
                 Image(systemName: "chevron.right")
                     .font(.caption2.weight(.semibold))
-                    .foregroundColor(.white.opacity(0.2))
+                    .foregroundColor(Color.gray.opacity(0.4))
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 14)
@@ -426,11 +444,47 @@ struct PeezySettingsView: View {
         .buttonStyle(.plain)
     }
     
+    private func settingsValueRow(
+        icon: String,
+        label: String,
+        value: String,
+        color: Color,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 14) {
+                Image(systemName: icon)
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundColor(color)
+                    .frame(width: 28)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(label)
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundColor(deepInk)
+                    Text(value)
+                        .font(.caption)
+                        .foregroundColor(Color.gray)
+                        .lineLimit(1)
+                }
+
+                Spacer()
+
+                Image(systemName: "chevron.right")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundColor(Color.gray.opacity(0.4))
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 14)
+        }
+        .buttonStyle(.plain)
+    }
+
     private func sectionLabel(_ text: String) -> some View {
         HStack {
             Text(text.uppercased())
                 .font(.caption.weight(.semibold))
-                .foregroundColor(.white.opacity(0.4))
+                .foregroundColor(Color.gray.opacity(0.6))
                 .tracking(1)
             Spacer()
         }
@@ -443,13 +497,13 @@ struct PeezySettingsView: View {
     private var glassBackground: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(.ultraThinMaterial)
+                .fill(.regularMaterial)
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(charcoalColor.opacity(0.5))
+                .fill(Color.white.opacity(0.5))
         }
         .overlay(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(.white.opacity(0.06), lineWidth: 0.5)
+                .stroke(Color.black.opacity(0.06), lineWidth: 0.5)
         )
     }
     
@@ -529,73 +583,249 @@ struct PeezySettingsView: View {
             UIApplication.shared.open(url)
         }
     }
+
+    private func truncated(_ text: String, maxLength: Int = 30) -> String {
+        text.count > maxLength ? String(text.prefix(maxLength)) + "..." : text
+    }
+
+    // MARK: - Move Details Firestore
+
+    private func loadMoveDetails() {
+        guard !moveDetailsLoaded else { return }
+        guard let uid = Auth.auth().currentUser?.uid else { return }
+        let db = Firestore.firestore()
+
+        Task {
+            do {
+                let snapshot = try await db.collection("users").document(uid)
+                    .collection("user_assessments")
+                    .limit(to: 1)
+                    .getDocuments()
+
+                guard let doc = snapshot.documents.first else { return }
+                let data = doc.data()
+
+                await MainActor.run {
+                    moveDetailCurrentAddress = data["currentAddress"] as? String ?? ""
+                    moveDetailNewAddress = data["newAddress"] as? String ?? ""
+                    if let timestamp = data["moveDate"] as? Timestamp {
+                        moveDetailDate = timestamp.dateValue()
+                    } else if let dateValue = data["moveDate"] as? Date {
+                        moveDetailDate = dateValue
+                    } else if let existingDate = userState?.moveDate {
+                        moveDetailDate = existingDate
+                    }
+                    moveDetailsLoaded = true
+                }
+            } catch {
+                // Silently fail — fields stay at defaults
+            }
+        }
+    }
+
+    private func saveMoveDetailField(_ key: String, value: Any) {
+        guard let uid = Auth.auth().currentUser?.uid else { return }
+        let db = Firestore.firestore()
+
+        Task {
+            do {
+                let snapshot = try await db.collection("users").document(uid)
+                    .collection("user_assessments")
+                    .limit(to: 1)
+                    .getDocuments()
+
+                guard let doc = snapshot.documents.first else { return }
+
+                try await doc.reference.updateData([key: value])
+                try? await db.collection("userKnowledge").document(uid).updateData([key: value])
+            } catch {
+                await MainActor.run {
+                    toastMessage = "Failed to save: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
 }
 
-// MARK: - Edit Profile Sheet
+// MARK: - Edit Move Date Sheet
 
-struct EditProfileSheet: View {
-    var userState: UserState?
-    var onSave: (String, Date?) -> Void
-    
+struct EditMoveDateSheet: View {
+    let currentDate: Date
+    var onSave: (Date) -> Void
+
     @Environment(\.dismiss) private var dismiss
-    
-    @State private var name: String = ""
-    @State private var currentAddress: String = ""
-    @State private var newAddress: String = ""
-    @State private var moveDate: Date = Date()
-    @State private var hasMoveDate: Bool = false
-    @State private var isSaving = false
-    @State private var error: String? = nil
-    
-    private let charcoalColor = Color(red: 0.15, green: 0.15, blue: 0.17)
-    
+    @State private var selectedDate: Date = Date()
+    private let deepInk = PeezyTheme.Colors.deepInk
+
     var body: some View {
         NavigationView {
             ZStack {
-                Color(red: 0.08, green: 0.08, blue: 0.1)
-                    .ignoresSafeArea()
-                
+                PeezyTheme.Colors.lightBase.ignoresSafeArea()
+
+                VStack(spacing: 24) {
+                    DatePicker(
+                        "Move Date",
+                        selection: $selectedDate,
+                        displayedComponents: .date
+                    )
+                    .datePickerStyle(.graphical)
+                    .tint(.blue)
+                    .padding(20)
+
+                    Button {
+                        onSave(selectedDate)
+                        dismiss()
+                    } label: {
+                        Text("Save")
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundColor(.black)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 16)
+                    }
+                    .background(Color.white)
+                    .cornerRadius(16)
+                    .padding(.horizontal, 20)
+
+                    Spacer()
+                }
+            }
+            .navigationTitle("Move Date")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                        .foregroundColor(deepInk)
+                }
+            }
+            .toolbarColorScheme(.light, for: .navigationBar)
+        }
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
+        .onAppear { selectedDate = currentDate }
+    }
+}
+
+// MARK: - Edit Address Sheet
+
+struct EditAddressSheet: View {
+    let title: String
+    let currentValue: String
+    var onSave: (String) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var address: String = ""
+    @FocusState private var isFocused: Bool
+    private let deepInk = PeezyTheme.Colors.deepInk
+
+    var body: some View {
+        NavigationView {
+            ZStack {
+                PeezyTheme.Colors.lightBase.ignoresSafeArea()
+
+                VStack(spacing: 24) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(title.uppercased())
+                            .font(.caption.weight(.semibold))
+                            .foregroundColor(Color.gray.opacity(0.6))
+                            .tracking(0.5)
+
+                        TextField("Enter address", text: $address)
+                            .textContentType(.fullStreetAddress)
+                            .font(.system(size: 16))
+                            .foregroundColor(deepInk)
+                            .focused($isFocused)
+                            .padding(16)
+                            .background(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .fill(Color.black.opacity(0.06))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                            .stroke(Color.black.opacity(0.08), lineWidth: 0.5)
+                                    )
+                            )
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.top, 20)
+
+                    Button {
+                        let trimmed = address.trimmingCharacters(in: .whitespacesAndNewlines)
+                        guard !trimmed.isEmpty else { return }
+                        onSave(trimmed)
+                        dismiss()
+                    } label: {
+                        Text("Save")
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundColor(.black)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 16)
+                    }
+                    .background(Color.white)
+                    .cornerRadius(16)
+                    .padding(.horizontal, 20)
+                    .disabled(address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .opacity(address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.5 : 1)
+
+                    Spacer()
+                }
+            }
+            .navigationTitle(title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                        .foregroundColor(deepInk)
+                }
+            }
+            .toolbarColorScheme(.light, for: .navigationBar)
+        }
+        .presentationDetents([.medium])
+        .presentationDragIndicator(.visible)
+        .onAppear {
+            address = currentValue
+            isFocused = true
+        }
+    }
+}
+
+// MARK: - Edit Name & Email Sheet
+
+struct EditNameEmailSheet: View {
+    var userState: UserState?
+    var onSave: (String) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var name: String = ""
+    @State private var email: String = ""
+    @State private var isSaving = false
+    @State private var error: String? = nil
+    private let deepInk = PeezyTheme.Colors.deepInk
+
+    var body: some View {
+        NavigationView {
+            ZStack {
+                PeezyTheme.Colors.lightBase.ignoresSafeArea()
+
                 ScrollView {
                     VStack(spacing: 24) {
-                        // Name field
                         fieldGroup(label: "Name") {
                             TextField("Your name", text: $name)
                                 .textContentType(.name)
                         }
-                        
-                        // Move date
-                        fieldGroup(label: "Move Date") {
-                            DatePicker(
-                                "",
-                                selection: $moveDate,
-                                displayedComponents: .date
-                            )
-                            .datePickerStyle(.compact)
-                            .labelsHidden()
-                            .tint(.cyan)
+
+                        fieldGroup(label: "Email") {
+                            TextField("Email address", text: $email)
+                                .textContentType(.emailAddress)
+                                .keyboardType(.emailAddress)
+                                .autocapitalization(.none)
                         }
-                        
-                        // Current address
-                        fieldGroup(label: "Current Address") {
-                            TextField("Current address", text: $currentAddress)
-                                .textContentType(.fullStreetAddress)
-                        }
-                        
-                        // New address
-                        fieldGroup(label: "New Address") {
-                            TextField("New address", text: $newAddress)
-                                .textContentType(.fullStreetAddress)
-                        }
-                        
-                        // Error
+
                         if let error = error {
                             Text(error)
                                 .font(.caption)
                                 .foregroundColor(.red)
                         }
-                        
-                        // Save button
-                        Button(action: saveProfile) {
+
+                        Button(action: save) {
                             if isSaving {
                                 ProgressView()
                                     .tint(.black)
@@ -622,128 +852,78 @@ struct EditProfileSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
-                        .foregroundColor(.white)
+                        .foregroundColor(deepInk)
                 }
             }
-            .toolbarColorScheme(.dark, for: .navigationBar)
+            .toolbarColorScheme(.light, for: .navigationBar)
         }
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
-        .onAppear { loadCurrentValues() }
+        .onAppear {
+            name = userState?.name ?? ""
+            email = Auth.auth().currentUser?.email ?? ""
+        }
     }
-    
-    // MARK: - Field Group
-    
+
     private func fieldGroup<Content: View>(label: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(label.uppercased())
                 .font(.caption.weight(.semibold))
-                .foregroundColor(.white.opacity(0.4))
+                .foregroundColor(Color.gray.opacity(0.6))
                 .tracking(0.5)
-            
+
             content()
                 .font(.system(size: 16))
-                .foregroundColor(.white)
+                .foregroundColor(deepInk)
                 .padding(16)
                 .background(
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(charcoalColor)
+                        .fill(Color.black.opacity(0.06))
                         .overlay(
                             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .stroke(.white.opacity(0.08), lineWidth: 0.5)
+                                .stroke(Color.black.opacity(0.08), lineWidth: 0.5)
                         )
                 )
-                .tint(.cyan)
+                .tint(.blue)
         }
     }
-    
-    // MARK: - Load Values
-    
-    private func loadCurrentValues() {
-        name = userState?.name ?? ""
-        
-        // Load addresses from Firestore assessment data
-        guard let uid = Auth.auth().currentUser?.uid else { return }
-        let db = Firestore.firestore()
-        
-        Task {
-            do {
-                let snapshot = try await db.collection("users").document(uid)
-                    .collection("user_assessments")
-                    .limit(to: 1)
-                    .getDocuments()
-                
-                guard let doc = snapshot.documents.first else { return }
-                let data = doc.data()
-                
-                await MainActor.run {
-                    currentAddress = data["currentAddress"] as? String ?? ""
-                    newAddress = data["newAddress"] as? String ?? ""
-                    if let timestamp = data["moveDate"] as? Timestamp {
-                        self.moveDate = timestamp.dateValue()
-                        self.hasMoveDate = true
-                    } else if let dateValue = data["moveDate"] as? Date {
-                        self.moveDate = dateValue
-                        self.hasMoveDate = true
-                    }
-                }
-            } catch {
-                // Silently fail — fields just stay empty
-            }
-        }
-    }
-    
-    // MARK: - Save
-    
-    private func saveProfile() {
+
+    private func save() {
         guard let uid = Auth.auth().currentUser?.uid else {
             error = "Not signed in"
             return
         }
-        
+
         isSaving = true
         error = nil
-        
+
         let db = Firestore.firestore()
         let trimmedName = name.trimmingCharacters(in: .whitespaces)
-        
+        let trimmedEmail = email.trimmingCharacters(in: .whitespaces)
+
         Task {
             do {
-                // Find the assessment document
+                // Update name in Firestore
                 let snapshot = try await db.collection("users").document(uid)
                     .collection("user_assessments")
                     .limit(to: 1)
                     .getDocuments()
-                
-                guard let doc = snapshot.documents.first else {
-                    await MainActor.run {
-                        error = "No assessment data found"
-                        isSaving = false
-                    }
-                    return
+
+                if let doc = snapshot.documents.first {
+                    try await doc.reference.updateData(["userName": trimmedName])
                 }
-                
-                // Build update dictionary — only include non-empty fields
-                var updates: [String: Any] = [
-                    "userName": trimmedName,
-                    "moveDate": Timestamp(date: moveDate)
-                ]
-                if !currentAddress.trimmingCharacters(in: .whitespaces).isEmpty {
-                    updates["currentAddress"] = currentAddress.trimmingCharacters(in: .whitespaces)
+                try? await db.collection("userKnowledge").document(uid)
+                    .updateData(["userName": trimmedName])
+
+                // Update email in Firebase Auth if changed
+                let currentEmail = Auth.auth().currentUser?.email ?? ""
+                if !trimmedEmail.isEmpty && trimmedEmail != currentEmail {
+                    try await Auth.auth().currentUser?.sendEmailVerification(beforeUpdatingEmail: trimmedEmail)
                 }
-                if !newAddress.trimmingCharacters(in: .whitespaces).isEmpty {
-                    updates["newAddress"] = newAddress.trimmingCharacters(in: .whitespaces)
-                }
-                
-                // Update assessment doc
-                try await doc.reference.updateData(updates)
-                
-                // Also update userKnowledge if it exists
-                try? await db.collection("userKnowledge").document(uid).updateData(updates)
-                
+
                 await MainActor.run {
                     isSaving = false
-                    onSave(trimmedName, moveDate)
+                    onSave(trimmedName)
                     dismiss()
                 }
             } catch {

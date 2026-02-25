@@ -198,7 +198,7 @@ struct WorkflowIntroContent: View {
                     Image(systemName: "arrow.right")
                         .font(.headline)
                 }
-                .foregroundColor(.white)
+                .foregroundColor(PeezyTheme.Colors.deepInk)
                 .frame(maxWidth: .infinity)
                 .frame(height: 56)
                 .background(
@@ -273,7 +273,7 @@ struct WorkflowQuestionContent: View {
                         Image(systemName: "arrow.right")
                             .font(.headline)
                     }
-                    .foregroundColor(.white)
+                    .foregroundColor(PeezyTheme.Colors.deepInk)
                     .frame(maxWidth: .infinity)
                     .frame(height: 56)
                     .background(
@@ -415,7 +415,7 @@ struct WorkflowRecapContent: View {
                     Image(systemName: "checkmark")
                         .font(.headline)
                 }
-                .foregroundColor(.white)
+                .foregroundColor(PeezyTheme.Colors.deepInk)
                 .frame(maxWidth: .infinity)
                 .frame(height: 56)
                 .background(

@@ -220,7 +220,7 @@ class WorkflowManager {
     // MARK: - Demo Workflow (No Firebase)
 
     /// Start a workflow with pre-loaded data (no Firebase fetch).
-    /// Used for walkthrough demo workflows.
+    /// Used for demo workflows (no Firebase fetch).
     func startDemoWorkflow(workflowId: String, workflowTitle: String, qualifying: WorkflowQualifying) {
         guard !isInWorkflow else { return }
 

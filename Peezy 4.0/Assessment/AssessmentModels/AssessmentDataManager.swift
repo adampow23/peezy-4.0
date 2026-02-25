@@ -48,13 +48,21 @@ class AssessmentDataManager: ObservableObject {
 
     // MARK: - Services
     @Published var hireMovers: String = ""
-    @Published var hirePackers: String = ""
+    @Published var packingPreference: String = ""
+    @Published var truckRental: String = ""
+    @Published var hasDeclutter: String = ""
+    @Published var wantToSell: String = ""
     @Published var hireCleaners: String = ""
     
     // MARK: - Accounts (categories for catalog conditions)
     @Published var financialInstitutions: [String] = []
     @Published var healthcareProviders: [String] = []
     @Published var fitnessWellness: [String] = []
+
+    // MARK: - Account Counts (category → tap count for multi-tap)
+    @Published var financialCounts: [String: Int] = [:]
+    @Published var healthcareCounts: [String: Int] = [:]
+    @Published var fitnessCounts: [String: Int] = [:]
 
     // MARK: - Account Details (category → business name, for personalization only)
     @Published var financialDetails: [String: String] = [:]
@@ -64,6 +72,7 @@ class AssessmentDataManager: ObservableObject {
     // MARK: - Attribution
     @Published var howHeard: String = ""
     @Published var referralCode: String = ""
+    @Published var promoCode: String = ""
     
     // MARK: - State
     @Published var saveError: Error?
@@ -124,8 +133,15 @@ class AssessmentDataManager: ObservableObject {
 
         // Services — raw labels preserved for display/Firestore, mapped to Yes/No below
         data["hireMoversDetail"] = hireMovers
-        data["hirePackersDetail"] = hirePackers
+        data["packingPreference"] = packingPreference
         data["hireCleanersDetail"] = hireCleaners
+
+        // Truck rental — "yes"/"no" from tile selection (only asked if not hiring movers)
+        data["wantsTruckRental"] = truckRental
+
+        // Declutter — already "Yes"/"No" from tile selection
+        data["hasDeclutter"] = hasDeclutter
+        data["wantToSell"] = wantToSell
         
         // Accounts (categories for catalog conditions)
         data["financialInstitutions"] = financialInstitutions
@@ -140,6 +156,7 @@ class AssessmentDataManager: ObservableObject {
         // Attribution
         data["howHeard"] = howHeard
         data["referralCode"] = referralCode
+        data["promoCode"] = promoCode
         
         // --- Computed keys for TaskConditionParser ---
         // These keys are required by taskCatalog conditions but not collected
@@ -153,7 +170,6 @@ class AssessmentDataManager: ObservableObject {
         // "Get me quotes" → "Yes"
         // "I'll handle it myself" → "No"
         data["hireMovers"] = mapServiceToYesNo(hireMovers, yesValues: ["get me quotes"])
-        data["hirePackers"] = mapServiceToYesNo(hirePackers, yesValues: ["get me quotes"])
         data["hireCleaners"] = mapServiceToYesNo(hireCleaners, yesValues: ["get me quotes"])
 
         return data
@@ -278,16 +294,23 @@ class AssessmentDataManager: ObservableObject {
         storageSize = ""
         storageFullness = ""
         hireMovers = ""
-        hirePackers = ""
+        packingPreference = ""
+        truckRental = ""
+        hasDeclutter = ""
+        wantToSell = ""
         hireCleaners = ""
         financialInstitutions = []
         healthcareProviders = []
         fitnessWellness = []
+        financialCounts = [:]
+        healthcareCounts = [:]
+        fitnessCounts = [:]
         financialDetails = [:]
         healthcareDetails = [:]
         fitnessDetails = [:]
         howHeard = ""
         referralCode = ""
+        promoCode = ""
         moveDistance = ""
         isInterstate = ""
         saveError = nil

@@ -21,10 +21,7 @@ struct CurrentRentOrOwn: View {
     var body: some View {
         VStack(spacing: 0) {
             // Content area with equal spacing
-            AssessmentContentArea(
-                questionText: "Renting or do you own?",
-                showContent: showContent
-            ) {
+            AssessmentContentArea {
                 // Options grid
                 LazyVGrid(columns: [
                     GridItem(.flexible(), spacing: 16),
@@ -53,7 +50,6 @@ struct CurrentRentOrOwn: View {
                 .padding(.horizontal, 20)
             }
         }
-        .background(InteractiveBackground())
         .onAppear {
             selected = assessmentData.currentRentOrOwn
             withAnimation {

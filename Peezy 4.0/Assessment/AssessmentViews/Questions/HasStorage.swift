@@ -21,10 +21,7 @@ struct HasStorage: View {
     var body: some View {
         VStack(spacing: 0) {
             // Content area with equal spacing
-            AssessmentContentArea(
-                questionText: "Do you have a storage unit that needs to be dealt with?",
-                showContent: showContent
-            ) {
+            AssessmentContentArea {
                 // Options grid
                 LazyVGrid(columns: [
                     GridItem(.flexible(), spacing: 16),
@@ -53,7 +50,6 @@ struct HasStorage: View {
                 .padding(.horizontal, 20)
             }
         }
-        .background(InteractiveBackground())
         .onAppear {
             selected = assessmentData.hasStorage
             withAnimation {

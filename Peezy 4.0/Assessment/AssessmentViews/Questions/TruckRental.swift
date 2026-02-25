@@ -1,20 +1,26 @@
 import SwiftUI
 
-struct CurrentSquareFootage: View {
+struct TruckRental: View {
     @State private var selected = ""
     @EnvironmentObject var assessmentData: AssessmentDataManager
     @EnvironmentObject var coordinator: AssessmentCoordinator
 
+    // Animation states
     @State private var showContent = false
 
+    // Haptic feedback
     private let lightHaptic = UIImpactFeedbackGenerator(style: .light)
 
-    let options = [
-        "Under 500 sq ft",
-        "500–800 sq ft",
-        "800–1,200 sq ft",
-        "1,200–1,800 sq ft",
-        "1,800+ sq ft"
+    let options = ["Yes, get me quotes", "No, I'm covered"]
+
+    let iconMap: [String: String] = [
+        "Yes, get me quotes": "truck.box.fill",
+        "No, I'm covered": "checkmark.circle.fill"
+    ]
+
+    let valueMap: [String: String] = [
+        "Yes, get me quotes": "yes",
+        "No, I'm covered": "no"
     ]
 
     var body: some View {
@@ -27,11 +33,11 @@ struct CurrentSquareFootage: View {
                     ForEach(Array(options.enumerated()), id: \.element) { index, option in
                         SelectionTile(
                             title: option,
-                            icon: nil,
+                            icon: iconMap[option],
                             isSelected: selected == option,
                             onTap: {
                                 selected = option
-                                assessmentData.currentSquareFootage = option
+                                assessmentData.truckRental = valueMap[option] ?? "no"
 
                                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                                     lightHaptic.impactOccurred()
@@ -48,7 +54,10 @@ struct CurrentSquareFootage: View {
             }
         }
         .onAppear {
-            selected = assessmentData.currentSquareFootage
+            // Reverse-map stored value back to display label
+            if let label = valueMap.first(where: { $0.value == assessmentData.truckRental })?.key {
+                selected = label
+            }
             withAnimation {
                 showContent = true
             }
@@ -58,7 +67,7 @@ struct CurrentSquareFootage: View {
 
 #Preview {
     let manager = AssessmentDataManager()
-    CurrentSquareFootage()
+    TruckRental()
         .environmentObject(manager)
         .environmentObject(AssessmentCoordinator(dataManager: manager))
 }

@@ -26,7 +26,7 @@ class TimelineService {
         let snapshot = try await db.collection("users")
             .document(userId)
             .collection("tasks")
-            .whereField("status", in: ["Upcoming", "InProgress", "pending", "Snoozed", "Completed"])
+            .whereField("status", in: ["Upcoming", "InProgress", "UserInProgress", "pending", "Snoozed", "Completed"])
             .getDocuments()
 
         print("📅 TimelineService: Found \(snapshot.documents.count) documents")
@@ -59,6 +59,13 @@ class TimelineService {
             let snoozedUntil = (data["snoozedUntil"] as? Timestamp)?.dateValue()
             let lastSnoozedAt = (data["lastSnoozedAt"] as? Timestamp)?.dateValue()
 
+            // Parse urgency
+            let urgencyPercentage = (data["urgencyPercentage"] as? NSNumber)?.intValue
+
+            // Parse UserInProgress data
+            let userInProgressDate = (data["userInProgressDate"] as? Timestamp)?.dateValue()
+            let userInProgressReturnDate = (data["userInProgressReturnDate"] as? Timestamp)?.dateValue()
+
             // Determine card type based on task properties
             let categoryRaw = data["category"] as? String
             let isVendorTask = categoryRaw?.lowercased().contains("vendor") ?? false
@@ -81,7 +88,10 @@ class TimelineService {
                 dueDate: dueDate,
                 snoozedUntil: snoozedUntil,
                 lastSnoozedAt: lastSnoozedAt,
-                taskCategory: categoryRaw
+                taskCategory: categoryRaw,
+                urgencyPercentage: urgencyPercentage,
+                userInProgressDate: userInProgressDate,
+                userInProgressReturnDate: userInProgressReturnDate
             )
 
             // 📅 DEBUG: Log dueDate from Firestore before filtering

@@ -6,7 +6,6 @@
 //
 
 import SwiftUI
-import Observation
 
 // MARK: - Confetti Particle Model
 
@@ -18,13 +17,15 @@ enum ConfettiShape {
 struct ConfettiParticle {
     var position: CGPoint
     var velocity: CGVector
-    var rotation: Double          // radians
+    var rotation: Double          // 2D Rotation (radians)
     var rotationSpeed: Double     // radians per second
+    var spin: Double              // 3D Flip axis (radians)
+    var spinSpeed: Double         // 3D Flip speed
     var opacity: Double
     var color: Color
     var shape: ConfettiShape
-    var wobbleFreq: Double        // Hz — unique per particle
-    var wobblePhase: Double       // radian offset — unique per particle
+    var wobbleFreq: Double        // Hz
+    var wobblePhase: Double       // radian offset
 }
 
 // MARK: - Confetti Intensity
@@ -35,9 +36,8 @@ enum ConfettiIntensity {
     case high
 }
 
-// MARK: - Particle System State (class so Canvas can mutate it)
+// MARK: - Particle System State
 
-@Observable
 private final class ParticleSystemState {
     var particles: [ConfettiParticle] = []
     var startDate: Date = Date()
@@ -63,122 +63,134 @@ struct ConfettiView: View {
 
     @State private var state = ParticleSystemState()
 
+    // Premium "Neon Glass" Palette
     private let colors: [Color] = [
-        Color(red: 0.98, green: 0.85, blue: 0.29), // gold
-        .white,
-        Color(red: 0.45, green: 0.78, blue: 0.98), // light blue
-        Color(red: 0.98, green: 0.50, blue: 0.45), // coral
-        Color(red: 0.45, green: 0.88, blue: 0.70), // mint
-        Color(red: 0.75, green: 0.55, blue: 0.95)  // soft purple
+        Color(red: 1.00, green: 0.84, blue: 0.00), // Pure Gold
+        Color(red: 0.00, green: 0.94, blue: 1.00), // Electric Cyan
+        Color(red: 1.00, green: 0.00, blue: 0.50), // Hot Pink
+        Color(red: 0.69, green: 0.00, blue: 1.00), // Neon Purple
+        Color(red: 0.00, green: 1.00, blue: 0.66), // Mint Glow
+        .white
     ]
 
     var body: some View {
         TimelineView(.animation(paused: !isActive)) { timeline in
             Canvas { context, size in
-                    let now = timeline.date
-                    let elapsed = now.timeIntervalSince(state.startDate)
-                    let dt = min(now.timeIntervalSince(state.lastFrameDate), 1.0 / 30.0)
+                let now = timeline.date
+                let elapsed = now.timeIntervalSince(state.startDate)
+                let dt = min(now.timeIntervalSince(state.lastFrameDate), 1.0 / 30.0)
 
-                    // Emit new particles during first 2 seconds
-                    if elapsed <= 2.0 && elapsed >= state.nextEmitTime {
-                        let batchCount = intensity == .low ? Int.random(in: 2...3) : Int.random(in: 6...8)
-                        for _ in 0..<batchCount {
-                            state.particles.append(makeParticle(screenWidth: size.width))
-                        }
-                        state.nextEmitTime = elapsed + 0.08
+                // Emit new particles during first 2 seconds
+                if elapsed <= 2.0 && elapsed >= state.nextEmitTime {
+                    let batchCount = intensity == .low ? Int.random(in: 3...5) : Int.random(in: 8...12)
+                    for _ in 0..<batchCount {
+                        state.particles.append(makeParticle(screenSize: size))
+                    }
+                    // Emitting slightly faster for a denser, premium burst
+                    state.nextEmitTime = elapsed + 0.05
+                }
+
+                // Fire settling callback once at t=2.2s.
+                if elapsed >= 2.2 && !state.settlingFired {
+                    state.settlingFired = true
+                    DispatchQueue.main.async { onSettling?() }
+                }
+
+                // Update physics
+                let gravity: Double = 500 // Stronger gravity for the explosive arc
+                
+                for i in state.particles.indices {
+                    var p = state.particles[i]
+
+                    // Apply air resistance (friction) to horizontal movement
+                    p.velocity.dx *= 0.98
+                    
+                    // Gravity
+                    p.velocity.dy += gravity * dt
+
+                    // Horizontal flutter (wobble)
+                    let wobble = sin(elapsed * p.wobbleFreq + p.wobblePhase) * 25
+                    p.position.x += (p.velocity.dx + wobble) * dt
+                    p.position.y += p.velocity.dy * dt
+
+                    // Rotations (2D and 3D)
+                    p.rotation += p.rotationSpeed * dt
+                    p.spin += p.spinSpeed * dt
+
+                    // Fade near bottom
+                    if p.position.y > size.height * 0.8 {
+                        p.opacity -= dt * 1.5
                     }
 
-                    // Fire settling callback once at t=2.2s.
-                    // Deferred to next run loop via async to avoid mutating view state
-                    // mid-draw-pass (Canvas closure runs synchronously on main thread).
-                    if elapsed >= 2.2 && !state.settlingFired {
-                        state.settlingFired = true
-                        DispatchQueue.main.async { onSettling?() }
-                    }
+                    state.particles[i] = p
+                }
 
-                    // Update physics
-                    let gravity: Double = 380
-                    for i in state.particles.indices {
-                        var p = state.particles[i]
+                // Remove dead particles (ensure they are falling down before removing off-screen)
+                state.particles.removeAll { ($0.position.y > size.height + 50 && $0.velocity.dy > 0) || $0.opacity <= 0 }
 
-                        // Gravity
-                        p.velocity.dy += gravity * dt
+                state.lastFrameDate = now
 
-                        // Horizontal wobble
-                        let wobble = sin(elapsed * p.wobbleFreq + p.wobblePhase) * 18
-                        p.position.x += (p.velocity.dx + wobble) * dt
-                        p.position.y += p.velocity.dy * dt
+                // Draw particles
+                for p in state.particles {
+                    var ctx = context
+                    
+                    // Move to particle position
+                    ctx.translateBy(x: p.position.x, y: p.position.y)
+                    // Apply 2D Rotation
+                    ctx.rotate(by: .radians(p.rotation))
+                    // Apply 3D Tumbling Effect (Squishing the Y axis)
+                    ctx.scaleBy(x: 1, y: max(0.1, abs(cos(p.spin))))
+                    
+                    // Set color
+                    let fillStyle = GraphicsContext.Shading.color(p.color.opacity(p.opacity))
 
-                        // Rotation
-                        p.rotation += p.rotationSpeed * dt
+                    switch p.shape {
+                    case .circle(let diameter):
+                        let rect = CGRect(x: -diameter / 2, y: -diameter / 2, width: diameter, height: diameter)
+                        ctx.fill(Path(ellipseIn: rect), with: fillStyle)
 
-                        // Fade near bottom
-                        if p.position.y > size.height * 0.75 {
-                            p.opacity -= dt * 1.8
-                        }
-
-                        state.particles[i] = p
-                    }
-
-                    // Remove dead particles
-                    state.particles.removeAll { $0.position.y > size.height + 20 || $0.opacity <= 0 }
-
-                    state.lastFrameDate = now
-
-                    // Draw particles
-                    for p in state.particles {
-                        switch p.shape {
-                        case .circle(let diameter):
-                            let rect = CGRect(
-                                x: p.position.x - diameter / 2,
-                                y: p.position.y - diameter / 2,
-                                width: diameter,
-                                height: diameter
-                            )
-                            context.fill(Path(ellipseIn: rect), with: .color(p.color.opacity(p.opacity)))
-
-                        case .rectangle(let w, let h):
-                            var ctx = context
-                            ctx.translateBy(x: p.position.x, y: p.position.y)
-                            ctx.rotate(by: .radians(p.rotation))
-                            let rect = CGRect(x: -w / 2, y: -h / 2, width: w, height: h)
-                            ctx.fill(Path(rect), with: .color(p.color.opacity(p.opacity)))
-                        }
+                    case .rectangle(let w, let h):
+                        let rect = CGRect(x: -w / 2, y: -h / 2, width: w, height: h)
+                        // Rounded rectangle for a premium, die-cut paper look
+                        ctx.fill(Path(roundedRect: rect, cornerRadius: 3), with: fillStyle)
                     }
                 }
+            }
         }
+        .allowsHitTesting(false)
         .onAppear {
             state.reset()
         }
     }
 
-    private func makeParticle(screenWidth: CGFloat) -> ConfettiParticle {
+    private func makeParticle(screenSize: CGSize) -> ConfettiParticle {
         let isRect = Bool.random()
         let shape: ConfettiShape = isRect
-            ? .rectangle(
-                width: CGFloat.random(in: 6...12),
-                height: CGFloat.random(in: 4...8)
-              )
-            : .circle(diameter: CGFloat.random(in: 4...6))
+            ? .rectangle(width: CGFloat.random(in: 8...14), height: CGFloat.random(in: 6...10))
+            : .circle(diameter: CGFloat.random(in: 6...9))
 
-        let dxMag = Double.random(in: 30...80)
-        let dx = Bool.random() ? dxMag : -dxMag
+        // Dual-Cannon Spawning: Choose left or right corner
+        let isLeftCannon = Bool.random()
+        
+        // Spawn slightly off-screen at the bottom
+        let startX: CGFloat = isLeftCannon ? -20 : screenSize.width + 20
+        let startY: CGFloat = screenSize.height + 10
+        
+        // Shoot inwards and upwards
+        let velocityX = isLeftCannon ? Double.random(in: 150...600) : Double.random(in: -600...(-150))
+        let velocityY = Double.random(in: -1200...(-700))
 
         return ConfettiParticle(
-            position: CGPoint(
-                x: CGFloat.random(in: 0...screenWidth),
-                y: -10
-            ),
-            velocity: CGVector(
-                dx: dx,
-                dy: Double.random(in: 180...320)
-            ),
+            position: CGPoint(x: startX, y: startY),
+            velocity: CGVector(dx: velocityX, dy: velocityY),
             rotation: Double.random(in: 0...(2 * .pi)),
-            rotationSpeed: Double.random(in: -6...6),
+            rotationSpeed: Double.random(in: -5...5),
+            spin: Double.random(in: 0...(2 * .pi)),
+            spinSpeed: Double.random(in: -8...8), // Fast 3D tumble
             opacity: 1.0,
             color: colors.randomElement() ?? .white,
             shape: shape,
-            wobbleFreq: Double.random(in: 1.5...3.5),
+            wobbleFreq: Double.random(in: 1.5...4.0),
             wobblePhase: Double.random(in: 0...(2 * .pi))
         )
     }
@@ -190,8 +202,8 @@ struct ConfettiView: View {
     // Note: TimelineView(.animation) hangs Xcode Canvas previews.
     // Test ConfettiView in the simulator via AssessmentCompleteView.
     ZStack {
-        Color.black.ignoresSafeArea()
+        Color(red: 0.05, green: 0.05, blue: 0.1).ignoresSafeArea() // Midnight background
         Text("Run in simulator to preview")
-            .foregroundStyle(.white.opacity(0.4))
+            .foregroundStyle(Color.gray)
     }
 }

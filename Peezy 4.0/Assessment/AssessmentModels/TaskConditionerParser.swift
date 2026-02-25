@@ -68,9 +68,9 @@ class TaskConditionParser {
             // Get the array of acceptable values
             guard let valuesArray = acceptableValues as? [String], !valuesArray.isEmpty else {
                 #if DEBUG
-                print("    ⚠️ Invalid condition format for '\(fieldName)' - skipping")
+                print("    ❌ Invalid condition format for '\(fieldName)' - failing safely")
                 #endif
-                continue
+                return false
             }
 
             // Get user's value for this field (case-insensitive key lookup)

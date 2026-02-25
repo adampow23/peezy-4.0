@@ -51,7 +51,7 @@ struct MiniAssessmentSheetView: View {
                         onCancel()
                         dismiss()
                     }
-                    .foregroundColor(.white.opacity(0.6))
+                    .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.5))
                 }
             }
         }
@@ -68,11 +68,11 @@ struct MiniAssessmentSheetView: View {
 
             Text("No questions configured")
                 .font(.title2.bold())
-                .foregroundColor(.white)
+                .foregroundColor(PeezyTheme.Colors.deepInk)
 
             Text("This mini-assessment doesn't have questions defined yet.")
                 .font(.body)
-                .foregroundColor(.white.opacity(0.6))
+                .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.5))
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 40)
 
@@ -121,7 +121,7 @@ struct MiniAssessmentSheetView: View {
         HStack(spacing: 8) {
             ForEach(0..<questions.count, id: \.self) { index in
                 Capsule()
-                    .fill(index <= currentQuestionIndex ? Color.green : Color.white.opacity(0.2))
+                    .fill(index <= currentQuestionIndex ? Color.green : Color.black.opacity(0.1))
                     .frame(height: 4)
             }
         }
@@ -136,14 +136,14 @@ struct MiniAssessmentSheetView: View {
             Text(taskTitle)
                 .font(.caption)
                 .fontWeight(.semibold)
-                .foregroundColor(.white.opacity(0.5))
+                .foregroundColor(Color.gray)
                 .textCase(.uppercase)
                 .tracking(1)
 
             if currentQuestionIndex < questions.count {
                 Text("\(currentQuestionIndex + 1) of \(questions.count)")
                     .font(.caption2)
-                    .foregroundColor(.white.opacity(0.4))
+                    .foregroundColor(Color.gray)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -158,7 +158,7 @@ struct MiniAssessmentSheetView: View {
             // Question text
             Text(question.label)
                 .font(.system(size: 28, weight: .bold))
-                .foregroundColor(.white)
+                .foregroundColor(PeezyTheme.Colors.deepInk)
                 .multilineTextAlignment(.leading)
                 .lineLimit(nil)
                 .fixedSize(horizontal: false, vertical: true)
@@ -204,7 +204,7 @@ struct MiniAssessmentSheetView: View {
             HStack {
                 Text(option)
                     .font(.headline)
-                    .foregroundColor(isSelected ? .black : .white)
+                    .foregroundColor(isSelected ? .white : PeezyTheme.Colors.deepInk)
                     .lineLimit(2)
                     .minimumScaleFactor(0.8)
                     .multilineTextAlignment(.leading)
@@ -222,11 +222,11 @@ struct MiniAssessmentSheetView: View {
             .frame(minHeight: 60)
             .background(
                 RoundedRectangle(cornerRadius: 16)
-                    .fill(isSelected ? Color.green : Color.white.opacity(0.1))
+                    .fill(isSelected ? Color.green : Color.black.opacity(0.06))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 16)
-                    .stroke(isSelected ? Color.clear : Color.white.opacity(0.2), lineWidth: 1)
+                    .stroke(isSelected ? Color.clear : Color.black.opacity(0.1), lineWidth: 1)
             )
         }
         .buttonStyle(PlainButtonStyle())
@@ -249,11 +249,11 @@ struct MiniAssessmentSheetView: View {
 
             Text("All set!")
                 .font(.system(size: 32, weight: .bold))
-                .foregroundColor(.white)
+                .foregroundColor(PeezyTheme.Colors.deepInk)
 
             Text("I'll create personalized tasks based on your answers.")
                 .font(.body)
-                .foregroundColor(.white.opacity(0.6))
+                .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.5))
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 40)
 
@@ -267,7 +267,7 @@ struct MiniAssessmentSheetView: View {
                                 .font(.caption)
                             Text(answer)
                                 .font(.subheadline)
-                                .foregroundColor(.white.opacity(0.8))
+                                .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.8))
                         }
                     }
                 }

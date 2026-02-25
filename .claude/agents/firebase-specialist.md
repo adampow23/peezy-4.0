@@ -53,7 +53,7 @@ conditions: { "hasVet": ["Yes"], "moveDistance": ["Long Distance"] }
 
 ## Assessment Data Keys Available for Conditions
 
-hasVet, hireMovers, hirePackers, hireCleaners, currentDwellingType, newDwellingType, currentRentOrOwn, newRentOrOwn, moveDistance, isInterstate, childrenInSchool, childrenInDaycare, financialInstitutions, healthcareProviders, fitnessWellness
+hasVet, hireMovers, packingPreference, hireCleaners, currentDwellingType, newDwellingType, currentRentOrOwn, newRentOrOwn, moveDistance, isInterstate, childrenInSchool, childrenInDaycare, financialInstitutions, healthcareProviders, fitnessWellness
 
 ## Cloud Functions
 

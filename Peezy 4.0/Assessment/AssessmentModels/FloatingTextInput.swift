@@ -62,7 +62,7 @@ struct floatingTextInput: View {
                     HStack {
                         Text(question)
                             .font(.system(size: 34, weight: .bold))
-                            .foregroundColor(.white)
+                            .foregroundColor(PeezyTheme.Colors.deepInk)
                             .frame(width: geo.size.width * 0.6, alignment: .leading)
                             .multilineTextAlignment(.leading)
                             .lineLimit(nil)
@@ -83,15 +83,15 @@ struct floatingTextInput: View {
                             .font(.system(size: 48, weight: .regular))
                             .multilineTextAlignment(.center)
                             .keyboardType(keyboardType)
-                            .foregroundColor(.white)
-                            .tint(.white)
+                            .foregroundColor(PeezyTheme.Colors.deepInk)
+                            .tint(PeezyTheme.Colors.deepInk)
                             .padding(.vertical, 20)
                             .padding(.horizontal, 24)
                             .background(
                                 ZStack {
                                     // Glass blur effect
                                     RoundedRectangle(cornerRadius: 20, style: .continuous)
-                                        .fill(.ultraThinMaterial)
+                                        .fill(.regularMaterial)
 
                                     // Charcoal tint
                                     RoundedRectangle(cornerRadius: 20, style: .continuous)
@@ -114,7 +114,7 @@ struct floatingTextInput: View {
                         if text.isEmpty {
                             Text("Tap to enter your name")
                                 .font(.system(size: 14))
-                                .foregroundColor(.white.opacity(0.5))
+                                .foregroundColor(Color.gray)
                                 .transition(.opacity)
                         }
                     }

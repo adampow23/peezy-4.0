@@ -5,58 +5,54 @@ struct HealthcareDetails: View {
     @EnvironmentObject var assessmentData: AssessmentDataManager
     @EnvironmentObject var coordinator: AssessmentCoordinator
 
-    @FocusState private var focusedCategory: String?
+    @FocusState private var focusedKey: String?
     @State private var showContent = false
+
+    private var fieldEntries: [(key: String, label: String, category: String)] {
+        var entries: [(String, String, String)] = []
+        for category in assessmentData.healthcareProviders {
+            let count = assessmentData.healthcareCounts[category] ?? 1
+            if count <= 1 {
+                entries.append((category, category, category))
+            } else {
+                for i in 1...count {
+                    let key = "\(category) \(i)"
+                    entries.append((key, "\(category) \(i)", category))
+                }
+            }
+        }
+        return entries
+    }
 
     var body: some View {
         VStack(spacing: 0) {
-            GeometryReader { geo in
-                VStack(spacing: 0) {
-                    Spacer(minLength: 0)
+            VStack(spacing: 0) {
+                Spacer(minLength: 0)
 
-                    HStack {
-                        Text("Which ones specifically?")
-                            .font(.system(size: 34, weight: .bold))
-                            .foregroundColor(.white)
-                            .frame(width: geo.size.width * 0.6, alignment: .leading)
-                            .multilineTextAlignment(.leading)
-                            .lineLimit(nil)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .padding(.horizontal, 20)
-                        Spacer(minLength: 0)
-                    }
-                    .opacity(showContent ? 1 : 0)
-                    .offset(x: showContent ? 0 : -20)
-                    .animation(.easeOut(duration: 0.5).delay(0.3), value: showContent)
-
-                    Spacer(minLength: 0)
-
-                    ScrollView {
-                        VStack(spacing: 16) {
-                            ForEach(assessmentData.healthcareProviders, id: \.self) { category in
-                                SuggestiveTextField(
-                                    label: category,
-                                    placeholder: "e.g. Dr. Smith, Aetna...",
-                                    text: binding(for: category),
-                                    source: suggestionSource(for: category),
-                                    isFocused: focusedCategory == category
-                                )
-                                .onTapGesture {
-                                    focusedCategory = category
-                                }
+                ScrollView {
+                    VStack(spacing: 16) {
+                        ForEach(fieldEntries, id: \.key) { entry in
+                            SuggestiveTextField(
+                                label: entry.label,
+                                placeholder: placeholderText(for: entry.category),
+                                text: binding(for: entry.key),
+                                source: suggestionSource(for: entry.category),
+                                isFocused: focusedKey == entry.key
+                            )
+                            .onTapGesture {
+                                focusedKey = entry.key
                             }
                         }
                     }
-                    .frame(maxHeight: 300)
-                    .padding(.horizontal, 24)
-                    .opacity(showContent ? 1 : 0)
-                    .offset(y: showContent ? 0 : 30)
-                    .animation(.easeOut(duration: 0.5).delay(0.5), value: showContent)
-
-                    Spacer(minLength: 0)
                 }
+                .padding(.horizontal, 24)
+                .opacity(showContent ? 1 : 0)
+                .offset(y: showContent ? 0 : 30)
+                .animation(.easeOut(duration: 0.5).delay(0.3), value: showContent)
+
+                Spacer(minLength: 0)
             }
-            .onTapGesture { focusedCategory = nil }
+            .onTapGesture { focusedKey = nil }
 
             PeezyAssessmentButton("Continue") {
                 assessmentData.healthcareDetails = details
@@ -68,13 +64,27 @@ struct HealthcareDetails: View {
             .offset(y: showContent ? 0 : 30)
             .animation(.spring(response: 0.6, dampingFraction: 0.8).delay(0.4), value: showContent)
         }
-        .background(InteractiveBackground())
         .onAppear {
             details = assessmentData.healthcareDetails
-            if let first = assessmentData.healthcareProviders.first {
-                focusedCategory = first
+            if let first = fieldEntries.first {
+                focusedKey = first.key
             }
             withAnimation { showContent = true }
+        }
+    }
+
+    private func placeholderText(for category: String) -> String {
+        switch category {
+        case "Doctor":
+            return "e.g. Dr. Smith, One Medical"
+        case "Dentist":
+            return "e.g. Aspen Dental, your dentist's name"
+        case "Specialists":
+            return "e.g. dermatologist, allergist, therapist"
+        case "Pharmacy":
+            return "e.g. CVS, Walgreens, Rite Aid"
+        default:
+            return "e.g. enter provider name"
         }
     }
 
@@ -93,10 +103,10 @@ struct HealthcareDetails: View {
         }
     }
 
-    private func binding(for category: String) -> Binding<String> {
+    private func binding(for key: String) -> Binding<String> {
         Binding(
-            get: { details[category] ?? "" },
-            set: { details[category] = $0 }
+            get: { details[key] ?? "" },
+            set: { details[key] = $0 }
         )
     }
 }
@@ -104,6 +114,7 @@ struct HealthcareDetails: View {
 #Preview {
     let manager = AssessmentDataManager()
     manager.healthcareProviders = ["Doctor", "Dentist"]
+    manager.healthcareCounts = ["Doctor": 2, "Dentist": 1]
     return HealthcareDetails()
         .environmentObject(manager)
         .environmentObject(AssessmentCoordinator(dataManager: manager))

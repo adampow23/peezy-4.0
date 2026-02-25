@@ -39,26 +39,24 @@ struct AddressAutocompleteView: View {
         TextField(
             "",
             text: $manager.queryFragment,
-            prompt: Text(placeholder).foregroundColor(.white.opacity(0.3))
+            prompt: Text(placeholder).foregroundColor(Color.gray.opacity(0.5))
         )
-        .font(.title3)
-        .foregroundColor(.white)
+        .font(.system(size: 18, weight: .medium))
+        .foregroundColor(PeezyTheme.Colors.deepInk)
         .multilineTextAlignment(.center)
         .textInputAutocapitalization(.words)
         .autocorrectionDisabled()
         .textContentType(.fullStreetAddress)
         .focused($isFieldFocused)
         .submitLabel(.done)
-        .padding(.vertical, 16)
-        .padding(.horizontal, 20)
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(Color.white.opacity(0.08))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16)
-                        .stroke(Color.white.opacity(isFieldFocused ? 0.4 : 0.15), lineWidth: 1)
-                )
+        .padding(16)
+        .background(Color.white)
+        .cornerRadius(12)
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(Color.gray.opacity(0.25), lineWidth: 1)
         )
+        .shadow(color: .black.opacity(0.04), radius: 4, y: 2)
         .padding(.horizontal, 24)
     }
 
@@ -66,7 +64,7 @@ struct AddressAutocompleteView: View {
         HStack(alignment: .top, spacing: 12) {
             Text(manager.selectedAddress)
                 .font(.system(size: 17, weight: .medium))
-                .foregroundColor(.white)
+                .foregroundColor(PeezyTheme.Colors.deepInk)
                 .multilineTextAlignment(.leading)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -77,26 +75,24 @@ struct AddressAutocompleteView: View {
             } label: {
                 Image(systemName: "square.and.pencil")
                     .font(.system(size: 17, weight: .medium))
-                    .foregroundColor(.white.opacity(0.6))
+                    .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.5))
                     .padding(8)
                     .background(
                         Circle()
-                            .fill(Color.white.opacity(0.12))
-                            .overlay(Circle().stroke(Color.white.opacity(0.2), lineWidth: 1))
+                            .fill(Color.gray.opacity(0.08))
+                            .overlay(Circle().stroke(Color.gray.opacity(0.2), lineWidth: 1))
                     )
             }
             .transition(.opacity.combined(with: .scale(scale: 0.85)))
         }
-        .padding(.vertical, 16)
-        .padding(.horizontal, 20)
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(Color.white.opacity(0.08))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16)
-                        .stroke(Color.white.opacity(0.3), lineWidth: 1)
-                )
+        .padding(16)
+        .background(Color.white)
+        .cornerRadius(12)
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(Color.gray.opacity(0.25), lineWidth: 1)
         )
+        .shadow(color: .black.opacity(0.04), radius: 4, y: 2)
         .padding(.horizontal, 24)
         .transition(.opacity.combined(with: .offset(y: 4)))
     }
@@ -139,12 +135,13 @@ struct AddressAutocompleteView: View {
                 }
             }
             .background(
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(Color.white.opacity(0.06))
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color.white)
                     .overlay(
-                        RoundedRectangle(cornerRadius: 16)
-                            .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(Color.gray.opacity(0.25), lineWidth: 1)
                     )
+                    .shadow(color: .black.opacity(0.04), radius: 4, y: 2)
             )
             .padding(.horizontal, 24)
             .padding(.top, 8)
@@ -164,10 +161,10 @@ private struct UnitNumberField: View {
             TextField(
                 "",
                 text: $unitNumber,
-                prompt: Text("Apt / Unit #").foregroundColor(.white.opacity(0.3))
+                prompt: Text("Apt / Unit #").foregroundColor(Color.gray.opacity(0.6))
             )
             .font(.system(size: 17))
-            .foregroundColor(.white)
+            .foregroundColor(PeezyTheme.Colors.deepInk)
             .multilineTextAlignment(.leading)
             .textInputAutocapitalization(.characters)
             .autocorrectionDisabled()
@@ -184,27 +181,25 @@ private struct UnitNumberField: View {
             } label: {
                 Text("N/A")
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(unitNumber == "N/A" ? .black : .white.opacity(0.7))
+                    .foregroundColor(unitNumber == "N/A" ? .white : PeezyTheme.Colors.deepInk.opacity(0.5))
                     .padding(.horizontal, 12)
                     .padding(.vertical, 6)
                     .background(
                         Capsule()
-                            .fill(unitNumber == "N/A" ? Color.white : Color.white.opacity(0.12))
-                            .overlay(Capsule().stroke(Color.white.opacity(0.25), lineWidth: 1))
+                            .fill(unitNumber == "N/A" ? PeezyTheme.Colors.deepInk : Color.gray.opacity(0.08))
+                            .overlay(Capsule().stroke(Color.gray.opacity(0.25), lineWidth: 1))
                     )
             }
             .animation(.easeOut(duration: 0.15), value: unitNumber)
         }
-        .padding(.vertical, 14)
-        .padding(.horizontal, 20)
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(Color.white.opacity(0.08))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16)
-                        .stroke(Color.white.opacity(isUnitFieldFocused.wrappedValue ? 0.4 : 0.15), lineWidth: 1)
-                )
+        .padding(16)
+        .background(Color.white)
+        .cornerRadius(12)
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(Color.gray.opacity(0.25), lineWidth: 1)
         )
+        .shadow(color: .black.opacity(0.04), radius: 4, y: 2)
     }
 }
 
@@ -217,18 +212,18 @@ private struct SuggestionRow: View {
         HStack(spacing: 12) {
             Image(systemName: "mappin.circle.fill")
                 .font(.system(size: 18))
-                .foregroundColor(.white.opacity(0.4))
+                .foregroundColor(Color.gray)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(suggestion.title)
                     .font(.system(size: 15, weight: .medium))
-                    .foregroundColor(.white)
+                    .foregroundColor(PeezyTheme.Colors.deepInk)
                     .lineLimit(1)
 
                 if !suggestion.subtitle.isEmpty {
                     Text(suggestion.subtitle)
                         .font(.system(size: 13))
-                        .foregroundColor(.white.opacity(0.5))
+                        .foregroundColor(Color.gray)
                         .lineLimit(1)
                 }
             }

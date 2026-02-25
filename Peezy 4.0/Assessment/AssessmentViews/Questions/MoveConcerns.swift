@@ -20,82 +20,58 @@ struct MoveConcerns: View {
     var body: some View {
         VStack(spacing: 0) {
             // Equal spacing region
-            GeometryReader { geo in
-                VStack(spacing: 0) {
-                    // Gap 1: Top → Question
-                    Spacer(minLength: 0)
-                    
-                    // Question with subtitle
-                    HStack {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("What's taking up the most mental energy right now?")
-                                .font(.system(size: 34, weight: .bold))
-                                .foregroundColor(.white)
-                                .frame(width: geo.size.width * 0.6, alignment: .leading)
-                                .multilineTextAlignment(.leading)
-                                .lineLimit(nil)
-                                .fixedSize(horizontal: false, vertical: true)
+            VStack(spacing: 0) {
+                Spacer(minLength: 0)
 
-                            Text("Pick your biggest headaches below.")
-                                .font(.system(size: 16))
-                                .foregroundColor(.white.opacity(0.6))
-                        }
-                        .padding(.horizontal, 20)
-                        Spacer(minLength: 0)
-                    }
-                    .opacity(showContent ? 1 : 0)
-                    .offset(x: showContent ? 0 : -20)
-                    .animation(.easeOut(duration: 0.5).delay(0.3), value: showContent)
-                    
-                    // Gap 2: Question → Options
-                    Spacer(minLength: 0)
-                    
-                    // Multi-select tiles
-                    VStack(spacing: 12) {
-                        ForEach(concerns, id: \.0) { concern in
-                            VStack(spacing: 8) {
-                                MultiSelectTile(
-                                    title: concern.0,
-                                    icon: concern.1,
-                                    isSelected: selectedConcerns.contains(concern.0),
-                                    onTap: {
-                                        if selectedConcerns.contains(concern.0) {
-                                            selectedConcerns.remove(concern.0)
-                                            if concern.0 == "Something else" {
-                                                otherText = ""
-                                            }
-                                        } else {
-                                            selectedConcerns.insert(concern.0)
+                // Multi-select tiles
+                VStack(spacing: 12) {
+                    ForEach(concerns, id: \.0) { concern in
+                        VStack(spacing: 8) {
+                            MultiSelectTile(
+                                title: concern.0,
+                                icon: concern.1,
+                                isSelected: selectedConcerns.contains(concern.0),
+                                onTap: {
+                                    if selectedConcerns.contains(concern.0) {
+                                        selectedConcerns.remove(concern.0)
+                                        if concern.0 == "Something else" {
+                                            otherText = ""
                                         }
+                                    } else {
+                                        selectedConcerns.insert(concern.0)
                                     }
-                                )
-                                .opacity(showContent ? 1 : 0)
-                                .offset(y: showContent ? 0 : 30)
-                                .animation(.easeOut(duration: 0.5).delay(0.5 + Double(concerns.firstIndex(where: { $0.0 == concern.0 }) ?? 0) * 0.1), value: showContent)
-                                
-                                // Show text field when "Something else" is selected
-                                if concern.0 == "Something else" && selectedConcerns.contains("Something else") {
-                                    TextField("Please specify...", text: $otherText)
-                                        .font(.system(size: 16))
-                                        .foregroundColor(.black)
-                                        .padding()
-                                        .background(Color.white)
-                                        .cornerRadius(12)
-                                        .shadow(color: Color.black.opacity(0.1), radius: 8, x: 0, y: 4)
-                                        .transition(.opacity.combined(with: .scale))
                                 }
+                            )
+                            .opacity(showContent ? 1 : 0)
+                            .offset(y: showContent ? 0 : 30)
+                            .animation(.easeOut(duration: 0.5).delay(0.5 + Double(concerns.firstIndex(where: { $0.0 == concern.0 }) ?? 0) * 0.1), value: showContent)
+
+                            // Show text field when "Something else" is selected
+                            if concern.0 == "Something else" && selectedConcerns.contains("Something else") {
+                                TextField("Please specify...", text: $otherText)
+                                    .font(.system(size: 16))
+                                    .foregroundColor(PeezyTheme.Colors.deepInk)
+                                    .padding(16)
+                                    .background(Color.white)
+                                    .cornerRadius(12)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 12)
+                                            .stroke(Color.gray.opacity(0.25), lineWidth: 1)
+                                    )
+                                    .shadow(color: .black.opacity(0.04), radius: 4, y: 2)
+                                    .transition(.opacity.combined(with: .scale))
                             }
                         }
                     }
-                    .padding(.horizontal, 20)
-                    
-                    // Gap 3: Options → Bottom
-                    Spacer(minLength: 0)
                 }
+                .padding(.horizontal, 20)
+
+                // Gap 3: Options → Bottom
+                Spacer(minLength: 0)
             }
-            
-            // Continue button
-            PeezyAssessmentButton("Continue") {
+
+            // Continue / Skip button
+            PeezyAssessmentButton(selectedConcerns.isEmpty ? "None — Skip" : "Continue") {
                 var concernsToSave = Array(selectedConcerns)
                 
                 if selectedConcerns.contains("Something else") && !otherText.isEmpty {
@@ -112,7 +88,6 @@ struct MoveConcerns: View {
             .offset(y: showContent ? 0 : 30)
             .animation(.spring(response: 0.6, dampingFraction: 0.8).delay(0.4), value: showContent)
         }
-        .background(InteractiveBackground())
         .onAppear {
             selectedConcerns = Set(assessmentData.moveConcerns.map { concern in
                 if concern.hasPrefix("Something else: ") {

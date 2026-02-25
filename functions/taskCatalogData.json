@@ -72,24 +72,6 @@
     "whyNeeded": "Booking early secures better availability, competitive pricing, and reliable crews."
   },
   {
-    "taskId": "BOOK_PACKERS",
-    "title": "Schedule Professional Packers",
-    "actionCategory": "book-schedule",
-    "category": "moving",
-    "actionType": "workflow",
-    "workflowId": "book_packers",
-    "conditions": {
-      "hirePackers": [
-        "Yes"
-      ]
-    },
-    "desc": "Hire a packing team to pack your belongings safely and efficiently before move day.",
-    "estHours": 2.5,
-    "tips": "Book packers 6\u20138 weeks ahead, especially during peak season. Clarify whether they provide materials or if you need to purchase them separately.",
-    "urgencyPercentage": 91,
-    "whyNeeded": "Professional packing saves significant time, reduces stress, and helps protect valuable or fragile items."
-  },
-  {
     "taskId": "BUY_CLEANING_SUPPLIES",
     "title": "Buy Move-Out Cleaning Supplies",
     "actionCategory": "purchase-get",
@@ -112,11 +94,7 @@
     "actionCategory": "purchase-get",
     "category": "packing",
     "actionType": "off-app",
-    "conditions": {
-      "hirePackers": [
-        "No"
-      ]
-    },
+    "conditions": {},
     "desc": "Purchase boxes, tape, bubble wrap, and other materials needed to pack your belongings safely.",
     "estHours": 1.5,
     "tips": "Start early\u2014people almost always underestimate how much they need. A typical one-bedroom move requires around 30 small boxes, 40 medium boxes, and 20 large boxes.",
@@ -158,20 +136,21 @@
     "whyNeeded": "Without a reserved elevator, movers may be blocked or delayed, which increases labor time and cost."
   },
   {
-    "taskId": "RESERVE_MOVING_TRUCK",
-    "title": "Reserve DIY Moving Truck",
+    "taskId": "RENT_TRUCK",
+    "title": "Rent a Moving Truck",
     "actionCategory": "book-schedule",
     "category": "moving",
-    "actionType": "off-app",
+    "actionType": "workflow",
+    "workflowId": "rent_truck",
     "conditions": {
-      "hireMovers": [
-        "No"
+      "wantsTruckRental": [
+        "yes"
       ]
     },
-    "desc": "Book a rental truck if you're handling the move yourself.",
+    "desc": "Get quotes and reserve a moving truck for your move.",
     "estHours": 2,
     "tips": "Compare pricing between U-Haul, Penske, and Budget. Reserve 4 to 6 weeks early, especially during peak season.",
-    "urgencyPercentage": 93,
+    "urgencyPercentage": 91,
     "whyNeeded": "Truck availability becomes limited close to your move. Early booking ensures better pricing and the right vehicle size."
   },
   {
@@ -192,17 +171,38 @@
     "whyNeeded": "If anything is lost or damaged during the move, a clear inventory makes insurance claims much easier."
   },
   {
-    "taskId": "DECLUTTER_DONATE_BELONGINGS",
-    "title": "Declutter and Donate Belongings",
+    "taskId": "SELL_ITEMS",
+    "title": "Sell unwanted items",
     "actionCategory": "prepare-plan",
     "category": "packing",
-    "actionType": "off-app",
-    "conditions": {},
-    "desc": "Sort through your home and remove items you no longer need by selling, donating, or discarding them before packing.",
-    "estHours": 8,
-    "tips": "Start 4\u20136 weeks before move-out. Tackle one room at a time. Schedule donation pickups, list valuable items online early.",
-    "urgencyPercentage": 54,
-    "whyNeeded": "Most households can reduce 20\u201330 percent of belongings before a move, saving both time and money."
+    "actionType": "workflow",
+    "workflowId": "sell_items",
+    "conditions": {
+      "hasDeclutter": ["Yes"],
+      "wantToSell": ["Yes"]
+    },
+    "desc": "List and sell items you don't want to bring to your new place.",
+    "estHours": 6,
+    "tips": "Start listing high-value items early on Facebook Marketplace, OfferUp, or Craigslist. Price to sell fast — you have a deadline.",
+    "urgencyPercentage": 75,
+    "whyNeeded": "Selling before the move puts cash in your pocket and reduces what the movers need to haul."
+  },
+  {
+    "taskId": "REMOVE_ITEMS",
+    "title": "Remove unwanted items",
+    "actionCategory": "prepare-plan",
+    "category": "packing",
+    "actionType": "workflow",
+    "workflowId": "remove_items",
+    "conditions": {
+      "hasDeclutter": ["Yes"],
+      "wantToSell": ["No"]
+    },
+    "desc": "Arrange donation pickup or junk removal for items you're leaving behind.",
+    "estHours": 4,
+    "tips": "Schedule a donation pickup with a local charity or book a junk removal service. Many charities offer free pickup for furniture and large items.",
+    "urgencyPercentage": 70,
+    "whyNeeded": "Getting rid of unwanted items before packing saves time, money, and truck space on moving day."
   },
   {
     "taskId": "DEFROST_FREEZER",
@@ -333,6 +333,9 @@
     "conditions": {
       "isInterstate": [
         "Yes"
+      ],
+      "hasVehicles": [
+        "Yes"
       ]
     },
     "desc": "Update your vehicle registration with your new state or country after you move.",
@@ -376,7 +379,7 @@
     "whyNeeded": "Returning all access devices is required for final move-out and prevents unnecessary charges."
   },
   {
-    "taskId": "CANCEL_UTILITIES_1",
+    "taskId": "CANCEL_UTILITIES",
     "title": "Cancel Utility Accounts",
     "actionCategory": "cancel-stop",
     "category": "utilities",
@@ -386,28 +389,11 @@
         "Long Distance"
       ]
     },
-    "desc": "Notify your current utility providers that you are moving and need to stop service at your current address.",
+    "desc": "Schedule shutoffs for electricity, gas, water, and trash at your current address.",
     "estHours": 1.25,
-    "tips": "Identify all utilities tied to your home: electricity, gas, water, internet, trash, and sewer. Each may require separate cancellation.",
+    "tips": "Identify all utilities tied to your home: electricity, gas, water, internet, trash, and sewer. Each may require separate cancellation. Plan shutoff for the day after you move out to keep lights and water available during cleaning.",
     "urgencyPercentage": 75,
     "whyNeeded": "Failing to cancel utilities can result in ongoing charges or new tenants using services under your name."
-  },
-  {
-    "taskId": "CANCEL_UTILITIES_2",
-    "title": "Schedule Utility Shutoffs",
-    "actionCategory": "cancel-stop",
-    "category": "utilities",
-    "actionType": "off-app",
-    "conditions": {
-      "moveDistance": [
-        "Long Distance"
-      ]
-    },
-    "desc": "Schedule the disconnection of utility services at your current home to align with your move-out date.",
-    "estHours": 2,
-    "tips": "Plan shutoff for the day after you move out to keep lights and water available during cleaning.",
-    "urgencyPercentage": 20,
-    "whyNeeded": "Utility companies often need advance notice for shutoff scheduling."
   },
   {
     "taskId": "SETUP_UTILITIES",
@@ -658,46 +644,6 @@
     "whyNeeded": "Banks need your correct address for security, compliance, and mailing important documents."
   },
   {
-    "taskId": "SETUP_CREDIT_UNION",
-    "title": "Set Up New Credit Union Account",
-    "actionCategory": "setup-establish",
-    "category": "finance",
-    "actionType": "off-app",
-    "conditions": {
-      "financialInstitutions": [
-        "Bank / Credit Union"
-      ],
-      "moveDistance": [
-        "Long Distance"
-      ]
-    },
-    "desc": "Open a credit union account if moving outside your current credit union's service area.",
-    "estHours": 2,
-    "tips": "Credit unions often require in-person setup or proof of eligibility. Research ones in your new region.",
-    "urgencyPercentage": 85,
-    "whyNeeded": "Many credit unions are region-specific and may not operate in your new state."
-  },
-  {
-    "taskId": "UPDATE_CREDIT_UNION",
-    "title": "Update Credit Union Address",
-    "actionCategory": "update-notify",
-    "category": "finance",
-    "actionType": "off-app",
-    "conditions": {
-      "financialInstitutions": [
-        "Bank / Credit Union"
-      ],
-      "moveDistance": [
-        "Local"
-      ]
-    },
-    "desc": "Update your address with your credit union for accounts, cards, and statements.",
-    "estHours": 1,
-    "tips": "Many credit unions require in-branch updates or identity verification.",
-    "urgencyPercentage": 63,
-    "whyNeeded": "Credit unions often use physical mail for important documents."
-  },
-  {
     "taskId": "UPDATE_CREDIT_CARD",
     "title": "Update Credit Card Address",
     "actionCategory": "update-notify",
@@ -713,6 +659,40 @@
     "tips": "Log into your credit card account and update your billing address. Update all authorized users and set a travel notice if moving long distance.",
     "urgencyPercentage": 62,
     "whyNeeded": "Credit card companies use your address for billing, fraud checks, and shipping replacement cards."
+  },
+  {
+    "taskId": "UPDATE_INVESTMENT",
+    "title": "Update Investment Account Address",
+    "actionCategory": "update-notify",
+    "category": "finance",
+    "actionType": "off-app",
+    "conditions": {
+      "financialInstitutions": [
+        "Investment Account"
+      ]
+    },
+    "desc": "Update your address with your investment or brokerage accounts.",
+    "estHours": 1,
+    "tips": "Log into each brokerage or investment platform and update your mailing and billing address. Check for beneficiary info updates too.",
+    "urgencyPercentage": 61,
+    "whyNeeded": "Investment accounts send tax documents and statements that must reach your correct address."
+  },
+  {
+    "taskId": "UPDATE_STUDENT_LOANS",
+    "title": "Update Student Loan Account Address",
+    "actionCategory": "update-notify",
+    "category": "finance",
+    "actionType": "off-app",
+    "conditions": {
+      "financialInstitutions": [
+        "Student Loans"
+      ]
+    },
+    "desc": "Update your address with your student loan servicer.",
+    "estHours": 0.5,
+    "tips": "Log into your loan servicer's website and update your mailing address. Check for autopay and communication preferences too.",
+    "urgencyPercentage": 60,
+    "whyNeeded": "Student loan servicers send important correspondence about repayment, forgiveness programs, and tax documents."
   },
   {
     "taskId": "CANCEL_CONDO_INSURANCE",
@@ -888,63 +868,16 @@
     "actionCategory": "update-notify",
     "category": "insurance",
     "actionType": "off-app",
-    "conditions": {},
+    "conditions": {
+      "hasVehicles": [
+        "Yes"
+      ]
+    },
     "desc": "Notify your auto insurer of your new address and update your policy details.",
     "estHours": 1.5,
     "tips": "Call your agent or update online. Rates can change by ZIP code, so ask for updated pricing.",
     "urgencyPercentage": 82,
     "whyNeeded": "Auto insurance premiums and coverage depend on where you live."
-  },
-  {
-    "taskId": "UPDATE_HEALTH_INSURANCE",
-    "title": "Update Health Insurance Address",
-    "actionCategory": "update-notify",
-    "category": "insurance",
-    "actionType": "off-app",
-    "conditions": {
-      "healthcareProviders": [
-        "Health Insurance"
-      ]
-    },
-    "desc": "Notify your health insurance provider of your new address so claims and coverage remain accurate.",
-    "estHours": 2.5,
-    "tips": "Update for all family members. Verify which doctors are in-network at your new location.",
-    "urgencyPercentage": 69,
-    "whyNeeded": "Health insurance relies on accurate address information for claims and referrals."
-  },
-  {
-    "taskId": "UPDATE_DENTAL_INSURANCE",
-    "title": "Update Dental Insurance Address",
-    "actionCategory": "update-notify",
-    "category": "insurance",
-    "actionType": "off-app",
-    "conditions": {
-      "healthcareProviders": [
-        "Dental Insurance"
-      ]
-    },
-    "desc": "Update your address with your dental insurance provider.",
-    "estHours": 1,
-    "tips": "Update your address for all covered family members. Check which dentists are in-network near your new home.",
-    "urgencyPercentage": 67,
-    "whyNeeded": "Dental insurance sends bills, EOBs, and ID cards by mail."
-  },
-  {
-    "taskId": "UPDATE_HSA",
-    "title": "Update HSA Account Address",
-    "actionCategory": "update-notify",
-    "category": "insurance",
-    "actionType": "off-app",
-    "conditions": {
-      "healthcareProviders": [
-        "HSA"
-      ]
-    },
-    "desc": "Update your address for your Health Savings Account (HSA).",
-    "estHours": 1,
-    "tips": "Log into your HSA provider portal or call customer service to update your mailing address.",
-    "urgencyPercentage": 60,
-    "whyNeeded": "HSA providers send tax documents and statements that must reach your new home."
   },
   {
     "taskId": "TRANSFER_DOCTOR_RECORDS",
@@ -985,26 +918,6 @@
     "tips": "Contact your current dentist 2 to 3 weeks before the move. Sign any required release forms.",
     "urgencyPercentage": 59,
     "whyNeeded": "Having your dental history ready makes it easier for your new dentist to continue your care."
-  },
-  {
-    "taskId": "TRANSFER_THERAPY_RECORDS",
-    "title": "Transfer Therapy Records",
-    "actionCategory": "transfer-records",
-    "category": "health",
-    "actionType": "off-app",
-    "conditions": {
-      "healthcareProviders": [
-        "Therapist"
-      ],
-      "moveDistance": [
-        "Long Distance"
-      ]
-    },
-    "desc": "Coordinate with your current therapist to share key notes or summaries with a new therapist.",
-    "estHours": 1.5,
-    "tips": "Talk with your therapist 4 to 6 weeks before your move. Ask for a treatment summary and diagnoses.",
-    "urgencyPercentage": 70,
-    "whyNeeded": "Having your therapy history documented makes it easier for a new therapist to pick up where you left off."
   },
   {
     "taskId": "TRANSFER_PHARMACY_RECORDS",
@@ -1088,7 +1001,7 @@
   },
   {
     "taskId": "CANCEL_YOGA",
-    "title": "Cancel Yoga Studio Membership",
+    "title": "Cancel Yoga / Pilates Membership",
     "actionCategory": "cancel-stop",
     "category": "fitness",
     "actionType": "off-app",
@@ -1100,31 +1013,11 @@
         "Long Distance"
       ]
     },
-    "desc": "Notify your yoga studio that you're relocating and need to end your membership.",
+    "desc": "Notify your yoga or pilates studio that you're relocating and need to end your membership.",
     "estHours": 0.75,
     "tips": "Review your studio's contract for cancellation rules. Most require 30-day notice.",
     "urgencyPercentage": 87,
     "whyNeeded": "Recurring monthly memberships will continue charging until formally canceled."
-  },
-  {
-    "taskId": "CANCEL_PILATES",
-    "title": "Cancel Pilates Membership",
-    "actionCategory": "cancel-stop",
-    "category": "fitness",
-    "actionType": "off-app",
-    "conditions": {
-      "fitnessWellness": [
-        "Yoga / Pilates"
-      ],
-      "moveDistance": [
-        "Long Distance"
-      ]
-    },
-    "desc": "Notify your Pilates studio that you're moving and need to end your membership.",
-    "estHours": 0.75,
-    "tips": "Review your contract for 30-day notice requirements.",
-    "urgencyPercentage": 84,
-    "whyNeeded": "Without proper cancellation, monthly fees can continue even after you move."
   },
   {
     "taskId": "CANCEL_SPIN_CYCLING",
@@ -1148,7 +1041,7 @@
   },
   {
     "taskId": "CANCEL_MASSAGE",
-    "title": "Cancel Massage Membership",
+    "title": "Cancel Massage / Spa Membership",
     "actionCategory": "cancel-stop",
     "category": "fitness",
     "actionType": "off-app",
@@ -1160,55 +1053,55 @@
         "Long Distance"
       ]
     },
-    "desc": "End your current massage or wellness membership.",
+    "desc": "End your current massage or spa membership.",
     "estHours": 0.75,
     "tips": "Most memberships require 30-day written notice. Check for early cancellation fees.",
     "urgencyPercentage": 82,
     "whyNeeded": "Canceling early prevents ongoing monthly fees."
   },
   {
-    "taskId": "CANCEL_SPA",
-    "title": "Cancel Spa or Wellness Membership",
+    "taskId": "CANCEL_GYM",
+    "title": "Cancel Gym / CrossFit Membership",
     "actionCategory": "cancel-stop",
     "category": "fitness",
     "actionType": "off-app",
     "conditions": {
       "fitnessWellness": [
-        "Massage / Spa"
+        "Gym / CrossFit"
       ],
       "moveDistance": [
         "Long Distance"
       ]
     },
-    "desc": "End your recurring spa or wellness subscription.",
+    "desc": "Cancel or freeze your gym membership before the move.",
     "estHours": 0.75,
-    "tips": "Check for 30-day notice policies and whether cancellations must be done in person.",
-    "urgencyPercentage": 81,
-    "whyNeeded": "Spa memberships often auto-renew monthly."
+    "tips": "Review your contract for cancellation rules and required notice periods. Some national chains allow location transfers.",
+    "urgencyPercentage": 86,
+    "whyNeeded": "Gym memberships will continue charging monthly until formally canceled."
   },
   {
-    "taskId": "CANCEL_OTHER_FITNESS",
-    "title": "Cancel Additional Fitness Membership",
+    "taskId": "CANCEL_GOLF",
+    "title": "Cancel Golf / Country Club Membership",
     "actionCategory": "cancel-stop",
     "category": "fitness",
     "actionType": "off-app",
     "conditions": {
       "fitnessWellness": [
-        "REMOVED_OTHER"
+        "Country Club / Golf"
       ],
       "moveDistance": [
         "Long Distance"
       ]
     },
-    "desc": "End any fitness memberships not covered by other categories.",
+    "desc": "Cancel or transfer your golf or country club membership.",
     "estHours": 0.75,
-    "tips": "Check the studio's cancellation policy. Many require in-person cancellation or a signed form.",
-    "urgencyPercentage": 83,
-    "whyNeeded": "Specialized fitness studios often do not transfer across cities."
+    "tips": "Review your membership agreement for resignation procedures and any required notice periods.",
+    "urgencyPercentage": 85,
+    "whyNeeded": "Club memberships often have ongoing dues that continue until formally canceled."
   },
   {
     "taskId": "SETUP_GYM",
-    "title": "Get New Gym Membership",
+    "title": "Set Up New Gym / CrossFit Membership",
     "actionCategory": "setup-establish",
     "category": "fitness",
     "actionType": "off-app",
@@ -1220,35 +1113,15 @@
         "Long Distance"
       ]
     },
-    "desc": "Find and join a gym near your new home.",
+    "desc": "Find and join a gym or CrossFit box near your new home.",
     "estHours": 1,
     "tips": "Compare gym options based on equipment variety, class schedules, and contract terms. Ask about trial passes.",
     "urgencyPercentage": 74,
     "whyNeeded": "Your old gym may not have locations in your new area."
   },
   {
-    "taskId": "SETUP_CROSSFIT",
-    "title": "Find and Join New CrossFit Gym",
-    "actionCategory": "setup-establish",
-    "category": "fitness",
-    "actionType": "off-app",
-    "conditions": {
-      "fitnessWellness": [
-        "Gym / CrossFit"
-      ],
-      "moveDistance": [
-        "Long Distance"
-      ]
-    },
-    "desc": "Find a CrossFit gym near your new home.",
-    "estHours": 1,
-    "tips": "Search for boxes with good reviews. Many offer free trial classes.",
-    "urgencyPercentage": 72,
-    "whyNeeded": "Most CrossFit memberships cannot be transferred across regions."
-  },
-  {
     "taskId": "SETUP_YOGA",
-    "title": "Set Up New Yoga Studio",
+    "title": "Set Up New Yoga / Pilates Studio",
     "actionCategory": "setup-establish",
     "category": "fitness",
     "actionType": "off-app",
@@ -1260,31 +1133,11 @@
         "Long Distance"
       ]
     },
-    "desc": "Find and join a yoga studio near your new home.",
+    "desc": "Find and join a yoga or pilates studio near your new home.",
     "estHours": 1.5,
     "tips": "Search for studios that match your preferred style and level. Use trial classes.",
     "urgencyPercentage": 45,
     "whyNeeded": "Your old studio will likely be too far to use after the move."
-  },
-  {
-    "taskId": "SETUP_PILATES",
-    "title": "Set Up New Pilates Studio",
-    "actionCategory": "setup-establish",
-    "category": "fitness",
-    "actionType": "off-app",
-    "conditions": {
-      "fitnessWellness": [
-        "Yoga / Pilates"
-      ],
-      "moveDistance": [
-        "Long Distance"
-      ]
-    },
-    "desc": "Find and enroll at a Pilates studio near your new home.",
-    "estHours": 1.5,
-    "tips": "Search for studios that match your preferred style. Use intro offers to test a few places.",
-    "urgencyPercentage": 44,
-    "whyNeeded": "Finding a new studio early makes it easier to resume your routine."
   },
   {
     "taskId": "SETUP_SPIN_CYCLING",
@@ -1308,7 +1161,7 @@
   },
   {
     "taskId": "SETUP_GOLF",
-    "title": "Set Up New Golf Membership",
+    "title": "Set Up New Golf / Country Club Membership",
     "actionCategory": "setup-establish",
     "category": "fitness",
     "actionType": "off-app",
@@ -1320,15 +1173,15 @@
         "Long Distance"
       ]
     },
-    "desc": "Join a new golf course or club near your new home.",
+    "desc": "Join a new golf course or country club near your new home.",
     "estHours": 1,
     "tips": "Research membership pricing, waitlists, guest policies, and tee-time availability.",
     "urgencyPercentage": 73,
-    "whyNeeded": "Golf memberships are tied to specific locations and rarely transfer."
+    "whyNeeded": "Golf and country club memberships are tied to specific locations and rarely transfer."
   },
   {
     "taskId": "SETUP_MASSAGE",
-    "title": "Set Up New Massage Membership",
+    "title": "Set Up New Massage / Spa Membership",
     "actionCategory": "setup-establish",
     "category": "fitness",
     "actionType": "off-app",
@@ -1340,75 +1193,15 @@
         "Long Distance"
       ]
     },
-    "desc": "Find a massage therapist or membership program near your new home.",
+    "desc": "Find a massage therapist or spa membership near your new home.",
     "estHours": 1,
     "tips": "Check for locations of national chains or local studios. Ask about introductory rates.",
     "urgencyPercentage": 72,
-    "whyNeeded": "Massage memberships rarely transfer across regions."
-  },
-  {
-    "taskId": "SETUP_SPA",
-    "title": "Set Up New Spa Membership",
-    "actionCategory": "setup-establish",
-    "category": "fitness",
-    "actionType": "off-app",
-    "conditions": {
-      "fitnessWellness": [
-        "Massage / Spa"
-      ],
-      "moveDistance": [
-        "Long Distance"
-      ]
-    },
-    "desc": "Find and join a spa or wellness center near your new home.",
-    "estHours": 2,
-    "tips": "Compare membership options, included services, and hours. Consider starting with a day pass.",
-    "urgencyPercentage": 41,
-    "whyNeeded": "Spa memberships are usually tied to a specific location."
-  },
-  {
-    "taskId": "SETUP_OTHER_FITNESS",
-    "title": "Set Up Other Fitness Activities",
-    "actionCategory": "setup-establish",
-    "category": "fitness",
-    "actionType": "off-app",
-    "conditions": {
-      "fitnessWellness": [
-        "REMOVED_OTHER"
-      ],
-      "moveDistance": [
-        "Long Distance"
-      ]
-    },
-    "desc": "Find and join new specialty fitness programs near your new home.",
-    "estHours": 2,
-    "tips": "List the activities you currently do, then search near your new address for similar options.",
-    "urgencyPercentage": 39,
-    "whyNeeded": "Specialty fitness memberships rarely transfer."
-  },
-  {
-    "taskId": "SETUP_COUNTRY_CLUB",
-    "title": "Set Up New Country Club Membership",
-    "actionCategory": "setup-establish",
-    "category": "fitness",
-    "actionType": "off-app",
-    "conditions": {
-      "fitnessWellness": [
-        "Country Club / Golf"
-      ],
-      "moveDistance": [
-        "Long Distance"
-      ]
-    },
-    "desc": "Establish a new country club membership near your new home.",
-    "estHours": 1,
-    "tips": "Research clubs in your new area, compare membership fees, access levels, and waitlists.",
-    "urgencyPercentage": 74,
-    "whyNeeded": "Memberships rarely transfer between regions."
+    "whyNeeded": "Massage and spa memberships rarely transfer across regions."
   },
   {
     "taskId": "UPDATE_GYM",
-    "title": "Update Gym Membership Address",
+    "title": "Update Gym / CrossFit Membership Address",
     "actionCategory": "update-notify",
     "category": "fitness",
     "actionType": "off-app",
@@ -1427,28 +1220,68 @@
     "whyNeeded": "Gyms use your address for billing and membership eligibility."
   },
   {
-    "taskId": "UPDATE_CROSSFIT",
-    "title": "Update CrossFit Membership",
+    "taskId": "UPDATE_YOGA",
+    "title": "Update Yoga / Pilates Membership Address",
     "actionCategory": "update-notify",
     "category": "fitness",
     "actionType": "off-app",
     "conditions": {
       "fitnessWellness": [
-        "Gym / CrossFit"
+        "Yoga / Pilates"
       ],
       "moveDistance": [
         "Local"
       ]
     },
-    "desc": "Update your address and membership info with your local CrossFit gym.",
-    "estHours": 0.75,
-    "tips": "Contact the gym to update your address, payment information, and emergency contacts.",
-    "urgencyPercentage": 58,
-    "whyNeeded": "Gyms often send billing notices tied to your address."
+    "desc": "Update your address with your yoga or pilates studio.",
+    "estHours": 0.5,
+    "tips": "Contact your studio to update billing and contact information.",
+    "urgencyPercentage": 45,
+    "whyNeeded": "Studios use your address for billing and account management."
+  },
+  {
+    "taskId": "UPDATE_SPIN",
+    "title": "Update Spin / Cycling Membership Address",
+    "actionCategory": "update-notify",
+    "category": "fitness",
+    "actionType": "off-app",
+    "conditions": {
+      "fitnessWellness": [
+        "Spin / Cycling"
+      ],
+      "moveDistance": [
+        "Local"
+      ]
+    },
+    "desc": "Update your address with your spin or cycling studio.",
+    "estHours": 0.5,
+    "tips": "Contact your studio to update billing and contact information.",
+    "urgencyPercentage": 44,
+    "whyNeeded": "Studios use your address for billing and account management."
+  },
+  {
+    "taskId": "UPDATE_MASSAGE",
+    "title": "Update Massage / Spa Membership Address",
+    "actionCategory": "update-notify",
+    "category": "fitness",
+    "actionType": "off-app",
+    "conditions": {
+      "fitnessWellness": [
+        "Massage / Spa"
+      ],
+      "moveDistance": [
+        "Local"
+      ]
+    },
+    "desc": "Update your address with your massage or spa provider.",
+    "estHours": 0.5,
+    "tips": "Contact your provider to update billing and contact information.",
+    "urgencyPercentage": 43,
+    "whyNeeded": "Providers use your address for billing and account management."
   },
   {
     "taskId": "UPDATE_GOLF",
-    "title": "Update Golf Membership",
+    "title": "Update Golf / Country Club Membership Address",
     "actionCategory": "update-notify",
     "category": "fitness",
     "actionType": "off-app",
@@ -1460,30 +1293,10 @@
         "Local"
       ]
     },
-    "desc": "Update your mailing and billing address with your golf club.",
+    "desc": "Update your mailing and billing address with your golf or country club.",
     "estHours": 0.75,
     "tips": "Contact the club's membership office. Update your address and payment info.",
     "urgencyPercentage": 52,
-    "whyNeeded": "Golf clubs rely on accurate addresses for billing and event communication."
-  },
-  {
-    "taskId": "UPDATE_COUNTRY_CLUB",
-    "title": "Update Country Club Membership Address",
-    "actionCategory": "update-notify",
-    "category": "fitness",
-    "actionType": "off-app",
-    "conditions": {
-      "fitnessWellness": [
-        "Country Club / Golf"
-      ],
-      "moveDistance": [
-        "Local"
-      ]
-    },
-    "desc": "Update your mailing and billing address with your current country club.",
-    "estHours": 0.75,
-    "tips": "Contact the membership or billing office and provide your new address.",
-    "urgencyPercentage": 74,
-    "whyNeeded": "Keeping your club records current prevents missed bills or access issues."
+    "whyNeeded": "Golf and country clubs rely on accurate addresses for billing and event communication."
   }
 ]

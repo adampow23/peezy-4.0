@@ -219,13 +219,13 @@ struct AssessmentProgressHeader: View {
             HStack {
                 Button(action: onBack) {
                     Image(systemName: "arrow.left")
-                        .foregroundColor(.white)
+                        .foregroundColor(PeezyTheme.Colors.deepInk)
                         .font(.system(size: 20))
                 }
                 Spacer()
                 Text("Step \(currentStep) of \(totalSteps)")
                     .font(.system(size: 18))
-                    .foregroundColor(.white.opacity(0.8))
+                    .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.8))
                 Spacer()
             }
             .padding(.horizontal, 20)

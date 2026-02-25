@@ -19,7 +19,7 @@ struct HowHeard: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            AssessmentContentArea(questionText: "How'd you find us?", showContent: showContent) {
+            AssessmentContentArea {
                 LazyVGrid(columns: [GridItem(.flexible(), spacing: 16), GridItem(.flexible(), spacing: 16)], spacing: 16) {
                     ForEach(Array(options.enumerated()), id: \.element) { index, option in
                         SelectionTile(title: option, icon: iconMap[option], isSelected: selected == option, onTap: {
@@ -38,7 +38,6 @@ struct HowHeard: View {
                 .padding(.horizontal, 20)
             }
         }
-        .background(InteractiveBackground())
         .onAppear {
             selected = assessmentData.howHeard
             withAnimation { showContent = true }

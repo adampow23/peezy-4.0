@@ -32,10 +32,7 @@ struct CurrentBedrooms: View {
     
     var body: some View {
         VStack(spacing: 0) {
-            AssessmentContentArea(
-                questionText: "How many bedrooms?",
-                showContent: showContent
-            ) {
+            AssessmentContentArea {
                 LazyVGrid(columns: [
                     GridItem(.flexible(), spacing: 16),
                     GridItem(.flexible(), spacing: 16)
@@ -63,7 +60,6 @@ struct CurrentBedrooms: View {
                 .padding(.horizontal, 20)
             }
         }
-        .background(InteractiveBackground())
         .onAppear {
             selected = assessmentData.currentBedrooms
             withAnimation {

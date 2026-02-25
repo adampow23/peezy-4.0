@@ -62,7 +62,10 @@ enum AssessmentInputStep: String, Hashable {
 
     // Section 5: Services
     case hireMovers
-    case hirePackers
+    case packingPreference
+    case truckRental
+    case hasDeclutter
+    case wantToSell
     case hireCleaners
     
     // Section 6: Accounts
@@ -75,6 +78,7 @@ enum AssessmentInputStep: String, Hashable {
     
     // Wrap-up
     case howHeard
+    case promoCode
 }
 
 // MARK: - Assessment Node
@@ -172,11 +176,16 @@ class AssessmentCoordinator: ObservableObject {
         if let currentInput = currentNode?.inputStep, isBranchingStep(currentInput) {
             let nodeBeforeRebuild = currentNode
             buildSequence()
-            
+
             // Find this same node in the rebuilt sequence
             if let nodeBeforeRebuild,
                let repositioned = sequence.firstIndex(of: nodeBeforeRebuild) {
                 currentIndex = repositioned
+            }
+
+            // Bounds check: if current node was removed from the new sequence
+            if currentIndex >= sequence.count {
+                currentIndex = max(sequence.count - 1, 0)
             }
         }
         
@@ -273,7 +282,16 @@ class AssessmentCoordinator: ObservableObject {
 
         // Section 5: Services
         addStep(.hireMovers)
-        addStep(.hirePackers)
+        if dataManager.hireMovers.lowercased() == "get me quotes" {
+            addStep(.packingPreference)
+        } else if !dataManager.hireMovers.isEmpty {
+            // Only show truckRental if user chose to handle move themselves
+            addStep(.truckRental)
+        }
+        addStep(.hasDeclutter)
+        if dataManager.hasDeclutter.lowercased() == "yes" {
+            addStep(.wantToSell)
+        }
         addStep(.hireCleaners)
         
         // Section 6: Accounts
@@ -292,7 +310,8 @@ class AssessmentCoordinator: ObservableObject {
         
         // Wrap-up
         addStep(.howHeard)
-        
+        addStep(.promoCode)
+
         sequence = nodes
 
         // Update watermark for progress bar stability
@@ -306,7 +325,7 @@ class AssessmentCoordinator: ObservableObject {
     private func isBranchingStep(_ step: AssessmentInputStep) -> Bool {
         switch step {
         case .currentDwellingType, .newDwellingType,
-             .hasStorage,
+             .hasStorage, .hireMovers, .hasDeclutter,
              .financialInstitutions, .healthcareProviders, .fitnessWellness:
             return true
         default:
@@ -325,43 +344,43 @@ class AssessmentCoordinator: ObservableObject {
             
         case .userName:
             return InputContext(
-                header: "Love it. Let's get to know each other. What's your first name?",
+                header: "Let's get to know each other. What's your first name?",
                 subheader: nil
             )
 
         case .moveConcerns:
             return InputContext(
                 header: "Nice to meet you, \(dataManager.userName). I'm Peezy! I'll be handling the entire move so you don't have to, but I want to know where your head is at. What's taking up the most mental energy right now?",
-                subheader: "Pick your biggest headaches below."
+                subheader: nil
             )
             
         case .moveDate:
-            let firstLine: String
+            let responseLine: String
             if dataManager.moveConcerns.isEmpty {
-                firstLine = "No major stress? I like your style, \(dataManager.userName). Let's keep it that way."
+                responseLine = "No major stress? I like your style, \(dataManager.userName). Let's keep it that way."
             } else {
-                firstLine = "Say no more. That is exactly the stuff I'm built to take off your plate. Take a deep breath—I've got it from here."
+                responseLine = "Say no more. That is exactly the stuff I'm built to take off your plate. Take a deep breath—I've got it from here."
             }
             return InputContext(
-                header: firstLine,
-                subheader: "Next up: when are we moving? If it's not 100% official yet, just drop your best guess below!"
+                header: "\(responseLine)\n\nWhen are we moving? If it's not 100% official yet, just drop your best guess below!",
+                subheader: nil
             )
 
         case .moveDateType:
             let days = Calendar.current.dateComponents([.day], from: Date(), to: dataManager.moveDate).day ?? 0
-            let firstLine: String
+            let responseLine: String
             if days < 7 {
-                firstLine = "Less than a week? No sweat. This is exactly why I'm here. Let's put this into high gear."
+                responseLine = "Less than a week? No sweat. This is exactly why I'm here. Let's put this into high gear."
             } else if days <= 14 {
-                firstLine = "Two weeks out! That's the perfect amount of time for me to get everything locked in without a scramble."
+                responseLine = "Two weeks out! That's the perfect amount of time for me to get everything locked in without a scramble."
             } else if days <= 30 {
-                firstLine = "A month away! I love it. We're going to have this whole thing handled with plenty of time to spare."
+                responseLine = "A month away! I love it. We're going to have this whole thing handled with plenty of time to spare."
             } else {
-                firstLine = "Awesome, we've got loads of time. Getting this sorted early means zero stress as the big day gets closer."
+                responseLine = "Awesome, we've got loads of time. Getting this sorted early means zero stress as the big day gets closer."
             }
             return InputContext(
-                header: firstLine,
-                subheader: "Now, how set in stone is that date?"
+                header: "\(responseLine)\n\nHow set in stone is that date?",
+                subheader: nil
             )
             
         // --- SECTION 2: CURRENT HOME ---
@@ -386,8 +405,8 @@ class AssessmentCoordinator: ObservableObject {
             
         case .currentFloorAccess:
             return InputContext(
-                header: "What floor are you on?",
-                subheader: "This helps me plan the move-out logistics."
+                header: "What's access like?",
+                subheader: nil
             )
             
         case .currentBedrooms:
@@ -430,8 +449,8 @@ class AssessmentCoordinator: ObservableObject {
             
         case .newFloorAccess:
             return InputContext(
-                header: "What floor is the new place?",
-                subheader: "Helps me plan the move-in side."
+                header: "What's access like?",
+                subheader: nil
             )
             
         case .newBedrooms:
@@ -474,8 +493,8 @@ class AssessmentCoordinator: ObservableObject {
 
         case .hasVehicles:
             return InputContext(
-                header: "Any vehicles that need registration or title updates?",
-                subheader: "State lines mean paperwork—I'll handle it."
+                header: "Any vehicles making the move?",
+                subheader: nil
             )
 
         case .hasStorage:
@@ -501,19 +520,37 @@ class AssessmentCoordinator: ObservableObject {
         case .hireMovers:
             return InputContext(
                 header: "Are you interested in getting quotes for professional movers, or are you planning to handle the move yourself?",
-                subheader: "Either way works—I'll build the plan around your choice."
+                subheader: nil
             )
             
-        case .hirePackers:
+        case .packingPreference:
             return InputContext(
-                header: "Would you like quotes for professional packing help, or are you planning to pack everything yourself?",
-                subheader: "Pro tip: packers can do a full house in a day. Just saying."
+                header: "Most moving companies also offer packing services. Interested in getting packing quotes too?",
+                subheader: nil
             )
-            
+
+        case .truckRental:
+            return InputContext(
+                header: "Are you planning to rent a moving truck, or do you have that covered?",
+                subheader: nil
+            )
+
+        case .hasDeclutter:
+            return InputContext(
+                header: "Moving is the perfect excuse to lighten the load. Any items you're planning to part with before the move?",
+                subheader: "Clothes, furniture, electronics — anything you don't want making the trip."
+            )
+
+        case .wantToSell:
+            return InputContext(
+                header: "Would you want to try selling any of those items?",
+                subheader: "We can help with that. If it doesn't work out, we'll find other options."
+            )
+
         case .hireCleaners:
             return InputContext(
                 header: "Would you like quotes for a professional move-out cleaning, or are you going to handle that yourself?",
-                subheader: "A good deep clean can be the difference between getting your deposit back and leaving money on the table."
+                subheader: nil
             )
             
         // --- SECTION 6: ACCOUNTS ---
@@ -521,7 +558,7 @@ class AssessmentCoordinator: ObservableObject {
         case .financialInstitutions:
             return InputContext(
                 header: "Let's make sure your money follows you. Which of these do you need to update your address with?",
-                subheader: "Tap all that apply."
+                subheader: "Tap once for each — twice if you have two of the same type."
             )
 
         case .financialDetails:
@@ -533,7 +570,7 @@ class AssessmentCoordinator: ObservableObject {
         case .healthcareProviders:
             return InputContext(
                 header: "What about healthcare? Who needs your new info?",
-                subheader: "Tap all that apply."
+                subheader: "Tap once for each — twice if you have two of the same type."
             )
 
         case .healthcareDetails:
@@ -545,7 +582,7 @@ class AssessmentCoordinator: ObservableObject {
         case .fitnessWellness:
             return InputContext(
                 header: "Any memberships or subscriptions we should cancel or transfer?",
-                subheader: "Gyms love to keep charging after you leave. Tap all that apply."
+                subheader: "Tap once for each — twice if you have two of the same type."
             )
 
         case .fitnessDetails:
@@ -559,6 +596,12 @@ class AssessmentCoordinator: ObservableObject {
         case .howHeard:
             return InputContext(
                 header: "Last one, \(dataManager.userName)—how'd you find us?",
+                subheader: nil
+            )
+
+        case .promoCode:
+            return InputContext(
+                header: "Got a promo code? Enter it below.",
                 subheader: nil
             )
         }
@@ -575,17 +618,27 @@ class AssessmentCoordinator: ObservableObject {
         // Show completion screen immediately
         isComplete = true
         isSaving = true
-        
+
+        defer { isSaving = false }
+
         do {
-            // Compute distance & interstate from addresses before building the dictionary
-            await dataManager.computeDistanceAndInterstate()
+            // Race geocoding against a 5-second timeout so a slow network can't hang forever
+            let geocodeTask = Task {
+                await dataManager.computeDistanceAndInterstate()
+            }
+            let timeoutTask = Task {
+                try? await Task.sleep(nanoseconds: 5_000_000_000)
+                geocodeTask.cancel()
+            }
+            _ = await geocodeTask.value
+            timeoutTask.cancel()
 
             let assessmentData = dataManager.getAllAssessmentData()
             let moveDate = dataManager.moveDate
-            
+
             // Save assessment to Firestore
             try await dataManager.saveAssessment()
-            
+
             // Generate tasks
             let taskService = TaskGenerationService()
             let tasksGenerated = try await taskService.generateTasksForUser(
@@ -593,16 +646,10 @@ class AssessmentCoordinator: ObservableObject {
                 assessment: assessmentData,
                 moveDate: moveDate
             )
-            
-            #if DEBUG
-            print("✅ Assessment complete. Generated \(tasksGenerated) tasks.")
-            #endif
+
             isSaving = false
-            
+
         } catch {
-            #if DEBUG
-            print("❌ Error completing assessment: \(error.localizedDescription)")
-            #endif
             isSaving = false
             saveError = error
         }

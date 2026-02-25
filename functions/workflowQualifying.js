@@ -5,72 +5,58 @@
 const WORKFLOW_QUALIFYING = {
 
   // ============================================
-  // BOOK MOVERS (Local)
+  // BOOK MOVERS
   // ============================================
   "book_movers": {
+    workflowId: "book_movers",
     intro: {
-      title: "Let's find you the right movers",
-      subtitle: "A few quick questions to match you with companies that fit your move. Takes about 30 seconds."
+      title: "Let's find the right movers",
+      subtitle: "A few quick questions so we can match you with companies that fit your move."
     },
+    // SET FROM ASSESSMENT (not asked, passed to matching):
+    // - Service area (current + new addresses)
+    // - Interstate flag
+    // - Packing preference (full/kitchen/both/none)
+    // - Home size (bedrooms + sqft)
     questions: [
       {
-        id: "priority",
-        question: "What matters most to you?",
+        id: "locally_owned",
+        question: "Do you prefer working with a locally owned company?",
         type: "single_select",
         options: [
-          { id: "price", label: "Lowest Price", icon: "dollarsign.circle.fill" },
-          { id: "reviews", label: "Best Reviews", icon: "star.fill" },
-          { id: "speed", label: "Fastest Available", icon: "clock.fill" },
-          { id: "full_service", label: "Full Service", icon: "hands.sparkles.fill" }
+          { id: "yes", label: "Yes, prefer local", icon: "building.2" },
+          { id: "no_preference", label: "No preference", icon: "hand.thumbsup" }
         ]
       },
       {
         id: "special_items",
-        question: "Any of these items?",
+        question: "Do you have any of these items that need special handling?",
+        subtitle: "These require specific equipment and expertise. Select all that apply.",
         type: "multi_select",
-        subtitle: "These need special handling",
         options: [
-          { id: "piano", label: "Piano", icon: "pianokeys" },
-          { id: "safe", label: "Heavy Safe", icon: "lock.square.fill" },
-          { id: "art", label: "Art/Antiques", icon: "photo.artframe" },
-          { id: "pool_table", label: "Pool Table", icon: "circle.fill" },
-          { id: "none", label: "None of These", icon: "checkmark.circle.fill", exclusive: true }
+          { id: "piano", label: "Piano or organ", icon: "pianokeys" },
+          { id: "safe", label: "Gun safe or large safe", icon: "lock.shield" },
+          { id: "hot_tub", label: "Hot tub or spa", icon: "drop.fill" },
+          { id: "pool_table", label: "Pool table", icon: "circle.grid.3x3" },
+          { id: "art", label: "Large art or antiques", icon: "photo.artframe" },
+          { id: "none", label: "None of these", icon: "xmark.circle" }
         ]
       },
       {
-        id: "packing_help",
-        question: "Need help packing?",
+        id: "insurance_preference",
+        question: "Industry standard coverage is just $0.60 per pound — a 50lb TV worth $800 would only be covered for $30. Want to see movers who offer full-value protection?",
         type: "single_select",
         options: [
-          { id: "full", label: "Pack Everything", subtitle: "They pack, you relax", icon: "shippingbox.fill" },
-          { id: "fragile", label: "Fragile Items Only", subtitle: "Dishes, mirrors, TVs", icon: "wineglass" },
-          { id: "none", label: "I'll Handle It", subtitle: "Just need transport", icon: "hand.raised.fill" }
-        ]
-      },
-      {
-        id: "access_issues",
-        question: "Any tricky access?",
-        type: "multi_select",
-        subtitle: "At either location",
-        options: [
-          { id: "stairs", label: "Stairs (No Elevator)", icon: "figure.stairs" },
-          { id: "long_walk", label: "Long Carry", subtitle: "Parking far from door", icon: "figure.walk" },
-          { id: "narrow", label: "Narrow Doorways", icon: "door.left.hand.closed" },
-          { id: "none", label: "Easy Access", icon: "checkmark.circle.fill", exclusive: true }
+          { id: "full_value", label: "Yes, I want full-value coverage", icon: "shield.checkered" },
+          { id: "standard", label: "No, standard is fine", icon: "shield" }
         ]
       }
     ],
+    questionCount: 3,
     recap: {
-      title: "Got it. Here's what I heard:",
-      closing: "I'm reaching out to your top 3 matches now. You'll have quotes within 24 hours.",
-      button: "Sounds Good"
-    },
-    matching: {
-      // Used by backend to weight vendor matching
-      priorityWeight: 0.4,
-      specialItemsWeight: 0.3,
-      servicesWeight: 0.2,
-      accessWeight: 0.1
+      title: "Got it — here's what I'm looking for",
+      closing: "I'll match you with movers who fit your specific needs and get you quotes.",
+      button: "Find my movers"
     }
   },
 
@@ -353,6 +339,315 @@ const WORKFLOW_QUALIFYING = {
       priorityWeight: 0.35,
       currentProviderWeight: 0.1,
       extrasWeight: 0.2
+    }
+  },
+
+  // ============================================
+  // BOOK CLEANERS
+  // ============================================
+  "book_cleaners": {
+    workflowId: "book_cleaners",
+    intro: {
+      title: "Let's find the right cleaners",
+      subtitle: "Just a couple questions to match you with the right service."
+    },
+    // SET FROM ASSESSMENT:
+    // - Service area (current address)
+    // - Home size (bedrooms + sqft)
+    questions: [
+      {
+        id: "locally_owned",
+        question: "Do you prefer working with a locally owned company?",
+        type: "single_select",
+        options: [
+          { id: "yes", label: "Yes, prefer local", icon: "building.2" },
+          { id: "no_preference", label: "No preference", icon: "hand.thumbsup" }
+        ]
+      },
+      {
+        id: "service_level",
+        question: "What level of cleaning do you need?",
+        subtitle: "Select all that apply — some companies offer package deals.",
+        type: "multi_select",
+        options: [
+          { id: "standard", label: "Standard move-out clean", icon: "sparkles" },
+          { id: "deep", label: "Deep clean (baseboards, inside appliances, windows)", icon: "bubbles.and.sparkles" },
+          { id: "carpet", label: "Carpet cleaning", icon: "square.grid.3x3.topleft.filled" },
+          { id: "move_in", label: "Move-in clean at new place", icon: "house" }
+        ]
+      }
+    ],
+    questionCount: 2,
+    recap: {
+      title: "Perfect — I know what you need",
+      closing: "I'll find cleaners who can handle everything you selected.",
+      button: "Find my cleaners"
+    }
+  },
+
+  // ============================================
+  // REMOVE ITEMS (donation + junk removal routing)
+  // ============================================
+  "remove_items": {
+    workflowId: "remove_items",
+    intro: {
+      title: "Let's figure out the best way to get rid of these items",
+      subtitle: "A few questions to find the right option for you."
+    },
+    // SET FROM ASSESSMENT:
+    // - Service area (current address)
+    questions: [
+      {
+        id: "removal_route",
+        question: "What are you looking to do with these items?",
+        type: "single_select",
+        options: [
+          { id: "donate", label: "Donate them", icon: "heart" },
+          { id: "haul_away", label: "Have them hauled away", icon: "truck.box" },
+          { id: "not_sure", label: "Not sure — help me decide", icon: "questionmark.circle" }
+        ]
+      },
+      {
+        id: "item_categories",
+        question: "What types of items are we talking about?",
+        subtitle: "Select all that apply.",
+        type: "multi_select",
+        options: [
+          { id: "furniture", label: "Furniture", icon: "sofa" },
+          { id: "appliances", label: "Appliances", icon: "refrigerator" },
+          { id: "electronics", label: "Electronics", icon: "desktopcomputer" },
+          { id: "clothing", label: "Clothing", icon: "tshirt" },
+          { id: "mattresses", label: "Mattresses", icon: "bed.double" },
+          { id: "household", label: "Household items", icon: "house" },
+          { id: "yard_waste", label: "Yard waste", icon: "leaf" },
+          { id: "debris", label: "Construction debris", icon: "hammer" },
+          { id: "other", label: "Other / mixed", icon: "shippingbox" }
+        ]
+      },
+      {
+        id: "item_condition",
+        question: "What condition are most of the items in?",
+        type: "single_select",
+        options: [
+          { id: "like_new", label: "Like new", icon: "star.fill" },
+          { id: "gently_used", label: "Gently used", icon: "star.leadinghalf.filled" },
+          { id: "worn", label: "Worn but functional", icon: "star" },
+          { id: "needs_repair", label: "Needs repair", icon: "wrench" }
+        ]
+      },
+      {
+        id: "quantity",
+        question: "How much stuff are we talking about?",
+        type: "single_select",
+        options: [
+          { id: "few_small", label: "A few small items", icon: "bag" },
+          { id: "several_large", label: "Several large items", icon: "shippingbox" },
+          { id: "full_room", label: "A full room's worth", icon: "sofa.fill" },
+          { id: "multiple_rooms", label: "Multiple rooms", icon: "building.2" }
+        ]
+      },
+      {
+        id: "item_location",
+        question: "Where are the items right now?",
+        type: "single_select",
+        options: [
+          { id: "ground_floor", label: "Inside home — ground floor", icon: "house" },
+          { id: "upstairs", label: "Inside home — upstairs, basement, or attic", icon: "stairs" },
+          { id: "garage", label: "Garage", icon: "car.garage" },
+          { id: "curbside", label: "Curbside or driveway", icon: "road.lanes" }
+        ]
+      },
+      {
+        id: "pickup_preference",
+        question: "Can you drop items off, or do you need them picked up?",
+        type: "single_select",
+        options: [
+          { id: "need_pickup", label: "I need pickup", icon: "truck.box" },
+          { id: "can_dropoff", label: "I can drop off", icon: "arrow.down.to.line" },
+          { id: "either", label: "Either works", icon: "arrow.left.arrow.right" }
+        ]
+      }
+    ],
+    questionCount: 6,
+    recap: {
+      title: "Got it — I'll find the best option",
+      closing: "Based on your answers, I'll match you with the right service to get these items taken care of.",
+      button: "Find my options"
+    }
+  },
+
+  // ============================================
+  // SELL ITEMS
+  // ============================================
+  "sell_items": {
+    workflowId: "sell_items",
+    intro: {
+      title: "Let's help you sell these items",
+      subtitle: "A few questions so we can point you in the right direction."
+    },
+    questions: [
+      {
+        id: "item_categories",
+        question: "What are you looking to sell?",
+        subtitle: "Select all that apply.",
+        type: "multi_select",
+        options: [
+          { id: "furniture", label: "Furniture", icon: "sofa" },
+          { id: "electronics", label: "Electronics", icon: "desktopcomputer" },
+          { id: "clothing", label: "Clothing", icon: "tshirt" },
+          { id: "appliances", label: "Appliances", icon: "refrigerator" },
+          { id: "collectibles", label: "Collectibles or valuables", icon: "tag" },
+          { id: "other", label: "Other", icon: "shippingbox" }
+        ]
+      },
+      {
+        id: "estimated_value",
+        question: "Roughly, what do you think everything is worth?",
+        type: "single_select",
+        options: [
+          { id: "under_500", label: "Under $500", icon: "dollarsign.circle" },
+          { id: "500_2000", label: "$500 – $2,000", icon: "dollarsign.circle.fill" },
+          { id: "2000_5000", label: "$2,000 – $5,000", icon: "banknote" },
+          { id: "over_5000", label: "$5,000+", icon: "banknote.fill" }
+        ]
+      },
+      {
+        id: "platforms",
+        question: "Which platforms are you open to?",
+        subtitle: "Select all you'd be willing to use.",
+        type: "multi_select",
+        options: [
+          { id: "fb_marketplace", label: "Facebook Marketplace", icon: "storefront" },
+          { id: "offerup", label: "OfferUp", icon: "tag" },
+          { id: "craigslist", label: "Craigslist", icon: "list.bullet" },
+          { id: "consignment", label: "Consignment store", icon: "building.columns" },
+          { id: "any", label: "Any of them", icon: "checkmark.circle" }
+        ]
+      }
+    ],
+    questionCount: 3,
+    recap: {
+      title: "Nice — let's get these sold",
+      closing: "I'll put together a game plan based on what you're selling and where.",
+      button: "Get my selling plan"
+    }
+  },
+
+  // ============================================
+  // SETUP INTERNET
+  // ============================================
+  "setup_internet": {
+    workflowId: "setup_internet",
+    intro: {
+      title: "Let's get your internet sorted",
+      subtitle: "A few questions to find the best provider and plan for your new place."
+    },
+    // SET FROM ASSESSMENT:
+    // - Service area (new address)
+    questions: [
+      {
+        id: "usage",
+        question: "How would you describe your internet usage?",
+        type: "single_select",
+        options: [
+          { id: "light", label: "Light — email and browsing", icon: "envelope" },
+          { id: "moderate", label: "Moderate — streaming and video calls", icon: "play.tv" },
+          { id: "heavy", label: "Heavy — gaming, large downloads, multiple streamers", icon: "gamecontroller" },
+          { id: "home_office", label: "Home office — need rock-solid reliability", icon: "desktopcomputer" }
+        ]
+      },
+      {
+        id: "people_devices",
+        question: "How many people and devices will be on the network?",
+        type: "single_select",
+        options: [
+          { id: "1_2", label: "1–2", icon: "person" },
+          { id: "3_5", label: "3–5", icon: "person.2" },
+          { id: "6_plus", label: "6+", icon: "person.3" }
+        ]
+      },
+      {
+        id: "contract_preference",
+        question: "How do you feel about contracts?",
+        type: "single_select",
+        options: [
+          { id: "month_to_month", label: "Month-to-month only", icon: "calendar" },
+          { id: "1_year", label: "1 year is fine", icon: "calendar.badge.clock" },
+          { id: "2_year", label: "2 years is fine", icon: "calendar.badge.checkmark" },
+          { id: "no_preference", label: "No preference", icon: "hand.thumbsup" }
+        ]
+      }
+    ],
+    questionCount: 3,
+    recap: {
+      title: "Got it — let me check what's available",
+      closing: "I'll find the best internet options at your new address based on your needs.",
+      button: "Find my internet"
+    }
+  },
+
+  // ============================================
+  // RENT TRUCK
+  // ============================================
+  "rent_truck": {
+    workflowId: "rent_truck",
+    intro: {
+      title: "Let's find the right truck",
+      subtitle: "A few details to get you the best rental options."
+    },
+    // SET FROM ASSESSMENT:
+    // - Service area (current + new addresses)
+    // - Home size (sqft → truck size estimate)
+    // - Move distance (determines one-way default for >100mi or round-trip for <50mi)
+    // - Has storage (determines if storage question shows)
+    questions: [
+      {
+        id: "storage_same_trip",
+        question: "Are you picking up items from a storage unit on the same trip?",
+        subtitle: "This affects the truck size and route.",
+        type: "single_select",
+        options: [
+          { id: "yes", label: "Yes, same trip", icon: "archivebox" },
+          { id: "no", label: "No", icon: "xmark.circle" }
+        ]
+      },
+      {
+        id: "trip_type",
+        question: "One-way or round-trip?",
+        subtitle: "One-way means you drop the truck off at your destination. Round-trip means you return it to the pickup location.",
+        type: "single_select",
+        options: [
+          { id: "one_way", label: "One-way", icon: "arrow.right" },
+          { id: "round_trip", label: "Round-trip", icon: "arrow.triangle.2.circlepath" },
+          { id: "not_sure", label: "Not sure", icon: "questionmark.circle" }
+        ]
+      },
+      {
+        id: "towing_vehicle",
+        question: "Will you need to tow a vehicle behind the truck?",
+        type: "single_select",
+        options: [
+          { id: "yes", label: "Yes", icon: "car" },
+          { id: "no", label: "No", icon: "xmark.circle" }
+        ]
+      },
+      {
+        id: "days_needed",
+        question: "How many days do you need the truck?",
+        type: "single_select",
+        options: [
+          { id: "moving_day", label: "Just moving day", icon: "sun.max" },
+          { id: "2_3_days", label: "2–3 days", icon: "calendar.badge.plus" },
+          { id: "full_week", label: "Full week", icon: "calendar" },
+          { id: "not_sure", label: "Not sure yet", icon: "questionmark.circle" }
+        ]
+      }
+    ],
+    questionCount: 4,
+    recap: {
+      title: "Perfect — I'll find your truck",
+      closing: "I'll compare options from the major rental companies and get you the best deal.",
+      button: "Find my truck"
     }
   }
 

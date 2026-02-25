@@ -296,9 +296,9 @@ let testCases: [TestCase] = [
         expected: true
     ),
     TestCase(
-        name: "HirePackers: Pack myself - PASS",
-        conditions: ["HirePackers": ["Pack myself"]],
-        assessment: ["HirePackers": "Pack myself"],
+        name: "packingPreference: none - PASS",
+        conditions: ["packingPreference": ["none"]],
+        assessment: ["packingPreference": "none"],
         expected: true
     ),
 

@@ -11,26 +11,30 @@ struct MultiSelectTile: View {
     // Haptic feedback
     private let lightHaptic = UIImpactFeedbackGenerator(style: .light)
 
-    // Charcoal glass color
-    private let charcoalColor = PeezyTheme.Colors.charcoalGlass
-    private let accentBlue = PeezyTheme.Colors.accentBlue
-
     var body: some View {
         Button(action: {
             lightHaptic.impactOccurred()
             onTap()
         }) {
             HStack(spacing: 16) {
-                // Icon on left
+                // Icon on left — cutout style
                 Image(systemName: icon)
                     .font(.system(size: 24))
-                    .foregroundColor(.white)
+                    .foregroundColor(
+                        isSelected
+                            ? PeezyTheme.Colors.lightBase
+                            : PeezyTheme.Colors.deepInk.opacity(0.12)
+                    )
                     .frame(width: 32)
 
                 // Text in center
                 Text(title)
                     .font(.system(size: 16, weight: .medium))
-                    .foregroundColor(.white)
+                    .foregroundColor(
+                        isSelected
+                            ? PeezyTheme.Colors.lightBase
+                            : PeezyTheme.Colors.deepInk
+                    )
                     .multilineTextAlignment(.leading)
                     .lineLimit(3)
                     .minimumScaleFactor(0.8)
@@ -41,35 +45,40 @@ struct MultiSelectTile: View {
                 if isSelected {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: 22, weight: .semibold))
-                        .foregroundColor(accentBlue)
+                        .foregroundColor(PeezyTheme.Colors.lightBase.opacity(0.8))
                 }
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 16)
             .background(
                 ZStack {
-                    // Glass blur effect
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(.ultraThinMaterial)
-
-                    // Charcoal tint (darker when selected)
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(charcoalColor.opacity(isSelected ? 0.8 : 0.6))
+                    if isSelected {
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .fill(PeezyTheme.Colors.deepInk)
+                    } else {
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .fill(.regularMaterial)
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .fill(Color.black.opacity(0.06))
+                    }
                 }
             )
             .overlay(
-                // Edge highlight (brighter when selected)
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .stroke(
-                        isSelected ? accentBlue.opacity(0.6) : Color.white.opacity(0.1),
-                        lineWidth: isSelected ? 2 : 1
+                        isSelected
+                            ? Color.clear
+                            : Color.black.opacity(0.06),
+                        lineWidth: 1
                     )
             )
             .shadow(
-                color: isSelected ? accentBlue.opacity(0.2) : Color.black.opacity(0.3),
-                radius: isPressed ? 3 : 8,
+                color: isSelected
+                    ? PeezyTheme.Colors.deepInk.opacity(0.25)
+                    : Color.black.opacity(0.15),
+                radius: isPressed ? 3 : (isSelected ? 10 : 12),
                 x: 0,
-                y: isPressed ? 1 : 4
+                y: isPressed ? 1 : (isSelected ? 4 : 6)
             )
             .scaleEffect(isPressed ? 0.98 : 1.0)
             .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isPressed)
@@ -100,28 +109,28 @@ struct MultiSelectTile: View {
             isSelected: true,
             onTap: { print("Tapped") }
         )
-        
+
         MultiSelectTile(
             title: "Packing/preparing for move day",
             icon: "shippingbox.fill",
             isSelected: false,
             onTap: { print("Tapped") }
         )
-        
+
         MultiSelectTile(
             title: "Finding reliable professionals (movers, cleaners, etc.)",
             icon: "person.fill.questionmark.rtl",
             isSelected: true,
             onTap: { print("Tapped") }
         )
-        
+
         MultiSelectTile(
             title: "Planning/staying on track",
             icon: "calendar",
             isSelected: false,
             onTap: { print("Tapped") }
         )
-        
+
         MultiSelectTile(
             title: "Other",
             icon: "ellipsis",

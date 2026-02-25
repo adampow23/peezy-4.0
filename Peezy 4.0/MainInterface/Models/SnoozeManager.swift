@@ -49,7 +49,7 @@ struct SnoozeOption: Identifiable, Equatable {
         var options: [SnoozeOption] = []
 
         // Tomorrow (always tomorrow, never today)
-        let tomorrow = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: now))!
+        let tomorrow = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: now)) ?? now.addingTimeInterval(86400)
         options.append(SnoozeOption(
             id: "tomorrow",
             label: "Tomorrow",
@@ -70,7 +70,7 @@ struct SnoozeOption: Identifiable, Equatable {
         }
 
         // Next Week (7 days from now)
-        let nextWeek = calendar.date(byAdding: .day, value: 7, to: calendar.startOfDay(for: now))!
+        let nextWeek = calendar.date(byAdding: .day, value: 7, to: calendar.startOfDay(for: now)) ?? now.addingTimeInterval(604800)
         options.append(SnoozeOption(
             id: "next_week",
             label: "Next Week",
@@ -80,7 +80,7 @@ struct SnoozeOption: Identifiable, Equatable {
         ))
 
         // In 2 Weeks
-        let twoWeeks = calendar.date(byAdding: .day, value: 14, to: calendar.startOfDay(for: now))!
+        let twoWeeks = calendar.date(byAdding: .day, value: 14, to: calendar.startOfDay(for: now)) ?? now.addingTimeInterval(1209600)
         options.append(SnoozeOption(
             id: "two_weeks",
             label: "In 2 Weeks",
@@ -100,7 +100,7 @@ struct SnoozeOption: Identifiable, Equatable {
                 let maxSnoozeDays = min(7, daysUntilDue - 3)
 
                 if maxSnoozeDays > 1 {
-                    let smartDate = calendar.date(byAdding: .day, value: maxSnoozeDays, to: calendar.startOfDay(for: now))!
+                    let smartDate = calendar.date(byAdding: .day, value: maxSnoozeDays, to: calendar.startOfDay(for: now)) ?? now.addingTimeInterval(Double(maxSnoozeDays) * 86400)
                     let daysLeft = daysUntilDue - maxSnoozeDays
 
                     options.append(SnoozeOption(
@@ -213,7 +213,7 @@ class SnoozeManager {
         self.moveDate = moveDate
 
         // Default to tomorrow
-        let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: DateProvider.shared.now))!
+        let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: DateProvider.shared.now)) ?? DateProvider.shared.now.addingTimeInterval(86400)
         self.selectedDate = tomorrow
 
         // Show swipeable card (new style)
@@ -228,7 +228,7 @@ class SnoozeManager {
         self.taskDueDate = taskDueDate
         self.moveDate = moveDate
 
-        let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: DateProvider.shared.now))!
+        let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: DateProvider.shared.now)) ?? DateProvider.shared.now.addingTimeInterval(86400)
         self.selectedDate = tomorrow
 
         snoozeCard = .options(taskId: taskId, taskTitle: taskTitle)
@@ -243,7 +243,7 @@ class SnoozeManager {
 
         switch action {
         case .tomorrow:
-            let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: DateProvider.shared.now))!
+            let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: DateProvider.shared.now)) ?? DateProvider.shared.now.addingTimeInterval(86400)
             await snoozeTask(taskId: taskId, until: tomorrow, confirmAction: .snoozed)
 
         case .never:
