@@ -42,7 +42,7 @@ struct AuthView: View {
 
                 // Header
                 TypewriterText(
-                    phrases: ["F*ck moving.", "Moving made Peezy.", "Your move, on autopilot."],
+                    phrases: ["F*ck moving.", "Moving made peezy.", "Your move, on autopilot."],
                     font: .system(size: 32, weight: .semibold),
                     foregroundColor: PeezyTheme.Colors.deepInk
                 )
@@ -155,12 +155,12 @@ struct AuthView: View {
                         )
                         .fill(.regularMaterial)
 
-                        // Light grey tint matching assessment tiles
+                        // Semi-transparent white tint — matches glass card style
                         UnevenRoundedRectangle(
                             topLeadingRadius: 30,
                             topTrailingRadius: 30
                         )
-                        .fill(Color.black.opacity(0.06))
+                        .fill(Color.white.opacity(0.5))
                     }
                 )
                 .overlay(
@@ -171,6 +171,7 @@ struct AuthView: View {
                     )
                     .stroke(Color.black.opacity(0.05), lineWidth: 1)
                 )
+                .shadow(color: Color.black.opacity(0.12), radius: 20, x: 0, y: -8)
                 .opacity(showContent ? 1 : 0)
                 .offset(y: showContent ? 0 : 50)
                 .animation(PeezyTheme.Animation.springSlow.delay(0.3), value: showContent)

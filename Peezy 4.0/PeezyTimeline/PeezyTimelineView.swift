@@ -166,10 +166,18 @@ struct PeezyTaskStream: View {
 
     // MARK: - Header
 
+    private var headerTitle: String {
+        if let name = userState?.name, !name.isEmpty {
+            let firstName = name.split(separator: " ").first.map(String.init) ?? name
+            return "\(firstName)'s Task List"
+        }
+        return "Task List"
+    }
+
     private var headerView: some View {
         HStack {
-            Text("Task List")
-                .font(.title2.bold())
+            Text(headerTitle)
+                .font(PeezyTheme.Typography.title2)
                 .foregroundColor(PeezyTheme.Colors.deepInk)
 
             Spacer()
@@ -185,7 +193,8 @@ struct PeezyTaskStream: View {
         HStack(spacing: 0) {
             ForEach(TaskTab.allCases, id: \.self) { tab in
                 Button {
-                    withAnimation(.easeInOut(duration: 0.2)) {
+                    PeezyHaptics.light()
+                    withAnimation(PeezyTheme.Animation.easeOut) {
                         selectedTab = tab
                         expandedTaskId = nil
                     }
@@ -193,21 +202,19 @@ struct PeezyTaskStream: View {
                     VStack(spacing: 6) {
                         HStack(spacing: 5) {
                             Text(tab.rawValue)
-                                .font(.system(size: 13, weight: selectedTab == tab ? .bold : .regular))
-                                .foregroundColor(selectedTab == tab ? PeezyTheme.Colors.deepInk : .gray)
+                                .font(selectedTab == tab ? PeezyTheme.Typography.footnoteMedium : PeezyTheme.Typography.footnote)
+                                .foregroundColor(selectedTab == tab ? PeezyTheme.Colors.deepInk : PeezyTheme.Colors.deepInk.opacity(0.4))
 
                             let count = taskCount(for: tab)
                             if count > 0 {
                                 Text("\(count)")
-                                    .font(.system(size: 11, weight: .medium))
-                                    .foregroundColor(selectedTab == tab ? PeezyTheme.Colors.deepInk : .gray)
+                                    .font(PeezyTheme.Typography.captionMedium)
+                                    .foregroundColor(selectedTab == tab ? PeezyTheme.Colors.deepInk : PeezyTheme.Colors.deepInk.opacity(0.4))
                                     .padding(.horizontal, 5)
                                     .padding(.vertical, 2)
                                     .background(
                                         Capsule()
-                                            .fill(selectedTab == tab
-                                                  ? PeezyTheme.Colors.deepInk.opacity(0.1)
-                                                  : Color.gray.opacity(0.1))
+                                            .fill(PeezyTheme.Colors.deepInk.opacity(selectedTab == tab ? 0.1 : 0.05))
                                     )
                             }
                         }
@@ -226,7 +233,7 @@ struct PeezyTaskStream: View {
         .padding(.horizontal, 16)
         .padding(.bottom, 4)
         .overlay(alignment: .bottom) {
-            Divider()
+            Divider().background(PeezyTheme.Colors.deepInk.opacity(0.06))
         }
     }
 
@@ -321,8 +328,9 @@ struct PeezyTaskStream: View {
     private func subsectionHeader(title: String) -> some View {
         HStack(spacing: 6) {
             Text(title)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.5))
+                .font(PeezyTheme.Typography.captionMedium)
+                .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.4))
+                .tracking(0.5)
 
             Spacer()
         }
@@ -335,7 +343,7 @@ struct PeezyTaskStream: View {
 
     private func tabEmptyState(message: String) -> some View {
         Text(message)
-            .font(.subheadline)
+            .font(PeezyTheme.Typography.callout)
             .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.4))
             .frame(maxWidth: .infinity)
             .padding(.top, 60)
@@ -355,14 +363,14 @@ struct PeezyTaskStream: View {
         VStack(spacing: 16) {
             Image(systemName: "checklist")
                 .font(.system(size: 50))
-                .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.4))
+                .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.3))
 
             Text("No tasks yet")
-                .font(.title3.bold())
+                .font(PeezyTheme.Typography.headline)
                 .foregroundStyle(PeezyTheme.Colors.deepInk)
 
             Text("Tasks will appear here after your assessment.")
-                .font(.subheadline)
+                .font(PeezyTheme.Typography.callout)
                 .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.5))
                 .multilineTextAlignment(.center)
         }
@@ -430,24 +438,24 @@ struct TaskListRow: View {
                         .frame(width: 48, height: 48)
                     Image(systemName: iconForCategory(task.taskCategory))
                         .font(.system(size: 20, weight: .regular))
-                        .foregroundColor(isCompleted ? .gray : PeezyTheme.Colors.deepInk.opacity(0.8))
+                        .foregroundColor(isCompleted ? PeezyTheme.Colors.deepInk.opacity(0.3) : PeezyTheme.Colors.deepInk.opacity(0.7))
                 }
                 .padding(.top, 4)
 
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(alignment: .top) {
                         Text(task.title)
-                            .font(.system(size: 18, weight: .medium, design: .rounded))
-                            .foregroundColor(isCompleted ? .gray : PeezyTheme.Colors.deepInk)
-                            .strikethrough(isCompleted, color: .gray)
+                            .font(PeezyTheme.Typography.bodyMedium)
+                            .foregroundColor(isCompleted ? PeezyTheme.Colors.deepInk.opacity(0.4) : PeezyTheme.Colors.deepInk)
+                            .strikethrough(isCompleted, color: PeezyTheme.Colors.deepInk.opacity(0.3))
                             .lineLimit(2)
                             .fixedSize(horizontal: false, vertical: true)
 
                         Spacer()
 
                         Image(systemName: "chevron.down")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundColor(.gray.opacity(0.4))
+                            .font(PeezyTheme.Typography.captionMedium)
+                            .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.3))
                             .rotationEffect(.degrees(isExpanded ? -180 : 0))
                             .animation(.spring(response: 0.4, dampingFraction: 0.75, blendDuration: 0), value: isExpanded)
                             .padding(.top, 4)
@@ -455,8 +463,8 @@ struct TaskListRow: View {
 
                     if !task.subtitle.isEmpty {
                         Text(task.subtitle)
-                            .font(.system(size: 15, weight: .regular))
-                            .foregroundColor(.gray.opacity(0.9))
+                            .font(PeezyTheme.Typography.callout)
+                            .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.5))
                             .lineSpacing(4)
                             .lineLimit(isExpanded ? nil : 2)
                     }
@@ -466,27 +474,27 @@ struct TaskListRow: View {
                         HStack {
                             if isUserInProgress {
                                 Text("You're on it")
-                                    .font(.system(size: 12, weight: .semibold))
-                                    .foregroundColor(.cyan)
+                                    .font(PeezyTheme.Typography.captionMedium)
+                                    .foregroundColor(PeezyTheme.Colors.infoBlue)
                                     .padding(.horizontal, 8)
                                     .padding(.vertical, 4)
-                                    .background(Color.cyan.opacity(0.1))
+                                    .background(PeezyTheme.Colors.infoBlue.opacity(0.1))
                                     .clipShape(Capsule())
                             } else if isInProgress {
                                 Text("Peezy is on it")
-                                    .font(.system(size: 12, weight: .semibold))
-                                    .foregroundColor(.blue)
+                                    .font(PeezyTheme.Typography.captionMedium)
+                                    .foregroundColor(PeezyTheme.Colors.accentBlue)
                                     .padding(.horizontal, 8)
                                     .padding(.vertical, 4)
-                                    .background(Color.blue.opacity(0.1))
+                                    .background(PeezyTheme.Colors.accentBlue.opacity(0.1))
                                     .clipShape(Capsule())
                             } else if isSnoozed {
                                 Text("Snoozed")
-                                    .font(.system(size: 12, weight: .semibold))
-                                    .foregroundColor(.orange)
+                                    .font(PeezyTheme.Typography.captionMedium)
+                                    .foregroundColor(PeezyTheme.Colors.warningOrange)
                                     .padding(.horizontal, 8)
                                     .padding(.vertical, 4)
-                                    .background(Color.orange.opacity(0.1))
+                                    .background(PeezyTheme.Colors.warningOrange.opacity(0.1))
                                     .clipShape(Capsule())
                             }
                         }
@@ -498,7 +506,8 @@ struct TaskListRow: View {
             .padding(.horizontal, 20)
             .contentShape(Rectangle())
             .onTapGesture {
-                withAnimation(.spring(response: 0.4, dampingFraction: 0.75, blendDuration: 0)) {
+                PeezyHaptics.light()
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                     onExpand()
                 }
             }
@@ -507,14 +516,8 @@ struct TaskListRow: View {
             if isExpanded {
                 // Start button (hide for Completed, InProgress, and UserInProgress tasks)
                 if !isCompleted && !isInProgress && !isUserInProgress, let onStart {
-                    Button(action: onStart) {
-                        Text("Start Task")
-                            .font(.system(size: 16, weight: .semibold, design: .rounded))
-                            .foregroundColor(.white)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 16)
-                            .background(PeezyTheme.Colors.deepInk)
-                            .cornerRadius(14)
+                    PeezyAssessmentButton("Start Task") {
+                        onStart()
                     }
                     .padding(.horizontal, 20)
                     .padding(.bottom, 24)
@@ -522,9 +525,19 @@ struct TaskListRow: View {
                 }
             }
         }
-        .background(Color.white)
-        .cornerRadius(20)
-        .shadow(color: PeezyTheme.Colors.deepInk.opacity(0.04), radius: 12, x: 0, y: 6)
+        .background(
+            ZStack {
+                RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadiusLarge, style: .continuous)
+                    .fill(.regularMaterial)
+                RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadiusLarge, style: .continuous)
+                    .fill(Color.white.opacity(0.15))
+            }
+            .overlay(
+                RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadiusLarge, style: .continuous)
+                    .stroke(Color.black.opacity(0.05), lineWidth: 1)
+            )
+        )
+        .shadow(color: Color.black.opacity(0.1), radius: 12, x: 0, y: 4)
         .opacity(isCompleted ? 0.6 : 1.0)
         .padding(.vertical, 8)
     }

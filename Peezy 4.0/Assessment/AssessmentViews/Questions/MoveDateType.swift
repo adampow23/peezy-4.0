@@ -19,6 +19,16 @@ struct MoveDateType: View {
         "Flexible (I have wiggle room)": "checkmark.circle"
     ]
 
+    let titleMap: [String: String] = [
+        "Strict (same-day swap)": "Strict",
+        "Flexible (I have wiggle room)": "Flexible"
+    ]
+
+    let subtitleMap: [String: String] = [
+        "Strict (same-day swap)": "same-day swap",
+        "Flexible (I have wiggle room)": "I have wiggle room"
+    ]
+
     var body: some View {
         VStack(spacing: 0) {
             // Content area with equal spacing
@@ -30,7 +40,8 @@ struct MoveDateType: View {
                 ], spacing: 16) {
                     ForEach(Array(options.enumerated()), id: \.element) { index, option in
                         SelectionTile(
-                            title: option,
+                            title: titleMap[option] ?? option,
+                            subtitle: subtitleMap[option],
                             icon: iconMap[option],
                             isSelected: selected == option,
                             onTap: {

@@ -20,8 +20,8 @@ struct ChatView: View {
 
     var body: some View {
         ZStack {
-            // Breathing Mesh Background
-            ChatBackground()
+            // Light opal background (matches assessment theme)
+            InteractiveBackground()
 
             VStack(spacing: 0) {
                 // Header
@@ -211,94 +211,10 @@ struct ChatView: View {
     }
 }
 
-// MARK: - Chat Background (Breathing Mesh)
-struct ChatBackground: View {
-    @State private var animate = false
-
-    var body: some View {
-        ZStack {
-            // Deep Space Base
-            Color(red: 0.02, green: 0.02, blue: 0.06)
-                .ignoresSafeArea()
-
-            // Moving Orbs (Atmosphere)
-            GeometryReader { geo in
-                ZStack {
-                    // Orb 1: Intelligence (Deep Navy/Purple)
-                    Circle()
-                        .fill(
-                            RadialGradient(
-                                colors: [
-                                    Color(red: 0.1, green: 0.1, blue: 0.25).opacity(0.6),
-                                    Color(red: 0.1, green: 0.1, blue: 0.25).opacity(0)
-                                ],
-                                center: .center,
-                                startRadius: 0,
-                                endRadius: geo.size.width * 0.5
-                            )
-                        )
-                        .frame(width: geo.size.width * 1.2)
-                        .blur(radius: 60)
-                        .offset(
-                            x: animate ? -80 : 80,
-                            y: animate ? -150 : 100
-                        )
-
-                    // Orb 2: Energy (Deep Purple/Violet)
-                    Circle()
-                        .fill(
-                            RadialGradient(
-                                colors: [
-                                    Color(red: 0.18, green: 0.1, blue: 0.3).opacity(0.5),
-                                    Color(red: 0.18, green: 0.1, blue: 0.3).opacity(0)
-                                ],
-                                center: .center,
-                                startRadius: 0,
-                                endRadius: geo.size.width * 0.5
-                            )
-                        )
-                        .frame(width: geo.size.width * 1.0)
-                        .blur(radius: 50)
-                        .offset(
-                            x: animate ? 120 : -120,
-                            y: animate ? 250 : -80
-                        )
-
-                    // Orb 3: Subtle Teal accent
-                    Circle()
-                        .fill(
-                            RadialGradient(
-                                colors: [
-                                    Color(red: 0.05, green: 0.2, blue: 0.25).opacity(0.3),
-                                    Color(red: 0.05, green: 0.2, blue: 0.25).opacity(0)
-                                ],
-                                center: .center,
-                                startRadius: 0,
-                                endRadius: geo.size.width * 0.4
-                            )
-                        )
-                        .frame(width: geo.size.width * 0.8)
-                        .blur(radius: 40)
-                        .offset(
-                            x: animate ? -50 : 100,
-                            y: animate ? 400 : 200
-                        )
-                }
-            }
-        }
-        .onAppear {
-            withAnimation(.easeInOut(duration: 12).repeatForever(autoreverses: true)) {
-                animate.toggle()
-            }
-        }
-    }
-}
-
 // MARK: - Chat Header (Floating Glass Panel)
 struct ChatHeader: View {
     @Environment(\.dismiss) private var dismiss
 
-    // Charcoal color for glass tint
     private let deepInk = PeezyTheme.Colors.deepInk
 
     var body: some View {
@@ -328,22 +244,22 @@ struct ChatHeader: View {
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
                     .fill(.regularMaterial)
 
-                // Charcoal tint
+                // Glass tint
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .fill(Color.white.opacity(0.5))
+                    .fill(Color.white.opacity(0.15))
             }
         )
         .overlay(
             RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .stroke(Color.black.opacity(0.1), lineWidth: 1)
+                .stroke(Color.black.opacity(0.05), lineWidth: 1)
         )
-        .shadow(color: Color.black.opacity(0.3), radius: 10, x: 0, y: 5)
+        .shadow(color: Color.black.opacity(0.1), radius: 12, x: 0, y: 8)
         .padding(.horizontal, 16)
         .padding(.top, 8)
     }
 }
 
-// MARK: - Message Bubble (Charcoal Glass Style)
+// MARK: - Message Bubble (Glass Style)
 struct MessageBubble: View {
     let message: ChatMessage
     var isAnimating: Bool = false
@@ -352,7 +268,6 @@ struct MessageBubble: View {
     var feedback: Bool? = nil
     var onFeedback: ((Bool?) -> Void)? = nil
 
-    // Charcoal color for assistant bubbles
     private let deepInk = PeezyTheme.Colors.deepInk
 
     private var displayedText: String {
@@ -375,35 +290,26 @@ struct MessageBubble: View {
                     .background(
                         ZStack {
                             if message.role == .user {
-                                // User bubble: Solid blue with subtle gradient
-                                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                                    .fill(
-                                        LinearGradient(
-                                            colors: [
-                                                Color(red: 0.2, green: 0.5, blue: 1.0),
-                                                Color(red: 0.15, green: 0.4, blue: 0.9)
-                                            ],
-                                            startPoint: .topLeading,
-                                            endPoint: .bottomTrailing
-                                        )
-                                    )
+                                // User bubble: Deep ink (matches assessment selected state)
+                                RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadiusLarge, style: .continuous)
+                                    .fill(PeezyTheme.Colors.deepInk)
                             } else {
-                                // Assistant bubble: Charcoal glass
+                                // Assistant bubble: Glass (matches assessment glass style)
                                 ZStack {
-                                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                                    RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadiusLarge, style: .continuous)
                                         .fill(.regularMaterial)
 
-                                    RoundedRectangle(cornerRadius: 20, style: .continuous)
-                                        .fill(Color.white.opacity(0.5))
+                                    RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadiusLarge, style: .continuous)
+                                        .fill(Color.white.opacity(0.15))
                                 }
                                 .overlay(
-                                    RoundedRectangle(cornerRadius: 20, style: .continuous)
-                                        .stroke(Color.black.opacity(0.1), lineWidth: 1)
+                                    RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadiusLarge, style: .continuous)
+                                        .stroke(Color.black.opacity(0.05), lineWidth: 1)
                                 )
                             }
                         }
                     )
-                    .foregroundColor(PeezyTheme.Colors.deepInk)
+                    .foregroundColor(message.role == .user ? PeezyTheme.Colors.lightBase : PeezyTheme.Colors.deepInk)
 
                 // Feedback buttons for non-welcome assistant messages
                 if showFeedback && message.role == .assistant {
@@ -453,12 +359,11 @@ struct ChatInputBar: View {
     var isFocused: FocusState<Bool>.Binding
     let onSend: () -> Void
 
-    // Charcoal color for glass tint
     private let deepInk = PeezyTheme.Colors.deepInk
 
     var body: some View {
         HStack(spacing: 12) {
-            // Text field with charcoal glass background
+            // Text field with glass background
             TextField("Ask Peezy anything...", text: $text, axis: .vertical)
                 .textFieldStyle(.plain)
                 .foregroundColor(PeezyTheme.Colors.deepInk)
@@ -468,12 +373,12 @@ struct ChatInputBar: View {
                 .background(
                     ZStack {
                         RoundedRectangle(cornerRadius: 20, style: .continuous)
-                            .fill(Color.white.opacity(0.5))
+                            .fill(Color.white.opacity(0.15))
                     }
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .stroke(Color.black.opacity(0.1), lineWidth: 1)
+                        .stroke(Color.black.opacity(0.05), lineWidth: 1)
                 )
                 .lineLimit(1...5)
                 .focused(isFocused)
@@ -483,7 +388,7 @@ struct ChatInputBar: View {
             Button(action: onSend) {
                 Image(systemName: "arrow.up.circle.fill")
                     .font(.system(size: 32))
-                    .foregroundStyle(canSend ? Color(red: 0.2, green: 0.5, blue: 1.0) : PeezyTheme.Colors.deepInk.opacity(0.3))
+                    .foregroundStyle(canSend ? PeezyTheme.Colors.deepInk : PeezyTheme.Colors.deepInk.opacity(0.3))
             }
             .disabled(!canSend)
         }
@@ -495,16 +400,16 @@ struct ChatInputBar: View {
                 RoundedRectangle(cornerRadius: 28, style: .continuous)
                     .fill(.regularMaterial)
 
-                // Charcoal tint
+                // Glass tint
                 RoundedRectangle(cornerRadius: 28, style: .continuous)
-                    .fill(Color.white.opacity(0.5))
+                    .fill(Color.white.opacity(0.15))
             }
         )
         .overlay(
             RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .stroke(Color.black.opacity(0.1), lineWidth: 1)
+                .stroke(Color.black.opacity(0.05), lineWidth: 1)
         )
-        .shadow(color: Color.black.opacity(0.3), radius: 10, x: 0, y: -5)
+        .shadow(color: Color.black.opacity(0.1), radius: 12, x: 0, y: -5)
         .padding(.horizontal, 16)
         .padding(.bottom, 8)
     }
@@ -514,18 +419,17 @@ struct ChatInputBar: View {
     }
 }
 
-// MARK: - Typing Indicator (Charcoal Glass Style)
+// MARK: - Typing Indicator (Glass Style)
 struct TypingIndicator: View {
     @State private var animating = false
 
-    // Charcoal color for glass tint
     private let deepInk = PeezyTheme.Colors.deepInk
 
     var body: some View {
         HStack(spacing: 4) {
             ForEach(0..<3) { index in
                 Circle()
-                    .fill(Color.white.opacity(0.6))
+                    .fill(PeezyTheme.Colors.deepInk.opacity(0.4))
                     .frame(width: 8, height: 8)
                     .scaleEffect(animating ? 1.0 : 0.5)
                     .animation(
@@ -544,23 +448,22 @@ struct TypingIndicator: View {
                     .fill(.regularMaterial)
 
                 RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .fill(Color.white.opacity(0.5))
+                    .fill(Color.white.opacity(0.15))
             }
         )
         .overlay(
             RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .stroke(Color.black.opacity(0.1), lineWidth: 1)
+                .stroke(Color.black.opacity(0.05), lineWidth: 1)
         )
         .onAppear { animating = true }
     }
 }
 
-// MARK: - Error Banner (Charcoal Glass Style)
+// MARK: - Error Banner (Glass Style)
 struct ErrorBanner: View {
     let message: String
     let onDismiss: () -> Void
 
-    // Charcoal color for glass tint
     private let deepInk = PeezyTheme.Colors.deepInk
 
     var body: some View {
@@ -584,7 +487,7 @@ struct ErrorBanner: View {
                     .fill(.regularMaterial)
 
                 Rectangle()
-                    .fill(Color.white.opacity(0.5))
+                    .fill(Color.white.opacity(0.15))
             }
         )
     }

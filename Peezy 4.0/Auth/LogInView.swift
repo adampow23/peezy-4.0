@@ -76,7 +76,7 @@ struct LoginView: View {
                         Group {
                             if isLoading {
                                 ProgressView()
-                                    .tint(.white)
+                                    .tint(PeezyTheme.Colors.deepInk)
                             } else {
                                 Text("Log In")
                                     .font(PeezyTheme.Typography.headline)
@@ -91,9 +91,9 @@ struct LoginView: View {
                                 RoundedRectangle(cornerRadius: 16, style: .continuous)
                                     .fill(.regularMaterial)
 
-                                // Charcoal tint (or accent blue when valid)
+                                // White tint to pop against the glass background
                                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                    .fill(isFormValid ? PeezyTheme.Colors.accentBlue : Color.black.opacity(0.06))
+                                    .fill(Color.white)
                             }
                         )
                         .overlay(

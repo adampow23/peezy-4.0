@@ -231,7 +231,7 @@ struct PeezyHomeView: View {
                 .padding(.vertical, 12)
 
                 // Action button
-                Button(action: {
+                PeezyAssessmentButton(welcomePage < 2 ? "Continue" : "Start My First Task") {
                     if welcomePage < 2 {
                         withAnimation(.easeInOut(duration: 0.3)) {
                             welcomePage += 1
@@ -239,14 +239,6 @@ struct PeezyHomeView: View {
                     } else {
                         viewModel.dismissFirstTimeWelcome()
                     }
-                }) {
-                    Text(welcomePage < 2 ? "Continue" : "Start My First Task")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundColor(.black)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 16)
-                        .background(Color.white)
-                        .cornerRadius(16)
                 }
                 .padding(.horizontal, 30)
                 .padding(.bottom, 30)
@@ -310,14 +302,8 @@ struct PeezyHomeView: View {
                 Spacer()
 
                 // Get Started button
-                Button(action: { viewModel.startNextTask() }) {
-                    Text("Get started")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundColor(.black)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 16)
-                        .background(Color.white)
-                        .cornerRadius(16)
+                PeezyAssessmentButton("Get started") {
+                    viewModel.startNextTask()
                 }
                 .padding(.horizontal, 30)
                 .padding(.bottom, 30)
@@ -357,14 +343,8 @@ struct PeezyHomeView: View {
                 Spacer()
 
                 // Pick up where I left off
-                Button(action: { viewModel.startNextTask() }) {
-                    Text("Pick up where I left off")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundColor(.black)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 16)
-                        .background(Color.white)
-                        .cornerRadius(16)
+                PeezyAssessmentButton("Pick up where I left off") {
+                    viewModel.startNextTask()
                 }
                 .padding(.horizontal, 30)
                 .padding(.bottom, 30)
@@ -487,23 +467,36 @@ struct PeezyHomeView: View {
                 let isWorkflow = !(task.workflowId ?? "").isEmpty
                 HStack(spacing: 10) {
                     // Later (skip)
-                    Button(action: { viewModel.skipCurrentTask() }) {
+                    Button(action: {
+                        PeezyHaptics.light()
+                        viewModel.skipCurrentTask()
+                    }) {
                         VStack(spacing: 4) {
                             Image(systemName: "clock.arrow.circlepath")
                                 .font(.system(size: 18))
                             Text("Later")
                                 .font(.system(size: 12, weight: .medium))
                         }
-                        .foregroundColor(Color.gray)
+                        .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.5))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 14)
-                        .background(Color.black.opacity(0.06))
-                        .cornerRadius(16)
+                        .background(
+                            RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadius, style: .continuous)
+                                .fill(.regularMaterial)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadius, style: .continuous)
+                                .stroke(Color.black.opacity(0.05), lineWidth: 1)
+                        )
                     }
+                    .buttonStyle(.peezySecondary)
 
                     // I'm on it (user in progress)
                     if !isWorkflow {
-                        Button(action: { viewModel.markCurrentTaskUserInProgress() }) {
+                        Button(action: {
+                            PeezyHaptics.light()
+                            viewModel.markCurrentTaskUserInProgress()
+                        }) {
                             VStack(spacing: 4) {
                                 Image(systemName: "figure.walk.circle.fill")
                                     .font(.system(size: 18))
@@ -513,13 +506,21 @@ struct PeezyHomeView: View {
                             .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.7))
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 14)
-                            .background(Color.black.opacity(0.06))
-                            .cornerRadius(16)
+                            .background(
+                                RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadius, style: .continuous)
+                                    .fill(.regularMaterial)
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadius, style: .continuous)
+                                    .stroke(Color.black.opacity(0.05), lineWidth: 1)
+                            )
                         }
+                        .buttonStyle(.peezySecondary)
                     }
 
                     // Complete / Get Started
                     Button(action: {
+                        PeezyHaptics.medium()
                         if isWorkflow {
                             viewModel.startWorkflowForCurrentTask()
                         } else {
@@ -532,12 +533,15 @@ struct PeezyHomeView: View {
                             Text(isWorkflow ? "Start" : "Done")
                                 .font(.system(size: 12, weight: .semibold))
                         }
-                        .foregroundColor(.black)
+                        .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 14)
-                        .background(Color.white)
-                        .cornerRadius(16)
+                        .background(
+                            Capsule(style: .continuous)
+                                .fill(PeezyTheme.Colors.deepInk)
+                        )
                     }
+                    .buttonStyle(.peezyPrimary)
                 }
                 .padding(.horizontal, 30)
                 .padding(.bottom, 30)
@@ -578,17 +582,9 @@ struct PeezyHomeView: View {
 
                     // Get ahead — loads ONE task at a time
                     if !viewModel.allActiveTasks.isEmpty {
-                        Button(action: {
+                        PeezyAssessmentButton("Keep Going") {
                             confettiActive = false
                             viewModel.getAhead()
-                        }) {
-                            Text("Keep Going")
-                                .font(.system(size: 17, weight: .semibold))
-                                .foregroundColor(.black)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 16)
-                                .background(Color.white)
-                                .cornerRadius(16)
                         }
                         .padding(.horizontal, 30)
                         .padding(.bottom, 30)
@@ -643,7 +639,7 @@ struct PeezyHomeView: View {
 
     // MARK: - Glass Card Container
 
-    /// Charcoal glass card matching existing card aesthetic from PeezyStackView
+    /// Glass card matching assessment theme
     private func glassCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
         ZStack {
             // Glass stack
@@ -652,7 +648,7 @@ struct PeezyHomeView: View {
                     .foregroundStyle(.regularMaterial)
 
                 RoundedRectangle(cornerRadius: 36, style: .continuous)
-                    .fill(Color.white.opacity(0.5))
+                    .fill(Color.white.opacity(0.15))
             }
             .overlay(
                 RoundedRectangle(cornerRadius: 36, style: .continuous)

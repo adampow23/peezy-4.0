@@ -96,7 +96,7 @@ struct PeezySettingsView: View {
                         .scaleEffect(1.5)
                         .tint(deepInk)
                     Text(processingMessage)
-                        .font(.subheadline)
+                        .font(PeezyTheme.Typography.callout)
                         .foregroundColor(deepInk.opacity(0.8))
                 }
             }
@@ -106,14 +106,14 @@ struct PeezySettingsView: View {
                 VStack {
                     Spacer()
                     Text(toast)
-                        .font(.subheadline.weight(.medium))
+                        .font(PeezyTheme.Typography.calloutMedium)
                         .foregroundColor(deepInk)
                         .padding(.horizontal, 20)
                         .padding(.vertical, 12)
                         .background(
                             Capsule()
                                 .fill(Color.white.opacity(0.9))
-                                .overlay(Capsule().stroke(Color.black.opacity(0.1), lineWidth: 0.5))
+                                .overlay(Capsule().stroke(Color.black.opacity(0.05), lineWidth: 0.5))
                         )
                         .padding(.bottom, 40)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -189,18 +189,12 @@ struct PeezySettingsView: View {
                 // Avatar circle
                 ZStack {
                     Circle()
-                        .fill(
-                            LinearGradient(
-                                colors: [.blue.opacity(0.6), .purple.opacity(0.6)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
+                        .fill(PeezyTheme.Colors.deepInk)
                         .frame(width: 56, height: 56)
-                    
+
                     Text(initials)
                         .font(.system(size: 22, weight: .bold))
-                        .foregroundColor(deepInk)
+                        .foregroundColor(PeezyTheme.Colors.lightBase)
                 }
                 
                 VStack(alignment: .leading, spacing: 4) {
@@ -210,8 +204,8 @@ struct PeezySettingsView: View {
                     
                     if let email = Auth.auth().currentUser?.email {
                         Text(email)
-                            .font(.subheadline)
-                            .foregroundColor(Color.gray)
+                            .font(PeezyTheme.Typography.callout)
+                            .foregroundColor(deepInk.opacity(0.5))
                     }
                 }
                 
@@ -234,39 +228,39 @@ struct PeezySettingsView: View {
                     icon: "calendar",
                     label: "Move Date",
                     value: formattedDate(moveDetailDate),
-                    color: .blue
+                    color: PeezyTheme.Colors.accentBlue
                 ) {
                     showEditMoveDate = true
                 }
 
-                Divider().background(Color.black.opacity(0.08))
+                Divider().background(deepInk.opacity(0.06))
 
                 // Current Address
                 settingsValueRow(
                     icon: "house",
                     label: "Current Address",
                     value: moveDetailCurrentAddress.isEmpty ? "Not set" : truncated(moveDetailCurrentAddress),
-                    color: .green
+                    color: PeezyTheme.Colors.successGreen
                 ) {
                     showEditCurrentAddress = true
                 }
 
-                Divider().background(Color.black.opacity(0.08))
+                Divider().background(deepInk.opacity(0.06))
 
                 // New Address
                 settingsValueRow(
                     icon: "house.fill",
                     label: "New Address",
                     value: moveDetailNewAddress.isEmpty ? "Not set" : truncated(moveDetailNewAddress),
-                    color: .purple
+                    color: PeezyTheme.Colors.supportPurple
                 ) {
                     showEditNewAddress = true
                 }
 
-                Divider().background(Color.black.opacity(0.08))
+                Divider().background(deepInk.opacity(0.06))
 
                 // Retake Assessment
-                settingsRow(icon: "arrow.counterclockwise", label: "Retake Assessment", color: .orange) {
+                settingsRow(icon: "arrow.counterclockwise", label: "Retake Assessment", color: PeezyTheme.Colors.warningOrange) {
                     showRetakeAlert = true
                 }
             }
@@ -286,18 +280,18 @@ struct PeezySettingsView: View {
                     Image(systemName: subscriptionManager.subscriptionStatus.isActive
                           ? "checkmark.seal.fill" : "xmark.seal.fill")
                         .font(.system(size: 16, weight: .medium))
-                        .foregroundColor(subscriptionManager.subscriptionStatus.isActive ? .green : .orange)
+                        .foregroundColor(subscriptionManager.subscriptionStatus.isActive ? PeezyTheme.Colors.successGreen : PeezyTheme.Colors.warningOrange)
                         .frame(width: 28)
 
                     VStack(alignment: .leading, spacing: 2) {
                         Text(subscriptionStatusLabel)
-                            .font(.system(size: 16, weight: .medium))
+                            .font(PeezyTheme.Typography.bodyMedium)
                             .foregroundColor(deepInk)
 
                         if !subscriptionDetailLabel.isEmpty {
                             Text(subscriptionDetailLabel)
-                                .font(.caption)
-                                .foregroundColor(Color.gray)
+                                .font(PeezyTheme.Typography.caption)
+                                .foregroundColor(deepInk.opacity(0.5))
                         }
                     }
 
@@ -306,17 +300,17 @@ struct PeezySettingsView: View {
                 .padding(.horizontal, 20)
                 .padding(.vertical, 14)
 
-                Divider().background(Color.black.opacity(0.08))
+                Divider().background(deepInk.opacity(0.06))
 
-                settingsRow(icon: "creditcard", label: "Manage Subscription", color: .cyan) {
+                settingsRow(icon: "creditcard", label: "Manage Subscription", color: PeezyTheme.Colors.infoBlue) {
                     if let url = URL(string: "https://apps.apple.com/account/subscriptions") {
                         UIApplication.shared.open(url)
                     }
                 }
 
-                Divider().background(Color.black.opacity(0.08))
+                Divider().background(deepInk.opacity(0.06))
 
-                settingsRow(icon: "arrow.triangle.2.circlepath", label: "Restore Purchases", color: Color.gray) {
+                settingsRow(icon: "arrow.triangle.2.circlepath", label: "Restore Purchases", color: deepInk.opacity(0.4)) {
                     Task { await subscriptionManager.restorePurchases() }
                 }
             }
@@ -362,19 +356,19 @@ struct PeezySettingsView: View {
             sectionLabel("Support")
             
             VStack(spacing: 0) {
-                settingsRow(icon: "envelope", label: "Contact Support", color: .green) {
+                settingsRow(icon: "envelope", label: "Contact Support", color: PeezyTheme.Colors.successGreen) {
                     openSupportEmail()
                 }
-                
-                Divider().background(Color.black.opacity(0.08))
-                
-                settingsRow(icon: "doc.text", label: "Privacy Policy", color: Color.gray) {
+
+                Divider().background(deepInk.opacity(0.06))
+
+                settingsRow(icon: "doc.text", label: "Privacy Policy", color: deepInk.opacity(0.4)) {
                     openURL("https://peezy.move/privacy")
                 }
-                
-                Divider().background(Color.black.opacity(0.08))
-                
-                settingsRow(icon: "doc.text", label: "Terms of Service", color: Color.gray) {
+
+                Divider().background(deepInk.opacity(0.06))
+
+                settingsRow(icon: "doc.text", label: "Terms of Service", color: deepInk.opacity(0.4)) {
                     openURL("https://peezy.move/terms")
                 }
             }
@@ -390,7 +384,7 @@ struct PeezySettingsView: View {
                 settingsRow(
                     icon: "rectangle.portrait.and.arrow.right",
                     label: "Sign Out",
-                    color: .red
+                    color: PeezyTheme.Colors.emotionalRed
                 ) {
                     showSignOutAlert = true
                 }
@@ -404,12 +398,12 @@ struct PeezySettingsView: View {
     private var versionFooter: some View {
         VStack(spacing: 4) {
             Text("Peezy")
-                .font(.caption.weight(.medium))
-                .foregroundColor(Color.gray.opacity(0.4))
-            
+                .font(PeezyTheme.Typography.captionMedium)
+                .foregroundColor(deepInk.opacity(0.3))
+
             Text("Version \(appVersion)")
-                .font(.caption2)
-                .foregroundColor(Color.gray.opacity(0.4))
+                .font(PeezyTheme.Typography.caption)
+                .foregroundColor(deepInk.opacity(0.3))
         }
     }
     
@@ -427,21 +421,21 @@ struct PeezySettingsView: View {
                     .font(.system(size: 16, weight: .medium))
                     .foregroundColor(color)
                     .frame(width: 28)
-                
+
                 Text(label)
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundColor(label == "Sign Out" ? .red : deepInk)
-                
+                    .font(PeezyTheme.Typography.bodyMedium)
+                    .foregroundColor(label == "Sign Out" ? PeezyTheme.Colors.emotionalRed : deepInk)
+
                 Spacer()
-                
+
                 Image(systemName: "chevron.right")
-                    .font(.caption2.weight(.semibold))
-                    .foregroundColor(Color.gray.opacity(0.4))
+                    .font(PeezyTheme.Typography.captionMedium)
+                    .foregroundColor(deepInk.opacity(0.3))
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 14)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.peezyPress)
     }
     
     private func settingsValueRow(
@@ -460,31 +454,31 @@ struct PeezySettingsView: View {
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(label)
-                        .font(.system(size: 16, weight: .medium))
+                        .font(PeezyTheme.Typography.bodyMedium)
                         .foregroundColor(deepInk)
                     Text(value)
-                        .font(.caption)
-                        .foregroundColor(Color.gray)
+                        .font(PeezyTheme.Typography.caption)
+                        .foregroundColor(deepInk.opacity(0.5))
                         .lineLimit(1)
                 }
 
                 Spacer()
 
                 Image(systemName: "chevron.right")
-                    .font(.caption2.weight(.semibold))
-                    .foregroundColor(Color.gray.opacity(0.4))
+                    .font(PeezyTheme.Typography.captionMedium)
+                    .foregroundColor(deepInk.opacity(0.3))
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 14)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.peezyPress)
     }
 
     private func sectionLabel(_ text: String) -> some View {
         HStack {
             Text(text.uppercased())
-                .font(.caption.weight(.semibold))
-                .foregroundColor(Color.gray.opacity(0.6))
+                .font(PeezyTheme.Typography.captionMedium)
+                .foregroundColor(deepInk.opacity(0.4))
                 .tracking(1)
             Spacer()
         }
@@ -496,14 +490,14 @@ struct PeezySettingsView: View {
     
     private var glassBackground: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadius, style: .continuous)
                 .fill(.regularMaterial)
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color.white.opacity(0.5))
+            RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadius, style: .continuous)
+                .fill(Color.white.opacity(0.15))
         }
         .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(Color.black.opacity(0.06), lineWidth: 0.5)
+            RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadius, style: .continuous)
+                .stroke(Color.black.opacity(0.05), lineWidth: 1)
         )
     }
     
@@ -669,21 +663,13 @@ struct EditMoveDateSheet: View {
                         displayedComponents: .date
                     )
                     .datePickerStyle(.graphical)
-                    .tint(.blue)
+                    .tint(deepInk)
                     .padding(20)
 
-                    Button {
+                    PeezyAssessmentButton("Save") {
                         onSave(selectedDate)
                         dismiss()
-                    } label: {
-                        Text("Save")
-                            .font(.system(size: 17, weight: .semibold))
-                            .foregroundColor(.black)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 16)
                     }
-                    .background(Color.white)
-                    .cornerRadius(16)
                     .padding(.horizontal, 20)
 
                     Spacer()
@@ -725,45 +711,36 @@ struct EditAddressSheet: View {
                 VStack(spacing: 24) {
                     VStack(alignment: .leading, spacing: 8) {
                         Text(title.uppercased())
-                            .font(.caption.weight(.semibold))
-                            .foregroundColor(Color.gray.opacity(0.6))
+                            .font(PeezyTheme.Typography.captionMedium)
+                            .foregroundColor(deepInk.opacity(0.4))
                             .tracking(0.5)
 
                         TextField("Enter address", text: $address)
                             .textContentType(.fullStreetAddress)
-                            .font(.system(size: 16))
+                            .font(PeezyTheme.Typography.body)
                             .foregroundColor(deepInk)
                             .focused($isFocused)
+                            .tint(deepInk)
                             .padding(16)
                             .background(
-                                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                    .fill(Color.black.opacity(0.06))
+                                RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadiusSmall, style: .continuous)
+                                    .fill(deepInk.opacity(0.04))
                                     .overlay(
-                                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                            .stroke(Color.black.opacity(0.08), lineWidth: 0.5)
+                                        RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadiusSmall, style: .continuous)
+                                            .stroke(deepInk.opacity(0.06), lineWidth: 0.5)
                                     )
                             )
                     }
                     .padding(.horizontal, 20)
                     .padding(.top, 20)
 
-                    Button {
+                    PeezyAssessmentButton("Save", disabled: address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) {
                         let trimmed = address.trimmingCharacters(in: .whitespacesAndNewlines)
                         guard !trimmed.isEmpty else { return }
                         onSave(trimmed)
                         dismiss()
-                    } label: {
-                        Text("Save")
-                            .font(.system(size: 17, weight: .semibold))
-                            .foregroundColor(.black)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 16)
                     }
-                    .background(Color.white)
-                    .cornerRadius(16)
                     .padding(.horizontal, 20)
-                    .disabled(address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    .opacity(address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.5 : 1)
 
                     Spacer()
                 }
@@ -821,28 +798,16 @@ struct EditNameEmailSheet: View {
 
                         if let error = error {
                             Text(error)
-                                .font(.caption)
-                                .foregroundColor(.red)
+                                .font(PeezyTheme.Typography.caption)
+                                .foregroundColor(PeezyTheme.Colors.emotionalRed)
                         }
 
-                        Button(action: save) {
-                            if isSaving {
-                                ProgressView()
-                                    .tint(.black)
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 16)
-                            } else {
-                                Text("Save Changes")
-                                    .font(.system(size: 17, weight: .semibold))
-                                    .foregroundColor(.black)
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 16)
-                            }
+                        PeezyAssessmentButton(
+                            isSaving ? "Saving..." : "Save Changes",
+                            disabled: isSaving || name.trimmingCharacters(in: .whitespaces).isEmpty
+                        ) {
+                            save()
                         }
-                        .background(Color.white)
-                        .cornerRadius(16)
-                        .disabled(isSaving || name.trimmingCharacters(in: .whitespaces).isEmpty)
-                        .opacity(name.trimmingCharacters(in: .whitespaces).isEmpty ? 0.5 : 1)
                     }
                     .padding(20)
                 }
@@ -868,23 +833,23 @@ struct EditNameEmailSheet: View {
     private func fieldGroup<Content: View>(label: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(label.uppercased())
-                .font(.caption.weight(.semibold))
-                .foregroundColor(Color.gray.opacity(0.6))
+                .font(PeezyTheme.Typography.captionMedium)
+                .foregroundColor(deepInk.opacity(0.4))
                 .tracking(0.5)
 
             content()
-                .font(.system(size: 16))
+                .font(PeezyTheme.Typography.body)
                 .foregroundColor(deepInk)
                 .padding(16)
                 .background(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(Color.black.opacity(0.06))
+                    RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadiusSmall, style: .continuous)
+                        .fill(deepInk.opacity(0.04))
                         .overlay(
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .stroke(Color.black.opacity(0.08), lineWidth: 0.5)
+                            RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadiusSmall, style: .continuous)
+                                .stroke(deepInk.opacity(0.06), lineWidth: 0.5)
                         )
                 )
-                .tint(.blue)
+                .tint(deepInk)
         }
     }
 

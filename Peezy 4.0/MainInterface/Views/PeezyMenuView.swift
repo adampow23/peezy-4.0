@@ -9,9 +9,9 @@ enum PeezyDestination: String, CaseIterable, Identifiable {
 
     var icon: String {
         switch self {
-        case .home: return "square.stack.3d.up.fill"
-        case .timeline: return "calendar.badge.clock"
-        case .settings: return "gearshape.fill"
+        case .home: return "house.fill"
+        case .timeline: return "checklist"
+        case .settings: return "gear"
         }
     }
 }
@@ -22,8 +22,7 @@ struct PeezyMenuView: View {
     let userName: String
     var onEditProfile: (() -> Void)? = nil
 
-    // Charcoal color matching app theme
-    private let menuBackground = Color(red: 0.96, green: 0.97, blue: 0.98)
+    private let menuBackground = PeezyTheme.Colors.lightBase
 
     var body: some View {
         ZStack(alignment: .leading) {
@@ -51,10 +50,6 @@ struct PeezyMenuView: View {
                         }
                     } label: {
                         VStack(alignment: .leading, spacing: 8) {
-                            Image(systemName: "shippingbox.fill")
-                                .font(.system(size: 40))
-                                .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.9))
-
                             HStack(alignment: .bottom) {
                                 Text("peezy")
                                     .font(.system(size: 24, weight: .light))
@@ -72,12 +67,12 @@ struct PeezyMenuView: View {
 
                             if !userName.isEmpty {
                                 Text("Hi, \(userName)")
-                                    .font(.subheadline)
+                                    .font(PeezyTheme.Typography.callout)
                                     .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.6))
                             }
                         }
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.peezySecondary)
                     .padding(.top, 60)
                     .padding(.horizontal, 24)
                     .padding(.bottom, 40)
@@ -103,7 +98,7 @@ struct PeezyMenuView: View {
 
                     // Version footer
                     Text("Version 1.0")
-                        .font(.caption2)
+                        .font(PeezyTheme.Typography.caption)
                         .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.3))
                         .padding(.horizontal, 24)
                         .padding(.bottom, 30)
@@ -139,30 +134,31 @@ struct MenuRow: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 16) {
+            HStack(spacing: PeezyTheme.Layout.itemSpacing) {
                 Image(systemName: destination.icon)
                     .font(.system(size: 20))
                     .frame(width: 28)
 
                 Text(destination.rawValue)
-                    .font(.system(size: 17, weight: isSelected ? .semibold : .regular))
+                    .font(isSelected ? PeezyTheme.Typography.headline : PeezyTheme.Typography.body)
 
                 Spacer()
 
                 if isSelected {
                     Circle()
-                        .fill(.cyan)
+                        .fill(PeezyTheme.Colors.infoBlue)
                         .frame(width: 8, height: 8)
                 }
             }
             .foregroundStyle(isSelected ? PeezyTheme.Colors.deepInk : PeezyTheme.Colors.deepInk.opacity(0.55))
-            .padding(.horizontal, 16)
-            .padding(.vertical, 14)
+            .padding(.horizontal, PeezyTheme.Layout.cardPadding)
+            .padding(.vertical, PeezyTheme.Layout.cardPaddingSmall)
             .background(
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadiusSmall, style: .continuous)
                     .fill(isSelected ? PeezyTheme.Colors.deepInk.opacity(0.08) : Color.clear)
             )
         }
+        .buttonStyle(.peezyPress)
     }
 }
 

@@ -88,6 +88,13 @@ cd functions && firebase deploy --only functions --project peezy-1ecrdl
 - Firebase Firestore for all persistence
 - Node.js for Cloud Functions (functions/ directory)
 
+## Self-Improvement Loop
+
+- After ANY correction from the user: update `tasks/lessons.md` with the pattern
+- Write rules for yourself that prevent the same mistake
+- Ruthlessly iterate on these lessons until mistake rate drops
+- Review `tasks/lessons.md` at session start before doing any work
+
 ## DO NOT (CRITICAL — Read Before Every Session)
 
 - **DO NOT modify .pbxproj files.** Create files, add to Xcode manually.
@@ -100,6 +107,7 @@ cd functions && firebase deploy --only functions --project peezy-1ecrdl
 - **DO NOT make changes to files you weren't asked to change.** No drive-by refactors, no "improvements" to unrelated code.
 - **DO NOT use `print()` for debugging in production code.** Use existing Logger/debug infrastructure or ask first.
 - **DO NOT skip xcodebuild verification after changes.** Build after every set of changes to catch compile errors immediately.
+- **DO NOT mark a task complete without proving it works.** Run tests, check logs, demonstrate correctness. Ask yourself: "Would a staff engineer approve this?"
 
 ## Known Bugs and Gotchas (Learn From Past Mistakes)
 

@@ -20,25 +20,19 @@ struct WorkflowCardView: View {
     var body: some View {
         GeometryReader { geometry in
             ZStack {
-                // Card Background - slightly different from task cards
-                RoundedRectangle(cornerRadius: 36)
-                    .fill(Color.white)
-                    .shadow(color: Color.black.opacity(0.12), radius: 20, x: 0, y: 10)
+                // Card Background — glass matching assessment theme
+                ZStack {
+                    RoundedRectangle(cornerRadius: 36, style: .continuous)
+                        .fill(.regularMaterial)
 
-                // Accent bar at top
-                VStack {
-                    RoundedRectangle(cornerRadius: 36)
-                        .fill(
-                            LinearGradient(
-                                colors: [Color.blue.opacity(0.1), Color.purple.opacity(0.05)],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
-                        .frame(height: 100)
-                    Spacer()
+                    RoundedRectangle(cornerRadius: 36, style: .continuous)
+                        .fill(Color.white.opacity(0.15))
                 }
-                .clipShape(RoundedRectangle(cornerRadius: 36))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 36, style: .continuous)
+                        .stroke(Color.black.opacity(0.05), lineWidth: 1)
+                )
+                .shadow(color: Color.black.opacity(0.1), radius: 20, x: 0, y: 15)
 
                 // Content
                 VStack(spacing: 0) {
@@ -130,13 +124,12 @@ struct WorkflowCardHeader: View {
             // Workflow name
             HStack(spacing: 6) {
                 Circle()
-                    .fill(Color.blue.opacity(0.6))
+                    .fill(PeezyTheme.Colors.infoBlue)
                     .frame(width: 8, height: 8)
 
                 Text(workflowTitle)
-                    .font(.caption)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.gray)
+                    .font(PeezyTheme.Typography.captionMedium)
+                    .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.5))
                     .textCase(.uppercase)
                     .tracking(0.5)
             }
@@ -146,14 +139,13 @@ struct WorkflowCardHeader: View {
             // Progress indicator
             if let progress = progress {
                 Text(progress)
-                    .font(.caption)
-                    .fontWeight(.medium)
-                    .foregroundColor(.gray.opacity(0.8))
+                    .font(PeezyTheme.Typography.captionMedium)
+                    .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.5))
                     .padding(.horizontal, 12)
                     .padding(.vertical, 4)
                     .background(
                         Capsule()
-                            .fill(Color.gray.opacity(0.1))
+                            .fill(PeezyTheme.Colors.deepInk.opacity(0.08))
                     )
             }
         }
@@ -175,12 +167,12 @@ struct WorkflowIntroContent: View {
             VStack(alignment: .leading, spacing: 16) {
                 Text(intro.title)
                     .font(.system(size: 32, weight: .heavy))
-                    .foregroundColor(.black)
+                    .foregroundColor(PeezyTheme.Colors.deepInk)
                     .fixedSize(horizontal: false, vertical: true)
 
                 Text(intro.subtitle)
                     .font(.title3)
-                    .foregroundColor(.gray)
+                    .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.6))
                     .fixedSize(horizontal: false, vertical: true)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -189,22 +181,8 @@ struct WorkflowIntroContent: View {
             Spacer()
 
             // Continue button
-            Button(action: onContinue) {
-                HStack {
-                    Text("Continue")
-                        .font(.headline)
-                        .fontWeight(.semibold)
-
-                    Image(systemName: "arrow.right")
-                        .font(.headline)
-                }
-                .foregroundColor(PeezyTheme.Colors.deepInk)
-                .frame(maxWidth: .infinity)
-                .frame(height: 56)
-                .background(
-                    RoundedRectangle(cornerRadius: 16)
-                        .fill(Color.black)
-                )
+            PeezyAssessmentButton("Continue") {
+                onContinue()
             }
             .padding(.horizontal, 28)
             .padding(.bottom, 28)
@@ -231,13 +209,13 @@ struct WorkflowQuestionContent: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text(question.question)
                     .font(.system(size: 26, weight: .bold))
-                    .foregroundColor(.black)
+                    .foregroundColor(PeezyTheme.Colors.deepInk)
                     .fixedSize(horizontal: false, vertical: true)
 
                 if let subtitle = question.subtitle {
                     Text(subtitle)
-                        .font(.subheadline)
-                        .foregroundColor(.gray)
+                        .font(PeezyTheme.Typography.callout)
+                        .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.5))
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -264,22 +242,8 @@ struct WorkflowQuestionContent: View {
 
             // For multi-select, show continue button
             if question.type == .multi_select && !selectedIds.isEmpty {
-                Button(action: onContinue) {
-                    HStack {
-                        Text("Continue")
-                            .font(.headline)
-                            .fontWeight(.semibold)
-
-                        Image(systemName: "arrow.right")
-                            .font(.headline)
-                    }
-                    .foregroundColor(PeezyTheme.Colors.deepInk)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 56)
-                    .background(
-                        RoundedRectangle(cornerRadius: 16)
-                            .fill(Color.black)
-                    )
+                PeezyAssessmentButton("Continue") {
+                    onContinue()
                 }
                 .padding(.horizontal, 28)
                 .padding(.bottom, 28)
@@ -304,20 +268,19 @@ struct WorkflowOptionTile: View {
 
     var body: some View {
         Button(action: {
-            let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
-            impactFeedback.impactOccurred()
+            PeezyHaptics.medium()
             onTap()
         }) {
             VStack(spacing: 10) {
                 // Icon
                 Image(systemName: option.icon)
                     .font(.system(size: 28))
-                    .foregroundColor(isSelected ? .white : .black)
+                    .foregroundColor(isSelected ? PeezyTheme.Colors.lightBase : PeezyTheme.Colors.deepInk)
 
                 // Label
                 Text(option.label)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(isSelected ? .white : .black)
+                    .font(PeezyTheme.Typography.calloutSemibold)
+                    .foregroundColor(isSelected ? PeezyTheme.Colors.lightBase : PeezyTheme.Colors.deepInk)
                     .multilineTextAlignment(.center)
                     .lineLimit(2)
                     .minimumScaleFactor(0.8)
@@ -325,8 +288,8 @@ struct WorkflowOptionTile: View {
                 // Subtitle if present
                 if let subtitle = option.subtitle {
                     Text(subtitle)
-                        .font(.system(size: 11))
-                        .foregroundColor(isSelected ? .white.opacity(0.8) : .gray)
+                        .font(PeezyTheme.Typography.caption)
+                        .foregroundColor(isSelected ? PeezyTheme.Colors.lightBase.opacity(0.8) : PeezyTheme.Colors.deepInk.opacity(0.5))
                         .multilineTextAlignment(.center)
                         .lineLimit(2)
                         .minimumScaleFactor(0.8)
@@ -335,12 +298,21 @@ struct WorkflowOptionTile: View {
             .frame(maxWidth: .infinity)
             .frame(height: 110)
             .background(
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(isSelected ? Color.black : Color.gray.opacity(0.08))
+                ZStack {
+                    if isSelected {
+                        RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadiusLarge, style: .continuous)
+                            .fill(PeezyTheme.Colors.deepInk)
+                    } else {
+                        RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadiusLarge, style: .continuous)
+                            .fill(.regularMaterial)
+                        RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadiusLarge, style: .continuous)
+                            .fill(Color.white.opacity(0.15))
+                    }
+                }
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 16)
-                    .stroke(isSelected ? Color.clear : Color.gray.opacity(0.15), lineWidth: 1)
+                RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadiusLarge, style: .continuous)
+                    .stroke(isSelected ? Color.clear : Color.black.opacity(0.05), lineWidth: 1)
             )
             .scaleEffect(isPressed ? 0.95 : 1.0)
         }
@@ -348,12 +320,15 @@ struct WorkflowOptionTile: View {
         .simultaneousGesture(
             DragGesture(minimumDistance: 0)
                 .onChanged { _ in
-                    withAnimation(.spring(response: 0.2)) {
-                        isPressed = true
+                    if !isPressed {
+                        PeezyHaptics.light()
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
+                            isPressed = true
+                        }
                     }
                 }
                 .onEnded { _ in
-                    withAnimation(.spring(response: 0.2)) {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
                         isPressed = false
                     }
                 }
@@ -374,7 +349,7 @@ struct WorkflowRecapContent: View {
             // Title
             Text(recap.title)
                 .font(.system(size: 26, weight: .bold))
-                .foregroundColor(.black)
+                .foregroundColor(PeezyTheme.Colors.deepInk)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 28)
                 .padding(.top, 20)
@@ -400,28 +375,14 @@ struct WorkflowRecapContent: View {
 
             // Closing message
             Text(recap.closing)
-                .font(.subheadline)
-                .foregroundColor(.gray)
+                .font(PeezyTheme.Typography.callout)
+                .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.6))
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 28)
 
             // Complete button
-            Button(action: onComplete) {
-                HStack {
-                    Text(recap.button)
-                        .font(.headline)
-                        .fontWeight(.semibold)
-
-                    Image(systemName: "checkmark")
-                        .font(.headline)
-                }
-                .foregroundColor(PeezyTheme.Colors.deepInk)
-                .frame(maxWidth: .infinity)
-                .frame(height: 56)
-                .background(
-                    RoundedRectangle(cornerRadius: 16)
-                        .fill(Color.green)
-                )
+            PeezyAssessmentButton(recap.button) {
+                onComplete()
             }
             .padding(.horizontal, 28)
             .padding(.top, 16)
@@ -446,13 +407,13 @@ struct RecapAnswerRow: View {
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             Image(systemName: "checkmark.circle.fill")
-                .foregroundColor(.green)
+                .foregroundColor(PeezyTheme.Colors.successGreen)
                 .font(.system(size: 18))
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(selectedLabels)
-                    .font(.system(size: 15, weight: .medium))
-                    .foregroundColor(.black)
+                    .font(PeezyTheme.Typography.calloutMedium)
+                    .foregroundColor(PeezyTheme.Colors.deepInk)
             }
 
             Spacer()
@@ -460,8 +421,8 @@ struct RecapAnswerRow: View {
         .padding(.vertical, 8)
         .padding(.horizontal, 12)
         .background(
-            RoundedRectangle(cornerRadius: 10)
-                .fill(Color.green.opacity(0.08))
+            RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadiusSmall, style: .continuous)
+                .fill(PeezyTheme.Colors.successGreen.opacity(0.08))
         )
     }
 }

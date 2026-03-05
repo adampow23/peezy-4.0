@@ -10,9 +10,9 @@ struct PackingPreference: View {
 
     let options: [(label: String, value: String, icon: String)] = [
         ("No thanks", "none", "hand.raised.fill"),
-        ("Yes, full service", "full", "shippingbox.fill"),
-        ("Yes, kitchen only", "kitchen", "fork.knife"),
-        ("Yes, both options", "both", "list.clipboard.fill")
+        ("Full service", "full", "shippingbox.fill"),
+        ("Kitchen only", "kitchen", "fork.knife"),
+        ("Both options", "both", "list.clipboard.fill")
     ]
 
     var body: some View {

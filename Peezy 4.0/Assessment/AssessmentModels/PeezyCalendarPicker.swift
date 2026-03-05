@@ -30,17 +30,16 @@ struct CalendarDayCell: View {
     let progress: Double
 
     private var calendar: Calendar { Calendar.current }
-    private let accentBlue = PeezyTheme.Colors.accentBlue
 
     var body: some View {
         ZStack {
             // Background
             if isSelected {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(accentBlue)
+                    .fill(PeezyTheme.Colors.deepInk)
             } else if isToday {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .strokeBorder(Color.white.opacity(0.5), lineWidth: 2)
+                    .strokeBorder(PeezyTheme.Colors.deepInk.opacity(0.4), lineWidth: 2)
             }
 
             // Day number
@@ -55,9 +54,9 @@ struct CalendarDayCell: View {
         if day.ignored {
             return .clear
         } else if isSelected {
-            return .white
+            return PeezyTheme.Colors.lightBase
         } else {
-            return .white
+            return PeezyTheme.Colors.deepInk
         }
     }
 }
@@ -132,14 +131,18 @@ struct PeezyCalendarPicker: View {
         }
         .padding(PeezyTheme.Layout.cardPadding)
         .background(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .fill(Color(white: 0.15))
+            ZStack {
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .fill(.regularMaterial)
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .fill(Color.white.opacity(0.15))
+            }
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .stroke(Color.white.opacity(0.08), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(Color.black.opacity(0.05), lineWidth: 1)
         )
-        .shadow(color: Color.black.opacity(0.3), radius: 15, x: 0, y: 8)
+        .shadow(color: Color.black.opacity(0.1), radius: 12, x: 0, y: 8)
     }
 
     // MARK: - Sections
@@ -149,7 +152,7 @@ struct PeezyCalendarPicker: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(monthFormatter.string(from: currentMonth))
                     .font(.system(size: 20, weight: .semibold))
-                    .foregroundColor(.white)
+                    .foregroundColor(PeezyTheme.Colors.deepInk)
             }
 
             Spacer()
@@ -162,9 +165,9 @@ struct PeezyCalendarPicker: View {
                 } label: {
                     Image(systemName: "chevron.left")
                         .font(.system(size: 16, weight: .semibold))
-                        .foregroundColor(Color.white.opacity(0.7))
+                        .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.7))
                         .frame(width: 36, height: 36)
-                        .background(Color.white.opacity(0.1))
+                        .background(Color.black.opacity(0.06))
                         .clipShape(Circle())
                 }
                 .disabled(!canMoveToPreviousMonth)
@@ -177,9 +180,9 @@ struct PeezyCalendarPicker: View {
                 } label: {
                     Image(systemName: "chevron.right")
                         .font(.system(size: 16, weight: .semibold))
-                        .foregroundColor(Color.white.opacity(0.7))
+                        .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.7))
                         .frame(width: 36, height: 36)
-                        .background(Color.white.opacity(0.1))
+                        .background(Color.black.opacity(0.06))
                         .clipShape(Circle())
                 }
             }
@@ -192,7 +195,7 @@ struct PeezyCalendarPicker: View {
                 Text(symbol)
                     .font(.system(size: 12, weight: .semibold))
                     .frame(maxWidth: .infinity)
-                    .foregroundColor(Color.white.opacity(0.5))
+                    .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.4))
                     .textCase(.uppercase)
             }
         }

@@ -47,20 +47,7 @@ struct CompletionFlowView: View {
 
     var body: some View {
         ZStack {
-            PeezyTheme.Colors.lightBase.ignoresSafeArea()
-
-            // Subtle gradient overlay (matches original)
-            RadialGradient(
-                colors: [
-                    Color.blue.opacity(0.08),
-                    Color.purple.opacity(0.05),
-                    Color.clear
-                ],
-                center: .center,
-                startRadius: 50,
-                endRadius: 400
-            )
-            .ignoresSafeArea()
+            InteractiveBackground()
 
             if showContent {
                 switch stage {

@@ -27,8 +27,7 @@ struct PaywallFlowView: View {
 
     var body: some View {
         ZStack {
-            // Background
-            PeezyTheme.Colors.lightBase.ignoresSafeArea()
+            InteractiveBackground()
 
             switch currentPage {
             case 0:
@@ -258,26 +257,32 @@ struct PaywallPage3: View {
                 Button(action: {
                     Task { await handlePurchase() }
                 }) {
-                    if subscriptionManager.isPurchasing {
-                        ProgressView()
-                            .tint(.white)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 16)
-                            .background(
-                                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                    .fill(PeezyTheme.Colors.deepInk.opacity(0.7))
-                            )
-                    } else {
-                        Text(isTrialEligible ? "Start My 3-Day Free Trial" : "Subscribe Now")
-                            .font(.system(size: 18, weight: .bold))
-                            .foregroundColor(.white)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 16)
-                            .background(
-                                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                    .fill(PeezyTheme.Colors.deepInk)
-                            )
+                    Group {
+                        if subscriptionManager.isPurchasing {
+                            ProgressView()
+                                .tint(.white)
+                                .frame(maxWidth: .infinity)
+                        } else {
+                            Text(isTrialEligible ? "Start My 3-Day Free Trial" : "Subscribe Now")
+                                .font(.system(size: 18, weight: .semibold))
+                                .foregroundColor(subscriptionManager.isPurchasing ? .white.opacity(0.4) : .white)
+                                .frame(maxWidth: .infinity)
+                        }
                     }
+                    .frame(height: 56)
+                    .background(
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                                .fill(.regularMaterial)
+                            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                                .fill(PeezyTheme.Colors.deepInk.opacity(subscriptionManager.isPurchasing ? 0.4 : 0.6))
+                        }
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 28, style: .continuous)
+                            .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                    )
+                    .shadow(color: Color.black.opacity(subscriptionManager.isPurchasing ? 0.1 : 0.3), radius: 15, x: 0, y: 8)
                 }
                 .disabled(subscriptionManager.isPurchasing)
                 .padding(.horizontal, 24)
@@ -522,32 +527,32 @@ struct PaywallPage3: View {
 
                 Text(label)
                     .font(.system(size: 15, weight: .medium))
-                    .foregroundColor(PeezyTheme.Colors.deepInk)
+                    .foregroundColor(isSelected ? PeezyTheme.Colors.lightBase : PeezyTheme.Colors.deepInk)
 
                 HStack(alignment: .firstTextBaseline, spacing: 2) {
                     Text(price)
                         .font(.system(size: 22, weight: .bold))
-                        .foregroundColor(PeezyTheme.Colors.deepInk)
+                        .foregroundColor(isSelected ? PeezyTheme.Colors.lightBase : PeezyTheme.Colors.deepInk)
 
                     Text(priceUnit)
                         .font(.system(size: 13))
-                        .foregroundColor(Color.gray)
+                        .foregroundColor(isSelected ? PeezyTheme.Colors.lightBase.opacity(0.6) : Color.gray)
                 }
 
                 // Selection indicator
                 ZStack {
                     Circle()
-                        .stroke(isSelected ? PeezyTheme.Colors.deepInk : Color.gray.opacity(0.3), lineWidth: 2)
+                        .stroke(isSelected ? PeezyTheme.Colors.lightBase.opacity(0.5) : Color.gray.opacity(0.3), lineWidth: 2)
                         .frame(width: 24, height: 24)
 
                     if isSelected {
                         Circle()
-                            .fill(PeezyTheme.Colors.deepInk)
+                            .fill(PeezyTheme.Colors.lightBase)
                             .frame(width: 24, height: 24)
 
                         Image(systemName: "checkmark")
                             .font(.system(size: 12, weight: .bold))
-                            .foregroundColor(.white)
+                            .foregroundColor(PeezyTheme.Colors.deepInk)
                     }
                 }
                 .padding(.top, 4)
@@ -555,13 +560,27 @@ struct PaywallPage3: View {
             .frame(maxWidth: .infinity)
             .padding(.vertical, 16)
             .background(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(Color.white)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .stroke(isSelected ? PeezyTheme.Colors.deepInk.opacity(0.3) : Color.gray.opacity(0.15), lineWidth: 1.5)
-                    )
-                    .shadow(color: Color.black.opacity(isSelected ? 0.08 : 0.03), radius: 4, x: 0, y: 2)
+                ZStack {
+                    if isSelected {
+                        RoundedRectangle(cornerRadius: 20, style: .continuous)
+                            .fill(PeezyTheme.Colors.deepInk)
+                    } else {
+                        RoundedRectangle(cornerRadius: 20, style: .continuous)
+                            .fill(.regularMaterial)
+                        RoundedRectangle(cornerRadius: 20, style: .continuous)
+                            .fill(Color.white.opacity(0.15))
+                    }
+                }
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .stroke(isSelected ? Color.clear : Color.black.opacity(0.05), lineWidth: 1)
+            )
+            .shadow(
+                color: isSelected ? PeezyTheme.Colors.deepInk.opacity(0.25) : Color.black.opacity(0.1),
+                radius: isSelected ? 10 : 12,
+                x: 0,
+                y: isSelected ? 4 : 8
             )
         }
         .buttonStyle(.plain)
@@ -608,18 +627,8 @@ private func bottomSection(
         .padding(.bottom, 4)
 
         // CTA Button
-        Button(action: action) {
-            Text(buttonText)
-                .font(.system(size: 18, weight: .bold))
-                .foregroundColor(.white)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 18)
-                .background(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(PeezyTheme.Colors.deepInk)
-                )
-        }
-        .padding(.horizontal, 24)
+        PeezyAssessmentButton(buttonText, action: action)
+            .padding(.horizontal, 24)
 
         // Price line
         Text(priceText)
