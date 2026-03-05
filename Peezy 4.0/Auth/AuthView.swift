@@ -71,8 +71,8 @@ struct AuthView: View {
                             }
                         )
                         .signInWithAppleButtonStyle(.white)
-                        .frame(height: 50)
-                        .cornerRadius(PeezyTheme.Layout.cornerRadiusSmall)
+                        .frame(height: 56)
+                        .clipShape(Capsule(style: .continuous))
                         .disabled(isAnyLoading)
                         .opacity(isAppleLoading ? 0.6 : 1)
 
@@ -81,6 +81,12 @@ struct AuthView: View {
                                 .progressViewStyle(CircularProgressViewStyle(tint: PeezyTheme.Colors.deepInk))
                         }
                     }
+                    .shadow(
+                        color: Color.black.opacity(0.15),
+                        radius: 16,
+                        x: 0,
+                        y: 8
+                    )
                     .opacity(showContent ? 1 : 0)
                     .offset(y: showContent ? 0 : 20)
                     .animation(.easeOut(duration: 0.5).delay(0.4), value: showContent)
@@ -88,13 +94,10 @@ struct AuthView: View {
                     // Sign in with Google
                     AuthButton(
                         title: "Continue with Google",
-                        icon: "g.circle.fill",
-                        backgroundColor: PeezyTheme.Colors.deepInk,
-                        textColor: .white,
+                        customImage: "google-logo",
                         isLoading: isGoogleLoading,
                         isDisabled: isAnyLoading
                     ) {
-                        PeezyHaptics.light()
                         loadingState = .google
                         viewModel.signInWithGoogle { error in
                             loadingState = .none
@@ -111,12 +114,8 @@ struct AuthView: View {
                     AuthButton(
                         title: "Continue with Email",
                         icon: "envelope.fill",
-                        backgroundColor: PeezyTheme.Colors.deepInk,
-                        textColor: .white,
-                        isLoading: false,
                         isDisabled: isAnyLoading
                     ) {
-                        PeezyHaptics.medium()
                         showSignUp = true
                     }
                     .opacity(showContent ? 1 : 0)
@@ -268,66 +267,92 @@ private struct AuthErrorToast: View {
 }
 
 // MARK: - AuthButton
+// Matches PeezyAssessmentButton style: capsule, deepInk, glow shadow, press gesture
 
 private struct AuthButton: View {
     let title: String
-    let icon: String?
-    let backgroundColor: Color
-    let textColor: Color
+    var icon: String? = nil
+    var customImage: String? = nil
     var isLoading: Bool = false
     var isDisabled: Bool = false
-    var hasBorder: Bool = false
     let action: () -> Void
 
+    @State private var isPressed = false
+
+    private let deepInk = PeezyTheme.Colors.deepInk
+
+    private var effectiveDisabled: Bool { isDisabled || isLoading }
+
     var body: some View {
-        Button(action: action) {
+        Button(action: {
+            guard !effectiveDisabled else { return }
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            action()
+        }) {
             ZStack {
                 HStack(spacing: 10) {
-                    if let icon = icon, !isLoading {
+                    if let customImage = customImage {
+                        Image(customImage)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 20, height: 20)
+                    } else if let icon = icon {
                         Image(systemName: icon)
                             .font(.system(size: 18, weight: .medium))
                     }
 
-                    if !isLoading {
-                        Text(title)
-                            .font(PeezyTheme.Typography.bodyMedium)
-                    }
+                    Text(title)
+                        .font(.system(size: 18, weight: .semibold, design: .rounded))
                 }
-                .foregroundColor(textColor)
+                .foregroundColor(effectiveDisabled ? .white.opacity(0.5) : .white)
                 .opacity(isLoading ? 0 : 1)
 
                 if isLoading {
                     ProgressView()
-                        .progressViewStyle(CircularProgressViewStyle(tint: textColor))
+                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
                 }
             }
             .frame(maxWidth: .infinity)
-            .frame(height: 50)
+            .frame(height: 56)
             .background(
-                ZStack {
-                    RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadiusSmall, style: .continuous)
-                        .fill(Color.clear)
-                        .peezyLiquidGlass(
-                            cornerRadius: PeezyTheme.Layout.cornerRadiusSmall,
-                            intensity: 0.55,
-                            speed: 0.22,
-                            tintOpacity: 0.05,
-                            highlightOpacity: 0.12
-                        )
-                    
-                    RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadiusSmall, style: .continuous)
-                        .fill(backgroundColor)
-                    
-                    if hasBorder {
-                        RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadiusSmall, style: .continuous)
-                            .strokeBorder(Color.gray.opacity(0.3), lineWidth: 1)
+                Capsule(style: .continuous)
+                    .fill(deepInk.opacity(effectiveDisabled ? 0.3 : 1.0))
+            )
+            .overlay(
+                Capsule(style: .continuous)
+                    .stroke(
+                        LinearGradient(
+                            colors: [.white.opacity(effectiveDisabled ? 0.0 : 0.25), .clear],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        ),
+                        lineWidth: 1
+                    )
+            )
+            .shadow(
+                color: effectiveDisabled ? .clear : deepInk.opacity(isPressed ? 0.2 : 0.4),
+                radius: isPressed ? 8 : 16,
+                x: 0,
+                y: isPressed ? 4 : 8
+            )
+        }
+        .disabled(effectiveDisabled)
+        .scaleEffect(isPressed ? 0.95 : 1.0)
+        .animation(.spring(response: 0.3, dampingFraction: 0.6), value: isPressed)
+        .animation(.easeInOut(duration: 0.2), value: effectiveDisabled)
+        .buttonStyle(PlainButtonStyle())
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { _ in
+                    if !effectiveDisabled && !isPressed {
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                        isPressed = true
                     }
                 }
-            )
-            .opacity(isDisabled ? 0.6 : 1.0)
-        }
-        .buttonStyle(.peezyPress)
-        .disabled(isDisabled)
+                .onEnded { _ in
+                    isPressed = false
+                }
+        )
     }
 }
 

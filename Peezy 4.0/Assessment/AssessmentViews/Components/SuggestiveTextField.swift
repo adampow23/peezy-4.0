@@ -25,21 +25,37 @@ struct SuggestiveTextField: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(label)
-                .font(.system(size: 14, weight: .medium))
-                .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.5))
+                .font(PeezyTheme.Typography.callout)
+                .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.6))
 
             TextField("", text: $text, prompt: Text(placeholder).foregroundColor(Color.gray.opacity(0.6)))
                 .font(.system(size: 16))
                 .foregroundColor(PeezyTheme.Colors.deepInk)
+                .tint(PeezyTheme.Colors.accentBlue)
                 .textInputAutocapitalization(.words)
-                .padding(16)
-                .background(Color.white)
-                .cornerRadius(12)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke(Color.gray.opacity(0.25), lineWidth: 1)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 14)
+                .frame(minHeight: 52)
+                .background(
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .fill(.regularMaterial)
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .fill(Color.black.opacity(0.06))
+                    }
                 )
-                .shadow(color: .black.opacity(0.04), radius: 4, y: 2)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .stroke(
+                            isFocused ? PeezyTheme.Colors.accentBlue.opacity(0.6) : Color.black.opacity(0.1),
+                            lineWidth: isFocused ? 2 : 1
+                        )
+                )
+                .shadow(
+                    color: isFocused ? PeezyTheme.Colors.accentBlue.opacity(0.2) : Color.black.opacity(0.3),
+                    radius: 10,
+                    y: 5
+                )
                 .onChange(of: text) { _, newValue in
                     handleTextChange(newValue)
                 }
@@ -99,12 +115,17 @@ struct SuggestiveTextField: View {
             }
         }
         .background(
-            RoundedRectangle(cornerRadius: 10)
-                .fill(Color.white)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10)
-                        .stroke(PeezyTheme.Colors.deepInk.opacity(0.1), lineWidth: 1)
-                )
+            ZStack {
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(.regularMaterial)
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(Color.black.opacity(0.06))
+            }
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(Color.black.opacity(0.1), lineWidth: 1)
+            )
+            .shadow(color: Color.black.opacity(0.3), radius: 10, y: 5)
         )
         .padding(.top, 2)
     }

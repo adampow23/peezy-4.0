@@ -30,10 +30,6 @@ struct PeezyStackView: View {
     // Chat sheet
     @State private var showChat = false
 
-    #if DEBUG
-    @State private var showDebugMenu = false
-    #endif
-    
     var body: some View {
         GeometryReader { geometry in
             ZStack {
@@ -106,11 +102,6 @@ struct PeezyStackView: View {
                         .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.8))
                         .frame(maxWidth: .infinity)
                         .padding(.top, 4)
-                        #if DEBUG
-                        .onTapGesture(count: 3) {
-                            showDebugMenu = true
-                        }
-                        #endif
 
                     // Undo button row (below logo)
                     HStack {
@@ -172,16 +163,9 @@ struct PeezyStackView: View {
 
             // Only load cards if not already loaded (prevents duplicate loads when using external viewModel)
             if viewModel.cards.isEmpty && !viewModel.isLoading {
-                print("🃏 StackView loading cards (viewModel was empty)")
                 Task {
                     await viewModel.loadInitialCards()
-                    print("🃏 StackView loaded: \(viewModel.cards.count) cards")
-                    for card in viewModel.cards {
-                        print("   - \(card.type): \(card.title)")
-                    }
                 }
-            } else {
-                print("🃏 StackView using existing \(viewModel.cards.count) cards from shared viewModel")
             }
         }
         .refreshable {
@@ -192,11 +176,6 @@ struct PeezyStackView: View {
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
         }
-        #if DEBUG
-        .sheet(isPresented: $showDebugMenu) {
-            DebugMenuView(viewModel: viewModel)
-        }
-        #endif
     }
 
     // MARK: - Card Swipe Handler

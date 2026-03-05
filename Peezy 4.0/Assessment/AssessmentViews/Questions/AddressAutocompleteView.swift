@@ -43,20 +43,36 @@ struct AddressAutocompleteView: View {
         )
         .font(.system(size: 18, weight: .medium))
         .foregroundColor(PeezyTheme.Colors.deepInk)
+        .tint(PeezyTheme.Colors.accentBlue)
         .multilineTextAlignment(.center)
         .textInputAutocapitalization(.words)
         .autocorrectionDisabled()
         .textContentType(.fullStreetAddress)
         .focused($isFieldFocused)
         .submitLabel(.done)
-        .padding(16)
-        .background(Color.white)
-        .cornerRadius(12)
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(Color.gray.opacity(0.25), lineWidth: 1)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .frame(minHeight: 52)
+        .background(
+            ZStack {
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(.regularMaterial)
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(Color.black.opacity(0.06))
+            }
         )
-        .shadow(color: .black.opacity(0.04), radius: 4, y: 2)
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(
+                    isFieldFocused ? PeezyTheme.Colors.accentBlue.opacity(0.6) : Color.black.opacity(0.1),
+                    lineWidth: isFieldFocused ? 2 : 1
+                )
+        )
+        .shadow(
+            color: isFieldFocused ? PeezyTheme.Colors.accentBlue.opacity(0.2) : Color.black.opacity(0.3),
+            radius: 10,
+            y: 5
+        )
         .padding(.horizontal, 24)
     }
 
@@ -85,14 +101,22 @@ struct AddressAutocompleteView: View {
             }
             .transition(.opacity.combined(with: .scale(scale: 0.85)))
         }
-        .padding(16)
-        .background(Color.white)
-        .cornerRadius(12)
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(Color.gray.opacity(0.25), lineWidth: 1)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .frame(minHeight: 52)
+        .background(
+            ZStack {
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(.regularMaterial)
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(Color.black.opacity(0.06))
+            }
         )
-        .shadow(color: .black.opacity(0.04), radius: 4, y: 2)
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(Color.black.opacity(0.1), lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(0.3), radius: 10, y: 5)
         .padding(.horizontal, 24)
         .transition(.opacity.combined(with: .offset(y: 4)))
     }
@@ -135,13 +159,17 @@ struct AddressAutocompleteView: View {
                 }
             }
             .background(
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(Color.white)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12)
-                            .stroke(Color.gray.opacity(0.25), lineWidth: 1)
-                    )
-                    .shadow(color: .black.opacity(0.04), radius: 4, y: 2)
+                ZStack {
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(.regularMaterial)
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(Color.black.opacity(0.06))
+                }
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .stroke(Color.black.opacity(0.1), lineWidth: 1)
+                )
+                .shadow(color: Color.black.opacity(0.3), radius: 10, y: 5)
             )
             .padding(.horizontal, 24)
             .padding(.top, 8)
@@ -192,14 +220,29 @@ private struct UnitNumberField: View {
             }
             .animation(.easeOut(duration: 0.15), value: unitNumber)
         }
-        .padding(16)
-        .background(Color.white)
-        .cornerRadius(12)
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(Color.gray.opacity(0.25), lineWidth: 1)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .frame(minHeight: 52)
+        .background(
+            ZStack {
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(.regularMaterial)
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(Color.black.opacity(0.06))
+            }
         )
-        .shadow(color: .black.opacity(0.04), radius: 4, y: 2)
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(
+                    isUnitFieldFocused.wrappedValue ? PeezyTheme.Colors.accentBlue.opacity(0.6) : Color.black.opacity(0.1),
+                    lineWidth: isUnitFieldFocused.wrappedValue ? 2 : 1
+                )
+        )
+        .shadow(
+            color: isUnitFieldFocused.wrappedValue ? PeezyTheme.Colors.accentBlue.opacity(0.2) : Color.black.opacity(0.3),
+            radius: 10,
+            y: 5
+        )
     }
 }
 

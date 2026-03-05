@@ -25,7 +25,6 @@ struct AppRootView: View {
     @State private var userState: UserState?  // Holds user context for Peezy
     
     var body: some View {
-        let _ = print("🔍 APP STATE DEBUG: appState = \(appState), currentUser = \(Auth.auth().currentUser?.uid ?? "nil")")
         Group {
             switch appState {
             case .loading:
@@ -60,13 +59,6 @@ struct AppRootView: View {
                 userState = nil
             }
         }
-        #if DEBUG
-        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("debugForceSignOut"))) { _ in
-            print("📢 Received debugForceSignOut notification - forcing navigation to auth")
-            appState = .notAuthenticated
-            userState = nil
-        }
-        #endif
     }
     
     // MARK: - State Management

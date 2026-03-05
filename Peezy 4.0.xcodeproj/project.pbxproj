@@ -36,33 +36,9 @@
 		45D0C9A82F14D0A600064C3C /* Peezy 4.0UITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Peezy 4.0UITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
-/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		455D7E762F16002800C1BC98 /* Exceptions for "Peezy 4.0" folder in "Peezy 4.0" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				"Documents/Anthropic-API-Key.txt",
-			);
-			target = 45D0C9902F14D0A500064C3C /* Peezy 4.0 */;
-		};
-/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
-
-/* Begin PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet section */
-		455D7E772F16002800C1BC98 /* Exceptions for "Peezy 4.0" folder in "Compile Sources" phase from "Peezy 4.0" target */ = {
-			isa = PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet;
-			buildPhase = 45D0C98D2F14D0A500064C3C /* Sources */;
-			membershipExceptions = (
-				"Documents/Anthropic-API-Key.txt",
-			);
-		};
-/* End PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet section */
-
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		45D0C9932F14D0A500064C3C /* Peezy 4.0 */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-				455D7E762F16002800C1BC98 /* Exceptions for "Peezy 4.0" folder in "Peezy 4.0" target */,
-				455D7E772F16002800C1BC98 /* Exceptions for "Peezy 4.0" folder in "Compile Sources" phase from "Peezy 4.0" target */,
-			);
 			path = "Peezy 4.0";
 			sourceTree = "<group>";
 		};

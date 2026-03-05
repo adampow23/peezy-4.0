@@ -88,37 +88,12 @@ struct SignUpView: View {
                     .padding(.horizontal, 24)
 
                     // Sign Up Button
-                    Button(action: handleSignUp) {
-                        Group {
-                            if isLoading {
-                                ProgressView()
-                                    .tint(PeezyTheme.Colors.deepInk)
-                            } else {
-                                Text("Sign Up")
-                                    .font(PeezyTheme.Typography.headline)
-                            }
-                        }
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 50)
-                        .foregroundColor(PeezyTheme.Colors.deepInk)
-                        .background(
-                            ZStack {
-                                // Glass blur effect
-                                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                    .fill(.regularMaterial)
-
-                                // White tint to pop against the glass background
-                                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                    .fill(Color.white)
-                            }
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                .stroke(Color.white.opacity(0.1), lineWidth: 1)
-                        )
-                        .shadow(color: isFormValid ? PeezyTheme.Colors.accentBlue.opacity(0.3) : Color.black.opacity(0.3), radius: 10, y: 5)
-                    }
-                    .disabled(!isFormValid || isLoading)
+                    AuthFormButton(
+                        title: "Sign Up",
+                        isLoading: isLoading,
+                        isDisabled: !isFormValid,
+                        action: handleSignUp
+                    )
                     .padding(.horizontal, 24)
                     .padding(.top, 8)
 

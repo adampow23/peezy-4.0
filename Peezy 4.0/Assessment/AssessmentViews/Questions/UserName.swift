@@ -16,19 +16,35 @@ struct UserName: View {
                 TextField("", text: $name, prompt: Text("First name").foregroundColor(Color.gray.opacity(0.5)))
                     .font(.system(size: 22, weight: .medium))
                     .foregroundColor(PeezyTheme.Colors.deepInk)
+                    .tint(PeezyTheme.Colors.accentBlue)
                     .multilineTextAlignment(.center)
                     .textInputAutocapitalization(.words)
                     .autocorrectionDisabled()
                     .textContentType(.givenName)
                     .focused($isTextFieldFocused)
-                    .padding(16)
-                    .background(Color.white)
-                    .cornerRadius(12)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12)
-                            .stroke(Color.gray.opacity(0.25), lineWidth: 1)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 14)
+                    .frame(minHeight: 52)
+                    .background(
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                .fill(.regularMaterial)
+                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                .fill(Color.black.opacity(0.06))
+                        }
                     )
-                    .shadow(color: .black.opacity(0.04), radius: 4, y: 2)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .stroke(
+                                isTextFieldFocused ? PeezyTheme.Colors.accentBlue.opacity(0.6) : Color.black.opacity(0.1),
+                                lineWidth: isTextFieldFocused ? 2 : 1
+                            )
+                    )
+                    .shadow(
+                        color: isTextFieldFocused ? PeezyTheme.Colors.accentBlue.opacity(0.2) : Color.black.opacity(0.3),
+                        radius: 10,
+                        y: 5
+                    )
                     .padding(.horizontal, 24)
                     .opacity(showContent ? 1 : 0)
                     .offset(y: showContent ? 0 : 30)

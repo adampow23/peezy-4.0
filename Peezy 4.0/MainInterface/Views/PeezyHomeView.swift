@@ -41,10 +41,6 @@ struct PeezyHomeView: View {
     // Onboarding pagination — tracks current welcome page (0, 1, 2)
     @State private var welcomePage: Int = 0
 
-    #if DEBUG
-    @State private var showDebugMenu = false
-    #endif
-
     // Deep ink text color for light theme
     private let deepInk = PeezyTheme.Colors.deepInk
 
@@ -110,11 +106,6 @@ struct PeezyHomeView: View {
                         .foregroundStyle(deepInk.opacity(0.8))
                         .frame(maxWidth: .infinity)
                         .padding(.top, 4)
-                        #if DEBUG
-                        .onTapGesture(count: 3) {
-                            showDebugMenu = true
-                        }
-                        #endif
 
                     Spacer()
                 }
@@ -172,13 +163,6 @@ struct PeezyHomeView: View {
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
         }
-        #if DEBUG
-        .sheet(isPresented: $showDebugMenu) {
-            // DebugMenuView expects PeezyStackViewModel — skip for now
-            Text("Debug Menu — use timeline for debug access")
-                .padding()
-        }
-        #endif
         .onChange(of: focusedTask) { _, task in
             if let task {
                 focusedTask = nil

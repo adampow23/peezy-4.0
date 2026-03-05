@@ -94,11 +94,6 @@ class TimelineService {
                 userInProgressReturnDate: userInProgressReturnDate
             )
 
-            // 📅 DEBUG: Log dueDate from Firestore before filtering
-            let dueDateFormatter = DateFormatter()
-            dueDateFormatter.dateFormat = "MMM d, yyyy"
-            print("📅 TimelineService: '\(card.title)' dueDate from Firestore: \(dueDate.map { dueDateFormatter.string(from: $0) } ?? "nil")")
-
             // Include all fetched cards for timeline display
             // (snoozed and completed are shown with distinct styling)
             if card.status != .skipped {

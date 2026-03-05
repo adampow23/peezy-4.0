@@ -100,13 +100,6 @@ struct ChatView: View {
         .onAppear {
             addWelcomeMessage()
         }
-        #if DEBUG
-        .onReceive(NotificationCenter.default.publisher(for: .debugClearChatHistory)) { _ in
-            messages.removeAll()
-            addWelcomeMessage()
-            print("DEBUG: ChatView cleared messages via notification")
-        }
-        #endif
     }
 
     // MARK: - Actions

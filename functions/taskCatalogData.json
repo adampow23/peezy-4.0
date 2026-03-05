@@ -1,7 +1,7 @@
 [
   {
     "taskId": "ARRANGE_PARKING_NEW",
-    "title": "Reserve Parking at New Home",
+    "title": "Reserve parking for unloading",
     "actionCategory": "book-schedule",
     "category": "moving",
     "actionType": "off-app",
@@ -19,7 +19,7 @@
   },
   {
     "taskId": "ARRANGE_PARKING_OLD",
-    "title": "Reserve Parking at Current Home",
+    "title": "Reserve parking for loading",
     "actionCategory": "book-schedule",
     "category": "moving",
     "actionType": "off-app",
@@ -37,7 +37,7 @@
   },
   {
     "taskId": "BOOK_CLEANERS",
-    "title": "Schedule Move-Out Cleaning Service",
+    "title": "Book cleaners",
     "actionCategory": "book-schedule",
     "category": "services",
     "actionType": "workflow",
@@ -55,7 +55,7 @@
   },
   {
     "taskId": "BOOK_MOVERS",
-    "title": "Book Professional Movers",
+    "title": "Book movers",
     "actionCategory": "book-schedule",
     "category": "moving",
     "actionType": "workflow",
@@ -73,7 +73,7 @@
   },
   {
     "taskId": "BUY_CLEANING_SUPPLIES",
-    "title": "Buy Move-Out Cleaning Supplies",
+    "title": "Buy cleaning supplies",
     "actionCategory": "purchase-get",
     "category": "services",
     "actionType": "off-app",
@@ -90,7 +90,7 @@
   },
   {
     "taskId": "BUY_PACKING_SUPPLIES",
-    "title": "Buy Packing Supplies",
+    "title": "Buy packing supplies",
     "actionCategory": "purchase-get",
     "category": "packing",
     "actionType": "off-app",
@@ -103,7 +103,7 @@
   },
   {
     "taskId": "RESERVE_ELEVATORS_NEW",
-    "title": "Reserve Elevator at New Home",
+    "title": "Reserve elevator for unloading",
     "actionCategory": "book-schedule",
     "category": "moving",
     "actionType": "off-app",
@@ -120,7 +120,7 @@
   },
   {
     "taskId": "RESERVE_ELEVATORS_OLD",
-    "title": "Reserve Elevator at Old Home",
+    "title": "Reserve elevator for loading",
     "actionCategory": "book-schedule",
     "category": "moving",
     "actionType": "off-app",
@@ -137,7 +137,7 @@
   },
   {
     "taskId": "RENT_TRUCK",
-    "title": "Rent a Moving Truck",
+    "title": "Rent moving truck",
     "actionCategory": "book-schedule",
     "category": "moving",
     "actionType": "workflow",
@@ -155,7 +155,7 @@
   },
   {
     "taskId": "INVENTORY_BELONGINGS",
-    "title": "Create Moving Inventory",
+    "title": "Create moving nventory",
     "actionCategory": "document-record",
     "category": "packing",
     "actionType": "off-app",
@@ -206,7 +206,7 @@
   },
   {
     "taskId": "DEFROST_FREEZER",
-    "title": "Defrost and Clean Freezer",
+    "title": "Defrost and clean freezer",
     "actionCategory": "pack-clean",
     "category": "packing",
     "actionType": "off-app",
@@ -219,7 +219,7 @@
   },
   {
     "taskId": "DIY_DEEP_CLEANING",
-    "title": "Deep Clean Your Home",
+    "title": "Final deep clean",
     "actionCategory": "pack-clean",
     "category": "services",
     "actionType": "off-app",
@@ -236,7 +236,7 @@
   },
   {
     "taskId": "DIY_FINAL_CLEANING",
-    "title": "Final Walkthrough and Cleaning",
+    "title": "Final touch-up cleaning",
     "actionCategory": "pack-clean",
     "category": "services",
     "actionType": "off-app",
@@ -253,7 +253,7 @@
   },
   {
     "taskId": "FORWARD_MAIL_USPS",
-    "title": "Submit USPS Mail Forwarding",
+    "title": "Forward mail",
     "actionCategory": "update-notify",
     "category": "administrative",
     "actionType": "off-app",
@@ -266,7 +266,7 @@
   },
   {
     "taskId": "SCHEDULE_TIME_OFF_WORK",
-    "title": "Request Time Off for Move",
+    "title": "Request time off",
     "actionCategory": "plan-schedule",
     "category": "administrative",
     "actionType": "off-app",
@@ -279,7 +279,7 @@
   },
   {
     "taskId": "UPDATE_EMPLOYER_RECORDS",
-    "title": "Update Employer HR Records",
+    "title": "Update employer records",
     "actionCategory": "update-notify",
     "category": "administrative",
     "actionType": "off-app",
@@ -292,7 +292,7 @@
   },
   {
     "taskId": "UPDATE_DRIVERS_LICENSE",
-    "title": "Update Driver's License Address",
+    "title": "Update address on your license",
     "actionCategory": "update-notify",
     "category": "administrative",
     "actionType": "off-app",
@@ -309,7 +309,7 @@
   },
   {
     "taskId": "NEW_DRIVERS_LICENSE",
-    "title": "Get New Driver's License",
+    "title": "Register for new drivers license",
     "actionCategory": "update-notify",
     "category": "administrative",
     "actionType": "off-app",
@@ -326,7 +326,7 @@
   },
   {
     "taskId": "REGISTER_VEHICLE",
-    "title": "Register Vehicle in New State",
+    "title": "Register vehicle(s) with new state",
     "actionCategory": "update-notify",
     "category": "administrative",
     "actionType": "off-app",
@@ -346,7 +346,7 @@
   },
   {
     "taskId": "PHOTOGRAPH_RENTAL_CONDITION",
-    "title": "Photograph Empty Rental Condition",
+    "title": "Take pictures of unit",
     "actionCategory": "document-record",
     "category": "administrative",
     "actionType": "off-app",
@@ -363,7 +363,7 @@
   },
   {
     "taskId": "RETURN_KEY_FOBS_REMOTES",
-    "title": "Return Keys and Remotes",
+    "title": "Return key(s)",
     "actionCategory": "finalize-closeout",
     "category": "administrative",
     "actionType": "off-app",
@@ -380,7 +380,7 @@
   },
   {
     "taskId": "CANCEL_UTILITIES",
-    "title": "Cancel Utility Accounts",
+    "title": "Cancel utility account(s)",
     "actionCategory": "cancel-stop",
     "category": "utilities",
     "actionType": "off-app",
@@ -397,7 +397,7 @@
   },
   {
     "taskId": "SETUP_UTILITIES",
-    "title": "Set Up New Home Utilities",
+    "title": "Schedule utility connection(s)",
     "actionCategory": "setup-establish",
     "category": "utilities",
     "actionType": "off-app",
@@ -414,7 +414,7 @@
   },
   {
     "taskId": "TRANSFER_UTILITIES",
-    "title": "Transfer Utilities to New Home",
+    "title": "Transfer utilities",
     "actionCategory": "transfer-update",
     "category": "utilities",
     "actionType": "off-app",
@@ -431,7 +431,7 @@
   },
   {
     "taskId": "SETUP_INTERNET",
-    "title": "Schedule Internet Installation",
+    "title": "Schedule install for internet",
     "actionCategory": "book-schedule",
     "category": "utilities",
     "actionType": "workflow",
@@ -445,7 +445,7 @@
   },
   {
     "taskId": "BEGIN_SCHOOL_TRANSFER",
-    "title": "Notify Current School to Begin Transfer",
+    "title": "Notify school(s) of transfer",
     "actionCategory": "update-notify",
     "category": "children",
     "actionType": "off-app",
@@ -465,7 +465,7 @@
   },
   {
     "taskId": "NEW_SCHOOL_ENROLLMENT",
-    "title": "Enroll Children in New Schools",
+    "title": "Register for new enrollment",
     "actionCategory": "book-schedule",
     "category": "children",
     "actionType": "off-app",
@@ -485,7 +485,7 @@
   },
   {
     "taskId": "COA_SCHOOLS",
-    "title": "Update Address with Your Child's School",
+    "title": "Update schools",
     "actionCategory": "update-notify",
     "category": "children",
     "actionType": "off-app",
@@ -505,7 +505,7 @@
   },
   {
     "taskId": "SETUP_DAYCARE",
-    "title": "Set Up New Daycare Services",
+    "title": "Set up new daycare",
     "actionCategory": "setup-establish",
     "category": "children",
     "actionType": "off-app",
@@ -525,7 +525,7 @@
   },
   {
     "taskId": "TRANSFER_DAYCARE",
-    "title": "Update Address With Daycare",
+    "title": "Update daycare",
     "actionCategory": "update-notify",
     "category": "children",
     "actionType": "off-app",
@@ -545,7 +545,7 @@
   },
   {
     "taskId": "SETUP_VET",
-    "title": "Set Up New Veterinarian",
+    "title": "Set up new vet",
     "actionCategory": "setup-establish",
     "category": "pets",
     "actionType": "off-app",
@@ -565,7 +565,7 @@
   },
   {
     "taskId": "TRANSFER_VET_RECORDS",
-    "title": "Transfer Vet Records",
+    "title": "Transfer vet records",
     "actionCategory": "transfer-records",
     "category": "pets",
     "actionType": "off-app",
@@ -585,7 +585,7 @@
   },
   {
     "taskId": "CANCEL_BANK",
-    "title": "Close Bank Account",
+    "title": "Close bank/credit union account",
     "actionCategory": "cancel-stop",
     "category": "finance",
     "actionType": "off-app",
@@ -605,7 +605,7 @@
   },
   {
     "taskId": "SETUP_BANK",
-    "title": "Set Up New Bank Account",
+    "title": "Set up new bank/credit union account",
     "actionCategory": "setup-establish",
     "category": "finance",
     "actionType": "off-app",
@@ -625,7 +625,7 @@
   },
   {
     "taskId": "UPDATE_BANK",
-    "title": "Update Bank Account Address",
+    "title": "Update bank/credit union",
     "actionCategory": "update-notify",
     "category": "finance",
     "actionType": "off-app",
@@ -645,7 +645,7 @@
   },
   {
     "taskId": "UPDATE_CREDIT_CARD",
-    "title": "Update Credit Card Address",
+    "title": "Update credit card companies",
     "actionCategory": "update-notify",
     "category": "finance",
     "actionType": "off-app",
@@ -662,7 +662,7 @@
   },
   {
     "taskId": "UPDATE_INVESTMENT",
-    "title": "Update Investment Account Address",
+    "title": "Update investment accounts",
     "actionCategory": "update-notify",
     "category": "finance",
     "actionType": "off-app",
@@ -679,7 +679,7 @@
   },
   {
     "taskId": "UPDATE_STUDENT_LOANS",
-    "title": "Update Student Loan Account Address",
+    "title": "Update student loan accounts",
     "actionCategory": "update-notify",
     "category": "finance",
     "actionType": "off-app",
@@ -696,7 +696,7 @@
   },
   {
     "taskId": "CANCEL_CONDO_INSURANCE",
-    "title": "Cancel Condo Insurance",
+    "title": "Cancel condo insurance",
     "actionCategory": "cancel-stop",
     "category": "insurance",
     "actionType": "off-app",
@@ -717,7 +717,7 @@
   },
   {
     "taskId": "CANCEL_RENTERS_INSURANCE",
-    "title": "Cancel or Update Renter's Insurance",
+    "title": "Cancel or update renter's insurance",
     "actionCategory": "cancel-stop",
     "category": "insurance",
     "actionType": "off-app",
@@ -737,7 +737,7 @@
   },
   {
     "taskId": "SETUP_CONDO_INSURANCE",
-    "title": "Set Up Condo Insurance",
+    "title": "Set up condo insurance",
     "actionCategory": "setup-establish",
     "category": "insurance",
     "actionType": "off-app",
@@ -758,7 +758,7 @@
   },
   {
     "taskId": "SETUP_HOMEOWNERS_INSURANCE",
-    "title": "Set Up Homeowner's Insurance",
+    "title": "Set up homeowner's insurance",
     "actionCategory": "setup-establish",
     "category": "insurance",
     "actionType": "off-app",
@@ -778,7 +778,7 @@
   },
   {
     "taskId": "SETUP_RENTERS_INSURANCE",
-    "title": "Set Up Renter's Insurance",
+    "title": "Set up renter's insurance",
     "actionCategory": "setup-establish",
     "category": "insurance",
     "actionType": "off-app",
@@ -798,7 +798,7 @@
   },
   {
     "taskId": "TRANSFER_CONDO_INSURANCE",
-    "title": "Transfer Condo Insurance",
+    "title": "Transfer condo insurance",
     "actionCategory": "transfer-update",
     "category": "insurance",
     "actionType": "off-app",
@@ -818,7 +818,7 @@
   },
   {
     "taskId": "TRANSFER_HOMEOWNERS_INSURANCE",
-    "title": "Transfer Homeowner's Insurance",
+    "title": "Transfer homeowner's insurance",
     "actionCategory": "transfer-update",
     "category": "insurance",
     "actionType": "off-app",
@@ -844,7 +844,7 @@
   },
   {
     "taskId": "TRANSFER_RENTERS_INSURANCE",
-    "title": "Transfer Renter's Insurance",
+    "title": "Transfer renter's insurance",
     "actionCategory": "transfer-update",
     "category": "insurance",
     "actionType": "off-app",
@@ -864,7 +864,7 @@
   },
   {
     "taskId": "UPDATE_AUTO_INSURANCE",
-    "title": "Update Auto Insurance Address",
+    "title": "Update auto insurance",
     "actionCategory": "update-notify",
     "category": "insurance",
     "actionType": "off-app",
@@ -881,7 +881,7 @@
   },
   {
     "taskId": "TRANSFER_DOCTOR_RECORDS",
-    "title": "Transfer Doctor Records",
+    "title": "Transfer medical records",
     "actionCategory": "transfer-records",
     "category": "health",
     "actionType": "off-app",
@@ -901,7 +901,7 @@
   },
   {
     "taskId": "TRANSFER_DENTIST_RECORDS",
-    "title": "Transfer Dentist Records",
+    "title": "Transfer dental records",
     "actionCategory": "transfer-records",
     "category": "health",
     "actionType": "off-app",
@@ -921,7 +921,7 @@
   },
   {
     "taskId": "TRANSFER_PHARMACY_RECORDS",
-    "title": "Transfer Pharmacy Records",
+    "title": "Transfer pharmacy records",
     "actionCategory": "transfer-records",
     "category": "health",
     "actionType": "off-app",
@@ -941,7 +941,7 @@
   },
   {
     "taskId": "TRANSFER_SPECIALISTS_RECORDS",
-    "title": "Transfer Specialist Medical Records",
+    "title": "Transfer medical specialist records",
     "actionCategory": "transfer-records",
     "category": "health",
     "actionType": "off-app",
@@ -961,7 +961,7 @@
   },
   {
     "taskId": "UPDATE_DOCTOR",
-    "title": "Update Doctor Information",
+    "title": "Update doctor's office",
     "actionCategory": "update-notify",
     "category": "health",
     "actionType": "off-app",
@@ -981,7 +981,7 @@
   },
   {
     "taskId": "UPDATE_DENTIST",
-    "title": "Update Dentist Information",
+    "title": "Update dentist office",
     "actionCategory": "update-notify",
     "category": "health",
     "actionType": "off-app",
@@ -1001,7 +1001,7 @@
   },
   {
     "taskId": "CANCEL_YOGA",
-    "title": "Cancel Yoga / Pilates Membership",
+    "title": "Cancel yoga/pilates membership",
     "actionCategory": "cancel-stop",
     "category": "fitness",
     "actionType": "off-app",
@@ -1021,7 +1021,7 @@
   },
   {
     "taskId": "CANCEL_SPIN_CYCLING",
-    "title": "Cancel Spin/Cycling Studio Membership",
+    "title": "Cancel spin/cycling membership",
     "actionCategory": "cancel-stop",
     "category": "fitness",
     "actionType": "off-app",
@@ -1041,7 +1041,7 @@
   },
   {
     "taskId": "CANCEL_MASSAGE",
-    "title": "Cancel Massage / Spa Membership",
+    "title": "Cancel massage/spa membership",
     "actionCategory": "cancel-stop",
     "category": "fitness",
     "actionType": "off-app",
@@ -1061,7 +1061,7 @@
   },
   {
     "taskId": "CANCEL_GYM",
-    "title": "Cancel Gym / CrossFit Membership",
+    "title": "Cancel gym/crossfit membership",
     "actionCategory": "cancel-stop",
     "category": "fitness",
     "actionType": "off-app",
@@ -1081,7 +1081,7 @@
   },
   {
     "taskId": "CANCEL_GOLF",
-    "title": "Cancel Golf / Country Club Membership",
+    "title": "Cancel golf/country club membership",
     "actionCategory": "cancel-stop",
     "category": "fitness",
     "actionType": "off-app",
@@ -1101,7 +1101,7 @@
   },
   {
     "taskId": "SETUP_GYM",
-    "title": "Set Up New Gym / CrossFit Membership",
+    "title": "Set up new gym/crossfit membership",
     "actionCategory": "setup-establish",
     "category": "fitness",
     "actionType": "off-app",
@@ -1121,7 +1121,7 @@
   },
   {
     "taskId": "SETUP_YOGA",
-    "title": "Set Up New Yoga / Pilates Studio",
+    "title": "Set up new yoga/pilates membership",
     "actionCategory": "setup-establish",
     "category": "fitness",
     "actionType": "off-app",
@@ -1141,7 +1141,7 @@
   },
   {
     "taskId": "SETUP_SPIN_CYCLING",
-    "title": "Set Up New Spin or Cycling Studio",
+    "title": "Set up new spin/cycling membership",
     "actionCategory": "setup-establish",
     "category": "fitness",
     "actionType": "off-app",
@@ -1161,7 +1161,7 @@
   },
   {
     "taskId": "SETUP_GOLF",
-    "title": "Set Up New Golf / Country Club Membership",
+    "title": "Set up new golf/country club membership",
     "actionCategory": "setup-establish",
     "category": "fitness",
     "actionType": "off-app",
@@ -1181,7 +1181,7 @@
   },
   {
     "taskId": "SETUP_MASSAGE",
-    "title": "Set Up New Massage / Spa Membership",
+    "title": "Set up new massage/spa membership",
     "actionCategory": "setup-establish",
     "category": "fitness",
     "actionType": "off-app",
@@ -1201,7 +1201,7 @@
   },
   {
     "taskId": "UPDATE_GYM",
-    "title": "Update Gym / CrossFit Membership Address",
+    "title": "Update gym/crossfit",
     "actionCategory": "update-notify",
     "category": "fitness",
     "actionType": "off-app",
@@ -1221,7 +1221,7 @@
   },
   {
     "taskId": "UPDATE_YOGA",
-    "title": "Update Yoga / Pilates Membership Address",
+    "title": "Update yoga/pilates",
     "actionCategory": "update-notify",
     "category": "fitness",
     "actionType": "off-app",
@@ -1241,7 +1241,7 @@
   },
   {
     "taskId": "UPDATE_SPIN",
-    "title": "Update Spin / Cycling Membership Address",
+    "title": "Update spin/cycling",
     "actionCategory": "update-notify",
     "category": "fitness",
     "actionType": "off-app",
@@ -1261,7 +1261,7 @@
   },
   {
     "taskId": "UPDATE_MASSAGE",
-    "title": "Update Massage / Spa Membership Address",
+    "title": "Update massage/spa",
     "actionCategory": "update-notify",
     "category": "fitness",
     "actionType": "off-app",
@@ -1281,7 +1281,7 @@
   },
   {
     "taskId": "UPDATE_GOLF",
-    "title": "Update Golf / Country Club Membership Address",
+    "title": "Update golf/country club",
     "actionCategory": "update-notify",
     "category": "fitness",
     "actionType": "off-app",
