@@ -79,7 +79,7 @@ struct PeezyMenuView: View {
 
                     // Menu Items
                     VStack(spacing: 4) {
-                        ForEach(PeezyDestination.allCases) { destination in
+                        ForEach(PeezyDestination.allCases.filter { $0 != .timeline }) { destination in
                             MenuRow(
                                 destination: destination,
                                 isSelected: selectedDestination == destination,

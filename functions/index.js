@@ -3,7 +3,7 @@
  * Main entry point for the Peezy conversational AI
  */
 
-const { onRequest } = require('firebase-functions/v2/https');
+const { onRequest, onCall } = require('firebase-functions/v2/https');
 const { setGlobalOptions } = require('firebase-functions/v2');
 const admin = require('firebase-admin');
 const { generateResponse, validateContentLoaded } = require('./peezyBrain');
@@ -374,6 +374,57 @@ function getGreeting() {
   return "Good evening";
 }
 
+
+/**
+ * Request concierge handling for a task ("Peezy, handle this")
+ */
+exports.requestConcierge = onCall(
+  { region: 'us-central1', timeoutSeconds: 10, memory: '256MiB' },
+  async (request) => {
+    const { taskId, taskTitle, taskCategory, userId, userName, currentAddress, newAddress, moveDate, moveDistance } = request.data;
+
+    const db = admin.firestore();
+    await db.collection('conciergeRequests').add({
+      taskId: taskId || '',
+      taskTitle: taskTitle || '',
+      taskCategory: taskCategory || '',
+      userId: userId || '',
+      userName: userName || '',
+      currentAddress: currentAddress || '',
+      newAddress: newAddress || '',
+      moveDate: moveDate || '',
+      moveDistance: moveDistance || '',
+      requestedAt: admin.firestore.FieldValue.serverTimestamp(),
+      status: 'pending'
+    });
+
+    const webhookUrl = process.env.NOTIFICATION_WEBHOOK_URL;
+    if (webhookUrl) {
+      fetch(webhookUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'concierge_request',
+          taskId: taskId || '',
+          taskTitle: taskTitle || '',
+          taskCategory: taskCategory || '',
+          userId: userId || '',
+          userName: userName || '',
+          currentAddress: currentAddress || '',
+          newAddress: newAddress || '',
+          moveDate: moveDate || '',
+          moveDistance: moveDistance || '',
+          requestedAt: new Date().toISOString(),
+          status: 'pending'
+        })
+      }).catch(err => console.error('Concierge webhook failed:', err.message));
+    } else {
+      console.warn('NOTIFICATION_WEBHOOK_URL not configured');
+    }
+
+    return { success: true };
+  }
+);
 
 /**
  * Health check endpoint

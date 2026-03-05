@@ -31,7 +31,7 @@ const WORKFLOW_QUALIFYING = {
       {
         id: "special_items",
         question: "Do you have any of these items that need special handling?",
-        subtitle: "These require specific equipment and expertise. Select all that apply.",
+        subtitle: "Select all that apply.",
         type: "multi_select",
         options: [
           { id: "piano", label: "Piano or organ", icon: "pianokeys" },
@@ -43,16 +43,24 @@ const WORKFLOW_QUALIFYING = {
         ]
       },
       {
+        id: "insurance_context",
+        question: "A quick note on moving insurance",
+        subtitle: "Industry standard coverage is only $0.60 per pound. That means a 50lb TV worth $800 would only be covered for $30.",
+        type: "single_select",
+        options: []
+      },
+      {
         id: "insurance_preference",
-        question: "Industry standard coverage is just $0.60 per pound — a 50lb TV worth $800 would only be covered for $30. Want to see movers who offer full-value protection?",
+        question: "Want full-value moving insurance?",
+        subtitle: "Standard coverage is only $0.60/lb — a $800 TV would be covered for just $30.",
         type: "single_select",
         options: [
-          { id: "full_value", label: "Yes, I want full-value coverage", icon: "shield.checkered" },
+          { id: "full_value", label: "Yes, full coverage", icon: "shield.checkered" },
           { id: "standard", label: "No, standard is fine", icon: "shield" }
         ]
       }
     ],
-    questionCount: 3,
+    questionCount: 4,
     recap: {
       title: "Got it — here's what I'm looking for",
       closing: "I'll match you with movers who fit your specific needs and get you quotes.",
@@ -367,7 +375,7 @@ const WORKFLOW_QUALIFYING = {
       {
         id: "service_level",
         question: "What level of cleaning do you need?",
-        subtitle: "Select all that apply — some companies offer package deals.",
+        subtitle: "Select all that apply.",
         type: "multi_select",
         options: [
           { id: "standard", label: "Standard move-out clean", icon: "sparkles" },
@@ -416,12 +424,9 @@ const WORKFLOW_QUALIFYING = {
           { id: "furniture", label: "Furniture", icon: "sofa" },
           { id: "appliances", label: "Appliances", icon: "refrigerator" },
           { id: "electronics", label: "Electronics", icon: "desktopcomputer" },
-          { id: "clothing", label: "Clothing", icon: "tshirt" },
           { id: "mattresses", label: "Mattresses", icon: "bed.double" },
-          { id: "household", label: "Household items", icon: "house" },
-          { id: "yard_waste", label: "Yard waste", icon: "leaf" },
-          { id: "debris", label: "Construction debris", icon: "hammer" },
-          { id: "other", label: "Other / mixed", icon: "shippingbox" }
+          { id: "household", label: "Household / clothing", icon: "house" },
+          { id: "outdoor", label: "Outdoor / debris", icon: "leaf" }
         ]
       },
       {
@@ -612,9 +617,15 @@ const WORKFLOW_QUALIFYING = {
         ]
       },
       {
+        id: "trip_type_context",
+        question: "One-way vs. round-trip",
+        type: "single_select",
+        options: []
+      },
+      {
         id: "trip_type",
         question: "One-way or round-trip?",
-        subtitle: "One-way means you drop the truck off at your destination. Round-trip means you return it to the pickup location.",
+        subtitle: "One-way = drop off at destination. Round-trip = return to pickup location.",
         type: "single_select",
         options: [
           { id: "one_way", label: "One-way", icon: "arrow.right" },
@@ -643,11 +654,322 @@ const WORKFLOW_QUALIFYING = {
         ]
       }
     ],
-    questionCount: 4,
+    questionCount: 5,
     recap: {
       title: "Perfect — I'll find your truck",
       closing: "I'll compare options from the major rental companies and get you the best deal.",
       button: "Find my truck"
+    }
+  },
+
+  // ============================================
+  // MANAGE BANK
+  // ============================================
+  "manage_bank": {
+    workflowId: "manage_bank",
+    intro: {
+      title: "Let's figure out what you need for your bank account.",
+      subtitle: null
+    },
+    questions: [
+      {
+        id: "action",
+        question: "What would you like to do with your bank account?",
+        type: "single_select",
+        options: [
+          { id: "update_address", label: "Update my address", icon: "pencil.line", subtitle: "Keep your current account, just update the address on file" },
+          { id: "close_open_new", label: "Close & open new account", icon: "arrow.triangle.swap", subtitle: "Close this account and set up a new one near your new home" },
+          { id: "already_handled", label: "Already handled", icon: "checkmark.circle", subtitle: "I've already taken care of this", alreadyHandled: true }
+        ]
+      }
+    ],
+    questionCount: 1,
+    recap: {
+      title: "We're on it",
+      closing: "We'll take it from here.",
+      button: "Submit"
+    },
+    alreadyHandledRecap: {
+      title: "All set",
+      closing: "Got it — we'll mark this as complete.",
+      button: "Done"
+    }
+  },
+
+  // ============================================
+  // MANAGE DOCTOR
+  // ============================================
+  "manage_doctor": {
+    workflowId: "manage_doctor",
+    intro: {
+      title: "Let's figure out what you need for your primary care doctor.",
+      subtitle: null
+    },
+    questions: [
+      {
+        id: "action",
+        question: "What would you like to do?",
+        type: "single_select",
+        options: [
+          { id: "transfer_records", label: "Transfer records to new doctor", icon: "doc.arrow.forward", subtitle: "Request records be sent to a new provider near your new home" },
+          { id: "update_address", label: "Update address with current doctor", icon: "pencil.line", subtitle: "Keep your current doctor, just update your contact info" },
+          { id: "already_handled", label: "Already handled", icon: "checkmark.circle", subtitle: "I've already taken care of this", alreadyHandled: true }
+        ]
+      }
+    ],
+    questionCount: 1,
+    recap: {
+      title: "We're on it",
+      closing: "We'll take it from here.",
+      button: "Submit"
+    },
+    alreadyHandledRecap: {
+      title: "All set",
+      closing: "Got it — we'll mark this as complete.",
+      button: "Done"
+    }
+  },
+
+  // ============================================
+  // MANAGE DENTIST
+  // ============================================
+  "manage_dentist": {
+    workflowId: "manage_dentist",
+    intro: {
+      title: "Let's figure out what you need for your dentist.",
+      subtitle: null
+    },
+    questions: [
+      {
+        id: "action",
+        question: "What would you like to do?",
+        type: "single_select",
+        options: [
+          { id: "transfer_records", label: "Transfer records to new dentist", icon: "doc.arrow.forward", subtitle: "Request records and X-rays be sent to a new dentist" },
+          { id: "update_address", label: "Update address with current dentist", icon: "pencil.line", subtitle: "Keep your current dentist, just update your contact info" },
+          { id: "already_handled", label: "Already handled", icon: "checkmark.circle", subtitle: "I've already taken care of this", alreadyHandled: true }
+        ]
+      }
+    ],
+    questionCount: 1,
+    recap: {
+      title: "We're on it",
+      closing: "We'll take it from here.",
+      button: "Submit"
+    },
+    alreadyHandledRecap: {
+      title: "All set",
+      closing: "Got it — we'll mark this as complete.",
+      button: "Done"
+    }
+  },
+
+  // ============================================
+  // MANAGE VET
+  // ============================================
+  "manage_vet": {
+    workflowId: "manage_vet",
+    intro: {
+      title: "Let's figure out what you need for your pet's vet care.",
+      subtitle: null
+    },
+    questions: [
+      {
+        id: "action",
+        question: "What would you like to do?",
+        type: "single_select",
+        options: [
+          { id: "transfer_records", label: "Find new vet & transfer records", icon: "doc.arrow.forward", subtitle: "We'll help find a vet near your new home and transfer records" },
+          { id: "update_address", label: "Update address with current vet", icon: "pencil.line", subtitle: "Keep your current vet, just update your contact info" },
+          { id: "already_handled", label: "Already handled", icon: "checkmark.circle", subtitle: "I've already taken care of this", alreadyHandled: true }
+        ]
+      }
+    ],
+    questionCount: 1,
+    recap: {
+      title: "We're on it",
+      closing: "We'll take it from here.",
+      button: "Submit"
+    },
+    alreadyHandledRecap: {
+      title: "All set",
+      closing: "Got it — we'll mark this as complete.",
+      button: "Done"
+    }
+  },
+
+  // ============================================
+  // MANAGE GYM
+  // ============================================
+  "manage_gym": {
+    workflowId: "manage_gym",
+    intro: {
+      title: "Let's figure out what you need for your gym membership.",
+      subtitle: null
+    },
+    questions: [
+      {
+        id: "action",
+        question: "What would you like to do with your membership?",
+        type: "single_select",
+        options: [
+          { id: "transfer", label: "Transfer to new location", icon: "arrow.triangle.swap", subtitle: "Move your membership to a location near your new home" },
+          { id: "cancel", label: "Cancel membership", icon: "xmark.circle", subtitle: "End your current membership" },
+          { id: "update_address", label: "Update my address", icon: "pencil.line", subtitle: "Keep your membership as-is, just update your address" },
+          { id: "already_handled", label: "Already handled", icon: "checkmark.circle", subtitle: "I've already taken care of this", alreadyHandled: true }
+        ]
+      }
+    ],
+    questionCount: 1,
+    recap: {
+      title: "We're on it",
+      closing: "We'll take it from here.",
+      button: "Submit"
+    },
+    alreadyHandledRecap: {
+      title: "All set",
+      closing: "Got it — we'll mark this as complete.",
+      button: "Done"
+    }
+  },
+
+  // ============================================
+  // MANAGE YOGA
+  // ============================================
+  "manage_yoga": {
+    workflowId: "manage_yoga",
+    intro: {
+      title: "Let's figure out what you need for your yoga or pilates membership.",
+      subtitle: null
+    },
+    questions: [
+      {
+        id: "action",
+        question: "What would you like to do with your membership?",
+        type: "single_select",
+        options: [
+          { id: "transfer", label: "Transfer to new location", icon: "arrow.triangle.swap", subtitle: "Move your membership to a location near your new home" },
+          { id: "cancel", label: "Cancel membership", icon: "xmark.circle", subtitle: "End your current membership" },
+          { id: "update_address", label: "Update my address", icon: "pencil.line", subtitle: "Keep your membership as-is, just update your address" },
+          { id: "already_handled", label: "Already handled", icon: "checkmark.circle", subtitle: "I've already taken care of this", alreadyHandled: true }
+        ]
+      }
+    ],
+    questionCount: 1,
+    recap: {
+      title: "We're on it",
+      closing: "We'll take it from here.",
+      button: "Submit"
+    },
+    alreadyHandledRecap: {
+      title: "All set",
+      closing: "Got it — we'll mark this as complete.",
+      button: "Done"
+    }
+  },
+
+  // ============================================
+  // MANAGE SPIN
+  // ============================================
+  "manage_spin": {
+    workflowId: "manage_spin",
+    intro: {
+      title: "Let's figure out what you need for your spin or cycling membership.",
+      subtitle: null
+    },
+    questions: [
+      {
+        id: "action",
+        question: "What would you like to do with your membership?",
+        type: "single_select",
+        options: [
+          { id: "transfer", label: "Transfer to new location", icon: "arrow.triangle.swap", subtitle: "Move your membership to a location near your new home" },
+          { id: "cancel", label: "Cancel membership", icon: "xmark.circle", subtitle: "End your current membership" },
+          { id: "update_address", label: "Update my address", icon: "pencil.line", subtitle: "Keep your membership as-is, just update your address" },
+          { id: "already_handled", label: "Already handled", icon: "checkmark.circle", subtitle: "I've already taken care of this", alreadyHandled: true }
+        ]
+      }
+    ],
+    questionCount: 1,
+    recap: {
+      title: "We're on it",
+      closing: "We'll take it from here.",
+      button: "Submit"
+    },
+    alreadyHandledRecap: {
+      title: "All set",
+      closing: "Got it — we'll mark this as complete.",
+      button: "Done"
+    }
+  },
+
+  // ============================================
+  // MANAGE MASSAGE
+  // ============================================
+  "manage_massage": {
+    workflowId: "manage_massage",
+    intro: {
+      title: "Let's figure out what you need for your massage or spa membership.",
+      subtitle: null
+    },
+    questions: [
+      {
+        id: "action",
+        question: "What would you like to do with your membership?",
+        type: "single_select",
+        options: [
+          { id: "transfer", label: "Transfer to new location", icon: "arrow.triangle.swap", subtitle: "Move your membership to a location near your new home" },
+          { id: "cancel", label: "Cancel membership", icon: "xmark.circle", subtitle: "End your current membership" },
+          { id: "update_address", label: "Update my address", icon: "pencil.line", subtitle: "Keep your membership as-is, just update your address" },
+          { id: "already_handled", label: "Already handled", icon: "checkmark.circle", subtitle: "I've already taken care of this", alreadyHandled: true }
+        ]
+      }
+    ],
+    questionCount: 1,
+    recap: {
+      title: "We're on it",
+      closing: "We'll take it from here.",
+      button: "Submit"
+    },
+    alreadyHandledRecap: {
+      title: "All set",
+      closing: "Got it — we'll mark this as complete.",
+      button: "Done"
+    }
+  },
+
+  // ============================================
+  // MANAGE GOLF
+  // ============================================
+  "manage_golf": {
+    workflowId: "manage_golf",
+    intro: {
+      title: "Let's figure out what you need for your golf or country club membership.",
+      subtitle: null
+    },
+    questions: [
+      {
+        id: "action",
+        question: "What would you like to do with your membership?",
+        type: "single_select",
+        options: [
+          { id: "transfer", label: "Transfer to new location", icon: "arrow.triangle.swap", subtitle: "Move your membership to a location near your new home" },
+          { id: "cancel", label: "Cancel membership", icon: "xmark.circle", subtitle: "End your current membership" },
+          { id: "update_address", label: "Update my address", icon: "pencil.line", subtitle: "Keep your membership as-is, just update your address" },
+          { id: "already_handled", label: "Already handled", icon: "checkmark.circle", subtitle: "I've already taken care of this", alreadyHandled: true }
+        ]
+      }
+    ],
+    questionCount: 1,
+    recap: {
+      title: "We're on it",
+      closing: "We'll take it from here.",
+      button: "Submit"
+    },
+    alreadyHandledRecap: {
+      title: "All set",
+      closing: "Got it — we'll mark this as complete.",
+      button: "Done"
     }
   }
 

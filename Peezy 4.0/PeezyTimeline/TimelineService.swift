@@ -91,7 +91,8 @@ class TimelineService {
                 taskCategory: categoryRaw,
                 urgencyPercentage: urgencyPercentage,
                 userInProgressDate: userInProgressDate,
-                userInProgressReturnDate: userInProgressReturnDate
+                userInProgressReturnDate: userInProgressReturnDate,
+                selfServiceOnly: (data["selfServiceOnly"] as? Bool) ?? false
             )
 
             // Include all fetched cards for timeline display

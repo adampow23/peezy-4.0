@@ -19,6 +19,7 @@ import SwiftUI
 import Observation
 import FirebaseFirestore
 import FirebaseAuth
+import FirebaseFunctions
 
 @Observable
 final class PeezyHomeViewModel {
@@ -136,7 +137,14 @@ final class PeezyHomeViewModel {
 
     var firstTimeWelcomeText: String {
         let daily = dailyTarget
-        return "Based on your move date, knocking out about \(daily) per day will keep you right on track.\n\nEach day, we'll serve up the tasks that matter most — just work through them and you're golden.\n\nIf you're feeling motivated and want to get ahead, go for it.\n\nIn the menu (top left), you'll find your full task list and move details. Feel free to update anything as plans change.\n\nAnd if you ever have a question about anything, just swipe up and ask!"
+        let paceDescription: String
+        if daily == 0 {
+            paceDescription = "We'll figure out your daily pace once tasks are generated."
+        } else {
+            let taskWord = daily == 1 ? "task" : "tasks"
+            paceDescription = "Based on your move date, knocking out about \(daily) \(taskWord) per day will keep you right on track."
+        }
+        return "\(paceDescription)\n\nEach day, we'll serve up the tasks that matter most — just work through them and you're golden.\n\nIf you're feeling motivated and want to get ahead, go for it.\n\nIn the menu (top left), you'll find your full task list and move details. Feel free to update anything as plans change.\n\nAnd if you ever have a question about anything, just swipe up and ask!"
     }
 
     var firstTimeWelcomeGreeting: String {
@@ -147,7 +155,11 @@ final class PeezyHomeViewModel {
     // MARK: - Daily Greeting Text
 
     var dailyGreetingSubtitle: String {
-        return "Just \(dailyTarget) to knock out today!"
+        if dailyTarget == 0 {
+            return "You're all caught up for today!"
+        }
+        let taskWord = dailyTarget == 1 ? "task" : "tasks"
+        return "Just \(dailyTarget) \(taskWord) to knock out today!"
     }
 
     // MARK: - Returning Mid-Day Text
@@ -155,7 +167,14 @@ final class PeezyHomeViewModel {
     var returningMidDaySubtitle: String {
         let completed = dailyDoseCompletedCount
         let remaining = max(dailyTarget - completed, 0)
-        return "You've done \(completed) of \(dailyTarget) today — \(remaining) to go."
+        if dailyTarget == 0 {
+            return "You're all caught up for today!"
+        }
+        if remaining == 0 {
+            return "You've knocked out all \(dailyTarget) for today!"
+        }
+        let taskWord = remaining == 1 ? "task" : "tasks"
+        return "You've done \(completed) of \(dailyTarget) today — \(remaining) \(taskWord) to go."
     }
 
     var returningGreeting: String {
@@ -206,6 +225,9 @@ final class PeezyHomeViewModel {
 
     /// "Today: X of Y done" — shown on welcome card (daily count only, no total)
     var progressText: String {
+        if dailyTarget == 0 {
+            return "No tasks scheduled today"
+        }
         let done = min(dailyDoseCompletedCount, dailyTarget)
         return "Today: \(done) of \(dailyTarget) done"
     }
@@ -316,9 +338,11 @@ final class PeezyHomeViewModel {
                     dueDate: dueDate,
                     snoozedUntil: snoozedUntil,
                     lastSnoozedAt: lastSnoozedAt,
+                    taskCategory: data["category"] as? String,
                     urgencyPercentage: urgencyPercentage,
                     userInProgressDate: userInProgressDate,
-                    userInProgressReturnDate: userInProgressReturnDate
+                    userInProgressReturnDate: userInProgressReturnDate,
+                    selfServiceOnly: (data["selfServiceOnly"] as? Bool) ?? false
                 )
 
                 if card.status == .inProgress {
@@ -528,6 +552,59 @@ final class PeezyHomeViewModel {
         isFocusedTask = false
 
         advanceAfterTask()
+    }
+
+    // MARK: - Mark Task Peezy Handling ("Peezy, handle this")
+
+    /// Marks the current task as InProgress — Peezy handles it via concierge.
+    /// Reuses existing markTaskInProgress() which writes status: "InProgress" to Firestore.
+    func markCurrentTaskPeezyHandling() {
+        guard let task = currentTask else { return }
+        Task {
+            await markTaskInProgress(task)
+
+            // Fire concierge notification (non-blocking, fire-and-forget)
+            Task {
+                do {
+                    let callable = Functions.functions().httpsCallable("requestConcierge")
+                    let moveDateStr: String
+                    if let date = userState?.moveDate {
+                        moveDateStr = ISO8601DateFormatter().string(from: date)
+                    } else {
+                        moveDateStr = ""
+                    }
+                    let currentAddr = [userState?.originCity, userState?.originState]
+                        .compactMap { $0 }
+                        .joined(separator: ", ")
+                    let newAddr = [userState?.destinationCity, userState?.destinationState]
+                        .compactMap { $0 }
+                        .joined(separator: ", ")
+                    let payload: [String: Any] = [
+                        "taskId": task.taskId ?? task.id,
+                        "taskTitle": task.title,
+                        "taskCategory": task.taskCategory ?? "",
+                        "userId": userState?.userId ?? "",
+                        "userName": userState?.name ?? "",
+                        "currentAddress": currentAddr,
+                        "newAddress": newAddr,
+                        "moveDate": moveDateStr,
+                        "moveDistance": userState?.moveDistance?.rawValue ?? ""
+                    ]
+                    _ = try await callable.call(payload)
+                } catch {
+                    print("Concierge notification failed: \(error.localizedDescription)")
+                }
+            }
+
+            await MainActor.run {
+                allActiveTasks.removeAll { $0.id == task.id }
+                dailyDoseCompletedCount += 1
+                completedThisSession += 1
+                currentTask = nil
+                isFocusedTask = false
+                advanceAfterTask()
+            }
+        }
     }
 
     // MARK: - Focus Task (from Task List)

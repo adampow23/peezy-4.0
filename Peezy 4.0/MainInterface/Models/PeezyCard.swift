@@ -51,6 +51,9 @@ struct PeezyCard: Identifiable, Equatable, Codable {
 
     // Task category for icon mapping (e.g. "moving", "utilities", "packing")
     var taskCategory: String?
+
+    // Self-service flag — user handles it themselves (no Peezy concierge option)
+    var selfServiceOnly: Bool = false
     
     // MARK: - Card Types
     enum CardType: String, Codable {
@@ -187,7 +190,8 @@ struct PeezyCard: Identifiable, Equatable, Codable {
         taskCategory: String? = nil,
         urgencyPercentage: Int? = nil,
         userInProgressDate: Date? = nil,
-        userInProgressReturnDate: Date? = nil
+        userInProgressReturnDate: Date? = nil,
+        selfServiceOnly: Bool = false
     ) {
         self.id = id
         self.type = type
@@ -209,6 +213,7 @@ struct PeezyCard: Identifiable, Equatable, Codable {
         self.urgencyPercentage = urgencyPercentage
         self.userInProgressDate = userInProgressDate
         self.userInProgressReturnDate = userInProgressReturnDate
+        self.selfServiceOnly = selfServiceOnly
     }
     
     // MARK: - Factory Methods

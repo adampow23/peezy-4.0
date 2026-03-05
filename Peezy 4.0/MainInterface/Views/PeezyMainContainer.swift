@@ -67,6 +67,22 @@ struct PeezyMainContainer: View {
                     .padding(.top, 8)
 
                     Spacer()
+
+                    // Task list button (top right)
+                    Button {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                            selectedDestination = .timeline
+                        }
+                    } label: {
+                        Image(systemName: "checklist")
+                            .font(.system(size: 20, weight: .medium))
+                            .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.8))
+                            .frame(width: 44, height: 44)
+                            .background(.regularMaterial.opacity(0.8))
+                            .clipShape(Circle())
+                    }
+                    .padding(.trailing, 16)
+                    .padding(.top, 8)
                 }
                 Spacer()
             }

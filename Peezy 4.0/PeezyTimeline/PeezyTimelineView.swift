@@ -7,6 +7,8 @@
 //
 
 import SwiftUI
+import FirebaseAuth
+import FirebaseFirestore
 
 // MARK: - Tab Enum
 
@@ -252,7 +254,8 @@ struct PeezyTaskStream: View {
                                 task: task,
                                 isExpanded: expandedTaskId == task.id,
                                 onExpand: { toggleExpand(task.id) },
-                                onStart: onNavigateToTask != nil ? { onNavigateToTask?(task) } : nil
+                                onStart: onNavigateToTask != nil ? { onNavigateToTask?(task) } : nil,
+                                onComplete: nil
                             )
                         }
                     }
@@ -268,7 +271,10 @@ struct PeezyTaskStream: View {
                                     task: task,
                                     isExpanded: expandedTaskId == task.id,
                                     onExpand: { toggleExpand(task.id) },
-                                    onStart: nil
+                                    onStart: nil,
+                                    onComplete: {
+                                        markTaskComplete(task)
+                                    }
                                 )
                             }
                         }
@@ -279,7 +285,8 @@ struct PeezyTaskStream: View {
                                     task: task,
                                     isExpanded: expandedTaskId == task.id,
                                     onExpand: { toggleExpand(task.id) },
-                                    onStart: nil
+                                    onStart: nil,
+                                    onComplete: nil
                                 )
                             }
                         }
@@ -294,7 +301,8 @@ struct PeezyTaskStream: View {
                                 task: task,
                                 isExpanded: expandedTaskId == task.id,
                                 onExpand: { toggleExpand(task.id) },
-                                onStart: onNavigateToTask != nil ? { onNavigateToTask?(task) } : nil
+                                onStart: onNavigateToTask != nil ? { onNavigateToTask?(task) } : nil,
+                                onComplete: nil
                             )
                         }
                     }
@@ -308,7 +316,8 @@ struct PeezyTaskStream: View {
                                 task: task,
                                 isExpanded: expandedTaskId == task.id,
                                 onExpand: { toggleExpand(task.id) },
-                                onStart: nil
+                                onStart: nil,
+                                onComplete: nil
                             )
                         }
                     }
@@ -354,6 +363,43 @@ struct PeezyTaskStream: View {
     private func toggleExpand(_ id: String) {
         withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
             expandedTaskId = expandedTaskId == id ? nil : id
+        }
+    }
+
+    // MARK: - Mark Task Complete
+
+    private func markTaskComplete(_ task: PeezyCard) {
+        guard let userId = Auth.auth().currentUser?.uid else { return }
+
+        let db = Firestore.firestore()
+        let taskRef = db.collection("users").document(userId).collection("tasks").document(task.id)
+
+        taskRef.updateData([
+            "status": "Completed",
+            "completedAt": FieldValue.serverTimestamp()
+        ]) { error in
+            if let error = error {
+                print("Failed to mark task complete: \(error.localizedDescription)")
+            } else {
+                // Update local state immediately so the task moves to Done tab
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                    if let index = allTasks.firstIndex(where: { $0.id == task.id }) {
+                        allTasks[index] = PeezyCard(
+                            id: task.id,
+                            type: task.type,
+                            title: task.title,
+                            subtitle: task.subtitle,
+                            priority: task.priority,
+                            status: .completed,
+                            dueDate: task.dueDate,
+                            taskCategory: task.taskCategory,
+                            urgencyPercentage: task.urgencyPercentage,
+                            selfServiceOnly: task.selfServiceOnly
+                        )
+                        expandedTaskId = nil
+                    }
+                }
+            }
         }
     }
 
@@ -408,6 +454,7 @@ struct TaskListRow: View {
     var isExpanded: Bool = false
     var onExpand: () -> Void = {}
     var onStart: (() -> Void)?
+    var onComplete: (() -> Void)?
 
     private var isSnoozed: Bool {
         if task.status == .snoozed { return true }
@@ -512,12 +559,22 @@ struct TaskListRow: View {
                 }
             }
 
-            // Start button — expanded state only
+            // Expanded buttons
             if isExpanded {
-                // Start button (hide for Completed, InProgress, and UserInProgress tasks)
+                // Start button for upcoming/snoozed tasks
                 if !isCompleted && !isInProgress && !isUserInProgress, let onStart {
                     PeezyAssessmentButton("Start Task") {
                         onStart()
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 24)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+
+                // Mark Complete button for "You're on it" tasks
+                if isUserInProgress, let onComplete {
+                    PeezyAssessmentButton("Mark Complete") {
+                        onComplete()
                     }
                     .padding(.horizontal, 20)
                     .padding(.bottom, 24)
@@ -566,7 +623,6 @@ struct TaskListRow: View {
 
 #Preview {
     PeezyTaskStream(previewTasks: [
-        // Active tasks
         PeezyCard(
             id: "1",
             type: .task,
@@ -587,7 +643,6 @@ struct TaskListRow: View {
             dueDate: Calendar.current.date(byAdding: .day, value: 10, to: Date()),
             taskCategory: "administrative"
         ),
-        // User in progress
         PeezyCard(
             id: "3a",
             type: .task,
@@ -599,7 +654,6 @@ struct TaskListRow: View {
             userInProgressDate: Date(),
             userInProgressReturnDate: Calendar.current.date(byAdding: .day, value: 3, to: Date())
         ),
-        // Peezy in progress
         PeezyCard(
             id: "3",
             type: .task,
@@ -610,7 +664,6 @@ struct TaskListRow: View {
             dueDate: Date(),
             taskCategory: "utilities"
         ),
-        // Snoozed task
         PeezyCard(
             id: "5",
             type: .task,
@@ -621,7 +674,6 @@ struct TaskListRow: View {
             snoozedUntil: Calendar.current.date(byAdding: .day, value: 3, to: Date()),
             taskCategory: "services"
         ),
-        // Completed tasks
         PeezyCard(
             id: "6",
             type: .task,

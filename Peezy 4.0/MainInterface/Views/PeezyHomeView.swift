@@ -44,6 +44,23 @@ struct PeezyHomeView: View {
     // Deep ink text color for light theme
     private let deepInk = PeezyTheme.Colors.deepInk
 
+    // MARK: - Initializers
+
+    init(userState: UserState?, focusedTask: Binding<PeezyCard?>) {
+        self.userState = userState
+        self._focusedTask = focusedTask
+    }
+
+    #if DEBUG
+    /// Internal init that accepts a pre-configured view model for Xcode Previews.
+    /// Bypasses Firebase loading — the view model state is set directly.
+    init(previewViewModel: PeezyHomeViewModel) {
+        self.userState = previewViewModel.userState
+        self._focusedTask = .constant(nil)
+        self._viewModel = State(initialValue: previewViewModel)
+    }
+    #endif
+
     var body: some View {
         GeometryReader { geometry in
             ZStack {
@@ -144,6 +161,11 @@ struct PeezyHomeView: View {
             }
         }
         .onAppear {
+            #if DEBUG
+            if ProcessInfo.processInfo.environment["XCODE_RUNNING_FOR_PREVIEWS"] == "1" {
+                return // Skip loading in previews — use injected state
+            }
+            #endif
             viewModel.userState = userState
             viewModel.resetDailyCountIfNeededPublic()
             if viewModel.taskQueue.isEmpty && viewModel.state == .loading {
@@ -243,14 +265,15 @@ struct PeezyHomeView: View {
         switch welcomePage {
         case 0:
             if daily > 0 {
-                return "We break your move into bite-sized daily tasks based on your timeline.\n\nWe've got about \(daily) tasks per day to keep you on track — just work through each day's batch and you're golden."
+                let taskWord = daily == 1 ? "task" : "tasks"
+                return "We break your move into bite-sized daily tasks based on your timeline.\n\nWe've got about \(daily) \(taskWord) per day to keep you on track — just work through each day's batch and you're golden."
             } else {
-                return "We break your move into bite-sized daily tasks based on your timeline. Each day you'll get a small batch to knock out — just work through them and you're golden."
+                return "We break your move into bite-sized daily tasks based on your timeline.\n\nWe'll figure out your daily pace once we know more about your move."
             }
         case 1:
             return "The task list tab has everything — upcoming, in progress, and done. You can also start tasks ahead of schedule from there.\n\nNeed to update your move details? Tap the menu in the top left."
         default:
-            return "Tap the chat icon on any task to get help from Peezy. It knows the context of that specific task and can walk you through it step by step."
+            return "Swipe up from the bottom of any screen to chat with Peezy. It can help answer questions, walk you through tasks, or just point you in the right direction."
         }
     }
 
@@ -449,83 +472,65 @@ struct PeezyHomeView: View {
 
                 // Action buttons
                 let isWorkflow = !(task.workflowId ?? "").isEmpty
-                HStack(spacing: 10) {
-                    // Later (skip)
-                    Button(action: {
-                        PeezyHaptics.light()
-                        viewModel.skipCurrentTask()
-                    }) {
-                        VStack(spacing: 4) {
-                            Image(systemName: "clock.arrow.circlepath")
-                                .font(.system(size: 18))
-                            Text("Later")
-                                .font(.system(size: 12, weight: .medium))
+                let isSelfService = task.selfServiceOnly
+                VStack(spacing: 10) {
+                    if isWorkflow {
+                        // Workflow: Start only
+                        PeezyAssessmentButton("Start") {
+                            viewModel.startWorkflowForCurrentTask()
                         }
-                        .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.5))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
-                        .background(
-                            RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadius, style: .continuous)
-                                .fill(.regularMaterial)
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadius, style: .continuous)
-                                .stroke(Color.black.opacity(0.05), lineWidth: 1)
-                        )
-                    }
-                    .buttonStyle(.peezySecondary)
+                    } else if isSelfService {
+                        // Self-service: Done + I'm on it
+                        PeezyAssessmentButton("Done") {
+                            viewModel.completeCurrentTask()
+                        }
 
-                    // I'm on it (user in progress)
-                    if !isWorkflow {
                         Button(action: {
                             PeezyHaptics.light()
                             viewModel.markCurrentTaskUserInProgress()
                         }) {
-                            VStack(spacing: 4) {
-                                Image(systemName: "figure.walk.circle.fill")
-                                    .font(.system(size: 18))
-                                Text("I'm on it")
-                                    .font(.system(size: 12, weight: .medium))
-                            }
-                            .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.7))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 14)
-                            .background(
-                                RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadius, style: .continuous)
-                                    .fill(.regularMaterial)
-                            )
-                            .overlay(
-                                RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadius, style: .continuous)
-                                    .stroke(Color.black.opacity(0.05), lineWidth: 1)
-                            )
+                            Text("I'm on it")
+                                .font(.system(size: 18, weight: .semibold, design: .rounded))
+                                .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.7))
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 56)
+                                .background(
+                                    Capsule(style: .continuous)
+                                        .fill(Color.black.opacity(0.06))
+                                )
                         }
-                        .buttonStyle(.peezySecondary)
+                    } else {
+                        // Concierge: Peezy handle this + I'll handle this
+                        PeezyAssessmentButton("Peezy, handle this") {
+                            viewModel.markCurrentTaskPeezyHandling()
+                        }
+
+                        Button(action: {
+                            PeezyHaptics.light()
+                            viewModel.markCurrentTaskUserInProgress()
+                        }) {
+                            Text("I'll handle this")
+                                .font(.system(size: 18, weight: .semibold, design: .rounded))
+                                .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.7))
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 56)
+                                .background(
+                                    Capsule(style: .continuous)
+                                        .fill(Color.black.opacity(0.06))
+                                )
+                        }
                     }
 
-                    // Complete / Get Started
+                    // Later — all task types
                     Button(action: {
-                        PeezyHaptics.medium()
-                        if isWorkflow {
-                            viewModel.startWorkflowForCurrentTask()
-                        } else {
-                            viewModel.completeCurrentTask()
-                        }
+                        PeezyHaptics.light()
+                        viewModel.skipCurrentTask()
                     }) {
-                        VStack(spacing: 4) {
-                            Image(systemName: isWorkflow ? "arrow.forward.circle.fill" : "checkmark.circle.fill")
-                                .font(.system(size: 18))
-                            Text(isWorkflow ? "Start" : "Done")
-                                .font(.system(size: 12, weight: .semibold))
-                        }
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
-                        .background(
-                            Capsule(style: .continuous)
-                                .fill(PeezyTheme.Colors.deepInk)
-                        )
+                        Text("Later")
+                            .font(.subheadline)
+                            .foregroundStyle(Color.gray)
                     }
-                    .buttonStyle(.peezyPrimary)
+                    .padding(.top, 4)
                 }
                 .padding(.horizontal, 30)
                 .padding(.bottom, 30)
@@ -648,11 +653,65 @@ struct PeezyHomeView: View {
     }
 }
 
-// MARK: - Preview
+// MARK: - Previews
 
-#Preview {
+#if DEBUG
+
+#Preview("First Time Welcome") {
     PeezyHomeView(
-        userState: UserState(userId: "preview", name: "Adam"),
-        focusedTask: .constant(nil)
+        previewViewModel: .preview(state: .firstTimeWelcome)
     )
 }
+
+#Preview("Daily Greeting") {
+    PeezyHomeView(
+        previewViewModel: .preview(state: .dailyGreeting)
+    )
+}
+
+#Preview("Returning Mid-Day") {
+    PeezyHomeView(
+        previewViewModel: .preview(state: .returningMidDay)
+    )
+}
+
+#Preview("Active Task - Workflow") {
+    PeezyHomeView(
+        previewViewModel: .preview(
+            state: .activeTask,
+            task: PreviewData.mockWorkflowTask
+        )
+    )
+}
+
+#Preview("Active Task - Self Service") {
+    PeezyHomeView(
+        previewViewModel: .preview(
+            state: .activeTask,
+            task: PreviewData.mockSelfServiceTask
+        )
+    )
+}
+
+#Preview("Active Task - Concierge") {
+    PeezyHomeView(
+        previewViewModel: .preview(
+            state: .activeTask,
+            task: PreviewData.mockConciergeTask
+        )
+    )
+}
+
+#Preview("Daily Complete") {
+    PeezyHomeView(
+        previewViewModel: .preview(state: .dailyComplete)
+    )
+}
+
+#Preview("All Complete") {
+    PeezyHomeView(
+        previewViewModel: .preview(state: .allComplete, tasks: [])
+    )
+}
+
+#endif

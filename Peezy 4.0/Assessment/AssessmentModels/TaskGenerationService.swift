@@ -108,6 +108,9 @@ class TaskGenerationService {
                     userTask["workflowId"] = workflowId
                 }
 
+                // Copy selfServiceOnly flag (defaults to false if absent)
+                userTask["selfServiceOnly"] = taskData["selfServiceOnly"] as? Bool ?? false
+
                 tasksToCreate.append(userTask)
             } else {
                 #if DEBUG

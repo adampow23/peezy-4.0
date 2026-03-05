@@ -96,8 +96,6 @@ struct WorkflowCardView: View {
             }
             .offset(x: offset.width, y: 0)
         }
-        // Workflow cards are slightly taller than task cards (520 vs 500)
-        // to accommodate progress indicator and more content
         .frame(width: 340, height: 520)
     }
 
@@ -121,7 +119,6 @@ struct WorkflowCardHeader: View {
 
     var body: some View {
         HStack {
-            // Workflow name
             HStack(spacing: 6) {
                 Circle()
                     .fill(PeezyTheme.Colors.infoBlue)
@@ -136,7 +133,6 @@ struct WorkflowCardHeader: View {
 
             Spacer()
 
-            // Progress indicator
             if let progress = progress {
                 Text(progress)
                     .font(PeezyTheme.Typography.captionMedium)
@@ -180,7 +176,6 @@ struct WorkflowIntroContent: View {
 
             Spacer()
 
-            // Continue button
             PeezyAssessmentButton("Continue") {
                 onContinue()
             }
@@ -205,55 +200,76 @@ struct WorkflowQuestionContent: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Question text
-            VStack(alignment: .leading, spacing: 8) {
-                Text(question.question)
-                    .font(.system(size: 26, weight: .bold))
-                    .foregroundColor(PeezyTheme.Colors.deepInk)
-                    .fixedSize(horizontal: false, vertical: true)
 
-                if let subtitle = question.subtitle {
-                    Text(subtitle)
-                        .font(PeezyTheme.Typography.callout)
-                        .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.5))
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 28)
-            .padding(.top, 20)
+            // Scrollable: question text + tiles
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(spacing: 0) {
+                    // Question text
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(question.question)
+                            .font(.system(size: 22, weight: .bold))
+                            .foregroundColor(PeezyTheme.Colors.deepInk)
+                            .fixedSize(horizontal: false, vertical: true)
 
-            Spacer()
-
-            // Options grid
-            LazyVGrid(columns: columns, spacing: 12) {
-                ForEach(question.options) { option in
-                    WorkflowOptionTile(
-                        option: option,
-                        isSelected: selectedIds.contains(option.id),
-                        onTap: {
-                            onSelect(option.id, option.exclusive ?? false)
+                        if let subtitle = question.subtitle {
+                            Text(subtitle)
+                                .font(PeezyTheme.Typography.callout)
+                                .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.5))
+                                .fixedSize(horizontal: false, vertical: true)
                         }
-                    )
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 28)
+                    .padding(.top, 16)
+
+                    // Options grid
+                    if !question.options.isEmpty {
+                        LazyVGrid(columns: columns, spacing: 12) {
+                            ForEach(question.options) { option in
+                                WorkflowOptionTile(
+                                    option: option,
+                                    isSelected: selectedIds.contains(option.id),
+                                    onTap: {
+                                        onSelect(option.id, option.exclusive ?? false)
+                                    }
+                                )
+                            }
+                        }
+                        .padding(.horizontal, 24)
+                        .padding(.top, 16)
+                        .padding(.bottom, 16)
+                    }
                 }
             }
-            .padding(.horizontal, 20)
 
-            Spacer()
-
-            // For multi-select, show continue button
-            if question.type == .multi_select && !selectedIds.isEmpty {
+            // Fixed bottom area
+            if question.options.isEmpty {
+                // Context-only card: just Continue
+                Button(action: { onContinue() }) {
+                    Text("Continue")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 16)
+                        .background(PeezyTheme.Colors.deepInk)
+                        .cornerRadius(16)
+                }
+                .padding(.horizontal, 28)
+                .padding(.bottom, 28)
+            } else if question.type == .multi_select && !selectedIds.isEmpty {
+                // Multi-select: Continue after selection
                 PeezyAssessmentButton("Continue") {
                     onContinue()
                 }
                 .padding(.horizontal, 28)
                 .padding(.bottom, 28)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
+                .animation(.spring(response: 0.4, dampingFraction: 0.7), value: selectedIds.isEmpty)
             } else {
-                // Spacer for layout consistency
-                Color.clear.frame(height: 84)
+                // Single-select: small bottom padding only
+                Color.clear.frame(height: 16)
             }
         }
-        .animation(.spring(response: 0.3), value: selectedIds)
     }
 }
 
@@ -268,14 +284,21 @@ struct WorkflowOptionTile: View {
 
     var body: some View {
         Button(action: {
-            PeezyHaptics.medium()
+            let impact = UIImpactFeedbackGenerator(style: .medium)
+            impact.impactOccurred()
             onTap()
         }) {
-            VStack(spacing: 10) {
+            VStack(spacing: 8) {
                 // Icon
                 Image(systemName: option.icon)
-                    .font(.system(size: 28))
-                    .foregroundColor(isSelected ? PeezyTheme.Colors.lightBase : PeezyTheme.Colors.deepInk)
+                    .font(.system(size: 24))
+                    .foregroundColor(
+                        isSelected
+                            ? PeezyTheme.Colors.lightBase
+                            : PeezyTheme.Colors.deepInk.opacity(0.12)
+                    )
+                    .scaleEffect(isSelected ? 1.05 : 1.0)
+                    .animation(.spring(response: 0.5, dampingFraction: 0.5), value: isSelected)
 
                 // Label
                 Text(option.label)
@@ -295,8 +318,10 @@ struct WorkflowOptionTile: View {
                         .minimumScaleFactor(0.8)
                 }
             }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 14)
             .frame(maxWidth: .infinity)
-            .frame(height: 110)
+            .frame(maxHeight: .infinity)
             .background(
                 ZStack {
                     if isSelected {
@@ -314,14 +339,23 @@ struct WorkflowOptionTile: View {
                 RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadiusLarge, style: .continuous)
                     .stroke(isSelected ? Color.clear : Color.black.opacity(0.05), lineWidth: 1)
             )
+            .shadow(
+                color: isSelected ? PeezyTheme.Colors.deepInk.opacity(0.25) : Color.black.opacity(0.1),
+                radius: isPressed ? 4 : (isSelected ? 10 : 12),
+                x: 0,
+                y: isPressed ? 1 : (isSelected ? 4 : 8)
+            )
             .scaleEffect(isPressed ? 0.95 : 1.0)
+            .animation(.spring(response: 0.3, dampingFraction: 0.6), value: isPressed)
+            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isSelected)
         }
         .buttonStyle(PlainButtonStyle())
         .simultaneousGesture(
             DragGesture(minimumDistance: 0)
                 .onChanged { _ in
                     if !isPressed {
-                        PeezyHaptics.light()
+                        let light = UIImpactFeedbackGenerator(style: .light)
+                        light.impactOccurred()
                         withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
                             isPressed = true
                         }
@@ -350,12 +384,13 @@ struct WorkflowRecapContent: View {
             Text(recap.title)
                 .font(.system(size: 26, weight: .bold))
                 .foregroundColor(PeezyTheme.Colors.deepInk)
+                .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 28)
                 .padding(.top, 20)
 
             // Answer summary
-            ScrollView {
+            ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 12) {
                     ForEach(questions) { question in
                         if let selectedIds = answers.answers[question.id], !selectedIds.isEmpty {
@@ -368,16 +403,17 @@ struct WorkflowRecapContent: View {
                 }
                 .padding(.horizontal, 28)
                 .padding(.top, 16)
+                .padding(.bottom, 16)
             }
-            .frame(maxHeight: 200)
 
-            Spacer()
+            Spacer(minLength: 0)
 
             // Closing message
             Text(recap.closing)
                 .font(PeezyTheme.Typography.callout)
                 .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.6))
                 .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, 28)
 
             // Complete button
