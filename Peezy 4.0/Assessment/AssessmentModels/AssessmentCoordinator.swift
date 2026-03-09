@@ -62,6 +62,7 @@ enum AssessmentInputStep: String, Hashable {
     case storageFullness
 
     // Section 5: Services
+    case servicesIntro
     case hireMovers
     case packingPreference
     case truckRental
@@ -70,6 +71,7 @@ enum AssessmentInputStep: String, Hashable {
     case hireCleaners
     
     // Section 6: Accounts
+    case addressChangeIntro
     case financialInstitutions
     case financialDetails
     case healthcareProviders
@@ -281,6 +283,7 @@ class AssessmentCoordinator: ObservableObject {
         addStep(.hasVehicles)
 
         // Section 5: Services
+        addStep(.servicesIntro)
         addStep(.hireMovers)
         if dataManager.hireMovers.lowercased() == "get me quotes" {
             addStep(.packingPreference)
@@ -295,6 +298,7 @@ class AssessmentCoordinator: ObservableObject {
         addStep(.hireCleaners)
         
         // Section 6: Accounts
+        addStep(.addressChangeIntro)
         addStep(.financialInstitutions)
         if !dataManager.financialInstitutions.isEmpty {
             addStep(.financialDetails)
@@ -522,7 +526,13 @@ class AssessmentCoordinator: ObservableObject {
             )
 
         // --- SECTION 5: SERVICES ---
-            
+
+        case .servicesIntro:
+            return InputContext(
+                header: "Now let's talk about any professional help you might need.",
+                subheader: "We'll ask about services you're planning to hire or even just interested in receiving quotes from — movers, packers, cleaners, and more."
+            )
+
         case .hireMovers:
             return InputContext(
                 header: "Would you like quotes for professional movers?",
@@ -560,7 +570,13 @@ class AssessmentCoordinator: ObservableObject {
             )
             
         // --- SECTION 6: ACCOUNTS ---
-            
+
+        case .addressChangeIntro:
+            return InputContext(
+                header: "Time to make sure everyone knows where to find you.",
+                subheader: "You'll need to update your address with certain companies. We can help with that — and if you need to cancel something or find a new provider in your area, we've got you covered."
+            )
+
         case .financialInstitutions:
             return InputContext(
                 header: "Let's start with finance related accounts you might have.",

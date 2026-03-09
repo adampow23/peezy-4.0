@@ -265,6 +265,8 @@ Note: The icon and header/subheader text are already handled by `AssessmentInput
 
 **Mark Phase 3 complete when verification passes.**
 
+<!-- Phase 3: COMPLETE -->
+
 ---
 
 ## Phase 4: Financial/Healthcare/Fitness Details — One-at-a-Time Redesign (files: 3 modify)

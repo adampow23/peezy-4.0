@@ -144,6 +144,7 @@ struct AssessmentFlowView: View {
         case .storageFullness:       StorageFullness()
 
         // --- Section 5: Services ---
+        case .servicesIntro:         ExplainerPage(icon: "hammer.fill", onContinue: { coordinator.goToNext() })
         case .hireMovers:            HireMovers()
         case .packingPreference:     PackingPreference()
         case .truckRental:           TruckRental()
@@ -152,6 +153,7 @@ struct AssessmentFlowView: View {
         case .hireCleaners:          HireCleaners()
             
         // --- Section 6: Accounts ---
+        case .addressChangeIntro:    ExplainerPage(icon: "envelope.fill", onContinue: { coordinator.goToNext() })
         case .financialInstitutions: FinancialInstitutions()
         case .financialDetails:      FinancialDetails()
         case .healthcareProviders:   HealthcareProviders()
