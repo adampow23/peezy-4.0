@@ -69,6 +69,7 @@ struct InteractiveHomeTaskCard: View {
 
     // Internal celebration state
     @State private var successState: CardSuccessState? = nil
+    @State private var dismissOffset: CGFloat = 0
 
     private var isWorkflow: Bool {
         !(task.workflowId ?? "").isEmpty
@@ -167,6 +168,8 @@ struct InteractiveHomeTaskCard: View {
             .animation(.spring(response: 0.5, dampingFraction: 0.8), value: successState)
         }
         .frame(width: 340, height: 500)
+        .offset(x: dismissOffset)
+        .rotationEffect(.degrees(Double(dismissOffset) / 30))
     }
 
     // MARK: - Action Buttons
@@ -175,10 +178,15 @@ struct InteractiveHomeTaskCard: View {
     private var actionButtons: some View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
-                // Later (skip) — NO celebration, instant action
+                // Later (skip) — NO celebration, fly off left
                 Button(action: {
                     PeezyHaptics.light()
-                    onSkip()
+                    withAnimation(.easeIn(duration: 0.3)) {
+                        dismissOffset = -UIScreen.main.bounds.width
+                    }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        onSkip()
+                    }
                 }) {
                     VStack(spacing: 4) {
                         Image(systemName: "clock.arrow.circlepath")
@@ -266,9 +274,15 @@ struct InteractiveHomeTaskCard: View {
         // 1. Morph the card to celebration state
         successState = state
 
-        // 2. Hold for 1.5 seconds, then fire the backend action
+        // 2. Hold for 1.5 seconds, then fly off right
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-            finalAction()
+            withAnimation(.easeIn(duration: 0.3)) {
+                dismissOffset = UIScreen.main.bounds.width
+            }
+            // 3. After fly-off completes, fire the backend action
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                finalAction()
+            }
         }
     }
 }
@@ -458,20 +472,36 @@ struct PeezyHomeView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 12)
 
-                // Action button
-                PeezyAssessmentButton(welcomePage < 2 ? "Continue" : "Start My First Task") {
-                    if welcomePage < 2 {
+                // Swipe hint for pages 0-1, button for page 2
+                if welcomePage < 2 {
+                    Text("Swipe to continue")
+                        .font(.caption)
+                        .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.3))
+                        .padding(.bottom, 30)
+                } else {
+                    PeezyAssessmentButton("Start My First Task") {
+                        viewModel.dismissFirstTimeWelcome()
+                    }
+                    .padding(.horizontal, 30)
+                    .padding(.bottom, 30)
+                }
+            }
+        }
+        .gesture(
+            DragGesture(minimumDistance: 50)
+                .onEnded { gesture in
+                    let horizontal = gesture.translation.width
+                    if horizontal < -50 && welcomePage < 2 {
                         withAnimation(.easeInOut(duration: 0.3)) {
                             welcomePage += 1
                         }
-                    } else {
-                        viewModel.dismissFirstTimeWelcome()
+                    } else if horizontal > 50 && welcomePage > 0 {
+                        withAnimation(.easeInOut(duration: 0.3)) {
+                            welcomePage -= 1
+                        }
                     }
                 }
-                .padding(.horizontal, 30)
-                .padding(.bottom, 30)
-            }
-        }
+        )
     }
 
     private var welcomePageHeadline: String {
