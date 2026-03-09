@@ -3,8 +3,7 @@ import MapKit
 import Observation
 
 @Observable
-@MainActor
-final class BusinessSearchManager {
+final class BusinessSearchManager: NSObject, MKLocalSearchCompleterDelegate {
 
     // MARK: - Output
 
@@ -12,17 +11,19 @@ final class BusinessSearchManager {
 
     // MARK: - Private
 
-    private var debounceTask: Task<Void, Never>?
+    private let completer = MKLocalSearchCompleter()
     private var cachedCoordinate: CLLocationCoordinate2D?
     private var cachedAddress: String = ""
-
-    // US geographic center — fallback when geocoding fails
     private let usCenterCoordinate = CLLocationCoordinate2D(latitude: 39.5, longitude: -98.35)
+
+    override init() {
+        super.init()
+        completer.delegate = self
+        completer.resultTypes = .pointOfInterest
+    }
 
     // MARK: - Public API
 
-    /// Geocode the given address once and cache the result.
-    /// Call this on .onAppear in the parent view.
     func primeLocation(address: String) async {
         guard !address.isEmpty, address != cachedAddress else { return }
         cachedAddress = address
@@ -31,60 +32,55 @@ final class BusinessSearchManager {
             let placemarks = try await geocoder.geocodeAddressString(address)
             if let location = placemarks.first?.location {
                 cachedCoordinate = location.coordinate
+                updateCompleterRegion()
             }
         } catch {
-            cachedCoordinate = nil // will fall back to US center
+            cachedCoordinate = nil
+            updateCompleterRegion()
         }
     }
 
-    /// Trigger a debounced search. Pass empty string to clear suggestions.
     func search(query: String, category: String) {
-        debounceTask?.cancel()
         guard query.count >= 2 else {
-            suggestions = []
+            clearSuggestions()
             return
         }
-        debounceTask = Task {
-            try? await Task.sleep(nanoseconds: 300_000_000) // 0.3 s
-            guard !Task.isCancelled else { return }
-            await performSearch(query: query, category: category)
-        }
+        let naturalQuery = category.isEmpty ? query : "\(query) \(category)"
+        completer.queryFragment = naturalQuery
     }
 
     func clearSuggestions() {
-        debounceTask?.cancel()
+        completer.queryFragment = ""
         suggestions = []
     }
 
-    // MARK: - Private
+    // MARK: - Private Helpers
 
-    private func performSearch(query: String, category: String) async {
-        let naturalQuery = "\(query) \(category)"
+    private func updateCompleterRegion() {
         let coordinate = cachedCoordinate ?? usCenterCoordinate
         let spanDelta: CLLocationDegrees = cachedCoordinate != nil ? 0.5 : 60.0
-
-        let request = MKLocalSearch.Request()
-        request.naturalLanguageQuery = naturalQuery
-        request.region = MKCoordinateRegion(
+        completer.region = MKCoordinateRegion(
             center: coordinate,
             span: MKCoordinateSpan(latitudeDelta: spanDelta, longitudeDelta: spanDelta)
         )
+    }
 
-        do {
-            let response = try await MKLocalSearch(request: request).start()
-            // Deduplicate by name, take first 5
-            var seen = Set<String>()
-            var names: [String] = []
-            for item in response.mapItems {
-                guard let name = item.name, !name.isEmpty else { continue }
-                if seen.insert(name).inserted {
-                    names.append(name)
-                    if names.count == 5 { break }
-                }
+    // MARK: - MKLocalSearchCompleterDelegate
+
+    func completerDidUpdateResults(_ completer: MKLocalSearchCompleter) {
+        var seen = Set<String>()
+        var names: [String] = []
+        for result in completer.results {
+            let name = result.title
+            if !name.isEmpty, seen.insert(name).inserted {
+                names.append(name)
+                if names.count == 5 { break }
             }
-            suggestions = names
-        } catch {
-            suggestions = []
         }
+        self.suggestions = names
+    }
+
+    func completer(_ completer: MKLocalSearchCompleter, didFailWithError error: Error) {
+        self.suggestions = []
     }
 }

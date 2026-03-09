@@ -1,0 +1,25 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // User data — only the owning user can read/write
+    match /users/{userId}/{document=**} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Inventory sessions (temporary processing data)
+    match /users/{userId}/inventorySessions/{document=**} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Permanent inventory storage
+    match /users/{userId}/inventory/{document=**} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Task catalog — readable by any authenticated user
+    match /taskCatalog/{document=**} {
+      allow read: if request.auth != null;
+    }
+  }
+}

@@ -96,6 +96,7 @@ struct ChatView: View {
                     onSend: sendMessage
                 )
             }
+            .padding(.bottom, 80)
         }
         .onAppear {
             addWelcomeMessage()

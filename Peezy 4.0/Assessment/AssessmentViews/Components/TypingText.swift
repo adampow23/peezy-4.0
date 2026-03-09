@@ -24,8 +24,10 @@ struct TypingText: View {
                 .hidden()
                 .accessibilityHidden(true)
 
-            // Visible typed text
+            // Visible typed text — fixed to same frame to prevent horizontal jitter
             Text(String(fullText.prefix(displayedCount)))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .animation(nil, value: displayedCount)
         }
         .accessibilityLabel(fullText)
         .onAppear {
@@ -48,8 +50,8 @@ struct TypingText: View {
         }
         timer = Timer.scheduledTimer(withTimeInterval: speed, repeats: true) { t in
             if displayedCount < fullText.count {
-                // Batch 2 characters per tick to match existing typewriter feel
-                displayedCount = min(displayedCount + 2, fullText.count)
+                // One character per tick for a deliberate typewriter feel
+                displayedCount = min(displayedCount + 1, fullText.count)
             }
             if displayedCount >= fullText.count {
                 t.invalidate()

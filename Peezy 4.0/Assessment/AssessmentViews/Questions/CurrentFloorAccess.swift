@@ -8,12 +8,12 @@ struct CurrentFloorAccess: View {
     @State private var showContent = false
     private let lightHaptic = UIImpactFeedbackGenerator(style: .light)
 
-    let options = ["First Floor", "Stairs", "Elevator", "Reservable Elevator"]
+    let options = ["First Floor", "Stairs", "Shared\nelevator", "Reservable\nelevator"]
     let iconMap: [String: String] = [
         "First Floor": "1.circle.fill",
         "Stairs": "figure.stairs",
-        "Elevator": "arrow.up.arrow.down.circle.fill",
-        "Reservable Elevator": "checkmark.circle.fill"
+        "Shared\nelevator": "arrow.up.arrow.down.circle.fill",
+        "Reservable\nelevator": "checkmark.circle.fill"
     ]
 
     var body: some View {

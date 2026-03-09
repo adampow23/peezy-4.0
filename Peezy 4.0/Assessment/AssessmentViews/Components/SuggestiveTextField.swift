@@ -153,7 +153,6 @@ struct SuggestiveTextField: View {
                 mapManager.search(query: newValue, category: category)
             } else {
                 mapManager.clearSuggestions()
-                suggestions = []
                 showSuggestions = false
             }
         }

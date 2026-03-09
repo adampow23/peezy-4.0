@@ -7,6 +7,7 @@ struct MoveConcerns: View {
     @EnvironmentObject var coordinator: AssessmentCoordinator
     
     // Animation states
+    @StateObject private var keyboard = KeyboardObserver()
     @State private var showContent = false
     
     let concerns = [
@@ -19,10 +20,7 @@ struct MoveConcerns: View {
     
     var body: some View {
         VStack(spacing: 0) {
-            // Equal spacing region
-            VStack(spacing: 0) {
-                Spacer(minLength: 0)
-
+            ScrollView {
                 // Multi-select tiles
                 VStack(spacing: 12) {
                     ForEach(concerns, id: \.0) { concern in
@@ -65,29 +63,30 @@ struct MoveConcerns: View {
                     }
                 }
                 .padding(.horizontal, 20)
-
-                // Gap 3: Options → Bottom
-                Spacer(minLength: 0)
+                .padding(.top, 12)
+                .padding(.bottom, 16)
             }
+            .scrollDismissesKeyboard(.interactively)
 
             // Continue / Skip button
             PeezyAssessmentButton(selectedConcerns.isEmpty ? "None — Skip" : "Continue") {
                 var concernsToSave = Array(selectedConcerns)
-                
+
                 if selectedConcerns.contains("Something else") && !otherText.isEmpty {
                     concernsToSave.removeAll { $0 == "Something else" }
                     concernsToSave.append("Something else: \(otherText)")
                 }
-                
+
                 assessmentData.moveConcerns = concernsToSave
                 coordinator.goToNext()
             }
             .padding(.horizontal, 24)
-            .padding(.bottom, 32)
+            .padding(.bottom, keyboard.isVisible ? 12 : 32)
             .opacity(showContent ? 1 : 0)
             .offset(y: showContent ? 0 : 30)
             .animation(.spring(response: 0.6, dampingFraction: 0.8).delay(0.4), value: showContent)
         }
+        .padding(.bottom, keyboard.isVisible ? keyboard.height : 0)
         .onAppear {
             selectedConcerns = Set(assessmentData.moveConcerns.map { concern in
                 if concern.hasPrefix("Something else: ") {

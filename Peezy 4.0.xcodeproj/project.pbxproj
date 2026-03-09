@@ -11,6 +11,7 @@
 		45D0CA062F157FCC00064C3C /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = 45D0CA052F157FCC00064C3C /* FirebaseFirestore */; };
 		45D0CA082F157FCC00064C3C /* FirebaseFunctions in Frameworks */ = {isa = PBXBuildFile; productRef = 45D0CA072F157FCC00064C3C /* FirebaseFunctions */; };
 		45D0CA0A2F160200000GSIN1 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = 45D0CA092F160200000GSIN1 /* GoogleSignIn */; };
+		45D0CA0C2F160200000STRG1 /* FirebaseStorage in Frameworks */ = {isa = PBXBuildFile; productRef = 45D0CA0B2F160200000STRG1 /* FirebaseStorage */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -63,6 +64,7 @@
 				45D0CA042F157FCC00064C3C /* FirebaseAuth in Frameworks */,
 				45D0CA062F157FCC00064C3C /* FirebaseFirestore in Frameworks */,
 				45D0CA0A2F160200000GSIN1 /* GoogleSignIn in Frameworks */,
+				45D0CA0C2F160200000STRG1 /* FirebaseStorage in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -135,6 +137,7 @@
 				45D0CA052F157FCC00064C3C /* FirebaseFirestore */,
 				45D0CA072F157FCC00064C3C /* FirebaseFunctions */,
 				45D0CA092F160200000GSIN1 /* GoogleSignIn */,
+				45D0CA0B2F160200000STRG1 /* FirebaseStorage */,
 			);
 			productName = "Peezy 4.0";
 			productReference = 45D0C9912F14D0A500064C3C /* Peezy 4.0.app */;
@@ -422,6 +425,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "Peezy 4.0/Peezy 4.0.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = C7434HTS3Q;
@@ -457,6 +461,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "Peezy 4.0/Peezy 4.0.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = C7434HTS3Q;
@@ -651,6 +656,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 455D7E7A2F1601C700C1BC98 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */;
 			productName = GoogleSignIn;
+		};
+		45D0CA0B2F160200000STRG1 /* FirebaseStorage */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 45D0C9BB2F1512B300064C3C /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseStorage;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

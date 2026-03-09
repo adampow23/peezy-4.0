@@ -94,6 +94,10 @@ final class PeezyHomeViewModel {
         "peezy.\(userId).lastGreetingDate"
     }
 
+    // MARK: - Inventory Scanner
+
+    var showInventoryScanner = false
+
     // MARK: - Workflow Support
 
     var workflowManager = WorkflowManager()
@@ -342,7 +346,8 @@ final class PeezyHomeViewModel {
                     urgencyPercentage: urgencyPercentage,
                     userInProgressDate: userInProgressDate,
                     userInProgressReturnDate: userInProgressReturnDate,
-                    selfServiceOnly: (data["selfServiceOnly"] as? Bool) ?? false
+                    selfServiceOnly: (data["selfServiceOnly"] as? Bool) ?? false,
+                    actionType: data["actionType"] as? String
                 )
 
                 if card.status == .inProgress {
@@ -435,6 +440,12 @@ final class PeezyHomeViewModel {
 
         let task = taskQueue.removeFirst()
         currentTask = task
+
+        if task.actionType == "in-app-inventory" {
+            showInventoryScanner = true
+            state = .activeTask
+            return
+        }
 
         if getWorkflowId(for: task) != nil {
             startWorkflowForCurrentTask()
@@ -615,6 +626,12 @@ final class PeezyHomeViewModel {
         taskQueue.removeAll { $0.id == task.id }
         currentTask = task
         isFocusedTask = true
+
+        if task.actionType == "in-app-inventory" {
+            showInventoryScanner = true
+            state = .activeTask
+            return
+        }
 
         if getWorkflowId(for: task) != nil {
             startWorkflowForCurrentTask()

@@ -163,8 +163,10 @@ class AssessmentDataManager: ObservableObject {
         // directly from UI — they are derived from raw assessment answers.
 
         // Distance & interstate (set by computeDistanceAndInterstate())
-        data["moveDistance"] = moveDistance   // "Local" or "Long Distance"
-        data["isInterstate"] = isInterstate  // "Yes" or "No"
+        // Fallback to "Long Distance" / "Yes" if geocoding never ran or was cancelled
+        // before setting values. Matches the default in computeDistanceAndInterstate().
+        data["moveDistance"] = moveDistance.isEmpty ? "Long Distance" : moveDistance
+        data["isInterstate"] = isInterstate.isEmpty ? "Yes" : isInterstate
 
         // Service hire mapping — UI stores descriptive labels, catalog expects "Yes"/"No"
         // "Get me quotes" → "Yes"

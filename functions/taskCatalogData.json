@@ -812,16 +812,15 @@
     "title": "Create moving inventory",
     "actionCategory": "document-record",
     "category": "packing",
-    "actionType": "off-app",
-    "selfServiceOnly": true,
+    "actionType": "in-app-inventory",
     "conditions": {
       "hireMovers": ["Yes"]
     },
-    "desc": "Document your belongings with photos, videos, and notes so you have a record for insurance and any damage claims.",
-    "estHours": 3,
-    "tips": "Walk room by room taking photos and short videos of furniture, electronics, and valuables. Store everything in the cloud.",
-    "urgencyPercentage": 42,
-    "whyNeeded": "If anything is lost or damaged during the move, a clear inventory makes insurance claims much easier."
+    "desc": "Scan each room with your camera to build a complete inventory of everything you're moving. This helps movers give accurate quotes and protects you if anything is damaged.",
+    "estHours": 0.5,
+    "tips": "Go room by room — it takes about 20 seconds per room. Pan slowly and the AI will identify your furniture and belongings automatically.",
+    "urgencyPercentage": 55,
+    "whyNeeded": "An accurate inventory prevents surprise charges on moving day and gives you documentation for insurance claims if anything is lost or damaged."
   },
   {
     "taskId": "DEFROST_FREEZER",

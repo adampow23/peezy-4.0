@@ -11,8 +11,8 @@ struct TypewriterText: View {
     // MARK: - Configuration
     
     let phrases: [String]
-    var typingSpeed: TimeInterval = 0.05
-    var deleteSpeed: TimeInterval = 0.03
+    var typingSpeed: TimeInterval = 0.10
+    var deleteSpeed: TimeInterval = 0.06
     var pauseDuration: TimeInterval = 1.5
     var font: Font = .body
     var foregroundColor: Color = .primary

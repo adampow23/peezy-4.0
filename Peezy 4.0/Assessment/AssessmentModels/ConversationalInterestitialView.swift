@@ -29,7 +29,7 @@ struct ConversationalInterstitialView: View {
     
     // MARK: - Animation Config
     
-    private let typewriterSpeed: TimeInterval = 0.03
+    private let typewriterSpeed: TimeInterval = 0.06
     private let tapHintDelay: TimeInterval = 1.5
     
     // MARK: - Body
@@ -98,7 +98,7 @@ struct ConversationalInterstitialView: View {
                 return
             }
             
-            let batchSize = 2
+            let batchSize = 1
             let end = min(index + batchSize, characters.count)
             displayedText += String(characters[index..<end])
             index = end

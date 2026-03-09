@@ -55,7 +55,6 @@ struct MiniAssessmentSheetView: View {
                 }
             }
         }
-        .preferredColorScheme(.dark)
     }
 
     // MARK: - No Questions View

@@ -2,17 +2,15 @@
 //  PeezyMainContainer.swift
 //  Peezy
 //
-//  Main container with hamburger menu navigation.
-//  Home tab uses PeezyHomeView (new state machine).
-//  Timeline tab uses PeezyTaskStream (unchanged, loads its own data).
+//  Main app container with floating tab bar.
+//  Four tabs: Home, Tasks, Chat, Settings.
 //
 
 import SwiftUI
 
 struct PeezyMainContainer: View {
     // Navigation state
-    @State private var showMenu = false
-    @State private var selectedDestination: PeezyDestination = .home
+    @State private var selectedTab: PeezyTab = .home
 
     // User state passed from AppRootView
     @Binding var userState: UserState?
@@ -24,82 +22,39 @@ struct PeezyMainContainer: View {
     // Task list → Home navigation: when set, switches to Home and focuses this task
     @State private var focusedTask: PeezyCard? = nil
 
-    // Edit profile sheet — triggered from menu header tap
-    @State private var showEditProfile = false
-
     var body: some View {
-        ZStack {
-            // Main content based on selection
+        ZStack(alignment: .bottom) {
+            // Main content
             Group {
-                switch selectedDestination {
+                switch selectedTab {
                 case .home:
                     PeezyHomeView(userState: userState, focusedTask: $focusedTask)
 
-                case .timeline:
-                    PeezyTaskStream(viewModel: timelineViewModel, userState: userState) { task in
-                        focusedTask = task
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                            selectedDestination = .home
+                case .tasks:
+                    PeezyTaskStream(
+                        viewModel: timelineViewModel,
+                        userState: userState,
+                        onNavigateToTask: { task in
+                            focusedTask = task
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                selectedTab = .home
+                            }
                         }
-                    }
+                    )
+
+                case .chat:
+                    ChatView(userState: userState, card: nil)
 
                 case .settings:
                     PeezySettingsView(userState: $userState)
                 }
             }
 
-            // Hamburger button (always visible)
-            VStack {
-                HStack {
-                    Button {
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                            showMenu = true
-                        }
-                    } label: {
-                        Image(systemName: "line.3.horizontal")
-                            .font(.system(size: 20, weight: .medium))
-                            .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.8))
-                            .frame(width: 44, height: 44)
-                            .background(.regularMaterial.opacity(0.8))
-                            .clipShape(Circle())
-                    }
-                    .padding(.leading, 16)
-                    .padding(.top, 8)
-
-                    Spacer()
-
-                    // Task list button (top right)
-                    Button {
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                            selectedDestination = .timeline
-                        }
-                    } label: {
-                        Image(systemName: "checklist")
-                            .font(.system(size: 20, weight: .medium))
-                            .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.8))
-                            .frame(width: 44, height: 44)
-                            .background(.regularMaterial.opacity(0.8))
-                            .clipShape(Circle())
-                    }
-                    .padding(.trailing, 16)
-                    .padding(.top, 8)
-                }
-                Spacer()
-            }
-
-            // Menu overlay
-            PeezyMenuView(
-                isOpen: $showMenu,
-                selectedDestination: $selectedDestination,
-                userName: userState?.name ?? "",
-                onEditProfile: {
-                    showEditProfile = true
-                }
-            )
+            // Floating tab bar
+            PeezyFloatingTabBar(selectedTab: $selectedTab)
         }
-        .onChange(of: selectedDestination) { _, newValue in
-            // Lazy-load timeline data when user navigates to it
-            if newValue == .timeline && !hasLoadedTimeline {
+        .onChange(of: selectedTab) { _, newValue in
+            if newValue == .tasks && !hasLoadedTimeline {
                 timelineViewModel.userState = userState
                 Task {
                     await timelineViewModel.loadInitialCards()
@@ -107,35 +62,77 @@ struct PeezyMainContainer: View {
                 }
             }
         }
-        .sheet(isPresented: $showEditProfile) {
-            EditNameEmailSheet(userState: userState) { updatedName in
-                userState?.name = updatedName
-            }
+    }
+}
+
+// MARK: - Tab Enum
+
+enum PeezyTab: String, CaseIterable {
+    case home
+    case tasks
+    case chat
+    case settings
+
+    var icon: String {
+        switch self {
+        case .home:     return "house"
+        case .tasks:    return "checklist"
+        case .chat:     return "bubble.left"
+        case .settings: return "gearshape"
+        }
+    }
+
+    var label: String {
+        switch self {
+        case .home:     return "Home"
+        case .tasks:    return "Tasks"
+        case .chat:     return "Chat"
+        case .settings: return "Settings"
         }
     }
 }
 
-// MARK: - Placeholder Views
+// MARK: - Floating Tab Bar
 
-struct SettingsPlaceholderView: View {
+struct PeezyFloatingTabBar: View {
+    @Binding var selectedTab: PeezyTab
+
     var body: some View {
-        ZStack {
-            InteractiveBackground()
+        HStack(spacing: 0) {
+            ForEach(PeezyTab.allCases, id: \.self) { tab in
+                Button {
+                    PeezyHaptics.light()
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        selectedTab = tab
+                    }
+                } label: {
+                    VStack(spacing: 4) {
+                        Image(systemName: tab.icon)
+                            .font(.system(size: 20, weight: .medium))
 
-            VStack(spacing: 16) {
-                Image(systemName: "gearshape.fill")
-                    .font(.system(size: 60))
-                    .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.5))
-
-                Text("Settings")
-                    .font(.title2.bold())
-                    .foregroundStyle(PeezyTheme.Colors.deepInk)
-
-                Text("Coming soon")
-                    .font(.subheadline)
-                    .foregroundStyle(Color.gray)
+                        Text(tab.label)
+                            .font(.system(size: 10, weight: .medium))
+                    }
+                    .foregroundStyle(
+                        selectedTab == tab
+                            ? PeezyTheme.Colors.deepInk.opacity(0.8)
+                            : PeezyTheme.Colors.deepInk.opacity(0.2)
+                    )
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+                }
+                .buttonStyle(.peezyTab)
             }
         }
+        .padding(.horizontal, 20)
+        .padding(.top, 8)
+        .padding(.bottom, 14) // Safe area breathing room
+        .background(
+            Capsule()
+                .fill(Color.white.opacity(0.85))
+                .shadow(color: Color.black.opacity(0.06), radius: 12, y: 4)
+                .padding(.horizontal, 24)
+        )
     }
 }
 

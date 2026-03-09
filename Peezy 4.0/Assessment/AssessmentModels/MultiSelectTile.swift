@@ -57,9 +57,7 @@ struct MultiSelectTile: View {
                             .fill(PeezyTheme.Colors.deepInk)
                     } else {
                         RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .fill(.regularMaterial)
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .fill(Color.white.opacity(0.15))
+                            .fill(Color.white)
                     }
                 }
             )

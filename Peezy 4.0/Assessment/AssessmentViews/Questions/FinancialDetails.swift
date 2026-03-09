@@ -22,6 +22,7 @@ struct FinancialDetails: View {
     @EnvironmentObject var coordinator: AssessmentCoordinator
 
     @FocusState private var focusedKey: String?
+    @StateObject private var keyboard = KeyboardObserver()
     @State private var showContent = false
 
     /// Builds the list of (detailKey, label, category) for all fields.
@@ -44,20 +45,30 @@ struct FinancialDetails: View {
     var body: some View {
         VStack(spacing: 0) {
             VStack(spacing: 0) {
-                Spacer(minLength: 0)
-
-                ScrollView {
-                    VStack(spacing: 16) {
-                        ForEach(fieldEntries, id: \.key) { entry in
-                            SuggestiveTextField(
-                                label: entry.label,
-                                placeholder: placeholderText(for: entry.category),
-                                text: binding(for: entry.key),
-                                source: suggestionSource(for: entry.category),
-                                isFocused: focusedKey == entry.key
-                            )
-                            .onTapGesture {
-                                focusedKey = entry.key
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        VStack(spacing: 16) {
+                            ForEach(fieldEntries, id: \.key) { entry in
+                                SuggestiveTextField(
+                                    label: entry.label,
+                                    placeholder: placeholderText(for: entry.category),
+                                    text: binding(for: entry.key),
+                                    source: suggestionSource(for: entry.category),
+                                    isFocused: focusedKey == entry.key
+                                )
+                                .id(entry.key)
+                                .onTapGesture {
+                                    focusedKey = entry.key
+                                }
+                            }
+                        }
+                        .padding(.bottom, 16)
+                    }
+                    .scrollDismissesKeyboard(.interactively)
+                    .onChange(of: focusedKey) { _, newKey in
+                        if let key = newKey {
+                            withAnimation(.easeOut(duration: 0.25)) {
+                                proxy.scrollTo(key, anchor: .center)
                             }
                         }
                     }
@@ -66,8 +77,6 @@ struct FinancialDetails: View {
                 .opacity(showContent ? 1 : 0)
                 .offset(y: showContent ? 0 : 30)
                 .animation(.easeOut(duration: 0.5).delay(0.3), value: showContent)
-
-                Spacer(minLength: 0)
             }
             .onTapGesture { focusedKey = nil }
 
@@ -76,11 +85,12 @@ struct FinancialDetails: View {
                 coordinator.goToNext()
             }
             .padding(.horizontal, 24)
-            .padding(.bottom, 32)
+            .padding(.bottom, keyboard.isVisible ? 12 : 32)
             .opacity(showContent ? 1 : 0)
             .offset(y: showContent ? 0 : 30)
             .animation(.spring(response: 0.6, dampingFraction: 0.8).delay(0.4), value: showContent)
         }
+        .padding(.bottom, keyboard.isVisible ? keyboard.height : 0)
         .onAppear {
             details = assessmentData.financialDetails
             if let first = fieldEntries.first {

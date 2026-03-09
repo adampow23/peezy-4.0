@@ -8,6 +8,7 @@ const { setGlobalOptions } = require('firebase-functions/v2');
 const admin = require('firebase-admin');
 const { generateResponse, validateContentLoaded } = require('./peezyBrain');
 const { getWorkflowQualifying, submitWorkflowAnswers } = require('./getWorkflowQualifying');
+const { processInventory } = require('./processInventory');
 const { validateSubscription } = require('./validateSubscription');
 
 // Set global options
@@ -445,3 +446,4 @@ exports.healthCheck = onRequest((req, res) => {
 exports.getWorkflowQualifying = getWorkflowQualifying;
 exports.submitWorkflowAnswers = submitWorkflowAnswers;
 exports.validateSubscription = validateSubscription;
+exports.processInventory = processInventory;

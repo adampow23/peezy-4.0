@@ -54,6 +54,9 @@ struct PeezyCard: Identifiable, Equatable, Codable {
 
     // Self-service flag — user handles it themselves (no Peezy concierge option)
     var selfServiceOnly: Bool = false
+
+    // Action type from catalog (e.g. "off-app", "in-app-inventory", "workflow")
+    var actionType: String?
     
     // MARK: - Card Types
     enum CardType: String, Codable {
@@ -191,7 +194,8 @@ struct PeezyCard: Identifiable, Equatable, Codable {
         urgencyPercentage: Int? = nil,
         userInProgressDate: Date? = nil,
         userInProgressReturnDate: Date? = nil,
-        selfServiceOnly: Bool = false
+        selfServiceOnly: Bool = false,
+        actionType: String? = nil
     ) {
         self.id = id
         self.type = type
@@ -214,6 +218,7 @@ struct PeezyCard: Identifiable, Equatable, Codable {
         self.userInProgressDate = userInProgressDate
         self.userInProgressReturnDate = userInProgressReturnDate
         self.selfServiceOnly = selfServiceOnly
+        self.actionType = actionType
     }
     
     // MARK: - Factory Methods

@@ -23,6 +23,7 @@ struct PeezyV1App: App {
     var body: some Scene {
         WindowGroup {
             AppRootView()
+                .preferredColorScheme(.light)
                 .environmentObject(SubscriptionManager.shared)
                 .onOpenURL { url in
                     // Handle Google Sign-In URL callback

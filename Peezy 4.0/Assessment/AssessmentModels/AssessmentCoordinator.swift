@@ -647,6 +647,10 @@ class AssessmentCoordinator: ObservableObject {
                 moveDate: moveDate
             )
 
+            #if DEBUG
+            print("✅ ASSESSMENT COMPLETE: \(tasksGenerated) tasks generated for user \(userId)")
+            #endif
+
             isSaving = false
 
         } catch {

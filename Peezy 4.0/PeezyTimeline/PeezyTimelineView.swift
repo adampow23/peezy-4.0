@@ -26,8 +26,9 @@ struct PeezyTaskStream: View {
     var viewModel: PeezyStackViewModel?
     var userState: UserState?
 
-    // Navigation callback — switches to Home tab with focused task
+    // Navigation callbacks
     var onNavigateToTask: ((PeezyCard) -> Void)?
+    var onNavigateHome: (() -> Void)?
 
     // Task data from Firestore
     @State private var allTasks: [PeezyCard] = []
@@ -35,6 +36,9 @@ struct PeezyTaskStream: View {
 
     // Expandable row tracking
     @State private var expandedTaskId: String? = nil
+
+    // Confetti celebration
+    @State private var showConfetti = false
 
     // Active tab
     @State private var selectedTab: TaskTab = .todo
@@ -47,14 +51,16 @@ struct PeezyTaskStream: View {
         self.viewModel = nil
         self.userState = nil
         self.onNavigateToTask = nil
+        self.onNavigateHome = nil
         self.previewTasks = nil
     }
 
     // Init for integrated use
-    init(viewModel: PeezyStackViewModel?, userState: UserState?, onNavigateToTask: ((PeezyCard) -> Void)? = nil) {
+    init(viewModel: PeezyStackViewModel?, userState: UserState?, onNavigateToTask: ((PeezyCard) -> Void)? = nil, onNavigateHome: (() -> Void)? = nil) {
         self.viewModel = viewModel
         self.userState = userState
         self.onNavigateToTask = onNavigateToTask
+        self.onNavigateHome = onNavigateHome
         self.previewTasks = nil
     }
 
@@ -63,6 +69,7 @@ struct PeezyTaskStream: View {
         self.viewModel = nil
         self.userState = nil
         self.onNavigateToTask = nil
+        self.onNavigateHome = nil
         self.previewTasks = previewTasks
     }
 
@@ -154,6 +161,12 @@ struct PeezyTaskStream: View {
                     tabContent
                 }
             }
+            // Confetti celebration for task completion
+            if showConfetti {
+                ConfettiView(isActive: $showConfetti, intensity: .high)
+                    .allowsHitTesting(false)
+                    .ignoresSafeArea()
+            }
         }
         .edgesIgnoringSafeArea(.bottom)
         .task {
@@ -183,9 +196,22 @@ struct PeezyTaskStream: View {
                 .foregroundColor(PeezyTheme.Colors.deepInk)
 
             Spacer()
+
+            if let onNavigateHome {
+                Button {
+                    onNavigateHome()
+                } label: {
+                    Image(systemName: "house.fill")
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.6))
+                        .frame(width: 36, height: 36)
+                        .background(.regularMaterial.opacity(0.8))
+                        .clipShape(Circle())
+                }
+            }
         }
         .padding(.horizontal, 20)
-        .padding(.top, 56)
+        .padding(.top, 16)
         .padding(.bottom, 16)
     }
 
@@ -317,13 +343,14 @@ struct PeezyTaskStream: View {
                                 isExpanded: expandedTaskId == task.id,
                                 onExpand: { toggleExpand(task.id) },
                                 onStart: nil,
-                                onComplete: nil
+                                onComplete: nil,
+                                onUndo: { undoTaskCompletion(task) }
                             )
                         }
                     }
                 }
 
-                Color.clear.frame(height: 40)
+                Color.clear.frame(height: 100)
             }
             .padding(.horizontal, 16)
         }
@@ -371,6 +398,12 @@ struct PeezyTaskStream: View {
     private func markTaskComplete(_ task: PeezyCard) {
         guard let userId = Auth.auth().currentUser?.uid else { return }
 
+        // Trigger confetti
+        showConfetti = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+            showConfetti = false
+        }
+
         let db = Firestore.firestore()
         let taskRef = db.collection("users").document(userId).collection("tasks").document(task.id)
 
@@ -381,21 +414,32 @@ struct PeezyTaskStream: View {
             if let error = error {
                 print("Failed to mark task complete: \(error.localizedDescription)")
             } else {
-                // Update local state immediately so the task moves to Done tab
                 withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                     if let index = allTasks.firstIndex(where: { $0.id == task.id }) {
-                        allTasks[index] = PeezyCard(
-                            id: task.id,
-                            type: task.type,
-                            title: task.title,
-                            subtitle: task.subtitle,
-                            priority: task.priority,
-                            status: .completed,
-                            dueDate: task.dueDate,
-                            taskCategory: task.taskCategory,
-                            urgencyPercentage: task.urgencyPercentage,
-                            selfServiceOnly: task.selfServiceOnly
-                        )
+                        allTasks[index].status = .completed
+                        expandedTaskId = nil
+                    }
+                }
+            }
+        }
+    }
+
+    private func undoTaskCompletion(_ task: PeezyCard) {
+        guard let userId = Auth.auth().currentUser?.uid else { return }
+
+        let db = Firestore.firestore()
+        let taskRef = db.collection("users").document(userId).collection("tasks").document(task.id)
+
+        taskRef.updateData([
+            "status": "Upcoming",
+            "completedAt": FieldValue.delete()
+        ]) { error in
+            if let error = error {
+                print("Failed to undo task completion: \(error.localizedDescription)")
+            } else {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                    if let index = allTasks.firstIndex(where: { $0.id == task.id }) {
+                        allTasks[index].status = .upcoming
                         expandedTaskId = nil
                     }
                 }
@@ -455,6 +499,7 @@ struct TaskListRow: View {
     var onExpand: () -> Void = {}
     var onStart: (() -> Void)?
     var onComplete: (() -> Void)?
+    var onUndo: (() -> Void)?
 
     private var isSnoozed: Bool {
         if task.status == .snoozed { return true }
@@ -508,7 +553,7 @@ struct TaskListRow: View {
                             .padding(.top, 4)
                     }
 
-                    if !task.subtitle.isEmpty {
+                    if !task.subtitle.isEmpty && !isCompleted {
                         Text(task.subtitle)
                             .font(PeezyTheme.Typography.callout)
                             .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.5))
@@ -563,7 +608,7 @@ struct TaskListRow: View {
             if isExpanded {
                 // Start button for upcoming/snoozed tasks
                 if !isCompleted && !isInProgress && !isUserInProgress, let onStart {
-                    PeezyAssessmentButton("Start Task") {
+                    PeezyAssessmentButton("Open Task") {
                         onStart()
                     }
                     .padding(.horizontal, 20)
@@ -571,12 +616,27 @@ struct TaskListRow: View {
                     .transition(.opacity.combined(with: .move(edge: .top)))
                 }
 
-                // Mark Complete button for "You're on it" tasks
+                // Mark as completed for "You're on it" tasks
                 if isUserInProgress, let onComplete {
-                    PeezyAssessmentButton("Mark Complete") {
+                    PeezyAssessmentButton("Mark as completed") {
+                        PeezyHaptics.medium()
                         onComplete()
                     }
                     .padding(.horizontal, 20)
+                    .padding(.bottom, 24)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+
+                // Undo — subtle link style for completed tasks
+                if isCompleted, let onUndo {
+                    Button(action: {
+                        PeezyHaptics.light()
+                        onUndo()
+                    }) {
+                        Text("Undo")
+                            .font(.subheadline)
+                            .foregroundStyle(Color.gray)
+                    }
                     .padding(.bottom, 24)
                     .transition(.opacity.combined(with: .move(edge: .top)))
                 }

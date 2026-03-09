@@ -2,11 +2,11 @@
 //  CompletionFlowView.swift
 //  Peezy
 //
-//  Replaces the monolithic AsessmentCompleteView with a clean linear flow:
+//  Linear completion flow after assessment:
 //    Stage 1 — GeneratingView (spinner + cycling messages)
 //    Stage 2 — ReadyView (checkmark + "See Your Custom Plan")
 //    Stage 3 — SummaryView (confetti + task count + "Let's Get Started")
-//              → routes to PaywallFlowView → then main app
+//              → routes directly to main app
 //
 //  Presented via .fullScreenCover from AssessmentFlowView when coordinator.isComplete = true.
 //  Only one stage renders at a time via a switch — no overlapping ZStacks.
@@ -32,7 +32,6 @@ struct CompletionFlowView: View {
 
     @State private var stage: Stage = .generating
     @State private var taskCount: Int = 0
-    @State private var showPaywall = false
     @State private var showContent = true
 
     /// Ensures stage can only advance forward, never go back.
@@ -70,24 +69,18 @@ struct CompletionFlowView: View {
                         userName: coordinator.dataManager.userName,
                         taskCount: taskCount,
                         onGetStarted: {
-                            showPaywall = true
+                            routeToMainApp()
                         }
                     )
                 }
             }
         }
         .interactiveDismissDisabled()
-        .fullScreenCover(isPresented: $showPaywall) {
-            PaywallFlowView(onComplete: {
-                handlePaywallComplete()
-            })
-            .environmentObject(SubscriptionManager.shared)
-        }
     }
 
-    // MARK: - Paywall Dismissal
+    // MARK: - Route to Main App
 
-    private func handlePaywallComplete() {
+    private func routeToMainApp() {
         // Immediately hide all content so nothing flashes
         withAnimation(.easeOut(duration: 0.15)) {
             showContent = false
@@ -95,14 +88,10 @@ struct CompletionFlowView: View {
 
         // Then run the dismissal sequence
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-            showPaywall = false
+            coordinator.isComplete = false
 
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                coordinator.isComplete = false
-
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                    NotificationCenter.default.post(name: .assessmentCompleted, object: nil)
-                }
+                NotificationCenter.default.post(name: .assessmentCompleted, object: nil)
             }
         }
 

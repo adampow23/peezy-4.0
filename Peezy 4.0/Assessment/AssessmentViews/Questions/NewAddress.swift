@@ -5,6 +5,7 @@ struct NewAddress: View {
     @EnvironmentObject var assessmentData: AssessmentDataManager
     @EnvironmentObject var coordinator: AssessmentCoordinator
 
+    @StateObject private var keyboard = KeyboardObserver()
     @State private var showContent = false
 
     private var needsUnitField: Bool {
@@ -24,7 +25,12 @@ struct NewAddress: View {
     var body: some View {
         VStack(spacing: 0) {
             VStack(spacing: 0) {
-                Spacer(minLength: 0)
+                if !keyboard.isVisible {
+                    Spacer(minLength: 0)
+                } else {
+                    Spacer(minLength: 0)
+                        .frame(maxHeight: 40)
+                }
 
                 AddressAutocompleteView(
                     placeholder: "Street, City, State, ZIP",
@@ -47,11 +53,12 @@ struct NewAddress: View {
                 coordinator.goToNext()
             }
             .padding(.horizontal, 24)
-            .padding(.bottom, 32)
+            .padding(.bottom, keyboard.isVisible ? 12 : 32)
             .opacity(showContent ? 1 : 0)
             .offset(y: showContent ? 0 : 30)
             .animation(.spring(response: 0.6, dampingFraction: 0.8).delay(0.4), value: showContent)
         }
+        .padding(.bottom, keyboard.isVisible ? keyboard.height : 0)
         .onAppear {
             selectedAddress = assessmentData.newAddress
             withAnimation { showContent = true }

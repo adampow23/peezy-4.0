@@ -74,9 +74,7 @@ struct SelectionTile: View {
                             .fill(PeezyTheme.Colors.deepInk)
                     } else {
                         RoundedRectangle(cornerRadius: 20, style: .continuous)
-                            .fill(.regularMaterial)
-                        RoundedRectangle(cornerRadius: 20, style: .continuous)
-                            .fill(Color.white.opacity(0.15))
+                            .fill(Color.white)
                     }
                 }
             )

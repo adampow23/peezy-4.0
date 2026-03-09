@@ -39,6 +39,13 @@ struct PeezySettingsView: View {
     
     // Sign out confirmation
     @State private var showSignOutAlert = false
+
+    // Inventory scanner
+    @State private var showInventoryScanner = false
+
+    #if DEBUG
+    @State private var showInventoryTestHarness = false
+    #endif
     
     // Processing state (for destructive actions)
     @State private var isProcessing = false
@@ -71,10 +78,20 @@ struct PeezySettingsView: View {
                     subscriptionSection
                         .padding(.top, 20)
 
+                    // Inventory
+                    inventorySection
+                        .padding(.top, 20)
+
                     // Support
                     supportSection
                         .padding(.top, 20)
                     
+                    #if DEBUG
+                    // Debug tools
+                    debugSection
+                        .padding(.top, 20)
+                    #endif
+
                     // Danger zone
                     dangerSection
                         .padding(.top, 20)
@@ -82,7 +99,7 @@ struct PeezySettingsView: View {
                     // Footer
                     versionFooter
                         .padding(.top, 32)
-                        .padding(.bottom, 60)
+                        .padding(.bottom, 80)
                 }
                 .padding(.horizontal, 20)
             }
@@ -166,6 +183,14 @@ struct PeezySettingsView: View {
         } message: {
             Text("You'll need to sign back in to access your tasks.")
         }
+        .fullScreenCover(isPresented: $showInventoryScanner) {
+            InventoryFlowView()
+        }
+        #if DEBUG
+        .sheet(isPresented: $showInventoryTestHarness) {
+            InventoryTestHarness()
+        }
+        #endif
     }
     
     // MARK: - Header
@@ -177,9 +202,9 @@ struct PeezySettingsView: View {
                 .foregroundColor(deepInk)
             Spacer()
         }
-        .padding(.top, 56)
+        .padding(.top, 16)
     }
-    
+
     // MARK: - Profile Card
     
     private var profileCard: some View {
@@ -349,6 +374,21 @@ struct PeezySettingsView: View {
         }
     }
 
+    // MARK: - Inventory Section
+
+    private var inventorySection: some View {
+        VStack(spacing: 0) {
+            sectionLabel("Inventory")
+
+            VStack(spacing: 0) {
+                settingsRow(icon: "camera.viewfinder", label: "Scan Room Inventory", color: PeezyTheme.Colors.infoBlue) {
+                    showInventoryScanner = true
+                }
+            }
+            .background(glassBackground)
+        }
+    }
+
     // MARK: - Support Section
 
     private var supportSection: some View {
@@ -376,8 +416,25 @@ struct PeezySettingsView: View {
         }
     }
     
+    #if DEBUG
+    // MARK: - Debug Section
+
+    private var debugSection: some View {
+        VStack(spacing: 0) {
+            sectionLabel("Debug Tools")
+
+            VStack(spacing: 0) {
+                settingsRow(icon: "camera.viewfinder", label: "Test Inventory Scanner", color: PeezyTheme.Colors.accentBlue) {
+                    showInventoryTestHarness = true
+                }
+            }
+            .background(glassBackground)
+        }
+    }
+    #endif
+
     // MARK: - Danger Section
-    
+
     private var dangerSection: some View {
         VStack(spacing: 0) {
             VStack(spacing: 0) {
