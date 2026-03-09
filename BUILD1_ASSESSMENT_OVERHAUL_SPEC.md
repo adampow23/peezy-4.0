@@ -493,6 +493,8 @@ In the tab bar (floating bar at bottom):
 
 **Mark Phase 7 complete when verification passes.**
 
+<!-- Phase 7: COMPLETE -->
+
 ---
 
 ## Files Summary

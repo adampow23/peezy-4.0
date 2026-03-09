@@ -53,6 +53,7 @@ struct PeezyMainContainer: View {
             // Floating tab bar
             PeezyFloatingTabBar(selectedTab: $selectedTab)
         }
+        .ignoresSafeArea(.container, edges: .bottom)
         .onChange(of: selectedTab) { _, newValue in
             if newValue == .tasks && !hasLoadedTimeline {
                 timelineViewModel.userState = userState
@@ -106,20 +107,15 @@ struct PeezyFloatingTabBar: View {
                         selectedTab = tab
                     }
                 } label: {
-                    VStack(spacing: 4) {
-                        Image(systemName: tab.icon)
-                            .font(.system(size: 20, weight: .medium))
-
-                        Text(tab.label)
-                            .font(.system(size: 10, weight: .medium))
-                    }
-                    .foregroundStyle(
-                        selectedTab == tab
-                            ? PeezyTheme.Colors.deepInk.opacity(0.8)
-                            : PeezyTheme.Colors.deepInk.opacity(0.2)
-                    )
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
+                    Image(systemName: tab.icon)
+                        .font(.system(size: 20, weight: .medium))
+                        .foregroundStyle(
+                            selectedTab == tab
+                                ? PeezyTheme.Colors.deepInk.opacity(0.8)
+                                : PeezyTheme.Colors.deepInk.opacity(0.2)
+                        )
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
                 }
                 .buttonStyle(.peezyTab)
             }

@@ -416,32 +416,36 @@ struct PeezyHomeView: View {
     private var firstTimeWelcomeCard: some View {
         glassCard {
             VStack(spacing: 0) {
-                // Scrollable page content — keyed by page so identity changes trigger opacity transition
-                ScrollView(.vertical, showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: 15) {
-                        Text(welcomePageHeadline)
-                            .font(.system(size: 38, weight: .heavy))
-                            .foregroundColor(PeezyTheme.Colors.deepInk)
-                            .lineLimit(2)
-                            .minimumScaleFactor(0.5)
+                // Header pinned at top
+                VStack(alignment: .leading, spacing: 15) {
+                    Text(welcomePageHeadline)
+                        .font(.system(size: 38, weight: .heavy))
+                        .foregroundColor(PeezyTheme.Colors.deepInk)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.5)
 
-                        Rectangle()
-                            .fill(Color.black.opacity(0.15))
-                            .frame(width: 50, height: 2)
-
-                        Text(welcomePageBody)
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-                            .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.6))
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    .padding(.horizontal, 30)
-                    .padding(.top, 30)
-                    .padding(.bottom, 10)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    Rectangle()
+                        .fill(Color.black.opacity(0.15))
+                        .frame(width: 50, height: 2)
                 }
-                .id(welcomePage)
-                .transition(.opacity)
+                .padding(.horizontal, 30)
+                .padding(.top, 30)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                // Body text centered in remaining space between divider and dots
+                Spacer()
+
+                Text(welcomePageBody)
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                    .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.6))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 30)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .id(welcomePage)
+                    .transition(.opacity)
+
+                Spacer()
 
                 // Dot indicators
                 HStack(spacing: 8) {
