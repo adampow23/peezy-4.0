@@ -24,6 +24,7 @@ struct FinancialDetails: View {
     @FocusState private var focusedKey: String?
     @StateObject private var keyboard = KeyboardObserver()
     @State private var showContent = false
+    @State private var currentEntryIndex: Int = 0
 
     /// Builds the list of (detailKey, label, category) for all fields.
     private var fieldEntries: [(key: String, label: String, category: String)] {
@@ -42,47 +43,58 @@ struct FinancialDetails: View {
         return entries
     }
 
+    private var currentEntry: (key: String, label: String, category: String)? {
+        guard currentEntryIndex < fieldEntries.count else { return nil }
+        return fieldEntries[currentEntryIndex]
+    }
+
     var body: some View {
         VStack(spacing: 0) {
-            VStack(spacing: 0) {
-                ScrollViewReader { proxy in
-                    ScrollView {
-                        VStack(spacing: 16) {
-                            ForEach(fieldEntries, id: \.key) { entry in
-                                SuggestiveTextField(
-                                    label: entry.label,
-                                    placeholder: placeholderText(for: entry.category),
-                                    text: binding(for: entry.key),
-                                    source: suggestionSource(for: entry.category),
-                                    isFocused: focusedKey == entry.key
-                                )
-                                .id(entry.key)
-                                .onTapGesture {
-                                    focusedKey = entry.key
-                                }
-                            }
-                        }
-                        .padding(.bottom, 16)
+            if let entry = currentEntry {
+                VStack(spacing: 0) {
+                    Text("What company do you have this \(entry.category.lowercased()) with?")
+                        .font(.title3.weight(.semibold))
+                        .foregroundColor(PeezyTheme.Colors.deepInk)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 24)
+                        .padding(.bottom, 8)
+
+                    if fieldEntries.count > 1 {
+                        Text("\(currentEntryIndex + 1) of \(fieldEntries.count)")
+                            .font(.caption)
+                            .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.4))
+                            .padding(.bottom, 16)
                     }
-                    .scrollDismissesKeyboard(.interactively)
-                    .onChange(of: focusedKey) { _, newKey in
-                        if let key = newKey {
-                            withAnimation(.easeOut(duration: 0.25)) {
-                                proxy.scrollTo(key, anchor: .center)
-                            }
-                        }
-                    }
+
+                    SuggestiveTextField(
+                        label: entry.label,
+                        placeholder: placeholderText(for: entry.category),
+                        text: binding(for: entry.key),
+                        source: suggestionSource(for: entry.category),
+                        isFocused: true
+                    )
+                    .id(entry.key)
+                    .padding(.horizontal, 24)
                 }
-                .padding(.horizontal, 24)
                 .opacity(showContent ? 1 : 0)
                 .offset(y: showContent ? 0 : 30)
                 .animation(.easeOut(duration: 0.5).delay(0.3), value: showContent)
             }
-            .onTapGesture { focusedKey = nil }
+
+            Spacer()
 
             PeezyAssessmentButton("Continue") {
-                assessmentData.financialDetails = details
-                coordinator.goToNext()
+                if currentEntryIndex < fieldEntries.count - 1 {
+                    showContent = false
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                        currentEntryIndex += 1
+                        focusedKey = currentEntry?.key
+                        showContent = true
+                    }
+                } else {
+                    assessmentData.financialDetails = details
+                    coordinator.goToNext()
+                }
             }
             .padding(.horizontal, 24)
             .padding(.bottom, keyboard.isVisible ? 12 : 32)
@@ -91,6 +103,7 @@ struct FinancialDetails: View {
             .animation(.spring(response: 0.6, dampingFraction: 0.8).delay(0.4), value: showContent)
         }
         .padding(.bottom, keyboard.isVisible ? keyboard.height : 0)
+        .onTapGesture { focusedKey = nil }
         .onAppear {
             details = assessmentData.financialDetails
             if let first = fieldEntries.first {

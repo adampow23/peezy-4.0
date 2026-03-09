@@ -300,6 +300,8 @@ Also fix the hard cut / glow clipping issue (item 27) — this is likely a `.cli
 
 **Mark Phase 4 complete when verification passes.**
 
+<!-- Phase 4: COMPLETE -->
+
 ---
 
 ## Phase 5: Bedroom Count → Room List for Scanning (files: 1-2 modify)
