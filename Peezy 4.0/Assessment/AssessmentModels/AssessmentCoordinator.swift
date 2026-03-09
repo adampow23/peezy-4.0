@@ -350,7 +350,7 @@ class AssessmentCoordinator: ObservableObject {
 
         case .moveConcerns:
             return InputContext(
-                header: "Nice to meet you, \(dataManager.userName). I'm Peezy! I'll be handling the entire move so you don't have to, but I want to know where your head is at. What's taking up the most mental energy right now?",
+                header: "What are you most hoping Peezy can help you with?",
                 subheader: nil
             )
             
@@ -472,34 +472,40 @@ class AssessmentCoordinator: ObservableObject {
             )
             
         // --- SECTION 4: PEOPLE ---
-            
+
+        case .anyKids:
+            return InputContext(
+                header: "Will any children be making the move with you?",
+                subheader: nil
+            )
+
         case .childrenInSchool:
             return InputContext(
-                header: "Any kids in school?",
-                subheader: "I'll handle the enrollment transfers and records requests so you don't have to sit on hold."
+                header: "Will any of them need to transfer schools?",
+                subheader: nil
             )
 
         case .childrenInDaycare:
             return InputContext(
-                header: "Any little ones in daycare?",
-                subheader: "I'll help with the provider search at the new place."
+                header: "What about any in daycare?",
+                subheader: nil
             )
-            
+
         case .hasVet:
             return InputContext(
                 header: "Got any pets that see a vet?",
-                subheader: "I'll transfer records and find a new vet near the new place if you need one."
+                subheader: nil
             )
 
         case .hasVehicles:
             return InputContext(
-                header: "Any vehicles making the move?",
+                header: "How many vehicles will be moving with you?",
                 subheader: nil
             )
 
         case .hasStorage:
             return InputContext(
-                header: "Do you have a storage unit that needs to be dealt with?",
+                header: "Are there any items in storage that will be making the move as well?",
                 subheader: nil
             )
 
@@ -519,7 +525,7 @@ class AssessmentCoordinator: ObservableObject {
             
         case .hireMovers:
             return InputContext(
-                header: "Are you interested in getting quotes for professional movers, or are you planning to handle the move yourself?",
+                header: "Would you like quotes for professional movers?",
                 subheader: nil
             )
             
@@ -537,19 +543,19 @@ class AssessmentCoordinator: ObservableObject {
 
         case .hasDeclutter:
             return InputContext(
-                header: "Moving is the perfect excuse to lighten the load. Any items you're planning to part with before the move?",
+                header: "Any items you're planning to part with before the move?",
                 subheader: "Clothes, furniture, electronics — anything you don't want making the trip."
             )
 
         case .wantToSell:
             return InputContext(
-                header: "Would you want to try selling any of those items?",
-                subheader: "We can help with that. If it doesn't work out, we'll find other options."
+                header: "Are you planning to sell any of those items?",
+                subheader: "We can assist with that process as well as plan b if they don't sell."
             )
 
         case .hireCleaners:
             return InputContext(
-                header: "Would you like quotes for a professional move-out cleaning, or are you going to handle that yourself?",
+                header: "And for the final deep clean of your current home, would you like to get some quotes for professional cleaners?",
                 subheader: nil
             )
             
@@ -557,8 +563,8 @@ class AssessmentCoordinator: ObservableObject {
             
         case .financialInstitutions:
             return InputContext(
-                header: "Let's make sure your money follows you. Which of these do you need to update your address with?",
-                subheader: "Tap once for each — twice if you have two of the same type."
+                header: "Let's start with finance related accounts you might have.",
+                subheader: "Tap once for each that you have an account with - if you have more than one of any, each tap will add a new task for you."
             )
 
         case .financialDetails:
@@ -569,8 +575,8 @@ class AssessmentCoordinator: ObservableObject {
 
         case .healthcareProviders:
             return InputContext(
-                header: "What about healthcare? Who needs your new info?",
-                subheader: "Tap once for each — twice if you have two of the same type."
+                header: "Now for any health-related accounts?",
+                subheader: "Tap once for each that you have an account with - if you have more than one of any, each tap will add a new task for you."
             )
 
         case .healthcareDetails:
@@ -581,8 +587,8 @@ class AssessmentCoordinator: ObservableObject {
 
         case .fitnessWellness:
             return InputContext(
-                header: "Any memberships or subscriptions we should cancel or transfer?",
-                subheader: "Tap once for each — twice if you have two of the same type."
+                header: "And lastly, do you have any wellness-related memberships?",
+                subheader: "Tap once for each that you have an account with - if you have more than one of any, each tap will add a new task for you."
             )
 
         case .fitnessDetails:
@@ -595,7 +601,7 @@ class AssessmentCoordinator: ObservableObject {
             
         case .howHeard:
             return InputContext(
-                header: "Last one, \(dataManager.userName)—how'd you find us?",
+                header: "Before we get to the fun stuff, we'd love to know what put Peezy on your radar?",
                 subheader: nil
             )
 
