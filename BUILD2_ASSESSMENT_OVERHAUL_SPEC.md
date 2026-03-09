@@ -378,6 +378,8 @@ Fix: In `routeToMainApp()`, post the `.assessmentCompleted` notification BEFORE 
 
 **Mark Phase 6 complete when verification passes.**
 
+<!-- Phase 6: COMPLETE -->
+
 ---
 
 ## Phase 7: Welcome Card Swipe + Card Fly-Off Animation (files: 1 modify)

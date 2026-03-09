@@ -81,24 +81,20 @@ struct CompletionFlowView: View {
     // MARK: - Route to Main App
 
     private func routeToMainApp() {
-        // Immediately hide all content so nothing flashes
-        withAnimation(.easeOut(duration: 0.15)) {
-            showContent = false
-        }
+        // Immediately hide all content with zero animation so nothing flashes
+        showContent = false
 
-        // Then run the dismissal sequence
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+        // Post notification BEFORE dismissing the cover so main app state updates first
+        NotificationCenter.default.post(name: .assessmentCompleted, object: nil)
+
+        // Then dismiss the fullScreenCover
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
             coordinator.isComplete = false
-
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                NotificationCenter.default.post(name: .assessmentCompleted, object: nil)
-            }
         }
 
         // FAILSAFE: If still showing after 5 seconds, force reset
         DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) {
-            if !showContent {
-                showContent = true
+            if coordinator.isComplete {
                 coordinator.isComplete = false
                 NotificationCenter.default.post(name: .assessmentCompleted, object: nil)
             }

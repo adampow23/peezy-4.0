@@ -105,7 +105,10 @@ struct GeneratingView: View {
         .onChange(of: isSaving) { _, newValue in
             if !newValue && !generationComplete {
                 generationComplete = true
-                fetchTaskCount()
+                // Small delay to ensure Firestore batch write has committed
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    fetchTaskCount()
+                }
             }
         }
     }
@@ -149,10 +152,12 @@ struct GeneratingView: View {
             checkReady()
         }
 
-        // If generation is already done by the time we appear, fetch now
+        // If generation is already done by the time we appear, fetch after a short delay
         if !isSaving {
             generationComplete = true
-            fetchTaskCount()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                fetchTaskCount()
+            }
         }
     }
 
