@@ -69,7 +69,7 @@ struct MoveConcerns: View {
             .scrollDismissesKeyboard(.interactively)
 
             // Continue / Skip button
-            PeezyAssessmentButton(selectedConcerns.isEmpty ? "None — Skip" : "Continue") {
+            PeezyAssessmentButton("Continue") {
                 var concernsToSave = Array(selectedConcerns)
 
                 if selectedConcerns.contains("Something else") && !otherText.isEmpty {

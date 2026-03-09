@@ -348,6 +348,8 @@ Change the continue button text from whatever it currently says to `"Continue"`.
 
 **Mark Phase 3 complete when verification passes.**
 
+<!-- Phase 3: COMPLETE -->
+
 ---
 
 ## Phase 4: Address Icon Change (files: 2 modify)

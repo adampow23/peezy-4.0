@@ -8,12 +8,13 @@ struct HowHeard: View {
     @State private var showContent = false
     private let lightHaptic = UIImpactFeedbackGenerator(style: .light)
 
-    let options = ["Realtor", "Friends / Family", "Social Media", "Search Engine", "Other"]
+    let options = ["Realtor", "Friends / Family", "Social Media", "Search Engine", "Moving Company", "Other"]
     let iconMap: [String: String] = [
         "Realtor": "house.fill",
         "Friends / Family": "person.2.fill",
         "Social Media": "iphone",
         "Search Engine": "magnifyingglass",
+        "Moving Company": "shippingbox.fill",
         "Other": "ellipsis.circle.fill"
     ]
 

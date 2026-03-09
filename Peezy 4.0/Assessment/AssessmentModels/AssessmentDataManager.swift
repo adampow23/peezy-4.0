@@ -128,7 +128,7 @@ class AssessmentDataManager: ObservableObject {
         data["childrenInSchool"] = childrenInSchool
         data["childrenInDaycare"] = childrenInDaycare
         data["hasVet"] = hasVet
-        data["hasVehicles"] = hasVehicles
+        data["hasVehiclesDetail"] = hasVehicles
         data["hasStorage"] = hasStorage
         data["storageSize"] = storageSize
         data["storageFullness"] = storageFullness
@@ -170,10 +170,11 @@ class AssessmentDataManager: ObservableObject {
         data["moveDistance"] = moveDistance.isEmpty ? "Long Distance" : moveDistance
         data["isInterstate"] = isInterstate.isEmpty ? "Yes" : isInterstate
 
-        // Service hire mapping — UI stores descriptive labels, catalog expects "Yes"/"No"
-        // "Get me quotes" → "Yes"
-        // "I'll handle it myself" → "No"
-        data["hireMovers"] = mapServiceToYesNo(hireMovers, yesValues: ["get me quotes"])
+        // Vehicle mapping — UI stores "None"/"One"/"Two"/"Three+", catalog expects "Yes"/"No"
+        data["hasVehicles"] = (hasVehicles.isEmpty || hasVehicles == "None") ? "No" : "Yes"
+
+        // Service hire mapping — UI now stores "Yes"/"No" directly for hireMovers
+        data["hireMovers"] = hireMovers
         data["hireCleaners"] = mapServiceToYesNo(hireCleaners, yesValues: ["get me quotes"])
 
         return data

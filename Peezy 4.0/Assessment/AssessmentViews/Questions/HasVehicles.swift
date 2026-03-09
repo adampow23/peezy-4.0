@@ -11,11 +11,13 @@ struct HasVehicles: View {
     // Haptic feedback
     private let lightHaptic = UIImpactFeedbackGenerator(style: .light)
 
-    let options = ["Yes", "No"]
+    let options = ["None", "One", "Two", "Three+"]
 
     let iconMap: [String: String] = [
-        "Yes": "checkmark.circle.fill",
-        "No": "xmark.circle.fill"
+        "None": "car",
+        "One": "car.fill",
+        "Two": "car.fill",
+        "Three+": "car.fill"
     ]
 
     var body: some View {
