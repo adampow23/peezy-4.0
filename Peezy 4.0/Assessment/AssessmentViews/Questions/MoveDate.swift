@@ -22,7 +22,7 @@ struct MoveDate: View {
                 .offset(y: showContent ? 0 : 30)
                 .animation(.easeOut(duration: 0.5).delay(0.3), value: showContent)
 
-                Spacer(minLength: 0)
+                Spacer(minLength: 24)
             }
 
             // Continue button

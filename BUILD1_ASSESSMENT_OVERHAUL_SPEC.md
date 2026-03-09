@@ -426,6 +426,8 @@ For the date picker (MoveDate):
 
 **Mark Phase 5 complete when verification passes.**
 
+<!-- Phase 5: COMPLETE -->
+
 ---
 
 ## Phase 6: Rent/Own Extra Space + Storage Icon Sizes + Fullness Pie Icons (files: 4-5 modify)

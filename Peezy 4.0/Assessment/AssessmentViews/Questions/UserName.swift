@@ -12,12 +12,7 @@ struct UserName: View {
     var body: some View {
         VStack(spacing: 0) {
             VStack(spacing: 0) {
-                if !keyboard.isVisible {
-                    Spacer(minLength: 0)
-                } else {
-                    Spacer(minLength: 0)
-                        .frame(maxHeight: 40)
-                }
+                Spacer(minLength: 20)
 
                 TextField("", text: $name, prompt: Text("First name").foregroundColor(Color.gray.opacity(0.5)))
                     .font(.system(size: 22, weight: .medium))
