@@ -125,8 +125,6 @@ struct AssessmentFlowView: View {
         case .currentAddress:        CurrentAddress()
         case .currentFloorAccess:    CurrentFloorAccess()
         case .currentBedrooms:       CurrentBedrooms()
-        case .currentSquareFootage:  CurrentSquareFootage()
-        case .currentFinishedSqFt:   CurrentFinishedSqFt()
             
         // --- Section 3: New Home ---
         case .newRentOrOwn:          NewRentOrOwn()
@@ -134,10 +132,9 @@ struct AssessmentFlowView: View {
         case .newAddress:            NewAddress()
         case .newFloorAccess:        NewFloorAccess()
         case .newBedrooms:           NewBedrooms()
-        case .newSquareFootage:      NewSquareFootage()
-        case .newFinishedSqFt:       NewFinishedSqFt()
             
         // --- Section 4: People ---
+        case .anyKids:               AnyKids()
         case .childrenInSchool:      ChildrenInSchool()
         case .childrenInDaycare:     ChildrenInDaycare()
         case .hasVet:                HasVet()
@@ -164,7 +161,8 @@ struct AssessmentFlowView: View {
             
         // --- Wrap-up ---
         case .howHeard:              HowHeard()
-        case .promoCode:             PromoCode()
+
+        default:                     EmptyView()
         }
     }
 }

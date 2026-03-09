@@ -52,6 +52,7 @@ enum AssessmentInputStep: String, Hashable {
     case newFinishedSqFt
     
     // Section 4: People
+    case anyKids
     case childrenInSchool
     case childrenInDaycare
     case hasVet
@@ -242,11 +243,9 @@ class AssessmentCoordinator: ObservableObject {
         if currentDwelling == "apartment" || currentDwelling == "condo" {
             addStep(.currentFloorAccess)
             addStep(.currentBedrooms)
-            addStep(.currentSquareFootage)
         } else {
             // House / Townhouse (also default if not yet answered)
             addStep(.currentBedrooms)
-            addStep(.currentFinishedSqFt)
         }
         
         // Section 3: New Home
@@ -259,10 +258,8 @@ class AssessmentCoordinator: ObservableObject {
         if newDwelling == "apartment" || newDwelling == "condo" {
             addStep(.newFloorAccess)
             addStep(.newBedrooms)
-            addStep(.newSquareFootage)
         } else {
             addStep(.newBedrooms)
-            addStep(.newFinishedSqFt)
         }
 
         // Storage — belongs with home details
@@ -273,8 +270,11 @@ class AssessmentCoordinator: ObservableObject {
         }
 
         // Section 4: People
-        addStep(.childrenInSchool)
-        addStep(.childrenInDaycare)
+        addStep(.anyKids)
+        if dataManager.anyKids.lowercased() == "yes" {
+            addStep(.childrenInSchool)
+            addStep(.childrenInDaycare)
+        }
 
         addStep(.hasVet)
 
@@ -310,7 +310,6 @@ class AssessmentCoordinator: ObservableObject {
         
         // Wrap-up
         addStep(.howHeard)
-        addStep(.promoCode)
 
         sequence = nodes
 
@@ -326,7 +325,8 @@ class AssessmentCoordinator: ObservableObject {
         switch step {
         case .currentDwellingType, .newDwellingType,
              .hasStorage, .hireMovers, .hasDeclutter,
-             .financialInstitutions, .healthcareProviders, .fitnessWellness:
+             .financialInstitutions, .healthcareProviders, .fitnessWellness,
+             .anyKids:
             return true
         default:
             return false

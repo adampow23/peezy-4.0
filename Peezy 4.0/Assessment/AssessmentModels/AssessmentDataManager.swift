@@ -38,6 +38,7 @@ class AssessmentDataManager: ObservableObject {
     @Published var newFinishedSqFt: String = ""
     
     // MARK: - Household
+    @Published var anyKids: String = ""
     @Published var childrenInSchool: String = ""
     @Published var childrenInDaycare: String = ""
     @Published var hasVet: String = ""
@@ -123,6 +124,7 @@ class AssessmentDataManager: ObservableObject {
         data["newFinishedSqFt"] = newFinishedSqFt
         
         // Household
+        data["anyKids"] = anyKids
         data["childrenInSchool"] = childrenInSchool
         data["childrenInDaycare"] = childrenInDaycare
         data["hasVet"] = hasVet
@@ -288,6 +290,7 @@ class AssessmentDataManager: ObservableObject {
         newBedrooms = ""
         newSquareFootage = ""
         newFinishedSqFt = ""
+        anyKids = ""
         childrenInSchool = ""
         childrenInDaycare = ""
         hasVet = ""
