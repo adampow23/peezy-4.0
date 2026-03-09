@@ -89,15 +89,10 @@ struct AddressAutocompleteView: View {
                 manager.clearSelection()
                 isFieldFocused = true
             } label: {
-                Image(systemName: "square.and.pencil")
-                    .font(.system(size: 17, weight: .medium))
-                    .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.5))
+                Image(systemName: "pencil")
+                    .font(.system(size: 28))
+                    .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.15))
                     .padding(8)
-                    .background(
-                        Circle()
-                            .fill(Color.gray.opacity(0.08))
-                            .overlay(Circle().stroke(Color.gray.opacity(0.2), lineWidth: 1))
-                    )
             }
             .transition(.opacity.combined(with: .scale(scale: 0.85)))
         }

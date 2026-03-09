@@ -381,6 +381,8 @@ Change the continue button text from whatever it currently says to `"Continue"`.
 
 **Mark Phase 4 complete when verification passes.**
 
+<!-- Phase 4: COMPLETE -->
+
 ---
 
 ## Phase 5: Layout Spacing Fixes — Text Fields + Date Picker (files: 2-3 modify)
