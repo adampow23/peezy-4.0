@@ -130,6 +130,8 @@ struct TypingText: View {
 
 **Mark Phase 1 complete when verification passes.**
 
+<!-- Phase 1: COMPLETE -->
+
 ---
 
 ## Phase 2: Assessment Intro Page Restyle (files: 1 modify)

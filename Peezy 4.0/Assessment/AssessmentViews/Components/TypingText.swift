@@ -2,45 +2,49 @@
 //  TypingText.swift
 //  Peezy
 //
-//  Reusable one-shot typewriter text component.
-//  Reveals text character-by-character at a configurable speed.
-//  Reserves full text height via hidden backing Text to prevent layout jumps.
+//  One-shot typewriter text component.
+//  Uses AttributedString to reveal characters by changing foreground color
+//  from .clear to visible. The full text layout is computed once and never
+//  changes — eliminating all layout shift, jitter, and alignment issues.
 //
 
 import SwiftUI
 
 struct TypingText: View {
     let fullText: String
-    let speed: Double // seconds per character batch
+    let speed: Double
     var onComplete: (() -> Void)? = nil
 
     @State private var displayedCount: Int = 0
     @State private var timer: Timer?
 
-    var body: some View {
-        ZStack(alignment: .topLeading) {
-            // Hidden full text reserves layout space to prevent jumps
-            Text(fullText)
-                .hidden()
-                .accessibilityHidden(true)
+    private var attributedText: AttributedString {
+        var result = AttributedString(fullText)
+        // Revealed characters: use the inherited foreground color from parent
+        // (don't set anything — let the parent .foregroundColor() apply)
 
-            // Visible typed text — fixed to same frame to prevent horizontal jitter
-            Text(String(fullText.prefix(displayedCount)))
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .animation(nil, value: displayedCount)
+        // Unrevealed characters: transparent
+        if displayedCount < fullText.count {
+            let startIndex = result.index(result.startIndex, offsetByCharacters: displayedCount)
+            result[startIndex..<result.endIndex].foregroundColor = .clear
         }
-        .accessibilityLabel(fullText)
-        .onAppear {
-            startTyping()
-        }
-        .onChange(of: fullText) { _, _ in
-            displayedCount = 0
-            timer?.invalidate()
-            startTyping()
-        }
-        .onDisappear {
-            timer?.invalidate()
-        }
+        return result
+    }
+
+    var body: some View {
+        Text(attributedText)
+            .accessibilityLabel(fullText)
+            .onAppear {
+                startTyping()
+            }
+            .onChange(of: fullText) { _, _ in
+                displayedCount = 0
+                timer?.invalidate()
+                startTyping()
+            }
+            .onDisappear {
+                timer?.invalidate()
+            }
     }
 
     private func startTyping() {
@@ -50,8 +54,7 @@ struct TypingText: View {
         }
         timer = Timer.scheduledTimer(withTimeInterval: speed, repeats: true) { t in
             if displayedCount < fullText.count {
-                // One character per tick for a deliberate typewriter feel
-                displayedCount = min(displayedCount + 1, fullText.count)
+                displayedCount += 1
             }
             if displayedCount >= fullText.count {
                 t.invalidate()
