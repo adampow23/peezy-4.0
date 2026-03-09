@@ -14,10 +14,10 @@ struct StorageFullness: View {
     let options = ["1/4 Full", "1/2 Full", "3/4 Full", "Full"]
 
     let iconMap: [String: String] = [
-        "1/4 Full": "square.dashed",
-        "1/2 Full": "square.split.2x1",
-        "3/4 Full": "square.split.2x2",
-        "Full": "square.fill"
+        "1/4 Full": "circle",
+        "1/2 Full": "circle.lefthalf.filled",
+        "3/4 Full": "circle.inset.filled",
+        "Full": "circle.fill"
     ]
 
     var body: some View {

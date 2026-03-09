@@ -14,9 +14,9 @@ struct StorageSize: View {
     let options = ["Small (5x5)", "Medium (10x10)", "Large (10x20+)"]
 
     let iconMap: [String: String] = [
-        "Small (5x5)": "shippingbox",
-        "Medium (10x10)": "shippingbox.fill",
-        "Large (10x20+)": "building.2"
+        "Small (5x5)": "square",
+        "Medium (10x10)": "square",
+        "Large (10x20+)": "square"
     ]
 
     var body: some View {
