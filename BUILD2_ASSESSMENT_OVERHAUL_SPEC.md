@@ -163,6 +163,8 @@ The button should appear AFTER all text has finished typing, not simultaneously.
 
 **Mark Phase 2 complete when verification passes.**
 
+<!-- Phase 2: COMPLETE -->
+
 ---
 
 ## Phase 3: Services Explainer Page + Address Change Explainer Page (files: 3-4 modify/create)
