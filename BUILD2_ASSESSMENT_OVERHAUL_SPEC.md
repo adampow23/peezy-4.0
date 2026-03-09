@@ -343,6 +343,8 @@ This data will be available for the inventory scanner to read. The scanner integ
 
 **Mark Phase 5 complete when verification passes.**
 
+<!-- Phase 5: COMPLETE -->
+
 ---
 
 ## Phase 6: Task Generation + Transition Fixes (files: 2-3 modify)

@@ -84,6 +84,21 @@ class AssessmentDataManager: ObservableObject {
     @Published var moveDistance: String = ""
     @Published var isInterstate: String = ""
 
+    // MARK: - Auto Room List (for Inventory Scanner)
+
+    /// Generates a default room list based on bedroom count.
+    /// The inventory scanner can use this to pre-populate rooms.
+    var autoRoomList: [String] {
+        let bedroomCount = Int(currentBedrooms) ?? 0
+        var rooms = ["Living Room", "Kitchen"]
+        for i in 1...max(bedroomCount, 1) {
+            rooms.append(bedroomCount == 1 ? "Bedroom" : "Bedroom \(i)")
+        }
+        rooms.append("Bathroom")
+        rooms.append("Garage")
+        return rooms
+    }
+
     // MARK: - Get All Assessment Data
     
     /// Returns every raw answer + mapped keys in a single dictionary.
@@ -160,6 +175,9 @@ class AssessmentDataManager: ObservableObject {
         data["referralCode"] = referralCode
         data["promoCode"] = promoCode
         
+        // Auto room list for inventory scanner
+        data["autoRoomList"] = autoRoomList
+
         // --- Computed keys for TaskConditionParser ---
         // These keys are required by taskCatalog conditions but not collected
         // directly from UI — they are derived from raw assessment answers.
