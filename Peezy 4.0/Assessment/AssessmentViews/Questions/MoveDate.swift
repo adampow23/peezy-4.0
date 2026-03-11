@@ -1,60 +1,40 @@
 import SwiftUI
 
 struct MoveDate: View {
+
+    // ═══════════════════════════════════════════
+    //  CONFIG
+    // ═══════════════════════════════════════════
+
+    let header      = "When's the big day?"
+    let subtext     : String? = "I'll build your timeline around this date."
+    let buttonText  = "Continue"
+
+    // ═══════════════════════════════════════════
+    //  WIRING
+    // ═══════════════════════════════════════════
+
     @State private var selectedDate = Date()
-    @State private var showError = false
-    @State private var showContent = false
-    @EnvironmentObject var assessmentData: AssessmentDataManager
+    @EnvironmentObject var data: AssessmentDataManager
     @EnvironmentObject var coordinator: AssessmentCoordinator
 
     var body: some View {
-        VStack(spacing: 0) {
-            VStack(spacing: 0) {
-                Spacer(minLength: 0)
-
-                PeezyCalendarPicker(
-                    selectedDate: $selectedDate,
-                    minimumDate: Date(),
-                    accentColor: PeezyTheme.Colors.brandYellow
-                )
-                .padding(.horizontal, 20)
-                .opacity(showContent ? 1 : 0)
-                .offset(y: showContent ? 0 : 30)
-                .animation(.easeOut(duration: 0.5).delay(0.3), value: showContent)
-
-                Spacer(minLength: 24)
+        DatePickerTemplate(
+            header: header, subtext: subtext,
+            date: $selectedDate,
+            buttonText: buttonText,
+            onContinue: {
+                data.moveDate = selectedDate
+                coordinator.goToNext()
             }
-
-            // Continue button
-            PeezyAssessmentButton("Continue") {
-                if selectedDate > Date() {
-                    assessmentData.moveDate = selectedDate
-                    coordinator.goToNext()
-                } else {
-                    showError = true
-                }
-            }
-            .padding(.horizontal, 24)
-            .padding(.bottom, 32)
-            .opacity(showContent ? 1 : 0)
-            .offset(y: showContent ? 0 : 30)
-            .animation(.spring(response: 0.6, dampingFraction: 0.8).delay(0.4), value: showContent)
-            .alert("Please choose a date in the future", isPresented: $showError) {
-                Button("OK", role: .cancel) { }
-            }
-        }
+        )
         .onAppear {
-            selectedDate = assessmentData.moveDate
-            withAnimation {
-                showContent = true
-            }
+            selectedDate = data.moveDate
         }
     }
 }
 
 #Preview {
-    let manager = AssessmentDataManager()
-    MoveDate()
-        .environmentObject(manager)
-        .environmentObject(AssessmentCoordinator(dataManager: manager))
+    let dm = AssessmentDataManager()
+    MoveDate().environmentObject(dm).environmentObject(AssessmentCoordinator(dataManager: dm))
 }

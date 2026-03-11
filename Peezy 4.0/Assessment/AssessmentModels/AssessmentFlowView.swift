@@ -24,10 +24,13 @@ struct AssessmentFlowView: View {
     
     var body: some View {
         ZStack {
+            // Background ignores keyboard so it doesn't squish
             InteractiveBackground()
+                .ignoresSafeArea(.keyboard)
             
+            // Content VStack — SwiftUI shrinks this naturally when keyboard appears
             VStack(spacing: 0) {
-                // Progress bar — always visible
+                // Progress bar — stays pinned at top
                 if coordinator.currentNode != nil {
                     progressBar
                         .transition(.opacity)

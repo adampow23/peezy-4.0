@@ -5,10 +5,15 @@ struct FitnessDetails: View {
     @EnvironmentObject var assessmentData: AssessmentDataManager
     @EnvironmentObject var coordinator: AssessmentCoordinator
 
-    @FocusState private var focusedKey: String?
-    @StateObject private var keyboard = KeyboardObserver()
-    @State private var showContent = false
     @State private var currentEntryIndex: Int = 0
+    @State private var showContent = true
+
+    @State private var headerDone = false
+    @State private var isHero = true
+    @State private var skipped = false
+    @State private var showControls = false
+
+    private let speed: Double = 0.04
 
     private var fieldEntries: [(key: String, label: String, category: String)] {
         var entries: [(String, String, String)] = []
@@ -31,100 +36,149 @@ struct FitnessDetails: View {
         return fieldEntries[currentEntryIndex]
     }
 
-    var body: some View {
-        VStack(spacing: 0) {
-            if let entry = currentEntry {
-                VStack(spacing: 0) {
-                    Text("Where do you go for \(entry.category.lowercased())?")
-                        .font(.title3.weight(.semibold))
-                        .foregroundColor(PeezyTheme.Colors.deepInk)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 24)
-                        .padding(.bottom, 8)
+    private var headerText: String {
+        guard let entry = currentEntry else { return "" }
+        return "Where do you go for \(entry.category.lowercased())?"
+    }
 
-                    if fieldEntries.count > 1 {
+    var body: some View {
+        ZStack {
+            InteractiveBackground()
+                .ignoresSafeArea(.keyboard)
+
+            VStack(spacing: 0) {
+
+                if isHero { Spacer() }
+
+                VStack(spacing: 8) {
+                    Group {
+                        if skipped || !isHero {
+                            Text(headerText)
+                        } else {
+                            TypingText(
+                                fullText: headerText,
+                                speed: speed,
+                                visibleColor: PeezyTheme.Colors.deepInk,
+                                onComplete: {
+                                    headerDone = true
+                                    triggerMorph()
+                                }
+                            )
+                        }
+                    }
+                    .font(.system(size: isHero ? 32 : 22, weight: .semibold))
+                    .foregroundColor(PeezyTheme.Colors.deepInk)
+                    .lineSpacing(4)
+                    .multilineTextAlignment(isHero ? .center : .leading)
+                    .frame(maxWidth: .infinity, alignment: isHero ? .center : .leading)
+
+                    if !isHero && fieldEntries.count > 1 {
                         Text("\(currentEntryIndex + 1) of \(fieldEntries.count)")
                             .font(.caption)
                             .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.4))
-                            .padding(.bottom, 16)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                     }
+                }
+                .padding(.horizontal, 24)
+                .padding(.top, isHero ? 0 : 24)
+                .padding(.bottom, isHero ? 0 : 40)
 
+                if isHero { Spacer() }
+
+                if !isHero && showControls { Spacer() }
+
+                if showControls, let entry = currentEntry {
                     SuggestiveTextField(
                         label: entry.label,
                         placeholder: placeholderText(for: entry.category),
                         text: binding(for: entry.key),
                         source: suggestionSource(for: entry.category),
-                        isFocused: true
+                        isFocused: true,
+                        autoFocus: true
                     )
                     .id(entry.key)
                     .padding(.horizontal, 24)
+                    .opacity(showContent ? 1 : 0)
+                    .animation(.easeOut(duration: 0.3), value: showContent)
                 }
-                .opacity(showContent ? 1 : 0)
-                .offset(y: showContent ? 0 : 30)
-                .animation(.easeOut(duration: 0.5).delay(0.3), value: showContent)
-            }
 
-            Spacer()
+                if !isHero && showControls { Spacer() }
 
-            PeezyAssessmentButton("Continue") {
-                if currentEntryIndex < fieldEntries.count - 1 {
-                    showContent = false
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                        currentEntryIndex += 1
-                        focusedKey = currentEntry?.key
-                        showContent = true
+                if showControls {
+                    PeezyAssessmentButton("Continue") {
+                        if currentEntryIndex < fieldEntries.count - 1 {
+                            showContent = false
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                                currentEntryIndex += 1
+                                showContent = true
+                            }
+                        } else {
+                            assessmentData.fitnessDetails = details
+                            coordinator.goToNext()
+                        }
                     }
-                } else {
-                    assessmentData.fitnessDetails = details
-                    coordinator.goToNext()
+                    .padding(.horizontal, 24)
+                    .padding(.bottom, 32)
                 }
             }
-            .padding(.horizontal, 24)
-            .padding(.bottom, keyboard.isVisible ? 12 : 32)
-            .opacity(showContent ? 1 : 0)
-            .offset(y: showContent ? 0 : 30)
-            .animation(.spring(response: 0.6, dampingFraction: 0.8).delay(0.4), value: showContent)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .padding(.bottom, keyboard.isVisible ? keyboard.height : 0)
-        .onTapGesture { focusedKey = nil }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            if isHero { skipToControls() }
+        }
         .onAppear {
             details = assessmentData.fitnessDetails
-            if let first = fieldEntries.first {
-                focusedKey = first.key
-            }
-            withAnimation { showContent = true }
         }
+    }
+
+    private func triggerMorph() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+            guard isHero else { return }
+            performMorph()
+        }
+    }
+
+    private func performMorph() {
+        withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) {
+            isHero = false
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            withAnimation(.easeOut(duration: 0.35)) {
+                showControls = true
+            }
+        }
+    }
+
+    private func skipToControls() {
+        skipped = true
+        headerDone = true
+        performMorph()
     }
 
     private func placeholderText(for category: String) -> String {
         switch category {
-        case "Gym / CrossFit":
-            return "e.g. Planet Fitness, Equinox, LA Fitness"
-        case "Yoga / Pilates":
-            return "e.g. CorePower, local studio name"
-        case "Spin / Cycling":
-            return "e.g. SoulCycle, Peloton studio"
-        case "Massage / Spa":
-            return "e.g. Massage Envy, Hand & Stone"
-        case "Country Club / Golf":
-            return "e.g. local country club, TopGolf"
-        default:
-            return "e.g. enter membership name"
+        case "Gym":         return "e.g. Planet Fitness, Equinox, LA Fitness"
+        case "Yoga":        return "e.g. CorePower, local studio name"
+        case "Pilates":     return "e.g. Club Pilates, local studio"
+        case "CrossFit":    return "e.g. local CrossFit box name"
+        case "Swimming":    return "e.g. local pool, YMCA"
+        default:            return "e.g. enter membership name"
         }
     }
 
     private func suggestionSource(for category: String) -> SuggestionSource {
         switch category {
-        case "Gym / CrossFit":
-            return .mapSearch(category: "gym crossfit", nearAddress: assessmentData.currentAddress)
-        case "Yoga / Pilates":
-            return .mapSearch(category: "yoga pilates studio", nearAddress: assessmentData.currentAddress)
-        case "Spin / Cycling":
-            return .mapSearch(category: "cycling spin studio", nearAddress: assessmentData.currentAddress)
-        case "Massage / Spa":
-            return .mapSearch(category: "spa massage", nearAddress: assessmentData.currentAddress)
-        case "Country Club / Golf":
-            return .mapSearch(category: "golf country club", nearAddress: assessmentData.currentAddress)
+        case "Gym":
+            return .mapSearch(category: "gym fitness", nearAddress: assessmentData.currentAddress)
+        case "Yoga":
+            return .mapSearch(category: "yoga studio", nearAddress: assessmentData.currentAddress)
+        case "Pilates":
+            return .mapSearch(category: "pilates studio", nearAddress: assessmentData.currentAddress)
+        case "CrossFit":
+            return .mapSearch(category: "crossfit gym", nearAddress: assessmentData.currentAddress)
+        case "Swimming":
+            return .mapSearch(category: "swimming pool", nearAddress: assessmentData.currentAddress)
         default:
             return .local([])
         }
@@ -140,8 +194,8 @@ struct FitnessDetails: View {
 
 #Preview {
     let manager = AssessmentDataManager()
-    manager.fitnessWellness = ["Gym / CrossFit", "Yoga / Pilates"]
-    manager.fitnessCounts = ["Gym / CrossFit": 2, "Yoga / Pilates": 1]
+    manager.fitnessWellness = ["Gym", "Yoga"]
+    manager.fitnessCounts = ["Gym": 2, "Yoga": 1]
     return FitnessDetails()
         .environmentObject(manager)
         .environmentObject(AssessmentCoordinator(dataManager: manager))

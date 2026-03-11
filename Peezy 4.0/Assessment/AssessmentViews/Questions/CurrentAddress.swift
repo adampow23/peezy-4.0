@@ -1,72 +1,43 @@
 import SwiftUI
 
 struct CurrentAddress: View {
-    @State private var selectedAddress = ""
-    @EnvironmentObject var assessmentData: AssessmentDataManager
+
+    // ═══════════════════════════════════════════
+    //  CONFIG
+    // ═══════════════════════════════════════════
+
+    let header      = "What's the current address?"
+    let subtext     : String? = "I'll use this for mail forwarding, utilities, and more."
+    let placeholder = "Street address"
+    let buttonText  = "Continue"
+
+    // ═══════════════════════════════════════════
+    //  WIRING
+    // ═══════════════════════════════════════════
+
+    @State private var address = ""
+    @EnvironmentObject var data: AssessmentDataManager
     @EnvironmentObject var coordinator: AssessmentCoordinator
 
-    // Animation states
-    @StateObject private var keyboard = KeyboardObserver()
-    @State private var showContent = false
-
-    private var needsUnitField: Bool {
-        let type = assessmentData.currentDwellingType.lowercased()
-        return type == "apartment" || type == "condo"
-    }
-
-    private var unitFieldSatisfied: Bool {
-        !needsUnitField || !assessmentData.currentUnitNumber.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-
-    private var canContinue: Bool {
-        !selectedAddress.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && unitFieldSatisfied
-    }
-
     var body: some View {
-        VStack(spacing: 0) {
-            VStack(spacing: 0) {
-                Spacer(minLength: 20)
-
-                AddressAutocompleteView(
-                    placeholder: "Street, City, State, ZIP",
-                    onAddressSelected: { address in
-                        selectedAddress = address
-                    },
-                    showUnitField: needsUnitField,
-                    unitNumber: $assessmentData.currentUnitNumber
-                )
-                .opacity(showContent ? 1 : 0)
-                .offset(y: showContent ? 0 : 30)
-                .animation(.easeOut(duration: 0.5).delay(0.3), value: showContent)
-
-                Spacer(minLength: 0)
-            }
-
-            PeezyAssessmentButton("Continue", disabled: !canContinue) {
-                guard canContinue else { return }
-                assessmentData.currentAddress = selectedAddress
+        TextEntryTemplate(
+            header: header, subtext: subtext,
+            placeholder: placeholder,
+            text: $address,
+            buttonText: buttonText,
+            onContinue: {
+                data.currentAddress = address.trimmingCharacters(in: .whitespacesAndNewlines)
                 coordinator.goToNext()
-            }
-            .padding(.horizontal, 24)
-            .padding(.bottom, keyboard.isVisible ? 12 : 32)
-            .opacity(showContent ? 1 : 0)
-            .offset(y: showContent ? 0 : 30)
-            .animation(.spring(response: 0.6, dampingFraction: 0.8).delay(0.4), value: showContent)
-        }
-        .padding(.bottom, keyboard.isVisible ? keyboard.height : 0)
+            },
+            disableAutocorrect: true, contentType: .fullStreetAddress
+        )
         .onAppear {
-            selectedAddress = assessmentData.currentAddress
-            withAnimation {
-                showContent = true
-            }
+            address = data.currentAddress
         }
     }
 }
 
 #Preview {
-    let manager = AssessmentDataManager()
-    CurrentAddress()
-        .environmentObject(manager)
-        .environmentObject(AssessmentCoordinator(dataManager: manager))
+    let dm = AssessmentDataManager()
+    CurrentAddress().environmentObject(dm).environmentObject(AssessmentCoordinator(dataManager: dm))
 }

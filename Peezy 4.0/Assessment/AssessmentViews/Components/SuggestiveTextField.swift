@@ -16,11 +16,13 @@ struct SuggestiveTextField: View {
     @Binding var text: String
     let source: SuggestionSource
     var isFocused: Bool = false
+    var autoFocus: Bool = false          // NEW: auto-opens keyboard on appear
 
     @State private var suggestions: [String] = []
     @State private var showSuggestions = false
     @State private var justSelected = false
     @State private var mapManager = BusinessSearchManager()
+    @FocusState private var fieldFocused: Bool   // NEW: internal focus state
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -33,6 +35,7 @@ struct SuggestiveTextField: View {
                 .foregroundColor(PeezyTheme.Colors.deepInk)
                 .tint(PeezyTheme.Colors.accentBlue)
                 .textInputAutocapitalization(.words)
+                .focused($fieldFocused)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 14)
                 .frame(minHeight: 52)
@@ -47,12 +50,12 @@ struct SuggestiveTextField: View {
                 .overlay(
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
                         .stroke(
-                            isFocused ? PeezyTheme.Colors.accentBlue.opacity(0.6) : Color.black.opacity(0.1),
-                            lineWidth: isFocused ? 2 : 1
+                            (isFocused || fieldFocused) ? PeezyTheme.Colors.accentBlue.opacity(0.6) : Color.black.opacity(0.1),
+                            lineWidth: (isFocused || fieldFocused) ? 2 : 1
                         )
                 )
                 .shadow(
-                    color: isFocused ? PeezyTheme.Colors.accentBlue.opacity(0.2) : Color.black.opacity(0.3),
+                    color: (isFocused || fieldFocused) ? PeezyTheme.Colors.accentBlue.opacity(0.2) : Color.black.opacity(0.3),
                     radius: 10,
                     y: 5
                 )
@@ -61,7 +64,6 @@ struct SuggestiveTextField: View {
                 }
 
             // Bridge @Observable manager suggestions into local @State
-            // SwiftUI re-renders this Color.clear whenever mapManager.suggestions changes
             if case .mapSearch = source {
                 Color.clear
                     .frame(height: 0)
@@ -80,6 +82,13 @@ struct SuggestiveTextField: View {
         .task {
             if case .mapSearch(_, let address) = source {
                 await mapManager.primeLocation(address: address)
+            }
+        }
+        .onAppear {
+            if autoFocus {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    fieldFocused = true
+                }
             }
         }
     }
@@ -121,27 +130,26 @@ struct SuggestiveTextField: View {
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .fill(Color.black.opacity(0.06))
             }
-            .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(Color.black.opacity(0.1), lineWidth: 1)
-            )
-            .shadow(color: Color.black.opacity(0.3), radius: 10, y: 5)
         )
-        .padding(.top, 2)
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(Color.black.opacity(0.08), lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(0.08), radius: 8, y: 4)
     }
 
-    // MARK: - Text change handler
+    // MARK: - Text Change Handler
 
     private func handleTextChange(_ newValue: String) {
         if justSelected {
             justSelected = false
             return
         }
+
         switch source {
         case .local(let list):
             if newValue.count >= 2 {
-                let query = newValue.lowercased()
-                suggestions = list.filter { $0.lowercased().hasPrefix(query) }.prefix(5).map { $0 }
+                suggestions = list.filter { $0.localizedCaseInsensitiveContains(newValue) }.prefix(5).map { $0 }
                 showSuggestions = !suggestions.isEmpty
             } else {
                 suggestions = []
@@ -153,6 +161,7 @@ struct SuggestiveTextField: View {
                 mapManager.search(query: newValue, category: category)
             } else {
                 mapManager.clearSuggestions()
+                suggestions = []
                 showSuggestions = false
             }
         }

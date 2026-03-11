@@ -21,12 +21,17 @@ struct FinancialDetails: View {
     @EnvironmentObject var assessmentData: AssessmentDataManager
     @EnvironmentObject var coordinator: AssessmentCoordinator
 
-    @FocusState private var focusedKey: String?
-    @StateObject private var keyboard = KeyboardObserver()
-    @State private var showContent = false
     @State private var currentEntryIndex: Int = 0
+    @State private var showContent = true
 
-    /// Builds the list of (detailKey, label, category) for all fields.
+    // Morph state — only morphs on first entry
+    @State private var headerDone = false
+    @State private var isHero = true
+    @State private var skipped = false
+    @State private var showControls = false
+
+    private let speed: Double = 0.04
+
     private var fieldEntries: [(key: String, label: String, category: String)] {
         var entries: [(String, String, String)] = []
         for category in assessmentData.financialInstitutions {
@@ -48,93 +53,155 @@ struct FinancialDetails: View {
         return fieldEntries[currentEntryIndex]
     }
 
-    var body: some View {
-        VStack(spacing: 0) {
-            if let entry = currentEntry {
-                VStack(spacing: 0) {
-                    Text("What company do you have this \(entry.category.lowercased()) with?")
-                        .font(.title3.weight(.semibold))
-                        .foregroundColor(PeezyTheme.Colors.deepInk)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 24)
-                        .padding(.bottom, 8)
+    private var headerText: String {
+        guard let entry = currentEntry else { return "" }
+        return "What company do you have this \(entry.category.lowercased()) with?"
+    }
 
-                    if fieldEntries.count > 1 {
+    var body: some View {
+        ZStack {
+            InteractiveBackground()
+                .ignoresSafeArea(.keyboard)
+
+            VStack(spacing: 0) {
+
+                if isHero { Spacer() }
+
+                // ── TEXT AREA ──
+                VStack(spacing: 8) {
+                    Group {
+                        if skipped || !isHero {
+                            Text(headerText)
+                        } else {
+                            TypingText(
+                                fullText: headerText,
+                                speed: speed,
+                                visibleColor: PeezyTheme.Colors.deepInk,
+                                onComplete: {
+                                    headerDone = true
+                                    triggerMorph()
+                                }
+                            )
+                        }
+                    }
+                    .font(.system(size: isHero ? 32 : 22, weight: .semibold))
+                    .foregroundColor(PeezyTheme.Colors.deepInk)
+                    .lineSpacing(4)
+                    .multilineTextAlignment(isHero ? .center : .leading)
+                    .frame(maxWidth: .infinity, alignment: isHero ? .center : .leading)
+
+                    // Counter
+                    if !isHero && fieldEntries.count > 1 {
                         Text("\(currentEntryIndex + 1) of \(fieldEntries.count)")
                             .font(.caption)
                             .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.4))
-                            .padding(.bottom, 16)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                     }
+                }
+                .padding(.horizontal, 24)
+                .padding(.top, isHero ? 0 : 24)
+                .padding(.bottom, isHero ? 0 : 40)
 
+                if isHero { Spacer() }
+
+                // Center field between header and button
+                if !isHero && showControls { Spacer() }
+
+                // ── TEXT FIELD ──
+                if showControls, let entry = currentEntry {
                     SuggestiveTextField(
                         label: entry.label,
                         placeholder: placeholderText(for: entry.category),
                         text: binding(for: entry.key),
                         source: suggestionSource(for: entry.category),
-                        isFocused: true
+                        isFocused: true,
+                        autoFocus: true
                     )
                     .id(entry.key)
                     .padding(.horizontal, 24)
+                    .opacity(showContent ? 1 : 0)
+                    .animation(.easeOut(duration: 0.3), value: showContent)
                 }
-                .opacity(showContent ? 1 : 0)
-                .offset(y: showContent ? 0 : 30)
-                .animation(.easeOut(duration: 0.5).delay(0.3), value: showContent)
-            }
 
-            Spacer()
+                if !isHero && showControls { Spacer() }
 
-            PeezyAssessmentButton("Continue") {
-                if currentEntryIndex < fieldEntries.count - 1 {
-                    showContent = false
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                        currentEntryIndex += 1
-                        focusedKey = currentEntry?.key
-                        showContent = true
+                // ── CONTINUE BUTTON ──
+                if showControls {
+                    PeezyAssessmentButton("Continue") {
+                        if currentEntryIndex < fieldEntries.count - 1 {
+                            showContent = false
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                                currentEntryIndex += 1
+                                showContent = true
+                            }
+                        } else {
+                            assessmentData.financialDetails = details
+                            coordinator.goToNext()
+                        }
                     }
-                } else {
-                    assessmentData.financialDetails = details
-                    coordinator.goToNext()
+                    .padding(.horizontal, 24)
+                    .padding(.bottom, 32)
                 }
             }
-            .padding(.horizontal, 24)
-            .padding(.bottom, keyboard.isVisible ? 12 : 32)
-            .opacity(showContent ? 1 : 0)
-            .offset(y: showContent ? 0 : 30)
-            .animation(.spring(response: 0.6, dampingFraction: 0.8).delay(0.4), value: showContent)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .padding(.bottom, keyboard.isVisible ? keyboard.height : 0)
-        .onTapGesture { focusedKey = nil }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            if isHero { skipToControls() }
+        }
         .onAppear {
             details = assessmentData.financialDetails
-            if let first = fieldEntries.first {
-                focusedKey = first.key
-            }
-            withAnimation { showContent = true }
         }
     }
 
+    // ── MORPH LOGIC ─────────────────────────────────────────────
+
+    private func triggerMorph() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+            guard isHero else { return }
+            performMorph()
+        }
+    }
+
+    private func performMorph() {
+        withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) {
+            isHero = false
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            withAnimation(.easeOut(duration: 0.35)) {
+                showControls = true
+            }
+        }
+    }
+
+    private func skipToControls() {
+        skipped = true
+        headerDone = true
+        performMorph()
+    }
+
+    // ── HELPERS ─────────────────────────────────────────────────
+
     private func placeholderText(for category: String) -> String {
         switch category {
-        case "Bank / Credit Union":
-            return "e.g. Chase, Bank of America, Wells Fargo"
-        case "Credit Card":
-            return "e.g. Amex, Capital One, Discover"
-        case "Investment Account":
-            return "e.g. Fidelity, Schwab, Vanguard"
-        case "Student Loans":
-            return "e.g. Navient, SoFi, Nelnet"
-        default:
-            return "e.g. enter provider name"
+        case "Bank/Credit Union":       return "e.g. Chase, Bank of America, Wells Fargo"
+        case "Credit Card":             return "e.g. Amex, Capital One, Discover"
+        case "Investment/Brokerage":    return "e.g. Fidelity, Schwab, Vanguard"
+        case "401k/IRA":                return "e.g. Fidelity, Vanguard, T. Rowe Price"
+        case "Student Loans":           return "e.g. Navient, SoFi, Nelnet"
+        case "Mortgage":                return "e.g. Wells Fargo, Rocket Mortgage"
+        case "HSA/FSA":                 return "e.g. Optum, HealthEquity, Fidelity"
+        default:                        return "e.g. enter provider name"
         }
     }
 
     private func suggestionSource(for category: String) -> SuggestionSource {
         switch category {
-        case "Bank / Credit Union":
+        case "Bank/Credit Union":
             return .mapSearch(category: "bank", nearAddress: assessmentData.currentAddress)
         case "Credit Card":
             return .local(creditCardSuggestions)
-        case "Investment Account":
+        case "Investment/Brokerage":
             return .local(investmentSuggestions)
         case "Student Loans":
             return .local(studentLoanSuggestions)
@@ -153,8 +220,8 @@ struct FinancialDetails: View {
 
 #Preview {
     let manager = AssessmentDataManager()
-    manager.financialInstitutions = ["Bank / Credit Union", "Credit Card"]
-    manager.financialCounts = ["Bank / Credit Union": 2, "Credit Card": 1]
+    manager.financialInstitutions = ["Bank/Credit Union", "Credit Card"]
+    manager.financialCounts = ["Bank/Credit Union": 2, "Credit Card": 1]
     return FinancialDetails()
         .environmentObject(manager)
         .environmentObject(AssessmentCoordinator(dataManager: manager))

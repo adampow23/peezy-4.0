@@ -1,25 +1,22 @@
 //
-//  TextEntryTemplate.swift
+//  DatePickerTemplate.swift
 //  Peezy
 //
-//  Complete page template for text entry assessment questions.
-//  Keyboard auto-opens when morph completes. SwiftUI handles keyboard avoidance
-//  natively — no manual KeyboardObserver needed. Spacers compress to keep
-//  the text field centered and button above the keyboard.
+//  Complete page template for date picker assessment questions.
+//  Typewriter + morph, then inline date wheel centered, Continue button at bottom.
 //  ALL layout values are in the CONTROL BOARD below.
 //
 
 import SwiftUI
 
-struct TextEntryTemplate: View {
+struct DatePickerTemplate: View {
 
     // ╔═══════════════════════════════════════════════════════════╗
     // ║  CONTENT — passed from the question file                 ║
     // ╚═══════════════════════════════════════════════════════════╝
     let header: String
     let subtext: String?
-    let placeholder: String
-    let text: Binding<String>
+    let date: Binding<Date>
     let buttonText: String
     let onContinue: () -> Void
 
@@ -38,13 +35,10 @@ struct TextEntryTemplate: View {
     var morphedFontSize: CGFloat = 22   //  header after morph
     var morphedSubtextSize: CGFloat = 14 // subtext after morph
     var morphTopPad: CGFloat = 24       //  space above text
-    var morphBottomPad: CGFloat = 40    //  space between text and field
+    var morphBottomPad: CGFloat = 40    //  space between text and picker
     // ║                                                          ║
-    // ║  TEXT FIELD                                               ║
-    var fieldFontSize: CGFloat = 22     //  text field font size
-    var fieldPadH: CGFloat = 24         //  field side padding
-    var fieldHeight: CGFloat = 52       //  minimum field height
-    var fieldCorner: CGFloat = 16       //  field corner radius
+    // ║  DATE PICKER                                             ║
+    var pickerPadH: CGFloat = 24        //  picker side padding
     // ║                                                          ║
     // ║  BUTTON                                                  ║
     var buttonPadH: CGFloat = 24        //  button side padding
@@ -58,26 +52,18 @@ struct TextEntryTemplate: View {
     var lineSpacing: CGFloat = 4        //  header line spacing
     var subtextLineSpacing: CGFloat = 3 //  subtext line spacing
     // ║                                                          ║
-    // ║  KEYBOARD                                                ║
-    var keyboardType: UIKeyboardType = .default
-    var autocap: TextInputAutocapitalization = .words
-    var disableAutocorrect: Bool = false
-    var contentType: UITextContentType? = nil
-    // ║                                                          ║
     // ╚═══════════════════════════════════════════════════════════╝
 
-    // ── STATE (don't touch) ─────────────────────────────────────
+    // ── ANIMATION STATE (don't touch) ───────────────────────────
     @State private var headerDone = false
     @State private var subtextDone = false
     @State private var showControls = false
     @State private var isHero = true
     @State private var skipped = false
-    @FocusState private var isFocused: Bool
 
     // ── BODY ────────────────────────────────────────────────────
     var body: some View {
         ZStack {
-            // Background ignores keyboard so it doesn't squish
             InteractiveBackground()
                 .ignoresSafeArea(.keyboard)
 
@@ -139,44 +125,15 @@ struct TextEntryTemplate: View {
 
                 if isHero { Spacer() }
 
-                // Center text field between header and button
+                // Center picker between header and button
                 if !isHero && showControls { Spacer() }
 
-                // ── TEXT FIELD ──
+                // ── DATE PICKER ──
                 if showControls {
-                    TextField("", text: text, prompt: Text(placeholder).foregroundColor(Color.gray.opacity(0.5)))
-                        .font(.system(size: fieldFontSize, weight: .medium))
-                        .foregroundColor(PeezyTheme.Colors.deepInk)
-                        .tint(PeezyTheme.Colors.accentBlue)
-                        .multilineTextAlignment(.center)
-                        .keyboardType(keyboardType)
-                        .textInputAutocapitalization(autocap)
-                        .autocorrectionDisabled(disableAutocorrect)
-                        .textContentType(contentType)
-                        .focused($isFocused)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 14)
-                        .frame(minHeight: fieldHeight)
-                        .background(
-                            ZStack {
-                                RoundedRectangle(cornerRadius: fieldCorner, style: .continuous)
-                                    .fill(.regularMaterial)
-                                RoundedRectangle(cornerRadius: fieldCorner, style: .continuous)
-                                    .fill(Color.black.opacity(0.06))
-                            }
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: fieldCorner, style: .continuous)
-                                .stroke(
-                                    isFocused ? PeezyTheme.Colors.accentBlue.opacity(0.6) : Color.black.opacity(0.1),
-                                    lineWidth: isFocused ? 2 : 1
-                                )
-                        )
-                        .shadow(
-                            color: isFocused ? PeezyTheme.Colors.accentBlue.opacity(0.2) : Color.black.opacity(0.1),
-                            radius: 10, y: 5
-                        )
-                        .padding(.horizontal, fieldPadH)
+                    DatePicker("", selection: date, in: Date()..., displayedComponents: .date)
+                        .datePickerStyle(.wheel)
+                        .labelsHidden()
+                        .padding(.horizontal, pickerPadH)
                         .transition(.opacity.combined(with: .move(edge: .bottom)))
                 }
 
@@ -184,7 +141,7 @@ struct TextEntryTemplate: View {
 
                 // ── CONTINUE BUTTON ──
                 if showControls {
-                    PeezyAssessmentButton(buttonText, disabled: text.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) {
+                    PeezyAssessmentButton(buttonText) {
                         onContinue()
                     }
                     .padding(.horizontal, buttonPadH)
@@ -194,13 +151,7 @@ struct TextEntryTemplate: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .contentShape(Rectangle())
-        .onTapGesture {
-            if isHero {
-                skipToControls()
-            } else {
-                isFocused = false
-            }
-        }
+        .onTapGesture { skipToControls() }
     }
 
     // ── MORPH LOGIC ─────────────────────────────────────────────
@@ -220,10 +171,6 @@ struct TextEntryTemplate: View {
             withAnimation(.easeOut(duration: 0.35)) {
                 showControls = true
             }
-            // Auto-focus the text field so keyboard opens automatically
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                isFocused = true
-            }
         }
     }
 
@@ -238,13 +185,12 @@ struct TextEntryTemplate: View {
 
 // ── PREVIEW ─────────────────────────────────────────────────
 #Preview {
-    @Previewable @State var name = ""
-    TextEntryTemplate(
-        header: "What's your first name?",
-        subtext: nil,
-        placeholder: "First name",
-        text: $name,
+    @Previewable @State var date = Date()
+    DatePickerTemplate(
+        header: "When's the big day?",
+        subtext: "I'll build your timeline around this date.",
+        date: $date,
         buttonText: "Continue",
-        onContinue: { print("Continue with: \(name)") }
+        onContinue: { print("Date: \(date)") }
     )
 }
