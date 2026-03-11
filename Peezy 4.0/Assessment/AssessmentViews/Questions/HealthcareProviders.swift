@@ -2,26 +2,17 @@ import SwiftUI
 
 struct HealthcareProviders: View {
 
-    // ═══════════════════════════════════════════
-    //  CONFIG
-    // ═══════════════════════════════════════════
-
     let header      = "Now for any health-related accounts?"
     let subtext     : String? = "Tap once for each that you have an account with - if you have more than one of any, each tap will add a new task for you."
     let buttonText  = "Continue"
+
+    // OPTIONS — must match taskCatalogData.json condition values EXACTLY
     let options: [(String, String)] = [
-        ("Doctor/Primary Care", "stethoscope"),
-        ("Dentist", "mouth.fill"),
-        ("Eye Doctor", "eye.fill"),
-        ("Specialist", "cross.circle.fill"),
-        ("Therapist", "brain.head.profile"),
-        ("Pharmacy", "pills.fill")
-    ]
-
-    // ═══════════════════════════════════════════
-    //  WIRING
-    // ═══════════════════════════════════════════
-
+            ("Doctor", "stethoscope"),
+            ("Dentist", "mouth.fill"),
+            ("Specialists", "cross.circle.fill"),
+            ("Pharmacy", "pills.fill")
+        ]
     @State private var selected: Set<String> = []
     @EnvironmentObject var data: AssessmentDataManager
     @EnvironmentObject var coordinator: AssessmentCoordinator

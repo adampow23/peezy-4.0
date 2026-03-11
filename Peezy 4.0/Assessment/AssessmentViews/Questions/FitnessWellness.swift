@@ -10,13 +10,12 @@ struct FitnessWellness: View {
     let subtext     : String? = "Tap once for each that you have an account with - if you have more than one of any, each tap will add a new task for you."
     let buttonText  = "Continue"
     let options: [(String, String)] = [
-        ("Gym", "dumbbell.fill"),
-        ("Yoga", "figure.yoga"),
-        ("Pilates", "figure.pilates"),
-        ("CrossFit", "figure.strengthtraining.functional"),
-        ("Swimming", "figure.pool.swim"),
-        ("Other", "ellipsis")
-    ]
+            ("Gym / CrossFit", "dumbbell.fill"),
+            ("Yoga / Pilates", "figure.yoga"),
+            ("Spin / Cycling", "figure.outdoor.cycle"),
+            ("Massage / Spa", "sparkles"),
+            ("Country Club / Golf", "figure.golf")
+        ]
 
     // ═══════════════════════════════════════════
     //  WIRING
