@@ -124,14 +124,14 @@ cd functions && firebase deploy --only functions --project peezy-1ecrdl
 
 getAllAssessmentData() outputs these keys — this is the CONTRACT that the condition parser evaluates against:
 
-**Raw answers:** userName, moveDate, moveDateType, moveConcerns, currentRentOrOwn, currentDwellingType, currentAddress, currentFloorAccess, currentBedrooms, currentSquareFootage, currentFinishedSqFt, newRentOrOwn, newDwellingType, newAddress, newFloorAccess, newBedrooms, newSquareFootage, newFinishedSqFt, childrenInSchool, childrenInDaycare, hasVet, hireMoversDetail, packingPreference, wantsTruckRental, hireCleanersDetail, hasDeclutter, wantToSell, financialInstitutions, healthcareProviders, fitnessWellness, howHeard, referralCode
+**Raw answers:** userName, moveDate, moveDateType, moveConcerns, currentRentOrOwn, currentDwellingType, currentAddress, currentFloorAccess, currentBedrooms, currentSquareFootage, currentFinishedSqFt, newRentOrOwn, newDwellingType, newAddress, newFloorAccess, newBedrooms, newSquareFootage, newFinishedSqFt, childrenInSchool, childrenInDaycare, hasVet, hireMoversDetail, hirePackers, wantsTruckRental, hireCleanersDetail, hasDeclutter, wantToSell, financialInstitutions, healthcareProviders, fitnessWellness, howHeard, referralCode
 
 **Computed/derived:** moveDistance (String), isInterstate (String), hireMovers (String "Yes"/"No"), hireCleaners (String "Yes"/"No")
 
 ## Condition Keys Used in Catalog
 
 These keys are referenced in taskCatalogData.json conditions:
-hasVet, hasVehicles, hireMovers, packingPreference, wantsTruckRental, hireCleaners, hasDeclutter, wantToSell, currentDwellingType, newDwellingType, currentRentOrOwn, newRentOrOwn, moveDistance, isInterstate, childrenInSchool, childrenInDaycare, financialInstitutions, healthcareProviders, fitnessWellness
+hasVet, hasVehicles, hireMovers, hirePackers, wantsTruckRental, hireCleaners, hasDeclutter, wantToSell, currentDwellingType, newDwellingType, currentRentOrOwn, newRentOrOwn, moveDistance, isInterstate, childrenInSchool, childrenInDaycare, financialInstitutions, healthcareProviders, fitnessWellness
 
 ## Workflow
 

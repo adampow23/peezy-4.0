@@ -1,25 +1,27 @@
 //
-//  GridSelectTemplate.swift
+//  MultiSelectTemplate.swift
 //  Peezy
 //
-//  Complete page template for 3+ option single-select assessment questions.
-//  Tapping an option auto-advances after a short delay.
+//  Complete page template for multi-select assessment questions.
+//  Vertical list of toggleable tiles with checkmarks. Continue button pinned at bottom.
+//  Tiles centered between header and button.
 //  ALL layout values are in the CONTROL BOARD below.
 //
 
 import SwiftUI
 
-struct GridSelectTemplate: View {
+struct MultiSelectTemplate: View {
 
     // ╔═══════════════════════════════════════════════════════════╗
     // ║  CONTENT — passed from the question file                 ║
     // ╚═══════════════════════════════════════════════════════════╝
     let header: String
     let subtext: String?
-    let options: [String]
-    let icons: [String]
-    let selected: String
-    let onSelect: (String) -> Void
+    let options: [(String, String)]          // (label, SF Symbol icon)
+    let selected: Set<String>
+    let buttonText: String
+    let onToggle: (String) -> Void
+    let onContinue: () -> Void
 
     // ╔═══════════════════════════════════════════════════════════╗
     // ║  CONTROL BOARD — change any number, see it in preview    ║
@@ -36,16 +38,19 @@ struct GridSelectTemplate: View {
     var morphedFontSize: CGFloat = 22   //  header after morph
     var morphedSubtextSize: CGFloat = 14 // subtext after morph
     var morphTopPad: CGFloat = 24       //  space above text
-    var morphBottomPad: CGFloat = 40    //  space between text and tiles
+    var morphBottomPad: CGFloat = 24    //  space between text and tiles
     // ║                                                          ║
-    // ║  GRID                                                    ║
-    var columns: Int = 2                //  number of columns
+    // ║  TILES                                                   ║
     var tilePadH: CGFloat = 20          //  tiles outer side padding
-    var tileSpacing: CGFloat = 16       //  space between tiles
+    var tileSpacing: CGFloat = 12       //  space between tiles
+    // ║                                                          ║
+    // ║  BUTTON                                                  ║
+    var buttonPadH: CGFloat = 24        //  button side padding
+    var buttonPadBottom: CGFloat = 32   //  button bottom padding
     // ║                                                          ║
     // ║  TIMING                                                  ║
     var morphDelay: Double = 0.4        //  pause after typing before morph
-    var tileStagger: Double = 0.08      //  delay between each tile appearing
+    var tileStagger: Double = 0.06      //  delay between each tile appearing
     // ║                                                          ║
     // ║  TEXT                                                     ║
     var textSidePad: CGFloat = 24       //  text left/right padding
@@ -61,12 +66,6 @@ struct GridSelectTemplate: View {
     @State private var isHero = true
     @State private var skipped = false
     @State private var showTiles = false
-
-    private let haptic = UIImpactFeedbackGenerator(style: .light)
-
-    private var gridColumns: [GridItem] {
-        Array(repeating: GridItem(.flexible(), spacing: tileSpacing), count: columns)
-    }
 
     // ── BODY ────────────────────────────────────────────────────
     var body: some View {
@@ -131,18 +130,18 @@ struct GridSelectTemplate: View {
 
                 if isHero { Spacer() }
 
-                // Center tiles in remaining space
+                // Center tiles between header and button
                 if !isHero && showControls { Spacer() }
 
                 // ── TILES ──
                 if showControls {
-                    LazyVGrid(columns: gridColumns, spacing: tileSpacing) {
-                        ForEach(Array(options.enumerated()), id: \.element) { index, option in
-                            SelectionTile(
-                                title: option,
-                                icon: index < icons.count ? icons[index] : nil,
-                                isSelected: selected == option,
-                                onTap: { onSelect(option) }
+                    VStack(spacing: tileSpacing) {
+                        ForEach(Array(options.enumerated()), id: \.offset) { index, option in
+                            MultiSelectTile(
+                                title: option.0,
+                                icon: option.1,
+                                isSelected: selected.contains(option.0),
+                                onTap: { onToggle(option.0) }
                             )
                             .opacity(showTiles ? 1 : 0)
                             .offset(y: showTiles ? 0 : 30)
@@ -156,7 +155,17 @@ struct GridSelectTemplate: View {
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
                 }
 
-                if !isHero { Spacer() }
+                // Push button to bottom
+                if !isHero && showControls { Spacer() }
+
+                // ── CONTINUE BUTTON ──
+                if showControls {
+                    PeezyAssessmentButton(buttonText) {
+                        onContinue()
+                    }
+                    .padding(.horizontal, buttonPadH)
+                    .padding(.bottom, buttonPadBottom)
+                }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
@@ -198,12 +207,19 @@ struct GridSelectTemplate: View {
 
 // ── PREVIEW ─────────────────────────────────────────────────
 #Preview {
-    GridSelectTemplate(
-        header: "What kind of place are you in now?",
+    MultiSelectTemplate(
+        header: "What are you most hoping Peezy can help you with?",
         subtext: nil,
-        options: ["House", "Apartment", "Condo", "Townhouse"],
-        icons: ["house.fill", "building.2.fill", "building.fill", "house.and.flag.fill"],
-        selected: "",
-        onSelect: { print("Selected: \($0)") }
+        options: [
+            ("Knowing what to do and when", "list.bullet.clipboard"),
+            ("Finding time to actually pack", "shippingbox.fill"),
+            ("Dealing with moving companies", "person.2.fill"),
+            ("The fear of forgetting something important", "calendar"),
+            ("Something else", "ellipsis")
+        ],
+        selected: ["Knowing what to do and when"],
+        buttonText: "Continue",
+        onToggle: { print("Toggled: \($0)") },
+        onContinue: { print("Continue") }
     )
 }

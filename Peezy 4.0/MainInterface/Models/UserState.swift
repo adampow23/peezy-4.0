@@ -216,10 +216,10 @@ struct UserState: Codable {
             self.budget = Budget(rawValue: budget.lowercased())
         }
 
-        // Help level - derived from hireMovers, packingPreference, hireCleaners
+        // Help level - derived from hireMovers, hirePackers, hireCleaners
         let hireMovers = assessment["hireMovers"] as? String ?? ""
-        let packingPreference = assessment["packingPreference"] as? String ?? ""
-        if hireMovers.lowercased() == "yes" && !packingPreference.isEmpty && packingPreference != "none" {
+        let hirePackers = assessment["hirePackers"] as? String ?? ""
+        if hireMovers.lowercased() == "yes" && !hirePackers.isEmpty && hirePackers != "none" {
             self.helpLevel = .fullService
         } else if hireMovers.lowercased() == "yes" {
             self.helpLevel = .someHelp

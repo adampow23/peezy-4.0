@@ -49,7 +49,7 @@ class AssessmentDataManager: ObservableObject {
 
     // MARK: - Services
     @Published var hireMovers: String = ""
-    @Published var packingPreference: String = ""
+    @Published var hirePackers: String = ""
     @Published var truckRental: String = ""
     @Published var hasDeclutter: String = ""
     @Published var wantToSell: String = ""
@@ -150,7 +150,7 @@ class AssessmentDataManager: ObservableObject {
 
         // Services — raw labels preserved for display/Firestore, mapped to Yes/No below
         data["hireMoversDetail"] = hireMovers
-        data["packingPreference"] = packingPreference
+        data["hirePackers"] = hirePackers
         data["hireCleanersDetail"] = hireCleaners
 
         // Truck rental — "yes"/"no" from tile selection (only asked if not hiring movers)
@@ -318,7 +318,7 @@ class AssessmentDataManager: ObservableObject {
         storageSize = ""
         storageFullness = ""
         hireMovers = ""
-        packingPreference = ""
+        hirePackers = ""
         truckRental = ""
         hasDeclutter = ""
         wantToSell = ""

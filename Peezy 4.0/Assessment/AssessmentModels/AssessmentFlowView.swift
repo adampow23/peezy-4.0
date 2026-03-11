@@ -135,7 +135,7 @@ struct AssessmentFlowView: View {
         // --- Section 5: Services ---
         case .servicesIntro:         ServicesIntro()
         case .hireMovers:            HireMovers()
-        case .packingPreference:     HirePackers()
+        case .hirePackers:     HirePackers()
         case .truckRental:           TruckRental()
         case .hasDeclutter:          HasDeclutter()
         case .wantToSell:            WantToSell()

@@ -64,7 +64,7 @@ enum AssessmentInputStep: String, Hashable {
     // Section 5: Services
     case servicesIntro
     case hireMovers
-    case packingPreference
+    case hirePackers
     case truckRental
     case hasDeclutter
     case wantToSell
@@ -285,10 +285,9 @@ class AssessmentCoordinator: ObservableObject {
         // Section 5: Services
         addStep(.servicesIntro)
         addStep(.hireMovers)
-        if dataManager.hireMovers.lowercased() == "get me quotes" {
-            addStep(.packingPreference)
-        } else if !dataManager.hireMovers.isEmpty {
-            // Only show truckRental if user chose to handle move themselves
+        if dataManager.hireMovers.lowercased() == "yes" {
+            addStep(.hirePackers)
+        } else if dataManager.hireMovers.lowercased() == "no" {
             addStep(.truckRental)
         }
         addStep(.hasDeclutter)
@@ -539,7 +538,7 @@ class AssessmentCoordinator: ObservableObject {
                 subheader: nil
             )
             
-        case .packingPreference:
+        case .hirePackers:
             return InputContext(
                 header: "Most moving companies also offer packing services. Interested in getting packing quotes too?",
                 subheader: nil

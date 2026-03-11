@@ -146,8 +146,8 @@ struct TaskCatalogSchema {
             assessmentSource: .direct,
             assessmentQuestion: "Are you interested in getting quotes from a moving company, or planning to handle moving yourself?"
         ),
-        "packingPreference": ConditionFieldInfo(
-            description: "Packing preference (conditional on hiring movers)",
+        "hirePackers": ConditionFieldInfo(
+            description: "hirePackers (conditional on hiring movers)",
             possibleValues: ["none", "full", "kitchen", "both"],
             assessmentSource: .direct,
             assessmentQuestion: "Most moving companies also offer packing services. Interested in getting packing quotes too?"
@@ -265,7 +265,7 @@ struct TaskCatalogSchema {
         "storageSize",           // ○ Logistics (conditional on hasStorage)
         "storageFullness",       // ○ Logistics (conditional on hasStorage)
         "hireMovers",            // ★ Condition key
-        "packingPreference",     // ★ Condition key
+        "hirePackers",     // ★ Condition key
         "wantsTruckRental",      // ★ Condition key (conditional on hireMovers = No)
         "hireCleaners",          // ★ Condition key
         "financialInstitutions", // ★ Condition key (multi-select)

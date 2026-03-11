@@ -1,25 +1,26 @@
 //
-//  GridSelectTemplate.swift
+//  TextEntryTemplate.swift
 //  Peezy
 //
-//  Complete page template for 3+ option single-select assessment questions.
-//  Tapping an option auto-advances after a short delay.
+//  Complete page template for text entry assessment questions.
+//  Keyboard auto-opens when morph completes. Button sits above keyboard.
+//  Text field centered between header and button.
 //  ALL layout values are in the CONTROL BOARD below.
 //
 
 import SwiftUI
 
-struct GridSelectTemplate: View {
+struct TextEntryTemplate: View {
 
     // ╔═══════════════════════════════════════════════════════════╗
     // ║  CONTENT — passed from the question file                 ║
     // ╚═══════════════════════════════════════════════════════════╝
     let header: String
     let subtext: String?
-    let options: [String]
-    let icons: [String]
-    let selected: String
-    let onSelect: (String) -> Void
+    let placeholder: String
+    let text: Binding<String>
+    let buttonText: String
+    let onContinue: () -> Void
 
     // ╔═══════════════════════════════════════════════════════════╗
     // ║  CONTROL BOARD — change any number, see it in preview    ║
@@ -36,37 +37,43 @@ struct GridSelectTemplate: View {
     var morphedFontSize: CGFloat = 22   //  header after morph
     var morphedSubtextSize: CGFloat = 14 // subtext after morph
     var morphTopPad: CGFloat = 24       //  space above text
-    var morphBottomPad: CGFloat = 40    //  space between text and tiles
+    var morphBottomPad: CGFloat = 40    //  space between text and field
     // ║                                                          ║
-    // ║  GRID                                                    ║
-    var columns: Int = 2                //  number of columns
-    var tilePadH: CGFloat = 20          //  tiles outer side padding
-    var tileSpacing: CGFloat = 16       //  space between tiles
+    // ║  TEXT FIELD                                               ║
+    var fieldFontSize: CGFloat = 22     //  text field font size
+    var fieldPadH: CGFloat = 24         //  field side padding
+    var fieldHeight: CGFloat = 52       //  minimum field height
+    var fieldCorner: CGFloat = 16       //  field corner radius
+    // ║                                                          ║
+    // ║  BUTTON                                                  ║
+    var buttonPadH: CGFloat = 24        //  button side padding
+    var buttonPadBottom: CGFloat = 12   //  button bottom when keyboard up
+    var buttonPadBottomNoKB: CGFloat = 32 // button bottom when keyboard down
     // ║                                                          ║
     // ║  TIMING                                                  ║
     var morphDelay: Double = 0.4        //  pause after typing before morph
-    var tileStagger: Double = 0.08      //  delay between each tile appearing
     // ║                                                          ║
     // ║  TEXT                                                     ║
     var textSidePad: CGFloat = 24       //  text left/right padding
-    var lineSpacing: CGFloat = 4        //  space between lines of header
-    var subtextLineSpacing: CGFloat = 3 //  space between lines of subtext
+    var lineSpacing: CGFloat = 4        //  header line spacing
+    var subtextLineSpacing: CGFloat = 3 //  subtext line spacing
+    // ║                                                          ║
+    // ║  KEYBOARD                                                ║
+    var keyboardType: UIKeyboardType = .default
+    var autocap: TextInputAutocapitalization = .words
+    var disableAutocorrect: Bool = false
+    var contentType: UITextContentType? = nil
     // ║                                                          ║
     // ╚═══════════════════════════════════════════════════════════╝
 
-    // ── ANIMATION STATE (don't touch) ───────────────────────────
+    // ── STATE (don't touch) ─────────────────────────────────────
     @State private var headerDone = false
     @State private var subtextDone = false
     @State private var showControls = false
     @State private var isHero = true
     @State private var skipped = false
-    @State private var showTiles = false
-
-    private let haptic = UIImpactFeedbackGenerator(style: .light)
-
-    private var gridColumns: [GridItem] {
-        Array(repeating: GridItem(.flexible(), spacing: tileSpacing), count: columns)
-    }
+    @FocusState private var isFocused: Bool
+    @StateObject private var keyboard = KeyboardObserver()
 
     // ── BODY ────────────────────────────────────────────────────
     var body: some View {
@@ -131,40 +138,73 @@ struct GridSelectTemplate: View {
 
                 if isHero { Spacer() }
 
-                // Center tiles in remaining space
+                // Center text field between header and button
                 if !isHero && showControls { Spacer() }
 
-                // ── TILES ──
+                // ── TEXT FIELD ──
                 if showControls {
-                    LazyVGrid(columns: gridColumns, spacing: tileSpacing) {
-                        ForEach(Array(options.enumerated()), id: \.element) { index, option in
-                            SelectionTile(
-                                title: option,
-                                icon: index < icons.count ? icons[index] : nil,
-                                isSelected: selected == option,
-                                onTap: { onSelect(option) }
-                            )
-                            .opacity(showTiles ? 1 : 0)
-                            .offset(y: showTiles ? 0 : 30)
-                            .animation(
-                                .easeOut(duration: 0.5).delay(tileStagger + Double(index) * tileStagger),
-                                value: showTiles
-                            )
-                        }
-                    }
-                    .padding(.horizontal, tilePadH)
-                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+                    TextField("", text: text, prompt: Text(placeholder).foregroundColor(Color.gray.opacity(0.5)))
+                        .font(.system(size: fieldFontSize, weight: .medium))
+                        .foregroundColor(PeezyTheme.Colors.deepInk)
+                        .tint(PeezyTheme.Colors.accentBlue)
+                        .multilineTextAlignment(.center)
+                        .keyboardType(keyboardType)
+                        .textInputAutocapitalization(autocap)
+                        .autocorrectionDisabled(disableAutocorrect)
+                        .textContentType(contentType)
+                        .focused($isFocused)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 14)
+                        .frame(minHeight: fieldHeight)
+                        .background(
+                            ZStack {
+                                RoundedRectangle(cornerRadius: fieldCorner, style: .continuous)
+                                    .fill(.regularMaterial)
+                                RoundedRectangle(cornerRadius: fieldCorner, style: .continuous)
+                                    .fill(Color.black.opacity(0.06))
+                            }
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: fieldCorner, style: .continuous)
+                                .stroke(
+                                    isFocused ? PeezyTheme.Colors.accentBlue.opacity(0.6) : Color.black.opacity(0.1),
+                                    lineWidth: isFocused ? 2 : 1
+                                )
+                        )
+                        .shadow(
+                            color: isFocused ? PeezyTheme.Colors.accentBlue.opacity(0.2) : Color.black.opacity(0.1),
+                            radius: 10, y: 5
+                        )
+                        .padding(.horizontal, fieldPadH)
+                        .transition(.opacity.combined(with: .move(edge: .bottom)))
                 }
 
-                if !isHero { Spacer() }
+                if !isHero && showControls { Spacer() }
+
+                // ── CONTINUE BUTTON ──
+                if showControls {
+                    PeezyAssessmentButton(buttonText, disabled: text.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) {
+                        onContinue()
+                    }
+                    .padding(.horizontal, buttonPadH)
+                    .padding(.bottom, keyboard.isVisible ? buttonPadBottom : buttonPadBottomNoKB)
+                }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(.bottom, keyboard.isVisible ? keyboard.height : 0)
         }
+        .ignoresSafeArea(.keyboard)
         .contentShape(Rectangle())
-        .onTapGesture { skipToControls() }
+        .onTapGesture {
+            if isHero {
+                skipToControls()
+            } else {
+                isFocused = false
+            }
+        }
     }
 
-    // ── MORPH LOGIC (don't touch) ───────────────────────────────
+    // ── MORPH LOGIC ─────────────────────────────────────────────
 
     private func triggerMorph() {
         DispatchQueue.main.asyncAfter(deadline: .now() + morphDelay) {
@@ -181,8 +221,9 @@ struct GridSelectTemplate: View {
             withAnimation(.easeOut(duration: 0.35)) {
                 showControls = true
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                showTiles = true
+            // Auto-focus the text field so keyboard opens automatically
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                isFocused = true
             }
         }
     }
@@ -198,12 +239,13 @@ struct GridSelectTemplate: View {
 
 // ── PREVIEW ─────────────────────────────────────────────────
 #Preview {
-    GridSelectTemplate(
-        header: "What kind of place are you in now?",
+    @Previewable @State var name = ""
+    TextEntryTemplate(
+        header: "What's your first name?",
         subtext: nil,
-        options: ["House", "Apartment", "Condo", "Townhouse"],
-        icons: ["house.fill", "building.2.fill", "building.fill", "house.and.flag.fill"],
-        selected: "",
-        onSelect: { print("Selected: \($0)") }
+        placeholder: "First name",
+        text: $name,
+        buttonText: "Continue",
+        onContinue: { print("Continue with: \(name)") }
     )
 }
