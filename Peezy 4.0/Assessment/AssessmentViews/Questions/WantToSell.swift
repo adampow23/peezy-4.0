@@ -1,67 +1,26 @@
 import SwiftUI
 
 struct WantToSell: View {
-    @State private var selected = ""
-    @EnvironmentObject var assessmentData: AssessmentDataManager
+    let header      = "Are you planning to sell any of those items?"
+    let subtext     : String? = "We can assist with that process as well as plan b if they don't sell."
+    let options     = ["Yes", "No"]
+    let icons       = ["hand.thumbsup.fill", "hand.thumbsdown.fill"]
+
+    @EnvironmentObject var data: AssessmentDataManager
     @EnvironmentObject var coordinator: AssessmentCoordinator
 
-    // Animation states
-    @State private var showContent = false
-
-    // Haptic feedback
-    private let lightHaptic = UIImpactFeedbackGenerator(style: .light)
-
-    let options = ["Yes", "No"]
-
-    let iconMap: [String: String] = [
-        "Yes": "checkmark.circle.fill",
-        "No": "xmark.circle.fill"
-    ]
-
     var body: some View {
-        VStack(spacing: 0) {
-            // Content area with equal spacing
-            AssessmentContentArea {
-                // Options grid
-                LazyVGrid(columns: [
-                    GridItem(.flexible(), spacing: 16),
-                    GridItem(.flexible(), spacing: 16)
-                ], spacing: 16) {
-                    ForEach(Array(options.enumerated()), id: \.element) { index, option in
-                        SelectionTile(
-                            title: option,
-                            icon: iconMap[option],
-                            isSelected: selected == option,
-                            onTap: {
-                                selected = option
-                                assessmentData.wantToSell = option
-
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                                    lightHaptic.impactOccurred()
-                                    coordinator.goToNext()
-                                }
-                            }
-                        )
-                        .opacity(showContent ? 1 : 0)
-                        .offset(y: showContent ? 0 : 30)
-                        .animation(.easeOut(duration: 0.5).delay(0.5 + Double(index) * 0.1), value: showContent)
-                    }
-                }
-                .padding(.horizontal, 20)
-            }
-        }
-        .onAppear {
-            selected = assessmentData.wantToSell
-            withAnimation {
-                showContent = true
-            }
+        SingleSelectTemplate(
+            header: header, subtext: subtext, options: options, icons: icons,
+            selected: data.wantToSell
+        ) { value in
+            data.wantToSell = value
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { coordinator.goToNext() }
         }
     }
 }
 
 #Preview {
-    let manager = AssessmentDataManager()
-    WantToSell()
-        .environmentObject(manager)
-        .environmentObject(AssessmentCoordinator(dataManager: manager))
+    let dm = AssessmentDataManager()
+    WantToSell().environmentObject(dm).environmentObject(AssessmentCoordinator(dataManager: dm))
 }

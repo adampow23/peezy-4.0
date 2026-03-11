@@ -1,59 +1,26 @@
 import SwiftUI
 
-struct PackingPreference: View {
-    @State private var selected = ""
-    @EnvironmentObject var assessmentData: AssessmentDataManager
+struct HirePackers: View {
+    let header      = "Would you like quotes for professional packing help?"
+    let subtext     : String? = nil
+    let options     = ["Yes", "No"]
+    let icons       = ["hand.thumbsup.fill", "hand.thumbsdown.fill"]
+
+    @EnvironmentObject var data: AssessmentDataManager
     @EnvironmentObject var coordinator: AssessmentCoordinator
 
-    @State private var showContent = false
-    private let lightHaptic = UIImpactFeedbackGenerator(style: .light)
-
-    let options: [(label: String, value: String, icon: String)] = [
-        ("No thanks", "none", "hand.raised.fill"),
-        ("Full service", "full", "shippingbox.fill"),
-        ("Kitchen only", "kitchen", "fork.knife"),
-        ("Both options", "both", "list.clipboard.fill")
-    ]
-
     var body: some View {
-        VStack(spacing: 0) {
-            AssessmentContentArea {
-                LazyVGrid(columns: [
-                    GridItem(.flexible(), spacing: 16),
-                    GridItem(.flexible(), spacing: 16)
-                ], spacing: 16) {
-                    ForEach(Array(options.enumerated()), id: \.element.value) { index, option in
-                        SelectionTile(
-                            title: option.label,
-                            icon: option.icon,
-                            isSelected: selected == option.value,
-                            onTap: {
-                                selected = option.value
-                                assessmentData.packingPreference = option.value
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                                    lightHaptic.impactOccurred()
-                                    coordinator.goToNext()
-                                }
-                            }
-                        )
-                        .opacity(showContent ? 1 : 0)
-                        .offset(y: showContent ? 0 : 30)
-                        .animation(.easeOut(duration: 0.5).delay(0.5 + Double(index) * 0.1), value: showContent)
-                    }
-                }
-                .padding(.horizontal, 20)
-            }
-        }
-        .onAppear {
-            selected = assessmentData.packingPreference
-            withAnimation { showContent = true }
+        SingleSelectTemplate(
+            header: header, subtext: subtext, options: options, icons: icons,
+            selected: data.packingPreference
+        ) { value in
+            data.packingPreference = value
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { coordinator.goToNext() }
         }
     }
 }
 
 #Preview {
-    let manager = AssessmentDataManager()
-    PackingPreference()
-        .environmentObject(manager)
-        .environmentObject(AssessmentCoordinator(dataManager: manager))
+    let dm = AssessmentDataManager()
+    HirePackers().environmentObject(dm).environmentObject(AssessmentCoordinator(dataManager: dm))
 }

@@ -1,69 +1,18 @@
 import SwiftUI
-
 struct HasVehicles: View {
-    @State private var selected = ""
-    @EnvironmentObject var assessmentData: AssessmentDataManager
+    let header = "How many vehicles will be moving with you?"
+    let options = ["0", "1", "2", "3+"]
+    let icons = ["xmark.circle.fill", "car.fill", "car.2.fill", "car.2.fill"]
+    let speed = 0.04
+
+    @EnvironmentObject var data: AssessmentDataManager
     @EnvironmentObject var coordinator: AssessmentCoordinator
 
-    // Animation states
-    @State private var showContent = false
-
-    // Haptic feedback
-    private let lightHaptic = UIImpactFeedbackGenerator(style: .light)
-
-    let options = ["None", "One", "Two", "Three+"]
-
-    let iconMap: [String: String] = [
-        "None": "car",
-        "One": "car.fill",
-        "Two": "car.fill",
-        "Three+": "car.fill"
-    ]
-
     var body: some View {
-        VStack(spacing: 0) {
-            // Content area with equal spacing
-            AssessmentContentArea {
-                // Options grid
-                LazyVGrid(columns: [
-                    GridItem(.flexible(), spacing: 16),
-                    GridItem(.flexible(), spacing: 16)
-                ], spacing: 16) {
-                    ForEach(Array(options.enumerated()), id: \.element) { index, option in
-                        SelectionTile(
-                            title: option,
-                            icon: iconMap[option],
-                            isSelected: selected == option,
-                            onTap: {
-                                selected = option
-                                assessmentData.hasVehicles = option
-
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                                    lightHaptic.impactOccurred()
-                                    coordinator.goToNext()
-                                }
-                            }
-                        )
-                        .opacity(showContent ? 1 : 0)
-                        .offset(y: showContent ? 0 : 30)
-                        .animation(.easeOut(duration: 0.5).delay(0.5 + Double(index) * 0.1), value: showContent)
-                    }
-                }
-                .padding(.horizontal, 20)
-            }
-        }
-        .onAppear {
-            selected = assessmentData.hasVehicles
-            withAnimation {
-                showContent = true
-            }
+        GridSelectTemplate(header: header, options: options, icons: icons, speed: speed, selected: data.hasVehicles) { value in
+            data.hasVehicles = value
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { coordinator.goToNext() }
         }
     }
 }
-
-#Preview {
-    let manager = AssessmentDataManager()
-    HasVehicles()
-        .environmentObject(manager)
-        .environmentObject(AssessmentCoordinator(dataManager: manager))
-}
+#Preview { let dm = AssessmentDataManager(); HasVehicles().environmentObject(dm).environmentObject(AssessmentCoordinator(dataManager: dm)) }

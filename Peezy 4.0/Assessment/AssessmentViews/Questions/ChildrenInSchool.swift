@@ -1,50 +1,26 @@
 import SwiftUI
 
 struct ChildrenInSchool: View {
-    @State private var selected = ""
-    @EnvironmentObject var assessmentData: AssessmentDataManager
+    let header      = "Will any of them need to transfer schools?"
+    let subtext     : String? = nil
+    let options     = ["Yes", "No"]
+    let icons       = ["hand.thumbsup.fill", "hand.thumbsdown.fill"]
+
+    @EnvironmentObject var data: AssessmentDataManager
     @EnvironmentObject var coordinator: AssessmentCoordinator
 
-    @State private var showContent = false
-    private let lightHaptic = UIImpactFeedbackGenerator(style: .light)
-
-    let options = ["Yes", "No"]
-    let iconMap: [String: String] = [
-        "Yes": "checkmark.circle.fill",
-        "No": "xmark.circle.fill"
-    ]
-
     var body: some View {
-        VStack(spacing: 0) {
-            AssessmentContentArea {
-                LazyVGrid(columns: [GridItem(.flexible(), spacing: 16), GridItem(.flexible(), spacing: 16)], spacing: 16) {
-                    ForEach(Array(options.enumerated()), id: \.element) { index, option in
-                        SelectionTile(title: option, icon: iconMap[option], isSelected: selected == option, onTap: {
-                            selected = option
-                            assessmentData.childrenInSchool = option
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                                lightHaptic.impactOccurred()
-                                coordinator.goToNext()
-                            }
-                        })
-                        .opacity(showContent ? 1 : 0)
-                        .offset(y: showContent ? 0 : 30)
-                        .animation(.easeOut(duration: 0.5).delay(0.5 + Double(index) * 0.1), value: showContent)
-                    }
-                }
-                .padding(.horizontal, 20)
-            }
-        }
-        .onAppear {
-            selected = assessmentData.childrenInSchool
-            withAnimation { showContent = true }
+        SingleSelectTemplate(
+            header: header, subtext: subtext, options: options, icons: icons,
+            selected: data.childrenInSchool
+        ) { value in
+            data.childrenInSchool = value
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { coordinator.goToNext() }
         }
     }
 }
 
 #Preview {
-    let manager = AssessmentDataManager()
-    ChildrenInSchool()
-        .environmentObject(manager)
-        .environmentObject(AssessmentCoordinator(dataManager: manager))
+    let dm = AssessmentDataManager()
+    ChildrenInSchool().environmentObject(dm).environmentObject(AssessmentCoordinator(dataManager: dm))
 }

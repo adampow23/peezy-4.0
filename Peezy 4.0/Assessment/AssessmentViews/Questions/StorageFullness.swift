@@ -1,69 +1,18 @@
 import SwiftUI
-
 struct StorageFullness: View {
-    @State private var selected = ""
-    @EnvironmentObject var assessmentData: AssessmentDataManager
+    let header = "How full is it?"
+    let options = ["1/4 Full", "Half Full", "3/4 Full", "Completely Full"]
+    let icons = ["circle.bottomhalf.filled", "circle.lefthalf.filled", "circle.righthalf.filled", "circle.fill"]
+    let speed = 0.04
+
+    @EnvironmentObject var data: AssessmentDataManager
     @EnvironmentObject var coordinator: AssessmentCoordinator
 
-    // Animation states
-    @State private var showContent = false
-
-    // Haptic feedback
-    private let lightHaptic = UIImpactFeedbackGenerator(style: .light)
-
-    let options = ["1/4 Full", "1/2 Full", "3/4 Full", "Full"]
-
-    let iconMap: [String: String] = [
-        "1/4 Full": "circle",
-        "1/2 Full": "circle.lefthalf.filled",
-        "3/4 Full": "circle.inset.filled",
-        "Full": "circle.fill"
-    ]
-
     var body: some View {
-        VStack(spacing: 0) {
-            // Content area with equal spacing
-            AssessmentContentArea {
-                // Options grid
-                LazyVGrid(columns: [
-                    GridItem(.flexible(), spacing: 16),
-                    GridItem(.flexible(), spacing: 16)
-                ], spacing: 16) {
-                    ForEach(Array(options.enumerated()), id: \.element) { index, option in
-                        SelectionTile(
-                            title: option,
-                            icon: iconMap[option],
-                            isSelected: selected == option,
-                            onTap: {
-                                selected = option
-                                assessmentData.storageFullness = option
-
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                                    lightHaptic.impactOccurred()
-                                    coordinator.goToNext()
-                                }
-                            }
-                        )
-                        .opacity(showContent ? 1 : 0)
-                        .offset(y: showContent ? 0 : 30)
-                        .animation(.easeOut(duration: 0.5).delay(0.5 + Double(index) * 0.1), value: showContent)
-                    }
-                }
-                .padding(.horizontal, 20)
-            }
-        }
-        .onAppear {
-            selected = assessmentData.storageFullness
-            withAnimation {
-                showContent = true
-            }
+        GridSelectTemplate(header: header, options: options, icons: icons, speed: speed, selected: data.storageFullness) { value in
+            data.storageFullness = value
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { coordinator.goToNext() }
         }
     }
 }
-
-#Preview {
-    let manager = AssessmentDataManager()
-    StorageFullness()
-        .environmentObject(manager)
-        .environmentObject(AssessmentCoordinator(dataManager: manager))
-}
+#Preview { let dm = AssessmentDataManager(); StorageFullness().environmentObject(dm).environmentObject(AssessmentCoordinator(dataManager: dm)) }

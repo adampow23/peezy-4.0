@@ -1,76 +1,18 @@
 import SwiftUI
-
 struct CurrentDwellingType: View {
-    @State private var selected = ""
-    @EnvironmentObject var assessmentData: AssessmentDataManager
+    let header = "What kind of place are you in now?"
+    let options = ["House", "Apartment", "Condo", "Townhouse"]
+    let icons = ["house.fill", "building.2.fill", "building.fill", "house.and.flag.fill"]
+    let speed = 0.04
+
+    @EnvironmentObject var data: AssessmentDataManager
     @EnvironmentObject var coordinator: AssessmentCoordinator
-    
-    // Animation states
-    @State private var showContent = false
-    
-    // Haptic feedback
-    private let lightHaptic = UIImpactFeedbackGenerator(style: .light)
 
-    var options: [String] {
-        assessmentData.currentRentOrOwn == "Own"
-            ? ["House", "Condo", "Townhouse"]
-            : ["House", "Apartment", "Condo", "Townhouse"]
-    }
-
-    let iconMap: [String: String] = [
-        "House": "house.fill",
-        "Apartment": "building.2.fill",
-        "Condo": "building.fill",
-        "Townhouse": "house.and.flag.fill"
-    ]
-    
     var body: some View {
-        VStack(spacing: 0) {
-            // Content area with equal spacing
-            AssessmentContentArea {
-                // Options grid
-                LazyVGrid(columns: [
-                    GridItem(.flexible(), spacing: 16),
-                    GridItem(.flexible(), spacing: 16)
-                ], spacing: 16) {
-                    ForEach(Array(options.enumerated()), id: \.element) { index, option in
-                        SelectionTile(
-                            title: option,
-                            icon: iconMap[option],
-                            isSelected: selected == option,
-                            onTap: {
-                                selected = option
-                                assessmentData.currentDwellingType = option
-                                
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                                    lightHaptic.impactOccurred()
-                                    coordinator.goToNext()
-                                }
-                            }
-                        )
-                        .opacity(showContent ? 1 : 0)
-                        .offset(y: showContent ? 0 : 30)
-                        .animation(.easeOut(duration: 0.5).delay(0.5 + Double(index) * 0.1), value: showContent)
-                    }
-                }
-                .padding(.horizontal, 20)
-            }
-        }
-        .onAppear {
-            if assessmentData.currentRentOrOwn == "Own" && assessmentData.currentDwellingType == "Apartment" {
-                assessmentData.currentDwellingType = ""
-            }
-            selected = assessmentData.currentDwellingType
-            withAnimation {
-                showContent = true
-            }
+        GridSelectTemplate(header: header, options: options, icons: icons, speed: speed, selected: data.currentDwellingType) { value in
+            data.currentDwellingType = value
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { coordinator.goToNext() }
         }
     }
 }
-
-#Preview {
-    let manager = AssessmentDataManager()
-    CurrentDwellingType()
-        .environmentObject(manager)
-        .environmentObject(AssessmentCoordinator(dataManager: manager))
-}
+#Preview { let dm = AssessmentDataManager(); CurrentDwellingType().environmentObject(dm).environmentObject(AssessmentCoordinator(dataManager: dm)) }

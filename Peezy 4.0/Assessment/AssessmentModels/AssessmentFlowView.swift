@@ -2,10 +2,9 @@
 //  AssessmentFlowView.swift
 //  Peezy
 //
-//  The container view that hosts the entire assessment flow.
-//  Renders AssessmentInputWrapper (context typewriter + reveal) for each question step.
-//
-//  Progress bar visible throughout. Completion sheet on finish.
+//  Hosts the entire assessment flow.
+//  Each question view owns its full page (typewriter, morph, tiles, everything).
+//  This view only provides the progress bar and routes to the right question.
 //
 
 import SwiftUI
@@ -28,16 +27,16 @@ struct AssessmentFlowView: View {
             InteractiveBackground()
             
             VStack(spacing: 0) {
-                // Progress bar
+                // Progress bar — always visible
                 if coordinator.currentNode != nil {
-                    assessmentProgressBar
+                    progressBar
                         .transition(.opacity)
                 }
                 
-                // Main content area
+                // Question — each one owns its full layout
                 if let node = coordinator.currentNode {
-                    nodeView(for: node)
-                        .id(coordinator.currentIndex) // Force fresh view on navigation
+                    questionView(for: node)
+                        .id(coordinator.currentIndex)
                 }
             }
         }
@@ -50,10 +49,9 @@ struct AssessmentFlowView: View {
     
     // MARK: - Progress Bar
     
-    private var assessmentProgressBar: some View {
+    private var progressBar: some View {
         VStack(spacing: 4) {
             HStack {
-                // Back button
                 if coordinator.currentInputStepNumber > 1 {
                     Button {
                         coordinator.goBack()
@@ -66,7 +64,6 @@ struct AssessmentFlowView: View {
                 
                 Spacer()
                 
-                // Step counter
                 Text("\(coordinator.currentInputStepNumber) of \(coordinator.totalInputSteps)")
                     .font(.caption)
                     .foregroundColor(Color.gray)
@@ -74,7 +71,6 @@ struct AssessmentFlowView: View {
             .padding(.horizontal, 24)
             .padding(.top, 8)
             
-            // Progress bar
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
                     RoundedRectangle(cornerRadius: 2)
@@ -93,25 +89,18 @@ struct AssessmentFlowView: View {
         }
     }
     
-    // MARK: - Node Routing
+    // MARK: - Question Routing
     
     @ViewBuilder
-    private func nodeView(for node: AssessmentNode) -> some View {
+    private func questionView(for node: AssessmentNode) -> some View {
         switch node {
         case .input(let step):
-            AssessmentInputWrapper(step: step, coordinator: coordinator) {
-                questionView(for: step)
-            }
+            questionContent(for: step)
         }
     }
     
-    // MARK: - Question View Switch
-    
-    /// Returns the raw question view for a given step.
-    /// These views contain ONLY input controls (tiles, text fields, pickers, etc.)
-    /// Context header/subheader is handled by AssessmentInputWrapper.
     @ViewBuilder
-    private func questionView(for step: AssessmentInputStep) -> some View {
+    private func questionContent(for step: AssessmentInputStep) -> some View {
         switch step {
         // --- Section 1: Basics ---
         case .userName:              UserName()
@@ -144,16 +133,16 @@ struct AssessmentFlowView: View {
         case .storageFullness:       StorageFullness()
 
         // --- Section 5: Services ---
-        case .servicesIntro:         ExplainerPage(icon: "hammer.fill", onContinue: { coordinator.goToNext() })
+        case .servicesIntro:         ServicesIntro()
         case .hireMovers:            HireMovers()
-        case .packingPreference:     PackingPreference()
+        case .packingPreference:     HirePackers()
         case .truckRental:           TruckRental()
         case .hasDeclutter:          HasDeclutter()
         case .wantToSell:            WantToSell()
         case .hireCleaners:          HireCleaners()
             
         // --- Section 6: Accounts ---
-        case .addressChangeIntro:    ExplainerPage(icon: "envelope.fill", onContinue: { coordinator.goToNext() })
+        case .addressChangeIntro:    AddressChangeIntro()
         case .financialInstitutions: FinancialInstitutions()
         case .financialDetails:      FinancialDetails()
         case .healthcareProviders:   HealthcareProviders()
@@ -163,13 +152,11 @@ struct AssessmentFlowView: View {
             
         // --- Wrap-up ---
         case .howHeard:              HowHeard()
-
+            
         default:                     EmptyView()
         }
     }
 }
-
-// MARK: - Preview
 
 #if DEBUG
 #Preview {
