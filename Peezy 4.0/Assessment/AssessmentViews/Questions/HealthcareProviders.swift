@@ -8,11 +8,12 @@ struct HealthcareProviders: View {
 
     // OPTIONS — must match taskCatalogData.json condition values EXACTLY
     let options: [(String, String)] = [
-            ("Doctor", "stethoscope"),
-            ("Dentist", "mouth.fill"),
-            ("Specialists", "cross.circle.fill"),
-            ("Pharmacy", "pills.fill")
-        ]
+        ("Doctor", "stethoscope"),
+        ("Dentist", "mouth.fill"),
+        ("Specialists", "cross.circle.fill"),
+        ("Pharmacy", "pills.fill")
+    ]
+
     @State private var selected: Set<String> = []
     @EnvironmentObject var data: AssessmentDataManager
     @EnvironmentObject var coordinator: AssessmentCoordinator
@@ -35,7 +36,8 @@ struct HealthcareProviders: View {
             onContinue: {
                 data.healthcareProviders = Array(selected)
                 coordinator.goToNext()
-            }
+            },
+            counts: data.healthcareCounts
         )
         .onAppear {
             selected = Set(data.healthcareProviders)

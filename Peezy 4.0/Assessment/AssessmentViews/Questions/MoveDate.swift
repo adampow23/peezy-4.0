@@ -7,7 +7,7 @@ struct MoveDate: View {
     // ═══════════════════════════════════════════
 
     let header      = "When's the big day?"
-    let subtext     : String? = "I'll build your timeline around this date."
+    let subtext     : String? = "If you're unsure, put your best guess and you can update it later."
     let buttonText  = "Continue"
 
     // ═══════════════════════════════════════════

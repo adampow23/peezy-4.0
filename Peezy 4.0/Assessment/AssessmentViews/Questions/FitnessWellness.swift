@@ -2,24 +2,18 @@ import SwiftUI
 
 struct FitnessWellness: View {
 
-    // ═══════════════════════════════════════════
-    //  CONFIG
-    // ═══════════════════════════════════════════
-
     let header      = "And lastly, do you have any wellness-related memberships?"
     let subtext     : String? = "Tap once for each that you have an account with - if you have more than one of any, each tap will add a new task for you."
     let buttonText  = "Continue"
-    let options: [(String, String)] = [
-            ("Gym / CrossFit", "dumbbell.fill"),
-            ("Yoga / Pilates", "figure.yoga"),
-            ("Spin / Cycling", "figure.outdoor.cycle"),
-            ("Massage / Spa", "sparkles"),
-            ("Country Club / Golf", "figure.golf")
-        ]
 
-    // ═══════════════════════════════════════════
-    //  WIRING
-    // ═══════════════════════════════════════════
+    // OPTIONS — must match taskCatalogData.json condition values EXACTLY
+    let options: [(String, String)] = [
+        ("Gym / CrossFit", "dumbbell.fill"),
+        ("Yoga / Pilates", "figure.yoga"),
+        ("Spin / Cycling", "figure.outdoor.cycle"),
+        ("Massage / Spa", "sparkles"),
+        ("Country Club / Golf", "figure.golf")
+    ]
 
     @State private var selected: Set<String> = []
     @EnvironmentObject var data: AssessmentDataManager
@@ -43,7 +37,8 @@ struct FitnessWellness: View {
             onContinue: {
                 data.fitnessWellness = Array(selected)
                 coordinator.goToNext()
-            }
+            },
+            counts: data.fitnessCounts
         )
         .onAppear {
             selected = Set(data.fitnessWellness)

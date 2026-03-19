@@ -8,11 +8,11 @@ struct FinancialInstitutions: View {
 
     // OPTIONS — must match taskCatalogData.json condition values EXACTLY
     let options: [(String, String)] = [
-            ("Bank / Credit Union", "building.columns.fill"),
-            ("Credit Card", "creditcard.fill"),
-            ("Investment Account", "chart.line.uptrend.xyaxis"),
-            ("Student Loans", "graduationcap.fill")
-        ]
+        ("Bank / Credit Union", "building.columns.fill"),
+        ("Credit Card", "creditcard.fill"),
+        ("Investment Account", "chart.line.uptrend.xyaxis"),
+        ("Student Loans", "graduationcap.fill")
+    ]
 
     @State private var selected: Set<String> = []
     @EnvironmentObject var data: AssessmentDataManager
@@ -36,7 +36,8 @@ struct FinancialInstitutions: View {
             onContinue: {
                 data.financialInstitutions = Array(selected)
                 coordinator.goToNext()
-            }
+            },
+            counts: data.financialCounts
         )
         .onAppear {
             selected = Set(data.financialInstitutions)

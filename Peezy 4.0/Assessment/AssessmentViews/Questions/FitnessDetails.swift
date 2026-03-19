@@ -38,7 +38,7 @@ struct FitnessDetails: View {
 
     private var headerText: String {
         guard let entry = currentEntry else { return "" }
-        return "Where do you go for \(entry.category.lowercased())?"
+        return "What \(entry.category.lowercased()) do you have a membership with?"
     }
 
     var body: some View {

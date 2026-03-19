@@ -53,7 +53,7 @@ struct PeezyMainContainer: View {
             // Floating tab bar
             PeezyFloatingTabBar(selectedTab: $selectedTab)
         }
-        .ignoresSafeArea(.container, edges: .bottom)
+        .ignoresSafeArea(.keyboard, edges: .bottom)
         .onChange(of: selectedTab) { _, newValue in
             if newValue == .tasks && !hasLoadedTimeline {
                 timelineViewModel.userState = userState
@@ -122,7 +122,7 @@ struct PeezyFloatingTabBar: View {
         }
         .padding(.horizontal, 20)
         .padding(.top, 8)
-        .padding(.bottom, 14) // Safe area breathing room
+        .padding(.bottom, 8)
         .background(
             Capsule()
                 .fill(Color.white.opacity(0.85))

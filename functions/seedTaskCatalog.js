@@ -117,6 +117,9 @@ async function seedCollection() {
         doc.workflowId = task.workflowId;
       }
 
+      // Include selfServiceOnly flag (defaults to false if absent)
+      doc.selfServiceOnly = task.selfServiceOnly || false;
+
       batch.set(docRef, doc);
     }
 

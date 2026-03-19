@@ -633,34 +633,45 @@ class AssessmentCoordinator: ObservableObject {
     func completeAssessment() async {
         guard !isCompleting else { return }
         isCompleting = true
-        
+
         let userId = Auth.auth().currentUser?.uid ?? ""
-        
+
+        #if DEBUG
+        print("🚀 COMPLETE ASSESSMENT: userId='\(userId)' auth=\(Auth.auth().currentUser != nil)")
+        #endif
+
         // Show completion screen immediately
         isComplete = true
         isSaving = true
 
         defer { isSaving = false }
 
+        // Race geocoding against a 5-second timeout so a slow network can't hang forever
+        let geocodeTask = Task {
+            await dataManager.computeDistanceAndInterstate()
+        }
+        let timeoutTask = Task {
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            geocodeTask.cancel()
+        }
+        _ = await geocodeTask.value
+        timeoutTask.cancel()
+
+        let assessmentData = dataManager.getAllAssessmentData()
+        let moveDate = dataManager.moveDate
+
+        // Save assessment to Firestore (non-blocking for task generation)
         do {
-            // Race geocoding against a 5-second timeout so a slow network can't hang forever
-            let geocodeTask = Task {
-                await dataManager.computeDistanceAndInterstate()
-            }
-            let timeoutTask = Task {
-                try? await Task.sleep(nanoseconds: 5_000_000_000)
-                geocodeTask.cancel()
-            }
-            _ = await geocodeTask.value
-            timeoutTask.cancel()
-
-            let assessmentData = dataManager.getAllAssessmentData()
-            let moveDate = dataManager.moveDate
-
-            // Save assessment to Firestore
             try await dataManager.saveAssessment()
+        } catch {
+            #if DEBUG
+            print("⚠️ Assessment save failed: \(error) — continuing with task generation")
+            #endif
+            saveError = error
+        }
 
-            // Generate tasks
+        // Generate tasks independently — don't let a save failure block this
+        do {
             let taskService = TaskGenerationService()
             let tasksGenerated = try await taskService.generateTasksForUser(
                 userId: userId,
@@ -671,11 +682,10 @@ class AssessmentCoordinator: ObservableObject {
             #if DEBUG
             print("✅ ASSESSMENT COMPLETE: \(tasksGenerated) tasks generated for user \(userId)")
             #endif
-
-            isSaving = false
-
         } catch {
-            isSaving = false
+            #if DEBUG
+            print("❌ Task generation failed: \(error)")
+            #endif
             saveError = error
         }
     }

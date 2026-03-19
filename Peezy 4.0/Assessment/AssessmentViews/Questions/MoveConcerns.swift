@@ -6,7 +6,7 @@ struct MoveConcerns: View {
     //  CONFIG
     // ═══════════════════════════════════════════
 
-    let header      = "What are you most hoping Peezy can help you with?"
+    let header      = "What are you hoping Peezy can help you with?"
     let subtext     : String? = nil
     let buttonText  = "Continue"
     let options: [(String, String)] = [

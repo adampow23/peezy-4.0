@@ -55,7 +55,7 @@ struct FinancialDetails: View {
 
     private var headerText: String {
         guard let entry = currentEntry else { return "" }
-        return "What company do you have this \(entry.category.lowercased()) with?"
+        return "What \(entry.category.lowercased()) do you have an account with?"
     }
 
     var body: some View {

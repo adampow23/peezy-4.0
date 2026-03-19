@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct HireCleaners: View {
-    let header      = "And for the final deep clean of your current home, would you like to get some quotes for professional cleaners?"
+    let header      = "And for the final deep clean of your current home, would you like quotes for professional cleaners?"
     let subtext     : String? = nil
     let options     = ["Yes", "No"]
     let icons       = ["hand.thumbsup.fill", "hand.thumbsdown.fill"]

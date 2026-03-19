@@ -3,8 +3,8 @@
 //  Peezy
 //
 //  Complete page template for multi-select assessment questions.
-//  Vertical list of toggleable tiles with checkmarks. Continue button pinned at bottom.
-//  Tiles centered between header and button.
+//  Vertical list of toggleable tiles with checkmarks or count badges.
+//  Continue button pinned at bottom. Tiles centered between header and button.
 //  ALL layout values are in the CONTROL BOARD below.
 //
 
@@ -22,6 +22,7 @@ struct MultiSelectTemplate: View {
     let buttonText: String
     let onToggle: (String) -> Void
     let onContinue: () -> Void
+    var counts: [String: Int] = [:]          // optional — enables number badges
 
     // ╔═══════════════════════════════════════════════════════════╗
     // ║  CONTROL BOARD — change any number, see it in preview    ║
@@ -141,7 +142,8 @@ struct MultiSelectTemplate: View {
                                 title: option.0,
                                 icon: option.1,
                                 isSelected: selected.contains(option.0),
-                                onTap: { onToggle(option.0) }
+                                onTap: { onToggle(option.0) },
+                                count: counts[option.0] ?? 0
                             )
                             .opacity(showTiles ? 1 : 0)
                             .offset(y: showTiles ? 0 : 30)
@@ -208,18 +210,18 @@ struct MultiSelectTemplate: View {
 // ── PREVIEW ─────────────────────────────────────────────────
 #Preview {
     MultiSelectTemplate(
-        header: "What are you most hoping Peezy can help you with?",
-        subtext: nil,
+        header: "Which financial accounts do you have?",
+        subtext: "Tap once for each. Tap again to add more.",
         options: [
-            ("Knowing what to do and when", "list.bullet.clipboard"),
-            ("Finding time to actually pack", "shippingbox.fill"),
-            ("Dealing with moving companies", "person.2.fill"),
-            ("The fear of forgetting something important", "calendar"),
-            ("Something else", "ellipsis")
+            ("Bank / Credit Union", "building.columns.fill"),
+            ("Credit Card", "creditcard.fill"),
+            ("Investment Account", "chart.line.uptrend.xyaxis"),
+            ("Student Loans", "graduationcap.fill")
         ],
-        selected: ["Knowing what to do and when"],
+        selected: ["Bank / Credit Union", "Credit Card"],
         buttonText: "Continue",
         onToggle: { print("Toggled: \($0)") },
-        onContinue: { print("Continue") }
+        onContinue: { print("Continue") },
+        counts: ["Bank / Credit Union": 2, "Credit Card": 1]
     )
 }

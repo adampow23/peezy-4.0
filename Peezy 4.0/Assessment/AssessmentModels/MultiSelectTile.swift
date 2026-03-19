@@ -5,10 +5,10 @@ struct MultiSelectTile: View {
     let icon: String
     let isSelected: Bool
     let onTap: () -> Void
+    var count: Int = 0          // 0 = not selected, 1 = checkmark, 2+ = number badge
 
     @State private var isPressed = false
 
-    // Haptic feedback
     private let lightHaptic = UIImpactFeedbackGenerator(style: .light)
 
     var body: some View {
@@ -17,7 +17,7 @@ struct MultiSelectTile: View {
             onTap()
         }) {
             HStack(spacing: 16) {
-                // Icon on left — cutout style
+                // Icon on left
                 Image(systemName: icon)
                     .font(.system(size: 24))
                     .foregroundColor(
@@ -41,11 +41,26 @@ struct MultiSelectTile: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
 
-                // Checkmark on right
+                // Right side — checkmark or count badge
                 if isSelected {
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 22, weight: .semibold))
-                        .foregroundColor(PeezyTheme.Colors.lightBase.opacity(0.8))
+                    if count > 1 {
+                        // Number badge for multiple taps
+                        Text("\(count)")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundColor(PeezyTheme.Colors.deepInk)
+                            .frame(width: 28, height: 28)
+                            .background(
+                                Circle()
+                                    .fill(PeezyTheme.Colors.lightBase)
+                            )
+                            .transition(.scale.combined(with: .opacity))
+                    } else {
+                        // Single checkmark
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 22, weight: .semibold))
+                            .foregroundColor(PeezyTheme.Colors.lightBase.opacity(0.8))
+                            .transition(.scale.combined(with: .opacity))
+                    }
                 }
             }
             .padding(.horizontal, 20)
@@ -81,6 +96,7 @@ struct MultiSelectTile: View {
             .scaleEffect(isPressed ? 0.98 : 1.0)
             .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isPressed)
             .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isSelected)
+            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: count)
         }
         .buttonStyle(PlainButtonStyle())
         .simultaneousGesture(
@@ -101,40 +117,12 @@ struct MultiSelectTile: View {
 
 #Preview {
     VStack(spacing: 12) {
-        MultiSelectTile(
-            title: "Building my to-do list",
-            icon: "list.bullet.clipboard",
-            isSelected: true,
-            onTap: { print("Tapped") }
-        )
-
-        MultiSelectTile(
-            title: "Packing/preparing for move day",
-            icon: "shippingbox.fill",
-            isSelected: false,
-            onTap: { print("Tapped") }
-        )
-
-        MultiSelectTile(
-            title: "Finding reliable professionals (movers, cleaners, etc.)",
-            icon: "person.fill.questionmark.rtl",
-            isSelected: true,
-            onTap: { print("Tapped") }
-        )
-
-        MultiSelectTile(
-            title: "Planning/staying on track",
-            icon: "calendar",
-            isSelected: false,
-            onTap: { print("Tapped") }
-        )
-
-        MultiSelectTile(
-            title: "Other",
-            icon: "ellipsis",
-            isSelected: false,
-            onTap: { print("Tapped") }
-        )
+        MultiSelectTile(title: "Bank / Credit Union", icon: "building.columns.fill",
+                        isSelected: false, onTap: {}, count: 0)
+        MultiSelectTile(title: "Credit Card", icon: "creditcard.fill",
+                        isSelected: true, onTap: {}, count: 1)
+        MultiSelectTile(title: "Investment Account", icon: "chart.line.uptrend.xyaxis",
+                        isSelected: true, onTap: {}, count: 3)
     }
     .padding()
     .background(InteractiveBackground())

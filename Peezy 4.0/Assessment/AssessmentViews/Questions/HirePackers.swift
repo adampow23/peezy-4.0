@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct HirePackers: View {
-    let header      = "Would you like quotes for professional packing help?"
+    let header      = "Would you like to recieve quotes for packing as well?"
     let subtext     : String? = nil
     let options     = ["Yes", "No"]
     let icons       = ["hand.thumbsup.fill", "hand.thumbsdown.fill"]
