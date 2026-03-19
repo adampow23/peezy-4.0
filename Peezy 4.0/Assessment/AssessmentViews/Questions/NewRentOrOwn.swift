@@ -3,7 +3,7 @@ import SwiftUI
 struct NewRentOrOwn: View {
     let header      = "And the new place — renting or buying?"
     let subtext     : String? = nil
-    let options     = ["Rent", "Own"]
+    let options     = ["Renting", "Buying"]
     let icons       = ["key.fill", "house.fill"]
 
     @EnvironmentObject var data: AssessmentDataManager

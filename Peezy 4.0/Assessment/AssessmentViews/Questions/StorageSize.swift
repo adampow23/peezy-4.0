@@ -4,7 +4,7 @@ struct StorageSize: View {
     let header      = "How big is the unit?"
     let subtext     : String? = nil
     let options     = ["Small", "Medium", "Large"]
-    let icons       = ["square.fill", "square.fill", "square.fill"]
+    let icons       = ["suitcase.fill", "car.fill", "truck.box.fill"]
 
     @EnvironmentObject var data: AssessmentDataManager
     @EnvironmentObject var coordinator: AssessmentCoordinator

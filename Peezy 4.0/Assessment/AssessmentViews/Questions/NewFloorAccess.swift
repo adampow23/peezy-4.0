@@ -3,8 +3,8 @@ import SwiftUI
 struct NewFloorAccess: View {
     let header      = "What's access like at the new place?"
     let subtext     : String? = nil
-    let options     = ["Ground Floor", "Stairs", "Elevator"]
-    let icons       = ["figure.walk", "stairs", "arrow.up.arrow.down"]
+    let options     = ["Ground Floor", "Stairs", "Elevator", "Reserved Elevator"]
+        let icons       = ["figure.walk", "stairs", "arrow.up.arrow.down", "calendar.badge.clock"] 
 
     @EnvironmentObject var data: AssessmentDataManager
     @EnvironmentObject var coordinator: AssessmentCoordinator
