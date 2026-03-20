@@ -41,6 +41,22 @@ final class InventoryAPIClient {
             throw InventoryError.networkError(error)
         }
     }
+
+    /// Trigger admin inventory package email after user saves
+    func packageInventory() async throws {
+        do {
+            let result = try await functions.httpsCallable("packageInventory").call([:])
+            if let response = result.data as? [String: Any],
+               let success = response["success"] as? Bool, !success {
+                throw InventoryError.processingFailed("Package send returned success=false")
+            }
+        } catch let error as NSError {
+            if error.domain == FunctionsErrorDomain {
+                throw InventoryError.processingFailed(error.localizedDescription)
+            }
+            throw InventoryError.networkError(error)
+        }
+    }
 }
 
 enum InventoryError: LocalizedError {

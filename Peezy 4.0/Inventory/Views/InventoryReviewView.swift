@@ -8,11 +8,15 @@ struct InventoryReviewView: View {
     @State private var newItemName = ""
     @State private var newItemCategory = "furniture"
     @State private var newItemSize = "medium"
+    @State private var newItemTier = "furniture"
 
     // Animation state
     @State private var showConfetti = false
     @State private var itemsAppeared = false
     @State private var confirmPressed = false
+
+    // Boxable section expand/collapse
+    @State private var boxableExpanded = false
 
     private let categories = ["furniture", "electronics", "boxes", "appliance", "decor", "other"]
     private let sizes = ["small", "medium", "large", "oversized"]
@@ -31,24 +35,15 @@ struct InventoryReviewView: View {
                 headerSection
 
                 ScrollView {
-                    LazyVStack(spacing: PeezyTheme.Layout.verticalSpacing) {
-                        ForEach(Array(viewModel.items.enumerated()), id: \.element.id) { index, item in
-                            InventoryItemRow(
-                                item: item,
-                                onToggleMove: { viewModel.toggleShouldMove(for: item) },
-                                onUpdateQuantity: { newQty in viewModel.updateQuantity(for: item, newQuantity: newQty) },
-                                onDelete: { deleteItem(item) }
-                            )
-                            .transition(.asymmetric(
-                                insertion: .scale.combined(with: .opacity),
-                                removal: .move(edge: .trailing).combined(with: .opacity)
-                            ))
-                            .opacity(itemsAppeared ? 1 : 0)
-                            .offset(y: itemsAppeared ? 0 : 20)
-                            .animation(
-                                PeezyTheme.Animation.spring.delay(Double(index) * 0.05),
-                                value: itemsAppeared
-                            )
+                    VStack(spacing: PeezyTheme.Layout.verticalSpacing) {
+                        // MARK: - Furniture Section
+                        if !viewModel.furnitureItems.isEmpty {
+                            furnitureSection
+                        }
+
+                        // MARK: - Boxable Section
+                        if !viewModel.boxableItems.isEmpty {
+                            boxableSection
                         }
                     }
                     .padding(.horizontal, PeezyTheme.Layout.horizontalPadding)
@@ -95,11 +90,173 @@ struct InventoryReviewView: View {
         .padding(.vertical, PeezyTheme.Layout.cardPadding)
     }
 
+    // MARK: - Furniture Section
+
+    private var furnitureSection: some View {
+        VStack(alignment: .leading, spacing: PeezyTheme.Layout.verticalSpacingSmall) {
+            // Section header
+            HStack {
+                Image(systemName: "sofa.fill")
+                    .font(.system(size: 14))
+                    .foregroundStyle(PeezyTheme.Colors.textSecondary)
+                Text("Furniture & Large Items")
+                    .font(PeezyTheme.Typography.calloutMedium)
+                    .foregroundStyle(PeezyTheme.Colors.textSecondary)
+                Spacer()
+                Text("\(viewModel.furnitureItems.count)")
+                    .font(PeezyTheme.Typography.calloutMedium)
+                    .foregroundStyle(PeezyTheme.Colors.textTertiary)
+            }
+            .padding(.horizontal, 4)
+
+            ForEach(Array(viewModel.furnitureItems.enumerated()), id: \.element.id) { index, item in
+                InventoryItemRow(
+                    item: item,
+                    onToggleMove: { viewModel.toggleShouldMove(for: item) },
+                    onUpdateQuantity: { newQty in viewModel.updateQuantity(for: item, newQuantity: newQty) },
+                    onDelete: { deleteItem(item) }
+                )
+                .transition(.asymmetric(
+                    insertion: .scale.combined(with: .opacity),
+                    removal: .move(edge: .trailing).combined(with: .opacity)
+                ))
+                .opacity(itemsAppeared ? 1 : 0)
+                .offset(y: itemsAppeared ? 0 : 20)
+                .animation(
+                    PeezyTheme.Animation.spring.delay(Double(index) * 0.05),
+                    value: itemsAppeared
+                )
+            }
+        }
+    }
+
+    // MARK: - Boxable Section
+
+    private var boxableSection: some View {
+        VStack(alignment: .leading, spacing: PeezyTheme.Layout.verticalSpacingSmall) {
+            // Section header
+            HStack {
+                Image(systemName: "shippingbox.fill")
+                    .font(.system(size: 14))
+                    .foregroundStyle(PeezyTheme.Colors.textSecondary)
+                Text("Packing Estimate")
+                    .font(PeezyTheme.Typography.calloutMedium)
+                    .foregroundStyle(PeezyTheme.Colors.textSecondary)
+                Spacer()
+            }
+            .padding(.horizontal, 4)
+
+            // Summary card
+            VStack(alignment: .leading, spacing: PeezyTheme.Layout.verticalSpacing) {
+                // Box estimate headline
+                HStack(alignment: .firstTextBaseline) {
+                    Text(viewModel.boxEstimateDescription)
+                        .font(PeezyTheme.Typography.title2)
+                        .foregroundStyle(PeezyTheme.Colors.textPrimary)
+                    Spacer()
+                }
+
+                Text("Every household packs differently — this is a ballpark based on what we found in this room.")
+                    .font(PeezyTheme.Typography.caption)
+                    .foregroundStyle(PeezyTheme.Colors.textTertiary)
+
+                // Item summary chips
+                FlowLayout(spacing: 6) {
+                    ForEach(viewModel.boxableItems, id: \.id) { item in
+                        boxableChip(item)
+                    }
+                }
+
+                // Expandable detail list
+                Button {
+                    withAnimation(PeezyTheme.Animation.spring) {
+                        boxableExpanded.toggle()
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Text(boxableExpanded ? "Hide details" : "See all items")
+                            .font(PeezyTheme.Typography.callout)
+                            .foregroundStyle(PeezyTheme.Colors.infoBlue)
+                        Image(systemName: boxableExpanded ? "chevron.up" : "chevron.down")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(PeezyTheme.Colors.infoBlue)
+                    }
+                }
+
+                if boxableExpanded {
+                    VStack(spacing: 8) {
+                        ForEach(viewModel.boxableItems, id: \.id) { item in
+                            HStack {
+                                Text(item.name)
+                                    .font(PeezyTheme.Typography.callout)
+                                    .foregroundStyle(PeezyTheme.Colors.textPrimary)
+                                Spacer()
+                                if item.quantity > 1 {
+                                    Text("×\(item.quantity)")
+                                        .font(PeezyTheme.Typography.callout)
+                                        .foregroundStyle(PeezyTheme.Colors.textTertiary)
+                                }
+                                Toggle("", isOn: Binding(
+                                    get: { item.shouldMove },
+                                    set: { _ in viewModel.toggleShouldMove(for: item) }
+                                ))
+                                .labelsHidden()
+                                .tint(PeezyTheme.Colors.infoBlue)
+                            }
+                            if item.id != viewModel.boxableItems.last?.id {
+                                Divider()
+                                    .overlay(Color.white.opacity(0.1))
+                            }
+                        }
+                    }
+                    .padding(.top, 4)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+            }
+            .padding(PeezyTheme.Layout.cardPadding)
+            .background(
+                ZStack {
+                    RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadius, style: .continuous)
+                        .fill(.regularMaterial)
+                    RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadius, style: .continuous)
+                        .fill(Color.white.opacity(0.15))
+                    RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadius, style: .continuous)
+                        .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                }
+            )
+            .shadow(color: PeezyTheme.Shadows.subtleShadowColor, radius: PeezyTheme.Shadows.subtleShadowRadius, x: 0, y: PeezyTheme.Shadows.subtleShadowY)
+            .opacity(itemsAppeared ? 1 : 0)
+            .offset(y: itemsAppeared ? 0 : 20)
+            .animation(
+                PeezyTheme.Animation.spring.delay(Double(viewModel.furnitureItems.count) * 0.05 + 0.1),
+                value: itemsAppeared
+            )
+        }
+    }
+
+    private func boxableChip(_ item: InventoryItem) -> some View {
+        HStack(spacing: 4) {
+            Text(item.name)
+                .font(PeezyTheme.Typography.caption)
+            if item.quantity > 1 {
+                Text("×\(item.quantity)")
+                    .font(PeezyTheme.Typography.caption)
+                    .foregroundStyle(PeezyTheme.Colors.textTertiary)
+            }
+        }
+        .foregroundStyle(item.shouldMove ? PeezyTheme.Colors.textSecondary : PeezyTheme.Colors.textTertiary)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .background(PeezyTheme.Colors.backgroundTertiary.opacity(item.shouldMove ? 1 : 0.5))
+        .clipShape(Capsule())
+        .strikethrough(!item.shouldMove)
+    }
+
     // MARK: - Bottom Bar
 
     private var bottomBar: some View {
         HStack(spacing: PeezyTheme.Layout.itemSpacing) {
-            // Add Item button — capsule with + icon
+            // Add Item button
             Button {
                 viewModel.showAddItem = true
             } label: {
@@ -120,7 +277,7 @@ struct InventoryReviewView: View {
                 )
             }
 
-            // Confirm button — full width gradient
+            // Confirm button
             Button {
                 confirmPressed = true
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
@@ -152,6 +309,13 @@ struct InventoryReviewView: View {
                 Section("Item Name") {
                     TextField("e.g. Floor Lamp", text: $newItemName)
                 }
+                Section("What kind of item?") {
+                    Picker("Tier", selection: $newItemTier) {
+                        Text("Furniture / Large Item").tag("furniture")
+                        Text("Packable / Goes in a Box").tag("boxable")
+                    }
+                    .pickerStyle(.segmented)
+                }
                 Section("Category") {
                     Picker("Category", selection: $newItemCategory) {
                         ForEach(categories, id: \.self) { cat in
@@ -179,10 +343,11 @@ struct InventoryReviewView: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Add") {
                         guard !newItemName.trimmingCharacters(in: .whitespaces).isEmpty else { return }
-                        viewModel.addManualItem(name: newItemName, category: newItemCategory, size: newItemSize)
+                        viewModel.addManualItem(name: newItemName, category: newItemCategory, size: newItemSize, tier: newItemTier)
                         newItemName = ""
                         newItemCategory = "furniture"
                         newItemSize = "medium"
+                        newItemTier = "furniture"
                         viewModel.showAddItem = false
                     }
                     .disabled(newItemName.trimmingCharacters(in: .whitespaces).isEmpty)
@@ -199,6 +364,46 @@ struct InventoryReviewView: View {
         withAnimation(PeezyTheme.Animation.spring) {
             viewModel.deleteItem(at: IndexSet(integer: index))
         }
+    }
+}
+
+// MARK: - Flow Layout (for boxable chips)
+
+private struct FlowLayout: Layout {
+    var spacing: CGFloat = 6
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let result = arrange(proposal: proposal, subviews: subviews)
+        return result.size
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let result = arrange(proposal: ProposedViewSize(width: bounds.width, height: nil), subviews: subviews)
+        for (index, position) in result.positions.enumerated() {
+            subviews[index].place(at: CGPoint(x: bounds.minX + position.x, y: bounds.minY + position.y), proposal: .unspecified)
+        }
+    }
+
+    private func arrange(proposal: ProposedViewSize, subviews: Subviews) -> (size: CGSize, positions: [CGPoint]) {
+        let maxWidth = proposal.width ?? .infinity
+        var positions: [CGPoint] = []
+        var x: CGFloat = 0
+        var y: CGFloat = 0
+        var rowHeight: CGFloat = 0
+
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if x + size.width > maxWidth, x > 0 {
+                x = 0
+                y += rowHeight + spacing
+                rowHeight = 0
+            }
+            positions.append(CGPoint(x: x, y: y))
+            rowHeight = max(rowHeight, size.height)
+            x += size.width + spacing
+        }
+
+        return (CGSize(width: maxWidth, height: y + rowHeight), positions)
     }
 }
 
@@ -252,10 +457,8 @@ private struct InventoryItemRow: View {
             ZStack {
                 RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadius, style: .continuous)
                     .fill(.regularMaterial)
-
                 RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadius, style: .continuous)
                     .fill(Color.white.opacity(0.15))
-
                 RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadius, style: .continuous)
                     .stroke(Color.white.opacity(0.2), lineWidth: 1)
             }

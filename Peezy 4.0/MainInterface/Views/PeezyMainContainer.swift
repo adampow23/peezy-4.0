@@ -24,6 +24,10 @@ struct PeezyMainContainer: View {
 
     var body: some View {
         ZStack(alignment: .bottom) {
+            // Full-bleed background — spans entire screen including safe areas
+            InteractiveBackground()
+                .ignoresSafeArea()
+
             // Main content
             Group {
                 switch selectedTab {
@@ -53,6 +57,7 @@ struct PeezyMainContainer: View {
             // Floating tab bar
             PeezyFloatingTabBar(selectedTab: $selectedTab)
         }
+        .ignoresSafeArea(edges: .bottom)
         .ignoresSafeArea(.keyboard, edges: .bottom)
         .onChange(of: selectedTab) { _, newValue in
             if newValue == .tasks && !hasLoadedTimeline {

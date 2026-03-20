@@ -12,6 +12,7 @@ final class InventorySessionManager {
         case enteringRoomName
         case scanning(roomName: String)
         case processing(roomName: String, progress: String)
+        case confirming(roomName: String, items: [InventoryItem], sessionId: String)
         case reviewing(roomName: String, items: [InventoryItem])
         case estimate
     }
@@ -20,6 +21,9 @@ final class InventorySessionManager {
     var scannedRooms: [ScannedRoom] = []
     var error: String?
     var isProcessing = false
+
+    /// Confidence threshold — furniture items below this go to user confirmation
+    static let confidenceThreshold: Double = 0.9
 
     // MARK: - Services
 
@@ -80,6 +84,11 @@ final class InventorySessionManager {
         }
     }
 
+    /// Called when confirmation flow completes — items have been updated with user corrections
+    func handleConfirmationCompleted(_ items: [InventoryItem], roomName: String) {
+        state = .reviewing(roomName: roomName, items: items)
+    }
+
     func handleReviewConfirmed(_ items: [InventoryItem], roomName: String) {
         let room = ScannedRoom(
             id: UUID().uuidString,
@@ -99,6 +108,7 @@ final class InventorySessionManager {
         scannedRooms.remove(atOffsets: offsets)
     }
 
+    /// Save inventory to Firestore and trigger admin notification email
     func saveAllToFirestore() async throws {
         guard let userId else {
             throw InventoryError.notAuthenticated
@@ -112,12 +122,14 @@ final class InventorySessionManager {
                 .collection("inventory").document(room.id)
 
             let itemsData: [[String: Any]] = room.items.map { item in
-                [
+                var dict: [String: Any] = [
                     "id": item.id,
                     "name": item.name,
                     "category": item.category,
+                    "tier": item.tier,
                     "quantity": item.quantity,
                     "sizeEstimate": item.sizeEstimate,
+                    "cubicFeet": item.cubicFeet,
                     "isFragile": item.isFragile,
                     "isHighValue": item.isHighValue,
                     "confidence": item.confidence,
@@ -125,6 +137,21 @@ final class InventorySessionManager {
                     "shouldMove": item.shouldMove,
                     "notes": item.notes
                 ]
+
+                if let frameIndex = item.frameIndex {
+                    dict["frameIndex"] = frameIndex
+                }
+
+                if let bb = item.boundingBox {
+                    dict["boundingBox"] = [
+                        "x": bb.x,
+                        "y": bb.y,
+                        "width": bb.width,
+                        "height": bb.height
+                    ]
+                }
+
+                return dict
             }
 
             batch.setData([
@@ -137,6 +164,18 @@ final class InventorySessionManager {
         }
 
         try await batch.commit()
+
+        // Send admin notification — fire and forget, don't block the user
+        Task {
+            do {
+                try await apiClient.packageInventory()
+            } catch {
+                #if DEBUG
+                print("[InventorySessionManager] packageInventory failed: \(error.localizedDescription)")
+                #endif
+                // Non-fatal — inventory is saved, email just didn't send
+            }
+        }
     }
 
     func reset() {
@@ -164,9 +203,24 @@ final class InventorySessionManager {
                 case .complete:
                     resumed = true
                     self.isProcessing = false
-                    self.state = .reviewing(roomName: roomName, items: session.items)
                     self.sessionListener?.remove()
                     self.sessionListener = nil
+
+                    // Check if any furniture-tier items need user confirmation
+                    let needsConfirmation = session.items.contains { item in
+                        item.tier == "furniture" && item.confidence < Self.confidenceThreshold
+                    }
+
+                    if needsConfirmation {
+                        self.state = .confirming(
+                            roomName: roomName,
+                            items: session.items,
+                            sessionId: sessionId
+                        )
+                    } else {
+                        self.state = .reviewing(roomName: roomName, items: session.items)
+                    }
+
                     continuation.resume()
 
                 case .error:
@@ -179,7 +233,6 @@ final class InventorySessionManager {
                     continuation.resume()
 
                 case .uploading, .processing:
-                    // Still in progress — update progress message
                     if session.status == .processing {
                         self.state = .processing(roomName: roomName, progress: "Analyzing room...")
                     }

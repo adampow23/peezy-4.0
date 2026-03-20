@@ -8,6 +8,7 @@ struct InventoryEstimateView: View {
     @State private var savePressed = false
     @State private var scanMorePressed = false
     @State private var appeared = false
+    @State private var furnitureExpanded = false
 
     var body: some View {
         ZStack {
@@ -18,7 +19,7 @@ struct InventoryEstimateView: View {
                 VStack(spacing: PeezyTheme.Layout.sectionSpacing) {
                     // Title
                     VStack(spacing: PeezyTheme.Layout.verticalSpacingSmall) {
-                        Text("Your Moving Estimate")
+                        Text("Your Scan Summary")
                             .font(PeezyTheme.Typography.title)
                             .foregroundStyle(PeezyTheme.Colors.textPrimary)
 
@@ -28,14 +29,19 @@ struct InventoryEstimateView: View {
                     }
                     .padding(.top, PeezyTheme.Layout.sectionSpacing)
 
-                    // 2x2 stat grid
-                    statGrid
+                    // Packing estimate card
+                    packingCard
+
+                    // Furniture summary
+                    if !estimate.furnitureItems.isEmpty {
+                        furnitureCard
+                    }
 
                     // Warning badges
                     warningBadges
 
                     // Disclaimer
-                    Text("Estimates are based on your scanned inventory. Actual costs depend on distance, access, and seasonal pricing.")
+                    Text("Packing varies from person to person — these are ballpark numbers. Your inventory will be shared with moving companies so they can provide accurate estimates for your move.")
                         .font(PeezyTheme.Typography.footnote)
                         .foregroundStyle(PeezyTheme.Colors.textTertiary)
                         .multilineTextAlignment(.center)
@@ -54,84 +60,150 @@ struct InventoryEstimateView: View {
         }
     }
 
-    // MARK: - Stat Grid
+    // MARK: - Packing Card
 
-    private var statGrid: some View {
-        LazyVGrid(columns: [
-            GridItem(.flexible(), spacing: PeezyTheme.Layout.verticalSpacing),
-            GridItem(.flexible(), spacing: PeezyTheme.Layout.verticalSpacing)
-        ], spacing: PeezyTheme.Layout.verticalSpacing) {
-            statCard(
-                icon: "truck.box.fill",
-                value: estimate.recommendedTruckSize,
-                label: "Truck Size",
-                color: PeezyTheme.Colors.infoBlue
-            )
-            .opacity(appeared ? 1 : 0)
-            .offset(y: appeared ? 0 : 20)
+    private var packingCard: some View {
+        VStack(alignment: .leading, spacing: PeezyTheme.Layout.verticalSpacing) {
+            HStack(spacing: PeezyTheme.Layout.verticalSpacingSmall) {
+                Image(systemName: "shippingbox.fill")
+                    .font(.system(size: 18, weight: .medium))
+                    .foregroundStyle(PeezyTheme.Colors.warningOrange)
 
-            statCard(
-                icon: "cube.fill",
-                value: "\(Int(estimate.totalCubicFeet)) cu ft",
-                label: "Volume",
-                color: PeezyTheme.Colors.brandYellow
-            )
-            .opacity(appeared ? 1 : 0)
-            .offset(y: appeared ? 0 : 20)
+                Text("Packing Estimate")
+                    .font(PeezyTheme.Typography.headline)
+                    .foregroundStyle(PeezyTheme.Colors.textPrimary)
+            }
 
-            statCard(
-                icon: "shippingbox.fill",
-                value: "\(estimate.estimatedBoxes)",
-                label: "Boxes",
-                color: PeezyTheme.Colors.successGreen
-            )
-            .opacity(appeared ? 1 : 0)
-            .offset(y: appeared ? 0 : 20)
+            HStack(spacing: PeezyTheme.Layout.sectionSpacing) {
+                // Boxes
+                VStack(spacing: 4) {
+                    Text(estimate.boxRangeDescription)
+                        .font(PeezyTheme.Typography.title2)
+                        .foregroundStyle(PeezyTheme.Colors.textPrimary)
+                    Text("estimated")
+                        .font(PeezyTheme.Typography.footnote)
+                        .foregroundStyle(PeezyTheme.Colors.textTertiary)
+                }
+                .frame(maxWidth: .infinity)
 
-            statCard(
-                icon: "clock.fill",
-                value: formatHours(estimate.estimatedLaborHours),
-                label: "Labor",
-                color: PeezyTheme.Colors.supportPurple
-            )
-            .opacity(appeared ? 1 : 0)
-            .offset(y: appeared ? 0 : 20)
+                // Divider
+                Rectangle()
+                    .fill(Color.white.opacity(0.15))
+                    .frame(width: 1, height: 40)
+
+                // Packing time
+                VStack(spacing: 4) {
+                    Text(estimate.packingTimeDescription)
+                        .font(PeezyTheme.Typography.title2)
+                        .foregroundStyle(PeezyTheme.Colors.textPrimary)
+                    Text("to pack")
+                        .font(PeezyTheme.Typography.footnote)
+                        .foregroundStyle(PeezyTheme.Colors.textTertiary)
+                }
+                .frame(maxWidth: .infinity)
+            }
+
+            Text("Every household packs differently — this is a ballpark based on what we found during your scan.")
+                .font(PeezyTheme.Typography.caption)
+                .foregroundStyle(PeezyTheme.Colors.textTertiary)
         }
+        .padding(PeezyTheme.Layout.cardPadding)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(cardBackground)
+        .shadow(color: PeezyTheme.Shadows.subtleShadowColor, radius: PeezyTheme.Shadows.subtleShadowRadius, x: 0, y: PeezyTheme.Shadows.subtleShadowY)
         .padding(.horizontal, PeezyTheme.Layout.horizontalPadding)
+        .opacity(appeared ? 1 : 0)
+        .offset(y: appeared ? 0 : 20)
     }
 
-    private func statCard(icon: String, value: String, label: String, color: Color) -> some View {
-        VStack(spacing: PeezyTheme.Layout.verticalSpacingSmall) {
-            Image(systemName: icon)
-                .font(.system(size: 24, weight: .medium))
-                .foregroundStyle(color)
+    // MARK: - Furniture Card
 
-            Text(value)
-                .font(PeezyTheme.Typography.headline)
-                .foregroundStyle(PeezyTheme.Colors.textPrimary)
-                .multilineTextAlignment(.center)
-                .lineLimit(2)
-                .minimumScaleFactor(0.8)
+    private var furnitureCard: some View {
+        VStack(alignment: .leading, spacing: PeezyTheme.Layout.verticalSpacing) {
+            HStack(spacing: PeezyTheme.Layout.verticalSpacingSmall) {
+                Image(systemName: "sofa.fill")
+                    .font(.system(size: 18, weight: .medium))
+                    .foregroundStyle(PeezyTheme.Colors.supportPurple)
 
-            Text(label)
-                .font(PeezyTheme.Typography.footnote)
-                .foregroundStyle(PeezyTheme.Colors.textSecondary)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(PeezyTheme.Layout.cardPadding)
-        .background(
-            ZStack {
-                RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadius, style: .continuous)
-                    .fill(.regularMaterial)
+                Text("Furniture & Large Items")
+                    .font(PeezyTheme.Typography.headline)
+                    .foregroundStyle(PeezyTheme.Colors.textPrimary)
 
-                RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadius, style: .continuous)
-                    .fill(Color.white.opacity(0.15))
+                Spacer()
 
-                RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadius, style: .continuous)
-                    .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                Text("\(estimate.furnitureItems.count)")
+                    .font(PeezyTheme.Typography.headline)
+                    .foregroundStyle(PeezyTheme.Colors.textTertiary)
             }
-        )
+
+            // Always show first few, expandable for the rest
+            let previewCount = 5
+            let itemsToShow = furnitureExpanded ? estimate.furnitureItems : Array(estimate.furnitureItems.prefix(previewCount))
+
+            VStack(spacing: 8) {
+                ForEach(Array(itemsToShow.enumerated()), id: \.offset) { index, item in
+                    HStack {
+                        Text(item.name)
+                            .font(PeezyTheme.Typography.callout)
+                            .foregroundStyle(PeezyTheme.Colors.textPrimary)
+
+                        if item.quantity > 1 {
+                            Text("×\(item.quantity)")
+                                .font(PeezyTheme.Typography.callout)
+                                .foregroundStyle(PeezyTheme.Colors.textTertiary)
+                        }
+
+                        Spacer()
+
+                        HStack(spacing: 6) {
+                            if item.isFragile {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(PeezyTheme.Colors.warningOrange)
+                            }
+                            if item.isHighValue {
+                                Image(systemName: "shield.fill")
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(PeezyTheme.Colors.supportPurple)
+                            }
+                        }
+
+                        Text(item.roomName)
+                            .font(PeezyTheme.Typography.caption)
+                            .foregroundStyle(PeezyTheme.Colors.textTertiary)
+                    }
+
+                    if index < itemsToShow.count - 1 {
+                        Divider()
+                            .overlay(Color.white.opacity(0.1))
+                    }
+                }
+            }
+
+            if estimate.furnitureItems.count > previewCount {
+                Button {
+                    withAnimation(PeezyTheme.Animation.spring) {
+                        furnitureExpanded.toggle()
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Text(furnitureExpanded ? "Show less" : "Show all \(estimate.furnitureItems.count) items")
+                            .font(PeezyTheme.Typography.callout)
+                            .foregroundStyle(PeezyTheme.Colors.infoBlue)
+                        Image(systemName: furnitureExpanded ? "chevron.up" : "chevron.down")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(PeezyTheme.Colors.infoBlue)
+                    }
+                }
+            }
+        }
+        .padding(PeezyTheme.Layout.cardPadding)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(cardBackground)
         .shadow(color: PeezyTheme.Shadows.subtleShadowColor, radius: PeezyTheme.Shadows.subtleShadowRadius, x: 0, y: PeezyTheme.Shadows.subtleShadowY)
+        .padding(.horizontal, PeezyTheme.Layout.horizontalPadding)
+        .opacity(appeared ? 1 : 0)
+        .offset(y: appeared ? 0 : 20)
     }
 
     // MARK: - Warning Badges
@@ -180,7 +252,6 @@ struct InventoryEstimateView: View {
 
     private var buttons: some View {
         VStack(spacing: PeezyTheme.Layout.verticalSpacing) {
-            // Save & Finish
             Button {
                 savePressed = true
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
@@ -200,7 +271,6 @@ struct InventoryEstimateView: View {
             .scaleEffect(savePressed ? PeezyTheme.Animation.pressScale : 1.0)
             .animation(PeezyTheme.Animation.spring, value: savePressed)
 
-            // Scan More Rooms
             Button {
                 scanMorePressed = true
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
@@ -222,12 +292,16 @@ struct InventoryEstimateView: View {
         .padding(.horizontal, PeezyTheme.Layout.horizontalPadding)
     }
 
-    // MARK: - Helpers
+    // MARK: - Shared Background
 
-    private func formatHours(_ hours: Double) -> String {
-        if hours == Double(Int(hours)) {
-            return "\(Int(hours)) hrs"
+    private var cardBackground: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadius, style: .continuous)
+                .fill(.regularMaterial)
+            RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadius, style: .continuous)
+                .fill(Color.white.opacity(0.15))
+            RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadius, style: .continuous)
+                .stroke(Color.white.opacity(0.2), lineWidth: 1)
         }
-        return String(format: "%.1f hrs", hours)
     }
 }

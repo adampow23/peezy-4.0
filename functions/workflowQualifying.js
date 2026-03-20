@@ -29,17 +29,27 @@ const WORKFLOW_QUALIFYING = {
         ]
       },
       {
-        id: "special_items",
-        question: "Do you have any of these items that need special handling?",
-        subtitle: "Select all that apply.",
+        id: "heavy_items",
+        question: "Do you have any really heavy items?",
+        subtitle: "These require special equipment and crew.",
         type: "multi_select",
         options: [
-          { id: "piano", label: "Piano or organ", icon: "pianokeys" },
-          { id: "safe", label: "Gun safe or large safe", icon: "lock.shield" },
-          { id: "hot_tub", label: "Hot tub or spa", icon: "drop.fill" },
-          { id: "pool_table", label: "Pool table", icon: "circle.grid.3x3" },
-          { id: "art", label: "Large art or antiques", icon: "photo.artframe" },
-          { id: "none", label: "None of these", icon: "xmark.circle" }
+          { id: "piano", label: "Piano / Organ", icon: "pianokeys" },
+          { id: "safe", label: "Gun Safe / Safe", icon: "lock.shield" },
+          { id: "hot_tub", label: "Hot Tub / Spa", icon: "drop.fill" },
+          { id: "none", label: "Nothing heavy", icon: "checkmark.circle.fill", exclusive: true }
+        ]
+      },
+      {
+        id: "fragile_items",
+        question: "Any delicate or high-value items?",
+        subtitle: "These need extra care during transport.",
+        type: "multi_select",
+        options: [
+          { id: "pool_table", label: "Pool Table", icon: "circle.grid.3x3" },
+          { id: "art", label: "Art / Antiques", icon: "photo.artframe" },
+          { id: "glass", label: "Large Mirrors / Glass", icon: "rectangle" },
+          { id: "none", label: "Nothing fragile", icon: "checkmark.circle.fill", exclusive: true }
         ]
       },
       {
@@ -60,7 +70,7 @@ const WORKFLOW_QUALIFYING = {
         ]
       }
     ],
-    questionCount: 4,
+    questionCount: 5,
     recap: {
       title: "Got it — here's what I'm looking for",
       closing: "I'll match you with movers who fit your specific needs and get you quotes.",
@@ -100,15 +110,23 @@ const WORKFLOW_QUALIFYING = {
         ]
       },
       {
-        id: "special_items",
-        question: "Any specialty items?",
+        id: "heavy_items",
+        question: "Any oversized or heavy items?",
         type: "multi_select",
         options: [
           { id: "piano", label: "Piano", icon: "pianokeys" },
           { id: "vehicle", label: "Vehicle to Ship", icon: "car.fill" },
+          { id: "none", label: "Standard items", icon: "checkmark.circle.fill", exclusive: true }
+        ]
+      },
+      {
+        id: "fragile_items",
+        question: "Any high-value or fragile items?",
+        type: "multi_select",
+        options: [
           { id: "art", label: "Fine Art", icon: "photo.artframe" },
           { id: "antiques", label: "Antiques", icon: "clock.fill" },
-          { id: "none", label: "Standard Household", icon: "checkmark.circle.fill", exclusive: true }
+          { id: "none", label: "Standard items", icon: "checkmark.circle.fill", exclusive: true }
         ]
       },
       {
@@ -178,15 +196,23 @@ const WORKFLOW_QUALIFYING = {
         ]
       },
       {
-        id: "focus_areas",
-        question: "Any areas need extra attention?",
+        id: "focus_rooms",
+        question: "Any rooms need extra attention?",
         type: "multi_select",
         options: [
           { id: "kitchen", label: "Kitchen", subtitle: "Appliances, grease", icon: "refrigerator.fill" },
           { id: "bathrooms", label: "Bathrooms", subtitle: "Tile, grout, fixtures", icon: "shower.fill" },
+          { id: "none", label: "Even attention", icon: "checkmark.circle.fill", exclusive: true }
+        ]
+      },
+      {
+        id: "focus_extras",
+        question: "Any add-on services?",
+        type: "multi_select",
+        options: [
           { id: "windows", label: "Windows", subtitle: "Inside and out", icon: "window.horizontal" },
-          { id: "carpet", label: "Carpet", subtitle: "Steam cleaning", icon: "square.fill" },
-          { id: "none", label: "Even Attention", icon: "checkmark.circle.fill", exclusive: true }
+          { id: "carpet", label: "Carpet Cleaning", subtitle: "Steam cleaning", icon: "square.fill" },
+          { id: "none", label: "No extras", icon: "checkmark.circle.fill", exclusive: true }
         ]
       },
       {

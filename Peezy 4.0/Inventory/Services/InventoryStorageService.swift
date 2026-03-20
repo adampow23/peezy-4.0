@@ -109,6 +109,20 @@ final class InventoryStorageService {
         return session
     }
 
+    /// Download a specific frame image from Firebase Storage for item confirmation
+    func downloadFrame(
+        userId: String,
+        sessionId: String,
+        frameIndex: Int
+    ) async throws -> Data {
+        let storage = Storage.storage()
+        let storagePath = "inventory/\(userId)/\(sessionId)/frame_\(frameIndex).jpg"
+        let storageRef = storage.reference().child(storagePath)
+
+        let maxSize: Int64 = 5 * 1024 * 1024 // 5MB max
+        return try await storageRef.data(maxSize: maxSize)
+    }
+
     /// Observe a session document for status changes (processing -> complete)
     func observeSession(
         userId: String,
@@ -133,15 +147,31 @@ final class InventoryStorageService {
             let itemsData = data["items"] as? [[String: Any]] ?? []
             let items: [InventoryItem] = itemsData.compactMap { itemDict in
                 guard let name = itemDict["name"] as? String else { return nil }
+
+                // Decode bounding box if present
+                var boundingBox: BoundingBox? = nil
+                if let bbDict = itemDict["boundingBox"] as? [String: Any] {
+                    boundingBox = BoundingBox(
+                        x: bbDict["x"] as? Double ?? 0,
+                        y: bbDict["y"] as? Double ?? 0,
+                        width: bbDict["width"] as? Double ?? 0,
+                        height: bbDict["height"] as? Double ?? 0
+                    )
+                }
+
                 return InventoryItem(
                     id: itemDict["id"] as? String ?? UUID().uuidString,
                     name: name,
                     category: itemDict["category"] as? String ?? "other",
+                    tier: itemDict["tier"] as? String ?? "boxable",
                     quantity: (itemDict["quantity"] as? NSNumber)?.intValue ?? 1,
                     sizeEstimate: itemDict["sizeEstimate"] as? String ?? "medium",
+                    cubicFeet: itemDict["cubicFeet"] as? Double ?? 0,
                     isFragile: itemDict["isFragile"] as? Bool ?? false,
                     isHighValue: itemDict["isHighValue"] as? Bool ?? false,
                     confidence: itemDict["confidence"] as? Double ?? 0.5,
+                    frameIndex: (itemDict["frameIndex"] as? NSNumber)?.intValue,
+                    boundingBox: boundingBox,
                     roomName: itemDict["roomName"] as? String ?? "",
                     shouldMove: itemDict["shouldMove"] as? Bool ?? true,
                     notes: itemDict["notes"] as? String ?? ""

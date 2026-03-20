@@ -9,6 +9,7 @@ const admin = require('firebase-admin');
 const { generateResponse, validateContentLoaded } = require('./peezyBrain');
 const { getWorkflowQualifying, submitWorkflowAnswers } = require('./getWorkflowQualifying');
 const { processInventory } = require('./processInventory');
+const { packageInventory } = require('./packageInventory');
 const { validateSubscription } = require('./validateSubscription');
 
 // Set global options
@@ -447,3 +448,4 @@ exports.getWorkflowQualifying = getWorkflowQualifying;
 exports.submitWorkflowAnswers = submitWorkflowAnswers;
 exports.validateSubscription = validateSubscription;
 exports.processInventory = processInventory;
+exports.packageInventory = packageInventory;
