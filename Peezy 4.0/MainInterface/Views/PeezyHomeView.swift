@@ -728,14 +728,12 @@ struct PeezyHomeView: View {
 
                     // Subtle "keep going" — not a CTA, just an option
                     if !viewModel.allActiveTasks.isEmpty {
-                        Button(action: {
+                        PeezyAssessmentButton(viewModel.currentBatchOffset > 0 ? "Keep going?" :
+                            "Want to get ahead?") {
                             confettiActive = false
                             viewModel.getAhead()
-                        }) {
-                            Text("Keep going")
-                                .font(.subheadline)
-                                .foregroundStyle(Color.gray)
                         }
+                        .padding(.horizontal, 30)
                         .padding(.bottom, 30)
                     }
                 }

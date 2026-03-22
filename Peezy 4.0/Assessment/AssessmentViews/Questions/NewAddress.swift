@@ -112,7 +112,7 @@ struct NewAddress: View {
                         onAddressSelected: { address in
                             selectedAddress = address
                         },
-                        showUnitField: true,
+                        showUnitField: data.newDwellingType == "Apartment" || data.newDwellingType == "Condo",
                         unitNumber: $data.newUnitNumber
                     )
                     .transition(.opacity.combined(with: .move(edge: .bottom)))

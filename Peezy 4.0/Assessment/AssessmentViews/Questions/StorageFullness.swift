@@ -4,7 +4,7 @@ struct StorageFullness: View {
     let header      = "How full is it?"
     let subtext     : String? = nil
     let options     = ["1/4", "1/2", "3/4", "Full"]
-    let icons       = ["chart.pie.fill", "chart.pie.fill", "chart.pie.fill", "chart.pie.fill"]
+    let icons       = ["battery.25percent", "battery.50percent", "battery.75percent", "battery.100percent"]
 
     @EnvironmentObject var data: AssessmentDataManager
     @EnvironmentObject var coordinator: AssessmentCoordinator
