@@ -147,10 +147,12 @@ struct WorkflowIntroContent: View {
                     .foregroundColor(PeezyTheme.Colors.deepInk)
                     .fixedSize(horizontal: false, vertical: true)
 
-                Text(intro.subtitle)
-                    .font(.title3)
-                    .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.6))
-                    .fixedSize(horizontal: false, vertical: true)
+                if let subtitle = intro.subtitle {
+                    Text(subtitle)
+                        .font(.title3)
+                        .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.6))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 28)

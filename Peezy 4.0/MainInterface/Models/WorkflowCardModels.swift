@@ -42,7 +42,7 @@ struct WorkflowQualifying: Codable, Equatable {
 
 struct WorkflowIntro: Codable, Equatable {
     let title: String
-    let subtitle: String
+    let subtitle: String?
 }
 
 struct WorkflowQuestion: Codable, Equatable, Identifiable {
