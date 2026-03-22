@@ -997,6 +997,670 @@ const WORKFLOW_QUALIFYING = {
       closing: "Got it — we'll mark this as complete.",
       button: "Done"
     }
+  },
+
+  // ============================================
+  // PARKING — NEW ADDRESS
+  // ============================================
+  "arrange_parking_new": {
+    workflowId: "arrange_parking_new",
+    workflowType: "guidance",
+    intro: {
+      title: "Let's sort out parking for move-in day",
+      subtitle: "We need to make sure the moving truck has a place to park at your new home."
+    },
+    questions: [
+      {
+        id: "has_driveway",
+        question: "Does your new place have a driveway or loading area?",
+        type: "single_select",
+        options: [
+          { id: "yes", label: "Yes, driveway or loading dock", icon: "car.fill", subtitle: "Truck can pull right up" },
+          { id: "no", label: "No, street parking only", icon: "road.lanes", subtitle: "May need a permit" },
+          { id: "not_sure", label: "Not sure", icon: "questionmark.circle", subtitle: "We'll plan for street parking" }
+        ]
+      }
+    ],
+    questionCount: 1,
+    recap: {
+      title: "Got your parking plan",
+      closing: "We'll walk you through the next steps.",
+      button: "Got it"
+    }
+  },
+
+  // ============================================
+  // PARKING — OLD ADDRESS
+  // ============================================
+  "arrange_parking_old": {
+    workflowId: "arrange_parking_old",
+    workflowType: "guidance",
+    intro: {
+      title: "Let's sort out parking for move-out day",
+      subtitle: "We need to make sure the moving truck has a place to park at your current building."
+    },
+    questions: [
+      {
+        id: "has_driveway",
+        question: "Does your current place have a driveway or loading area?",
+        type: "single_select",
+        options: [
+          { id: "yes", label: "Yes, driveway or loading dock", icon: "car.fill", subtitle: "Truck can pull right up" },
+          { id: "no", label: "No, street parking only", icon: "road.lanes", subtitle: "May need a permit" },
+          { id: "not_sure", label: "Not sure", icon: "questionmark.circle", subtitle: "We'll plan for street parking" }
+        ]
+      }
+    ],
+    questionCount: 1,
+    recap: {
+      title: "Got your parking plan",
+      closing: "We'll walk you through the next steps.",
+      button: "Got it"
+    }
+  },
+
+  // ============================================
+  // ELEVATOR — NEW ADDRESS
+  // ============================================
+  "reserve_elevators_new": {
+    workflowId: "reserve_elevators_new",
+    workflowType: "guidance",
+    intro: {
+      title: "Let's reserve the elevator for move-in",
+      subtitle: "We'll figure out when you need it and for how long based on your inventory."
+    },
+    questions: [
+      {
+        id: "move_start_time",
+        question: "What time are you planning to start your move?",
+        subtitle: "This helps us calculate when you'll arrive at the new place.",
+        type: "single_select",
+        options: [
+          { id: "morning", label: "Morning", icon: "sunrise.fill", subtitle: "Before 10am" },
+          { id: "midday", label: "Midday", icon: "sun.max.fill", subtitle: "10am – 1pm" },
+          { id: "afternoon", label: "Afternoon", icon: "sunset.fill", subtitle: "After 1pm" }
+        ]
+      }
+    ],
+    questionCount: 1,
+    recap: {
+      title: "Elevator reservation plan ready",
+      closing: "We'll calculate the time window you need based on your inventory.",
+      button: "Got it"
+    }
+  },
+
+  // ============================================
+  // ELEVATOR — OLD ADDRESS
+  // ============================================
+  "reserve_elevators_old": {
+    workflowId: "reserve_elevators_old",
+    workflowType: "guidance",
+    intro: {
+      title: "Let's reserve the elevator for move-out",
+      subtitle: "We'll figure out how long you need it based on your inventory."
+    },
+    questions: [
+      {
+        id: "move_start_time",
+        question: "What time are you planning to start your move?",
+        subtitle: "This helps us calculate how long you'll need the elevator.",
+        type: "single_select",
+        options: [
+          { id: "morning", label: "Morning", icon: "sunrise.fill", subtitle: "Before 10am" },
+          { id: "midday", label: "Midday", icon: "sun.max.fill", subtitle: "10am – 1pm" },
+          { id: "afternoon", label: "Afternoon", icon: "sunset.fill", subtitle: "After 1pm" }
+        ]
+      }
+    ],
+    questionCount: 1,
+    recap: {
+      title: "Elevator reservation plan ready",
+      closing: "We'll calculate the time window you need based on your inventory.",
+      button: "Got it"
+    }
+  },
+
+  // ============================================
+  // CANCEL UTILITIES
+  // ============================================
+  "cancel_utilities": {
+    workflowId: "cancel_utilities",
+    workflowType: "guidance",
+    intro: {
+      title: "Time to cancel utilities at your current place",
+      subtitle: "We'll tell you exactly which providers to contact and when."
+    },
+    questions: [],
+    questionCount: 0,
+    recap: {
+      title: "Here's your utility cancellation plan",
+      closing: "Schedule disconnection for the day after your move so you have service through your last day. Most providers need 3-5 business days notice.",
+      button: "Got it"
+    }
+  },
+
+  // ============================================
+  // SETUP UTILITIES
+  // ============================================
+  "setup_utilities": {
+    workflowId: "setup_utilities",
+    workflowType: "guidance",
+    intro: {
+      title: "Let's get utilities set up at your new place",
+      subtitle: "We'll make sure everything is on when you arrive."
+    },
+    questions: [
+      {
+        id: "internet_chosen",
+        question: "Have you already chosen an internet provider?",
+        type: "single_select",
+        options: [
+          { id: "yes", label: "Yes, I know which one", icon: "checkmark.circle.fill", subtitle: "Just need setup steps" },
+          { id: "no", label: "No, I need to pick one", icon: "magnifyingglass", subtitle: "Show me what's available" },
+          { id: "building_provided", label: "My building has one option", icon: "building.2.fill", subtitle: "No choice to make" }
+        ]
+      }
+    ],
+    questionCount: 1,
+    recap: {
+      title: "Your utility setup plan",
+      closing: "Priority order: Electric and gas first (1-3 day lead time), then internet (7-14 days for installation).",
+      button: "Got it"
+    }
+  },
+
+  // ============================================
+  // TRANSFER UTILITIES
+  // ============================================
+  "transfer_utilities": {
+    workflowId: "transfer_utilities",
+    workflowType: "guidance",
+    intro: {
+      title: "Let's transfer your utilities",
+      subtitle: "We'll check which providers serve both addresses so you can transfer instead of cancel and re-setup."
+    },
+    questions: [],
+    questionCount: 0,
+    recap: {
+      title: "Your utility transfer plan",
+      closing: "Do transfers 5-7 business days before your move date to avoid any gap in service.",
+      button: "Got it"
+    }
+  },
+
+  // ============================================
+  // FORWARD MAIL
+  // ============================================
+  "forward_mail_usps": {
+    workflowId: "forward_mail_usps",
+    workflowType: "guidance",
+    intro: {
+      title: "Let's set up mail forwarding",
+      subtitle: "This takes about 2 minutes and makes sure your mail follows you."
+    },
+    questions: [],
+    questionCount: 0,
+    recap: {
+      title: "Here's how to forward your mail",
+      closing: "Do this 1-2 weeks before your move. USPS needs 7-10 business days to fully activate forwarding. Forwarding lasts 12 months for first-class mail.",
+      button: "Got it"
+    }
+  },
+
+  // ============================================
+  // BEGIN SCHOOL TRANSFER
+  // ============================================
+  "begin_school_transfer": {
+    workflowId: "begin_school_transfer",
+    workflowType: "guidance",
+    intro: {
+      title: "Let's start the school transfer",
+      subtitle: "A couple quick questions so we can give you the right checklist."
+    },
+    questions: [
+      {
+        id: "num_children",
+        question: "How many children are transferring?",
+        type: "single_select",
+        options: [
+          { id: "1", label: "1 child", icon: "person.fill" },
+          { id: "2", label: "2 children", icon: "person.2.fill" },
+          { id: "3_plus", label: "3 or more", icon: "person.3.fill", subtitle: "We'll help you coordinate" }
+        ]
+      },
+      {
+        id: "grade_levels",
+        question: "What grade level(s)?",
+        subtitle: "Select all that apply",
+        type: "multi_select",
+        options: [
+          { id: "elementary", label: "Elementary (K-5)", icon: "book.fill", subtitle: "Report cards, immunizations" },
+          { id: "middle", label: "Middle (6-8)", icon: "books.vertical.fill", subtitle: "Course placement records" },
+          { id: "high", label: "High School (9-12)", icon: "graduationcap.fill", subtitle: "Transcripts, credits, AP records" }
+        ]
+      }
+    ],
+    questionCount: 2,
+    recap: {
+      title: "Your school transfer checklist is ready",
+      closing: "Start this process 2-3 weeks before your move. Schools typically take 5-10 business days to process records.",
+      button: "Got it"
+    }
+  },
+
+  // ============================================
+  // NEW SCHOOL ENROLLMENT
+  // ============================================
+  "new_school_enrollment": {
+    workflowId: "new_school_enrollment",
+    workflowType: "guidance",
+    intro: {
+      title: "Let's enroll at the new school",
+      subtitle: "We'll tell you which school you're zoned for and what you need to bring."
+    },
+    questions: [
+      {
+        id: "num_children",
+        question: "How many children are enrolling?",
+        type: "single_select",
+        options: [
+          { id: "1", label: "1 child", icon: "person.fill" },
+          { id: "2", label: "2 children", icon: "person.2.fill", subtitle: "May be different schools" },
+          { id: "3_plus", label: "3 or more", icon: "person.3.fill", subtitle: "We'll help coordinate" }
+        ]
+      }
+    ],
+    questionCount: 1,
+    recap: {
+      title: "Your enrollment plan is ready",
+      closing: "Enroll as soon as you have proof of residency at the new address. Don't wait until move day.",
+      button: "Got it"
+    }
+  },
+
+  // ============================================
+  // CHANGE OF ADDRESS — SCHOOLS
+  // ============================================
+  "coa_schools": {
+    workflowId: "coa_schools",
+    workflowType: "guidance",
+    intro: {
+      title: "Update your address with the school",
+      subtitle: "Since you're staying in the same district, this is a quick update."
+    },
+    questions: [],
+    questionCount: 0,
+    recap: {
+      title: "Here's what to do",
+      closing: "Contact the registrar with your new address and proof of residency. Also update emergency contacts, bus routes, and after-school programs.",
+      button: "Got it"
+    }
+  },
+
+  // ============================================
+  // SETUP DAYCARE
+  // ============================================
+  "setup_daycare": {
+    workflowId: "setup_daycare",
+    workflowType: "guidance",
+    intro: {
+      title: "Let's find daycare near your new home",
+      subtitle: "A couple questions so we can point you to the right options."
+    },
+    questions: [
+      {
+        id: "child_age",
+        question: "How old is your child?",
+        subtitle: "Availability and waitlists vary significantly by age.",
+        type: "single_select",
+        options: [
+          { id: "infant", label: "Infant (0-12 mo)", icon: "figure.and.child.holdinghands", subtitle: "Longest waitlists" },
+          { id: "toddler", label: "Toddler (1-3 yrs)", icon: "figure.child", subtitle: "Competitive but more options" },
+          { id: "prek", label: "Pre-K (3-5 yrs)", icon: "book.and.wrench.fill", subtitle: "Check for free public pre-K" }
+        ]
+      },
+      {
+        id: "care_type",
+        question: "What type of care are you looking for?",
+        type: "single_select",
+        options: [
+          { id: "center", label: "Daycare center", icon: "building.2.fill", subtitle: "Licensed facility" },
+          { id: "in_home", label: "In-home daycare", icon: "house.fill", subtitle: "Family daycare provider" },
+          { id: "part_time", label: "Part-time or drop-in", icon: "clock.fill", subtitle: "Flexible schedule" }
+        ]
+      }
+    ],
+    questionCount: 2,
+    recap: {
+      title: "Your daycare search plan",
+      closing: "Contact 3-5 providers and get on waitlists now — it costs nothing and can take months. Start tours before or right after your move.",
+      button: "Got it"
+    }
+  },
+
+  // ============================================
+  // TRANSFER DAYCARE
+  // ============================================
+  "transfer_daycare": {
+    workflowId: "transfer_daycare",
+    workflowType: "guidance",
+    intro: {
+      title: "Let's handle the daycare transition",
+      subtitle: "We'll make sure there's no gap in care."
+    },
+    questions: [],
+    questionCount: 0,
+    recap: {
+      title: "Your daycare transition plan",
+      closing: "Give written notice to your current daycare ASAP — most require 2-4 weeks. Ask about prorated refunds and request immunization records and developmental assessments.",
+      button: "Got it"
+    }
+  },
+
+  // ============================================
+  // UPDATE CREDIT CARDS
+  // ============================================
+  "update_credit_card": {
+    workflowId: "update_credit_card",
+    workflowType: "guidance",
+    intro: {
+      title: "Update your credit card addresses",
+      subtitle: "A billing address mismatch can cause declined payments on autopay."
+    },
+    questions: [],
+    questionCount: 0,
+    recap: {
+      title: "Here's your checklist",
+      closing: "Update on or right after move day. Don't forget store cards, debit cards, and digital wallets. Set a reminder to check for any missed cards 30 days later.",
+      button: "Got it"
+    }
+  },
+
+  // ============================================
+  // UPDATE INVESTMENT ACCOUNTS
+  // ============================================
+  "update_investment": {
+    workflowId: "update_investment",
+    workflowType: "guidance",
+    intro: {
+      title: "Update your investment account addresses",
+      subtitle: "This matters for tax document delivery and state tax compliance."
+    },
+    questions: [],
+    questionCount: 0,
+    recap: {
+      title: "Here's what to update",
+      closing: "Update within the first week after your move. Critical deadline: before year-end so 1099s and other tax documents are mailed to the right address.",
+      button: "Got it"
+    }
+  },
+
+  // ============================================
+  // UPDATE STUDENT LOANS
+  // ============================================
+  "update_student_loans": {
+    workflowId: "update_student_loans",
+    workflowType: "guidance",
+    intro: {
+      title: "Update your student loan address",
+      subtitle: "Missing correspondence from your servicer can mean missed payments or lost IDR deadlines."
+    },
+    questions: [],
+    questionCount: 0,
+    recap: {
+      title: "Here's what to update",
+      closing: "Update StudentAid.gov and each loan servicer separately. If you're on an Income-Driven Repayment plan, make sure recertification paperwork goes to the right address.",
+      button: "Got it"
+    }
+  },
+
+  // ============================================
+  // TRANSFER PHARMACY RECORDS
+  // ============================================
+  "transfer_pharmacy_records": {
+    workflowId: "transfer_pharmacy_records",
+    workflowType: "guidance",
+    intro: {
+      title: "Let's make sure your prescriptions follow you",
+      subtitle: "One question to figure out if you need to do anything."
+    },
+    questions: [
+      {
+        id: "ongoing_prescriptions",
+        question: "Do you have ongoing prescriptions you fill regularly?",
+        type: "single_select",
+        options: [
+          { id: "yes", label: "Yes, regular prescriptions", icon: "pills.fill", subtitle: "Need seamless transfer" },
+          { id: "no", label: "No, just occasional", icon: "checkmark.circle.fill", subtitle: "No proactive transfer needed" }
+        ]
+      }
+    ],
+    questionCount: 1,
+    recap: {
+      title: "Your pharmacy transfer plan",
+      closing: "If you have prescriptions due within 2 weeks of your move, fill them now at your current pharmacy for a buffer.",
+      button: "Got it"
+    }
+  },
+
+  // ============================================
+  // TRANSFER SPECIALISTS RECORDS
+  // ============================================
+  "transfer_specialists_records": {
+    workflowId: "transfer_specialists_records",
+    workflowType: "guidance",
+    intro: {
+      title: "Transfer your specialist medical records",
+      subtitle: "Let's make sure there's no gap in your care."
+    },
+    questions: [
+      {
+        id: "sees_specialists",
+        question: "Do you or your family see any specialists regularly?",
+        type: "single_select",
+        options: [
+          { id: "yes", label: "Yes, we see specialists", icon: "stethoscope", subtitle: "Need records transferred" },
+          { id: "no", label: "No specialists", icon: "checkmark.circle.fill", subtitle: "Nothing to transfer" }
+        ]
+      }
+    ],
+    questionCount: 1,
+    recap: {
+      title: "Your medical records plan",
+      closing: "Request records 2-3 weeks before your move. Under HIPAA they must provide them, but it can take up to 30 days. Ask for digital copies when available.",
+      button: "Got it"
+    }
+  },
+
+  // ============================================
+  // UPDATE AUTO INSURANCE
+  // ============================================
+  "update_auto_insurance": {
+    workflowId: "update_auto_insurance",
+    workflowType: "guidance",
+    intro: {
+      title: "Update your auto insurance",
+      subtitle: "Your garaging address affects your rates — this needs to be updated."
+    },
+    questions: [],
+    questionCount: 0,
+    recap: {
+      title: "Here's your plan",
+      closing: "Update within 30 days of your move. If moving to a different state, you'll also need to update your vehicle registration and driver's license within 30-90 days.",
+      button: "Got it"
+    }
+  },
+
+  // ============================================
+  // CANCEL RENTERS INSURANCE
+  // ============================================
+  "cancel_renters_insurance": {
+    workflowId: "cancel_renters_insurance",
+    workflowType: "guidance",
+    intro: {
+      title: "Cancel your renters insurance",
+      subtitle: "We'll make sure you're covered through your last day."
+    },
+    questions: [],
+    questionCount: 0,
+    recap: {
+      title: "Here's what to do",
+      closing: "Cancel effective your move date — not earlier. Your policy covers your belongings until everything is out. If you're setting up a new policy, ask about transferring to keep your loyalty discount.",
+      button: "Got it"
+    }
+  },
+
+  // ============================================
+  // SETUP RENTERS INSURANCE
+  // ============================================
+  "setup_renters_insurance": {
+    workflowId: "setup_renters_insurance",
+    workflowType: "guidance",
+    intro: {
+      title: "Set up renters insurance at your new place",
+      subtitle: "Most leases require it, and it protects your stuff."
+    },
+    questions: [],
+    questionCount: 0,
+    recap: {
+      title: "Here's your plan",
+      closing: "Set this up 1-2 days before move day. Get quotes from your auto insurer first (bundle discount). Typical cost is $15-30/month. Check if your lease specifies a minimum coverage amount.",
+      button: "Got it"
+    }
+  },
+
+  // ============================================
+  // TRANSFER RENTERS INSURANCE
+  // ============================================
+  "transfer_renters_insurance": {
+    workflowId: "transfer_renters_insurance",
+    workflowType: "guidance",
+    intro: {
+      title: "Transfer your renters insurance",
+      subtitle: "Update your existing policy to cover your new address."
+    },
+    questions: [],
+    questionCount: 0,
+    recap: {
+      title: "Here's what to do",
+      closing: "Update 1-2 days before move day so you're covered at both locations during the transition. Your rate may change based on the new location. Confirm your policy covers belongings in transit.",
+      button: "Got it"
+    }
+  },
+
+  // ============================================
+  // CANCEL CONDO INSURANCE
+  // ============================================
+  "cancel_condo_insurance": {
+    workflowId: "cancel_condo_insurance",
+    workflowType: "guidance",
+    intro: {
+      title: "Cancel your condo insurance",
+      subtitle: "Important: cancel effective your closing date, not your move-out date."
+    },
+    questions: [],
+    questionCount: 0,
+    recap: {
+      title: "Here's what to do",
+      closing: "Cancel effective closing date — you're liable until the deed transfers. Ask about prorated refund and notify your lender if mortgage escrow pays the premium. Request a cancellation confirmation letter.",
+      button: "Got it"
+    }
+  },
+
+  // ============================================
+  // SETUP CONDO INSURANCE
+  // ============================================
+  "setup_condo_insurance": {
+    workflowId: "setup_condo_insurance",
+    workflowType: "guidance",
+    intro: {
+      title: "Set up condo insurance at your new place",
+      subtitle: "Your HOA's master policy doesn't cover your unit's interior or your belongings."
+    },
+    questions: [],
+    questionCount: 0,
+    recap: {
+      title: "Here's your plan",
+      closing: "Get your HOA's master policy declaration page first — it tells you where their coverage ends. Get quotes 2-3 weeks before closing. Your lender will require proof of insurance before closing.",
+      button: "Got it"
+    }
+  },
+
+  // ============================================
+  // TRANSFER CONDO INSURANCE
+  // ============================================
+  "transfer_condo_insurance": {
+    workflowId: "transfer_condo_insurance",
+    workflowType: "guidance",
+    intro: {
+      title: "Transfer your condo insurance",
+      subtitle: "Move your policy from your old condo to the new one."
+    },
+    questions: [],
+    questionCount: 0,
+    recap: {
+      title: "Here's what to do",
+      closing: "Call your insurer with both closing dates. You need coverage at both locations during any overlap. Provide the new HOA's master policy so they can adjust your HO-6 coverage.",
+      button: "Got it"
+    }
+  },
+
+  // ============================================
+  // CANCEL HOMEOWNERS INSURANCE
+  // ============================================
+  "cancel_homeowners_insurance": {
+    workflowId: "cancel_homeowners_insurance",
+    workflowType: "guidance",
+    intro: {
+      title: "Cancel your homeowners insurance",
+      subtitle: "Critical: do not cancel before closing."
+    },
+    questions: [],
+    questionCount: 0,
+    recap: {
+      title: "Here's what to do",
+      closing: "Cancel effective your closing date — not your move-out date. Contact your insurer 1-2 weeks before closing but make cancellation contingent on the sale actually closing. If escrow pays the premium, notify your lender.",
+      button: "Got it"
+    }
+  },
+
+  // ============================================
+  // SETUP HOMEOWNERS INSURANCE
+  // ============================================
+  "setup_homeowners_insurance": {
+    workflowId: "setup_homeowners_insurance",
+    workflowType: "guidance",
+    intro: {
+      title: "Set up homeowners insurance",
+      subtitle: "Your lender requires this before closing — non-negotiable."
+    },
+    questions: [],
+    questionCount: 0,
+    recap: {
+      title: "Here's your plan",
+      closing: "Start getting quotes 3-4 weeks before closing. Check with your auto insurer first for a bundle discount. Bind at least 1 week before closing and send the declarations page to your lender.",
+      button: "Got it"
+    }
+  },
+
+  // ============================================
+  // TRANSFER HOMEOWNERS INSURANCE
+  // ============================================
+  "transfer_homeowners_insurance": {
+    workflowId: "transfer_homeowners_insurance",
+    workflowType: "guidance",
+    intro: {
+      title: "Transfer your homeowners insurance",
+      subtitle: "Move your coverage from your current home to the new one."
+    },
+    questions: [],
+    questionCount: 0,
+    recap: {
+      title: "Here's what to do",
+      closing: "Call your insurer 3-4 weeks before closing. You need coverage at both homes during any overlap. Dwelling coverage will be recalculated for the new property. Send the new declarations page to your lender.",
+      button: "Got it"
+    }
   }
 
 };

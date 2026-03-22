@@ -4,7 +4,7 @@
     "title": "Reserve parking for unloading",
     "actionCategory": "book-schedule",
     "category": "moving",
-    "actionType": "off-app",
+    "actionType": "workflow",
     "conditions": {
       "newDwellingType": [
         "Apartment",
@@ -13,16 +13,17 @@
     },
     "desc": "Secure a designated parking space at your new building for moving day to ensure the truck can park legally and close to the entrance.",
     "estHours": 1,
-    "tips": "Contact your new building's management 2\u20133 weeks before your move. Confirm whether they require permits, fees, or insurance documents from your moving company. Always get written confirmation of the reservation and relay the parking instructions to your movers to avoid delays or fines.",
+    "tips": "Contact your new building's management 2–3 weeks before your move. Confirm whether they require permits, fees, or insurance documents from your moving company. Always get written confirmation of the reservation and relay the parking instructions to your movers to avoid delays or fines.",
     "urgencyPercentage": 72,
-    "whyNeeded": "Many buildings require advance reservations for moving trucks. Securing parking prevents last-minute issues such as citations, long carry distances, or denied access on move day."
+    "whyNeeded": "Many buildings require advance reservations for moving trucks. Securing parking prevents last-minute issues such as citations, long carry distances, or denied access on move day.",
+    "workflowId": "arrange_parking_new"
   },
   {
     "taskId": "ARRANGE_PARKING_OLD",
     "title": "Reserve parking for loading",
     "actionCategory": "book-schedule",
     "category": "moving",
-    "actionType": "off-app",
+    "actionType": "workflow",
     "conditions": {
       "currentDwellingType": [
         "Apartment",
@@ -31,16 +32,17 @@
     },
     "desc": "Book a legal and accessible parking space for the moving truck at your current building so movers can load efficiently.",
     "estHours": 1,
-    "tips": "Reach out to your property manager about two weeks before your move. Some buildings may charge $50\u2013100, require truck measurements, or ask for a Certificate of Insurance from your movers.",
+    "tips": "Reach out to your property manager about two weeks before your move. Some buildings may charge $50–100, require truck measurements, or ask for a Certificate of Insurance from your movers.",
     "urgencyPercentage": 73,
-    "whyNeeded": "Apartment and condo buildings often enforce strict parking rules, and failing to reserve space can lead to fines, towing risks, or long carry distances on moving day."
+    "whyNeeded": "Apartment and condo buildings often enforce strict parking rules, and failing to reserve space can lead to fines, towing risks, or long carry distances on moving day.",
+    "workflowId": "arrange_parking_old"
   },
   {
     "taskId": "RESERVE_ELEVATORS_NEW",
     "title": "Reserve elevator for unloading",
     "actionCategory": "book-schedule",
     "category": "moving",
-    "actionType": "off-app",
+    "actionType": "workflow",
     "conditions": {
       "newFloorAccess": [
         "Reserved Elevator"
@@ -48,16 +50,17 @@
     },
     "desc": "Book an elevator time slot at your new building so movers can load and unload efficiently.",
     "estHours": 0.75,
-    "tips": "Contact your new building's management 2\u20133 weeks before move-in. Ask about required time windows, fees, and insurance documents from your movers.",
+    "tips": "Contact your new building's management 2–3 weeks before move-in. Ask about required time windows, fees, and insurance documents from your movers.",
     "urgencyPercentage": 70,
-    "whyNeeded": "High-rise buildings often require elevator reservations for moves."
+    "whyNeeded": "High-rise buildings often require elevator reservations for moves.",
+    "workflowId": "reserve_elevators_new"
   },
   {
     "taskId": "RESERVE_ELEVATORS_OLD",
     "title": "Reserve elevator for loading",
     "actionCategory": "book-schedule",
     "category": "moving",
-    "actionType": "off-app",
+    "actionType": "workflow",
     "conditions": {
       "currentFloorAccess": [
         "Reserved Elevator"
@@ -67,7 +70,8 @@
     "estHours": 0.75,
     "tips": "High-rise buildings usually require reservations 2 to 3 weeks in advance. Time slots fill quickly, especially mornings.",
     "urgencyPercentage": 71,
-    "whyNeeded": "Without a reserved elevator, movers may be blocked or delayed, which increases labor time and cost."
+    "whyNeeded": "Without a reserved elevator, movers may be blocked or delayed, which increases labor time and cost.",
+    "workflowId": "reserve_elevators_old"
   },
   {
     "taskId": "BOOK_MOVERS",
@@ -83,7 +87,7 @@
     },
     "desc": "Research and reserve a moving company to handle your relocation safely and efficiently.",
     "estHours": 3,
-    "tips": "Get at least three quotes from licensed movers. During peak season (May\u2013September), book 8\u201312 weeks in advance; off-season typically requires 4\u20136 weeks. Verify insurance, USDOT registration, and reviews.",
+    "tips": "Get at least three quotes from licensed movers. During peak season (May–September), book 8–12 weeks in advance; off-season typically requires 4–6 weeks. Verify insurance, USDOT registration, and reviews.",
     "urgencyPercentage": 94,
     "whyNeeded": "Booking early secures better availability, competitive pricing, and reliable crews."
   },
@@ -101,7 +105,7 @@
     },
     "desc": "Book a professional cleaning team to deep clean your home after you move out.",
     "estHours": 1.5,
-    "tips": "Schedule cleaners 2\u20133 weeks in advance for the day after the movers finish. Get quotes from at least three companies and review your lease or sale agreement for specific cleaning requirements.",
+    "tips": "Schedule cleaners 2–3 weeks in advance for the day after the movers finish. Get quotes from at least three companies and review your lease or sale agreement for specific cleaning requirements.",
     "urgencyPercentage": 25,
     "whyNeeded": "A professional cleaning often determines how much of your security deposit you get back."
   },
@@ -154,7 +158,7 @@
     },
     "desc": "List and sell items you don't want to bring to your new place.",
     "estHours": 6,
-    "tips": "Start listing high-value items early on Facebook Marketplace, OfferUp, or Craigslist. Price to sell fast \u2014 you have a deadline.",
+    "tips": "Start listing high-value items early on Facebook Marketplace, OfferUp, or Craigslist. Price to sell fast — you have a deadline.",
     "urgencyPercentage": 75,
     "whyNeeded": "Selling before the move puts cash in your pocket and reduces what the movers need to haul."
   },
@@ -191,7 +195,7 @@
         "Bank / Credit Union"
       ]
     },
-    "desc": "Decide how to handle your bank account for the move \u2014 update your address, close and open a new one, or let us know it's covered.",
+    "desc": "Decide how to handle your bank account for the move — update your address, close and open a new one, or let us know it's covered.",
     "estHours": 1.5,
     "tips": "If your bank operates nationally, an address update is usually all you need. If it's regional, you may need to open a new account and transfer direct deposits.",
     "urgencyPercentage": 84,
@@ -209,9 +213,9 @@
         "Doctor"
       ]
     },
-    "desc": "Handle your doctor situation for the move \u2014 transfer records to a new provider or update your address with your current one.",
+    "desc": "Handle your doctor situation for the move — transfer records to a new provider or update your address with your current one.",
     "estHours": 2,
-    "tips": "If staying with your current doctor, a quick address update is all you need. If switching, request full medical records 3\u20134 weeks before moving.",
+    "tips": "If staying with your current doctor, a quick address update is all you need. If switching, request full medical records 3–4 weeks before moving.",
     "urgencyPercentage": 68,
     "whyNeeded": "Your doctor needs accurate contact and insurance information, and new providers need your full medical history."
   },
@@ -227,9 +231,9 @@
         "Dentist"
       ]
     },
-    "desc": "Handle your dental care for the move \u2014 transfer records to a new dentist or update your address with your current one.",
+    "desc": "Handle your dental care for the move — transfer records to a new dentist or update your address with your current one.",
     "estHours": 1,
-    "tips": "If switching dentists, request records and X-rays 2\u20133 weeks before the move. If staying, just update your contact details.",
+    "tips": "If switching dentists, request records and X-rays 2–3 weeks before the move. If staying, just update your contact details.",
     "urgencyPercentage": 59,
     "whyNeeded": "Dental records help your provider continue care without repeating exams or X-rays."
   },
@@ -245,9 +249,9 @@
         "Yes"
       ]
     },
-    "desc": "Handle your pet's vet care for the move \u2014 find a new vet and transfer records, or update your address with your current one.",
+    "desc": "Handle your pet's vet care for the move — find a new vet and transfer records, or update your address with your current one.",
     "estHours": 2,
-    "tips": "If switching vets, request full medical records, vaccination history, and lab results 2\u20133 weeks before moving.",
+    "tips": "If switching vets, request full medical records, vaccination history, and lab results 2–3 weeks before moving.",
     "urgencyPercentage": 63,
     "whyNeeded": "Having your pet's complete records ready ensures continuity of care and is critical in emergencies."
   },
@@ -263,7 +267,7 @@
         "Gym / CrossFit"
       ]
     },
-    "desc": "Decide how to handle your gym membership \u2014 transfer to a new location, cancel, or update your address.",
+    "desc": "Decide how to handle your gym membership — transfer to a new location, cancel, or update your address.",
     "estHours": 1,
     "tips": "Many national chains allow location transfers. Check your contract for cancellation terms if you need to switch.",
     "urgencyPercentage": 86,
@@ -281,7 +285,7 @@
         "Yoga / Pilates"
       ]
     },
-    "desc": "Decide how to handle your yoga or pilates membership \u2014 transfer, cancel, or update your address.",
+    "desc": "Decide how to handle your yoga or pilates membership — transfer, cancel, or update your address.",
     "estHours": 1,
     "tips": "Most studios require 30-day notice for cancellation. Ask about location transfers if your studio has multiple branches.",
     "urgencyPercentage": 87,
@@ -299,7 +303,7 @@
         "Spin / Cycling"
       ]
     },
-    "desc": "Decide how to handle your spin or cycling membership \u2014 transfer, cancel, or update your address.",
+    "desc": "Decide how to handle your spin or cycling membership — transfer, cancel, or update your address.",
     "estHours": 1,
     "tips": "Many cycling studios require 30-day written cancellation. Check if your studio has locations near your new home.",
     "urgencyPercentage": 82,
@@ -317,7 +321,7 @@
         "Massage / Spa"
       ]
     },
-    "desc": "Decide how to handle your massage or spa membership \u2014 transfer, cancel, or update your address.",
+    "desc": "Decide how to handle your massage or spa membership — transfer, cancel, or update your address.",
     "estHours": 1,
     "tips": "National chains like Massage Envy allow location transfers. Local studios usually require cancellation.",
     "urgencyPercentage": 82,
@@ -335,7 +339,7 @@
         "Country Club / Golf"
       ]
     },
-    "desc": "Decide how to handle your golf or country club membership \u2014 resign, transfer, or update your address.",
+    "desc": "Decide how to handle your golf or country club membership — resign, transfer, or update your address.",
     "estHours": 1,
     "tips": "Review your membership agreement for resignation procedures and required notice periods. Some clubs have waitlists for new members.",
     "urgencyPercentage": 85,
@@ -346,7 +350,7 @@
     "title": "Update credit card companies",
     "actionCategory": "update-notify",
     "category": "finance",
-    "actionType": "off-app",
+    "actionType": "workflow",
     "conditions": {
       "financialInstitutions": [
         "Credit Card"
@@ -356,14 +360,15 @@
     "estHours": 0.5,
     "tips": "Log into your credit card account and update your billing address. Update all authorized users and set a travel notice if moving long distance.",
     "urgencyPercentage": 62,
-    "whyNeeded": "Credit card companies use your address for billing, fraud checks, and shipping replacement cards."
+    "whyNeeded": "Credit card companies use your address for billing, fraud checks, and shipping replacement cards.",
+    "workflowId": "update_credit_card"
   },
   {
     "taskId": "UPDATE_INVESTMENT",
     "title": "Update investment accounts",
     "actionCategory": "update-notify",
     "category": "finance",
-    "actionType": "off-app",
+    "actionType": "workflow",
     "conditions": {
       "financialInstitutions": [
         "Investment Account"
@@ -373,14 +378,15 @@
     "estHours": 1,
     "tips": "Log into each brokerage or investment platform and update your mailing and billing address. Check for beneficiary info updates too.",
     "urgencyPercentage": 61,
-    "whyNeeded": "Investment accounts send tax documents and statements that must reach your correct address."
+    "whyNeeded": "Investment accounts send tax documents and statements that must reach your correct address.",
+    "workflowId": "update_investment"
   },
   {
     "taskId": "UPDATE_STUDENT_LOANS",
     "title": "Update student loan accounts",
     "actionCategory": "update-notify",
     "category": "finance",
-    "actionType": "off-app",
+    "actionType": "workflow",
     "conditions": {
       "financialInstitutions": [
         "Student Loans"
@@ -390,20 +396,22 @@
     "estHours": 0.5,
     "tips": "Log into your loan servicer's website and update your mailing address. Check for autopay and communication preferences too.",
     "urgencyPercentage": 60,
-    "whyNeeded": "Student loan servicers send important correspondence about repayment, forgiveness programs, and tax documents."
+    "whyNeeded": "Student loan servicers send important correspondence about repayment, forgiveness programs, and tax documents.",
+    "workflowId": "update_student_loans"
   },
   {
     "taskId": "FORWARD_MAIL_USPS",
     "title": "Forward mail",
     "actionCategory": "update-notify",
     "category": "administrative",
-    "actionType": "off-app",
+    "actionType": "workflow",
     "conditions": {},
     "desc": "File a change of address with the postal service so your mail is forwarded from your old address to your new one.",
     "estHours": 0.5,
     "tips": "Complete this online at USPS.com (small verification fee) or at your local post office. You can schedule the start date up to a few months in advance.",
     "urgencyPercentage": 79,
-    "whyNeeded": "Mail forwarding acts as a safety net so important letters and documents don't get lost during your move."
+    "whyNeeded": "Mail forwarding acts as a safety net so important letters and documents don't get lost during your move.",
+    "workflowId": "forward_mail_usps"
   },
   {
     "taskId": "SCHEDULE_TIME_OFF_WORK",
@@ -465,7 +473,7 @@
     },
     "desc": "Obtain a new driver's license in your new state after you move.",
     "estHours": 3,
-    "tips": "Check your new state's DMV website for required documents. Many states require this within 30\u201360 days of moving.",
+    "tips": "Check your new state's DMV website for required documents. Many states require this within 30–60 days of moving.",
     "urgencyPercentage": 84,
     "whyNeeded": "Most locations legally require your license to reflect your current address and issuing state."
   },
@@ -531,7 +539,7 @@
     "title": "Cancel utility account(s)",
     "actionCategory": "cancel-stop",
     "category": "utilities",
-    "actionType": "off-app",
+    "actionType": "workflow",
     "conditions": {
       "moveDistance": [
         "Long Distance"
@@ -541,14 +549,15 @@
     "estHours": 1.25,
     "tips": "Identify all utilities tied to your home: electricity, gas, water, internet, trash, and sewer. Each may require separate cancellation. Plan shutoff for the day after you move out to keep lights and water available during cleaning.",
     "urgencyPercentage": 75,
-    "whyNeeded": "Failing to cancel utilities can result in ongoing charges or new tenants using services under your name."
+    "whyNeeded": "Failing to cancel utilities can result in ongoing charges or new tenants using services under your name.",
+    "workflowId": "cancel_utilities"
   },
   {
     "taskId": "SETUP_UTILITIES",
     "title": "Schedule utility connection(s)",
     "actionCategory": "setup-establish",
     "category": "utilities",
-    "actionType": "off-app",
+    "actionType": "workflow",
     "conditions": {
       "moveDistance": [
         "Long Distance"
@@ -558,14 +567,15 @@
     "estHours": 2.5,
     "tips": "Contact utility providers 2 to 3 weeks before move-in. Some may require deposits or credit checks.",
     "urgencyPercentage": 80,
-    "whyNeeded": "Having power, water, and gas active when you arrive prevents a very unpleasant first night."
+    "whyNeeded": "Having power, water, and gas active when you arrive prevents a very unpleasant first night.",
+    "workflowId": "setup_utilities"
   },
   {
     "taskId": "TRANSFER_UTILITIES",
     "title": "Transfer utilities",
     "actionCategory": "transfer-update",
     "category": "utilities",
-    "actionType": "off-app",
+    "actionType": "workflow",
     "conditions": {
       "moveDistance": [
         "Local"
@@ -575,14 +585,15 @@
     "estHours": 1.5,
     "tips": "Contact each utility company 1 to 2 weeks before your move. Set the shutoff date for the old home and the start date for the new home.",
     "urgencyPercentage": 72,
-    "whyNeeded": "Transferring utilities properly prevents surprise shutoffs, double billing, or incorrect final charges."
+    "whyNeeded": "Transferring utilities properly prevents surprise shutoffs, double billing, or incorrect final charges.",
+    "workflowId": "transfer_utilities"
   },
   {
     "taskId": "BEGIN_SCHOOL_TRANSFER",
     "title": "Notify school(s) of transfer",
     "actionCategory": "update-notify",
     "category": "children",
-    "actionType": "off-app",
+    "actionType": "workflow",
     "conditions": {
       "childrenInSchool": [
         "Yes"
@@ -595,14 +606,15 @@
     "estHours": 1,
     "tips": "Notify the school as early as possible because districts often require transcripts, vaccination records, and special program documentation.",
     "urgencyPercentage": 82,
-    "whyNeeded": "School transfers can take time, especially if moving out of state."
+    "whyNeeded": "School transfers can take time, especially if moving out of state.",
+    "workflowId": "begin_school_transfer"
   },
   {
     "taskId": "NEW_SCHOOL_ENROLLMENT",
     "title": "Register for new enrollment",
     "actionCategory": "book-schedule",
     "category": "children",
-    "actionType": "off-app",
+    "actionType": "workflow",
     "conditions": {
       "childrenInSchool": [
         "Yes"
@@ -615,14 +627,15 @@
     "estHours": 4,
     "tips": "Begin researching schools as soon as your move is confirmed. Most districts require immunization records, birth certificates, prior report cards, and proof of residency.",
     "urgencyPercentage": 90,
-    "whyNeeded": "School enrollment can be time-sensitive and capacity-limited."
+    "whyNeeded": "School enrollment can be time-sensitive and capacity-limited.",
+    "workflowId": "new_school_enrollment"
   },
   {
     "taskId": "COA_SCHOOLS",
     "title": "Update schools",
     "actionCategory": "update-notify",
     "category": "children",
-    "actionType": "off-app",
+    "actionType": "workflow",
     "conditions": {
       "childrenInSchool": [
         "Yes"
@@ -635,14 +648,15 @@
     "estHours": 1,
     "tips": "Provide proof of your new address, update emergency contacts, and ask whether additional documents are required.",
     "urgencyPercentage": 90,
-    "whyNeeded": "Schools need accurate addresses for communication, transportation eligibility, and official records."
+    "whyNeeded": "Schools need accurate addresses for communication, transportation eligibility, and official records.",
+    "workflowId": "coa_schools"
   },
   {
     "taskId": "SETUP_DAYCARE",
     "title": "Set up new daycare",
     "actionCategory": "setup-establish",
     "category": "children",
-    "actionType": "off-app",
+    "actionType": "workflow",
     "conditions": {
       "childrenInDaycare": [
         "Yes"
@@ -655,14 +669,15 @@
     "estHours": 2.5,
     "tips": "Daycares often have long waitlists. Contact centers early, tour multiple locations, ask about availability, staff ratios, and pricing.",
     "urgencyPercentage": 88,
-    "whyNeeded": "Daycare availability varies widely. Early enrollment is essential to avoid gaps in childcare."
+    "whyNeeded": "Daycare availability varies widely. Early enrollment is essential to avoid gaps in childcare.",
+    "workflowId": "setup_daycare"
   },
   {
     "taskId": "TRANSFER_DAYCARE",
     "title": "Update daycare",
     "actionCategory": "update-notify",
     "category": "children",
-    "actionType": "off-app",
+    "actionType": "workflow",
     "conditions": {
       "childrenInDaycare": [
         "Yes"
@@ -675,14 +690,15 @@
     "estHours": 0.5,
     "tips": "Call or email the daycare with your new address, updated contact info, and any changes to pickup or drop-off routines.",
     "urgencyPercentage": 75,
-    "whyNeeded": "Daycare providers need accurate contact information and address details for safety, billing, and communication."
+    "whyNeeded": "Daycare providers need accurate contact information and address details for safety, billing, and communication.",
+    "workflowId": "transfer_daycare"
   },
   {
     "taskId": "TRANSFER_PHARMACY_RECORDS",
     "title": "Transfer pharmacy records",
     "actionCategory": "transfer-records",
     "category": "health",
-    "actionType": "off-app",
+    "actionType": "workflow",
     "conditions": {
       "healthcareProviders": [
         "Pharmacy"
@@ -695,14 +711,15 @@
     "estHours": 1.5,
     "tips": "Contact your current pharmacy 2 to 3 weeks before the move. Controlled medications may need new prescriptions.",
     "urgencyPercentage": 55,
-    "whyNeeded": "Transferring prescriptions early reduces the risk of running out of medications."
+    "whyNeeded": "Transferring prescriptions early reduces the risk of running out of medications.",
+    "workflowId": "transfer_pharmacy_records"
   },
   {
     "taskId": "TRANSFER_SPECIALISTS_RECORDS",
     "title": "Transfer medical specialist records",
     "actionCategory": "transfer-records",
     "category": "health",
-    "actionType": "off-app",
+    "actionType": "workflow",
     "conditions": {
       "healthcareProviders": [
         "Specialists"
@@ -715,14 +732,15 @@
     "estHours": 2,
     "tips": "Make a list of all specialists you currently see. Contact each office 3 to 4 weeks before your move.",
     "urgencyPercentage": 69,
-    "whyNeeded": "Specialists often manage key parts of your health. Having records ready helps new doctors continue treatment."
+    "whyNeeded": "Specialists often manage key parts of your health. Having records ready helps new doctors continue treatment.",
+    "workflowId": "transfer_specialists_records"
   },
   {
     "taskId": "UPDATE_AUTO_INSURANCE",
     "title": "Update auto insurance",
     "actionCategory": "update-notify",
     "category": "insurance",
-    "actionType": "off-app",
+    "actionType": "workflow",
     "conditions": {
       "hasVehicles": [
         "Yes"
@@ -732,14 +750,15 @@
     "estHours": 1.5,
     "tips": "Call your agent or update online. Rates can change by ZIP code, so ask for updated pricing.",
     "urgencyPercentage": 82,
-    "whyNeeded": "Auto insurance premiums and coverage depend on where you live."
+    "whyNeeded": "Auto insurance premiums and coverage depend on where you live.",
+    "workflowId": "update_auto_insurance"
   },
   {
     "taskId": "CANCEL_CONDO_INSURANCE",
     "title": "Cancel condo insurance",
     "actionCategory": "cancel-stop",
     "category": "insurance",
-    "actionType": "off-app",
+    "actionType": "workflow",
     "conditions": {
       "newDwellingType": [
         "Apartment",
@@ -753,14 +772,15 @@
     "estHours": 1.5,
     "tips": "You can set a future cancellation date for the old policy to avoid coverage gaps.",
     "urgencyPercentage": 76,
-    "whyNeeded": "Insurance must match your physical address."
+    "whyNeeded": "Insurance must match your physical address.",
+    "workflowId": "cancel_condo_insurance"
   },
   {
     "taskId": "CANCEL_RENTERS_INSURANCE",
     "title": "Cancel or update renter's insurance",
     "actionCategory": "cancel-stop",
     "category": "insurance",
-    "actionType": "off-app",
+    "actionType": "workflow",
     "conditions": {
       "newRentOrOwn": [
         "Own"
@@ -773,14 +793,15 @@
     "estHours": 1,
     "tips": "Most insurers allow you to schedule a future cancellation date so you remain covered until move-out.",
     "urgencyPercentage": 77,
-    "whyNeeded": "Insurance must match your physical address, and improper coverage can lead to denied claims."
+    "whyNeeded": "Insurance must match your physical address, and improper coverage can lead to denied claims.",
+    "workflowId": "cancel_renters_insurance"
   },
   {
     "taskId": "SETUP_CONDO_INSURANCE",
     "title": "Set up condo insurance",
     "actionCategory": "setup-establish",
     "category": "insurance",
-    "actionType": "off-app",
+    "actionType": "workflow",
     "conditions": {
       "newDwellingType": [
         "Condo"
@@ -794,14 +815,15 @@
     "estHours": 1.5,
     "tips": "Condo associations often require specific coverage. Set the effective date to your move-in day.",
     "urgencyPercentage": 76,
-    "whyNeeded": "Condo insurance is required by most associations."
+    "whyNeeded": "Condo insurance is required by most associations.",
+    "workflowId": "setup_condo_insurance"
   },
   {
     "taskId": "SETUP_HOMEOWNERS_INSURANCE",
     "title": "Set up homeowner's insurance",
     "actionCategory": "setup-establish",
     "category": "insurance",
-    "actionType": "off-app",
+    "actionType": "workflow",
     "conditions": {
       "newDwellingType": [
         "House"
@@ -814,14 +836,15 @@
     "estHours": 1.5,
     "tips": "Compare coverage and deductibles. Get the insurance binder early, as some lenders require it before closing.",
     "urgencyPercentage": 77,
-    "whyNeeded": "Homeowner's insurance is required for mortgages and protects your property."
+    "whyNeeded": "Homeowner's insurance is required for mortgages and protects your property.",
+    "workflowId": "setup_homeowners_insurance"
   },
   {
     "taskId": "SETUP_RENTERS_INSURANCE",
     "title": "Set up renter's insurance",
     "actionCategory": "setup-establish",
     "category": "insurance",
-    "actionType": "off-app",
+    "actionType": "workflow",
     "conditions": {
       "currentRentOrOwn": [
         "Own"
@@ -834,14 +857,15 @@
     "estHours": 1,
     "tips": "Get quotes from a few insurers. Policies are usually quick to set up online and often cost $15 to $30 per month.",
     "urgencyPercentage": 77,
-    "whyNeeded": "Renter's insurance protects your belongings and may be required by your new lease."
+    "whyNeeded": "Renter's insurance protects your belongings and may be required by your new lease.",
+    "workflowId": "setup_renters_insurance"
   },
   {
     "taskId": "TRANSFER_CONDO_INSURANCE",
     "title": "Transfer condo insurance",
     "actionCategory": "transfer-update",
     "category": "insurance",
-    "actionType": "off-app",
+    "actionType": "workflow",
     "conditions": {
       "currentDwellingType": [
         "Condo"
@@ -854,14 +878,15 @@
     "estHours": 2,
     "tips": "Call your agent 3 to 4 weeks before the move. Provide details of the new condo.",
     "urgencyPercentage": 76,
-    "whyNeeded": "Transferring your existing policy can be faster and easier than starting from scratch."
+    "whyNeeded": "Transferring your existing policy can be faster and easier than starting from scratch.",
+    "workflowId": "transfer_condo_insurance"
   },
   {
     "taskId": "TRANSFER_HOMEOWNERS_INSURANCE",
     "title": "Transfer homeowner's insurance",
     "actionCategory": "transfer-update",
     "category": "insurance",
-    "actionType": "off-app",
+    "actionType": "workflow",
     "conditions": {
       "currentRentOrOwn": [
         "Own"
@@ -880,14 +905,15 @@
     "estHours": 2,
     "tips": "Contact your insurance agent 3 to 4 weeks before your move. Provide details for the new home.",
     "urgencyPercentage": 77,
-    "whyNeeded": "Transferring your existing policy keeps coverage continuous."
+    "whyNeeded": "Transferring your existing policy keeps coverage continuous.",
+    "workflowId": "transfer_homeowners_insurance"
   },
   {
     "taskId": "TRANSFER_RENTERS_INSURANCE",
     "title": "Transfer renter's insurance",
     "actionCategory": "transfer-update",
     "category": "insurance",
-    "actionType": "off-app",
+    "actionType": "workflow",
     "conditions": {
       "currentRentOrOwn": [
         "Rent"
@@ -900,7 +926,8 @@
     "estHours": 1,
     "tips": "Contact your insurer 1 to 2 weeks before move-in. Provide your new address and move-in date.",
     "urgencyPercentage": 77,
-    "whyNeeded": "Transferring the policy keeps your belongings and liability covered without gaps."
+    "whyNeeded": "Transferring the policy keeps your belongings and liability covered without gaps.",
+    "workflowId": "transfer_renters_insurance"
   },
   {
     "taskId": "BUY_PACKING_SUPPLIES",
@@ -912,7 +939,7 @@
     "conditions": {},
     "desc": "Purchase boxes, tape, bubble wrap, and other materials needed to pack your belongings safely.",
     "estHours": 1.5,
-    "tips": "Start early\u2014people almost always underestimate how much they need. A typical one-bedroom move requires around 30 small boxes, 40 medium boxes, and 20 large boxes.",
+    "tips": "Start early—people almost always underestimate how much they need. A typical one-bedroom move requires around 30 small boxes, 40 medium boxes, and 20 large boxes.",
     "urgencyPercentage": 85,
     "whyNeeded": "Having the right supplies early prevents delays, protects fragile items, and helps you pack in an organized way."
   },
@@ -930,7 +957,7 @@
     },
     "desc": "Purchase essential cleaning products needed to complete your move-out cleaning.",
     "estHours": 1,
-    "tips": "Buy supplies 3\u20135 days before your move. Key items include: all-purpose cleaner, glass cleaner, mop, broom, gloves, trash bags, sponges, and paper towels.",
+    "tips": "Buy supplies 3–5 days before your move. Key items include: all-purpose cleaner, glass cleaner, mop, broom, gloves, trash bags, sponges, and paper towels.",
     "urgencyPercentage": 10,
     "whyNeeded": "Move-out cleaning requires multiple supplies that you may not want to unpack once boxes are sealed."
   },
@@ -1006,7 +1033,7 @@
     "title": "Cancel homeowner's insurance",
     "actionCategory": "cancel-stop",
     "category": "insurance",
-    "actionType": "off-app",
+    "actionType": "workflow",
     "conditions": {
       "currentRentOrOwn": [
         "Own"
@@ -1023,6 +1050,7 @@
     "estHours": 1,
     "tips": "Contact your insurance agent 1 to 2 weeks before closing. Set the cancellation date for after you've fully moved out and closed on the sale. Ask about any refund on prepaid premiums.",
     "urgencyPercentage": 76,
-    "whyNeeded": "Homeowner's insurance premiums will continue billing until formally canceled, and you'll need proof of cancellation for your records."
+    "whyNeeded": "Homeowner's insurance premiums will continue billing until formally canceled, and you'll need proof of cancellation for your records.",
+    "workflowId": "cancel_homeowners_insurance"
   }
 ]

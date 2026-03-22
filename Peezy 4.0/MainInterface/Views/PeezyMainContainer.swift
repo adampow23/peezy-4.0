@@ -56,8 +56,8 @@ struct PeezyMainContainer: View {
 
             // Floating tab bar
             PeezyFloatingTabBar(selectedTab: $selectedTab)
+                .padding(.bottom, 16)
         }
-        .ignoresSafeArea(edges: .bottom)
         .ignoresSafeArea(.keyboard, edges: .bottom)
         .onChange(of: selectedTab) { _, newValue in
             if newValue == .tasks && !hasLoadedTimeline {

@@ -132,10 +132,48 @@ const submitWorkflowAnswers = onCall(
     try {
       const db = admin.firestore();
       
-      // Determine if this is a mini-assessment or vendor workflow
+      // Determine workflow type: mini-assessment, guidance, or vendor
       const isMiniAssessment = workflowId in MINI_ASSESSMENT_WORKFLOWS;
+      const isGuidance = WORKFLOW_QUALIFYING[workflowId]?.workflowType === 'guidance';
       
-      if (isMiniAssessment) {
+      if (isGuidance) {
+        // Guidance workflow: user acknowledged the guidance — mark task complete
+        console.log(`Guidance workflow completed: ${workflowId} for user ${userId}`);
+        
+        // Save the answers (may be empty for zero-question workflows)
+        await db.collection('users')
+          .doc(userId)
+          .collection('workflowResponses')
+          .doc(workflowId)
+          .set({
+            workflowId,
+            answers,
+            workflowType: 'guidance',
+            completedAt: admin.firestore.FieldValue.serverTimestamp()
+          });
+
+        // Mark the task as Completed
+        try {
+          await db.collection('users')
+            .doc(userId)
+            .collection('tasks')
+            .doc(workflowId)
+            .update({
+              status: 'Completed',
+              completedAt: admin.firestore.FieldValue.serverTimestamp(),
+              qualifyingAnswers: answers
+            });
+        } catch (updateErr) {
+          // Task doc may use the catalog taskId (uppercase) instead of workflowId
+          console.warn(`Could not update task ${workflowId}: ${updateErr.message}`);
+        }
+
+        return {
+          success: true,
+          status: 'completed'
+        };
+
+      } else if (isMiniAssessment) {
         // Mini-assessment: answers is an array of { id, displayName, textEntry? }
         await db.collection('users')
           .doc(userId)

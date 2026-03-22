@@ -638,7 +638,7 @@ struct PeezyHomeView: View {
 
     private var workflowContent: some View {
         VStack(spacing: 16) {
-            // Workflow card (centered, same size as original overlay)
+            // Workflow card (centered, constrained to match other cards)
             ForEach(viewModel.workflowManager.workflowCards) { card in
                 WorkflowCardView(
                     card: card,
@@ -657,6 +657,7 @@ struct PeezyHomeView: View {
                         viewModel.completeWorkflowTask()
                     }
                 )
+                .frame(width: 340, height: 500)
                 .transition(.asymmetric(
                     insertion: .scale(scale: 0.9).combined(with: .opacity),
                     removal: .move(edge: .leading).combined(with: .opacity)
