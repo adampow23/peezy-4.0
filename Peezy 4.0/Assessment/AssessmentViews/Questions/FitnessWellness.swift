@@ -27,8 +27,8 @@ struct FitnessWellness: View {
             buttonText: buttonText,
             onToggle: { option in
                 if selected.contains(option) {
-                    let current = data.fitnessCounts[option] ?? 1
-                    data.fitnessCounts[option] = current + 1
+                    selected.remove(option)
+                    data.fitnessCounts.removeValue(forKey: option)
                 } else {
                     selected.insert(option)
                     data.fitnessCounts[option] = 1

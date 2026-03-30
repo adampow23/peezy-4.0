@@ -24,7 +24,7 @@ struct SubmittedView: View {
                         .padding(.bottom, 24)
 
                     Text("We're on it!")
-                        .font(.system(size: 32, weight: .heavy))
+                        .font(.system(size: 44, weight: .heavy))
                         .foregroundStyle(PeezyTheme.Colors.deepInk)
                         .padding(.bottom, 10)
 
@@ -50,9 +50,7 @@ struct SubmittedView: View {
                     .padding(.horizontal, 30)
                     .padding(.bottom, 30)
                 }
-                .frame(minHeight: 420)
             }
-            .padding(.horizontal, 20)
         }
         .onAppear {
             withAnimation(.spring(response: 0.5, dampingFraction: 0.6).delay(0.15)) {
@@ -79,18 +77,10 @@ struct SubmittedView: View {
 
             content()
         }
-        .frame(width: 340)
+        .frame(width: 340, height: 500)
     }
 }
 
 #Preview {
-    SubmittedView(
-        task: PeezyCard(
-            type: .task,
-            title: "Research Internet Providers",
-            subtitle: "Find the best internet plan at your new address.",
-            taskType: "research"
-        ),
-        onDone: {}
-    )
+    SubmittedView(task: .previewResearch, onDone: {})
 }

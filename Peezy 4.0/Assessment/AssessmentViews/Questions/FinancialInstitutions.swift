@@ -26,8 +26,8 @@ struct FinancialInstitutions: View {
             buttonText: buttonText,
             onToggle: { option in
                 if selected.contains(option) {
-                    let current = data.financialCounts[option] ?? 1
-                    data.financialCounts[option] = current + 1
+                    selected.remove(option)
+                    data.financialCounts.removeValue(forKey: option)
                 } else {
                     selected.insert(option)
                     data.financialCounts[option] = 1

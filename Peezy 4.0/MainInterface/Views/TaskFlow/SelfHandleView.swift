@@ -27,10 +27,10 @@ struct TaskChoiceView: View {
 
                     VStack(alignment: .leading, spacing: 12) {
                         Text(task.title)
-                            .font(.system(size: 28, weight: .heavy))
+                            .font(.system(size: 44, weight: .heavy))
                             .foregroundStyle(PeezyTheme.Colors.deepInk)
-                            .lineLimit(3)
-                            .minimumScaleFactor(0.6)
+                            .lineLimit(2)
+                            .minimumScaleFactor(0.5)
 
                         Rectangle()
                             .fill(Color.black.opacity(0.15))
@@ -59,9 +59,7 @@ struct TaskChoiceView: View {
                     .padding(.horizontal, 30)
                     .padding(.bottom, 30)
                 }
-                .frame(minHeight: 440)
             }
-            .padding(.horizontal, 20)
         }
     }
 
@@ -82,19 +80,10 @@ struct TaskChoiceView: View {
 
             content()
         }
-        .frame(width: 340)
+        .frame(width: 340, height: 500)
     }
 }
 
 #Preview {
-    TaskChoiceView(
-        task: PeezyCard(
-            type: .task,
-            title: "Research Internet Providers",
-            subtitle: "Find the best internet plan at your new address.",
-            taskType: "research"
-        ),
-        onPeezyHandle: {},
-        onSelfHandle: {}
-    )
+    TaskChoiceView(task: .previewResearch, onPeezyHandle: {}, onSelfHandle: {})
 }

@@ -26,8 +26,8 @@ struct HealthcareProviders: View {
             buttonText: buttonText,
             onToggle: { option in
                 if selected.contains(option) {
-                    let current = data.healthcareCounts[option] ?? 1
-                    data.healthcareCounts[option] = current + 1
+                    selected.remove(option)
+                    data.healthcareCounts.removeValue(forKey: option)
                 } else {
                     selected.insert(option)
                     data.healthcareCounts[option] = 1

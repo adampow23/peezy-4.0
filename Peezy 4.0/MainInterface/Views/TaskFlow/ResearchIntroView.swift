@@ -27,10 +27,10 @@ struct TaskEntryView: View {
 
                     VStack(alignment: .leading, spacing: 12) {
                         Text(task.title)
-                            .font(.system(size: 32, weight: .heavy))
+                            .font(.system(size: 44, weight: .heavy))
                             .foregroundStyle(PeezyTheme.Colors.deepInk)
-                            .lineLimit(3)
-                            .minimumScaleFactor(0.6)
+                            .lineLimit(2)
+                            .minimumScaleFactor(0.5)
 
                         Rectangle()
                             .fill(Color.black.opacity(0.15))
@@ -60,9 +60,7 @@ struct TaskEntryView: View {
                     .padding(.horizontal, 30)
                     .padding(.bottom, 30)
                 }
-                .frame(minHeight: 440)
             }
-            .padding(.horizontal, 20)
         }
     }
 
@@ -83,19 +81,18 @@ struct TaskEntryView: View {
 
             content()
         }
-        .frame(width: 340)
+        .frame(width: 340, height: 500)
     }
 }
 
-#Preview {
-    TaskEntryView(
-        task: PeezyCard(
-            type: .task,
-            title: "Research Internet Providers",
-            subtitle: "We'll research the best options available at your new address and send you a summary.",
-            taskType: "research"
-        ),
-        onStart: {},
-        onSkip: {}
-    )
+#Preview("Research Entry") {
+    TaskEntryView(task: .previewResearch, onStart: {}, onSkip: {})
+}
+
+#Preview("Survey Entry") {
+    TaskEntryView(task: .previewSurvey, onStart: {}, onSkip: {})
+}
+
+#Preview("Provide Info Entry") {
+    TaskEntryView(task: .previewProvideInfo, onStart: {}, onSkip: {})
 }

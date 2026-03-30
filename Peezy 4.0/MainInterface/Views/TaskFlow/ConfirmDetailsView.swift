@@ -1,40 +1,190 @@
 import SwiftUI
 
+// MARK: - ConfirmField
+
+struct ConfirmField: Identifiable {
+    let id = UUID()
+    let label: String
+    let fieldType: FieldType
+
+    enum FieldType {
+        case currentAddress
+        case newAddress
+        case moveDate
+        case userInput(placeholder: String)
+    }
+}
+
+// MARK: - Field Mapping
+
+extension ConfirmField {
+    static func fields(for taskId: String?) -> [ConfirmField] {
+        switch taskId {
+
+        // NEW ADDRESS + MOVE DATE
+        case "ARRANGE_PARKING_NEW", "RESERVE_ELEVATORS_NEW", "SETUP_UTILITIES", "SETUP_DAYCARE":
+            return [
+                ConfirmField(label: "New address", fieldType: .newAddress),
+                ConfirmField(label: "Move date", fieldType: .moveDate)
+            ]
+
+        // OLD ADDRESS + MOVE DATE
+        case "ARRANGE_PARKING_OLD", "RESERVE_ELEVATORS_OLD", "CANCEL_UTILITIES":
+            return [
+                ConfirmField(label: "Current address", fieldType: .currentAddress),
+                ConfirmField(label: "Move date", fieldType: .moveDate)
+            ]
+
+        // NEW ADDRESS ONLY
+        case "NEW_DRIVERS_LICENSE", "REGISTER_VEHICLE":
+            return [
+                ConfirmField(label: "New address", fieldType: .newAddress)
+            ]
+
+        // BOTH ADDRESSES + MOVE DATE
+        case "TRANSFER_UTILITIES", "TRANSFER_DAYCARE", "UPDATE_DRIVERS_LICENSE":
+            return [
+                ConfirmField(label: "Current address", fieldType: .currentAddress),
+                ConfirmField(label: "New address", fieldType: .newAddress),
+                ConfirmField(label: "Move date", fieldType: .moveDate)
+            ]
+
+        // OLD ADDRESS + INSURANCE + MOVE DATE
+        case "CANCEL_CONDO_INSURANCE", "CANCEL_HOMEOWNERS_INSURANCE", "CANCEL_RENTERS_INSURANCE":
+            return [
+                ConfirmField(label: "Current address", fieldType: .currentAddress),
+                ConfirmField(label: "Insurance company", fieldType: .userInput(placeholder: "Insurance company name")),
+                ConfirmField(label: "Move date", fieldType: .moveDate)
+            ]
+
+        // NEW ADDRESS + INSURANCE + MOVE DATE
+        case "SETUP_CONDO_INSURANCE", "SETUP_HOMEOWNERS_INSURANCE", "SETUP_RENTERS_INSURANCE":
+            return [
+                ConfirmField(label: "New address", fieldType: .newAddress),
+                ConfirmField(label: "Insurance company", fieldType: .userInput(placeholder: "Insurance company name")),
+                ConfirmField(label: "Move date", fieldType: .moveDate)
+            ]
+
+        // BOTH ADDRESSES + INSURANCE + MOVE DATE
+        case "TRANSFER_CONDO_INSURANCE", "TRANSFER_HOMEOWNERS_INSURANCE", "TRANSFER_RENTERS_INSURANCE", "UPDATE_AUTO_INSURANCE":
+            return [
+                ConfirmField(label: "Current address", fieldType: .currentAddress),
+                ConfirmField(label: "New address", fieldType: .newAddress),
+                ConfirmField(label: "Insurance company", fieldType: .userInput(placeholder: "Insurance company name")),
+                ConfirmField(label: "Move date", fieldType: .moveDate)
+            ]
+
+        // BOTH ADDRESSES + PROVIDER NAME
+        case "TRANSFER_PHARMACY_RECORDS":
+            return [
+                ConfirmField(label: "Current address", fieldType: .currentAddress),
+                ConfirmField(label: "New address", fieldType: .newAddress),
+                ConfirmField(label: "Pharmacy name", fieldType: .userInput(placeholder: "Pharmacy name"))
+            ]
+
+        case "TRANSFER_SPECIALISTS_RECORDS":
+            return [
+                ConfirmField(label: "Current address", fieldType: .currentAddress),
+                ConfirmField(label: "New address", fieldType: .newAddress),
+                ConfirmField(label: "Specialist name", fieldType: .userInput(placeholder: "Specialist name"))
+            ]
+
+        // PROVIDER NAME ONLY
+        case "MANAGE_BANK":
+            return [ConfirmField(label: "Bank or credit union", fieldType: .userInput(placeholder: "Bank or credit union name"))]
+        case "MANAGE_DENTIST":
+            return [ConfirmField(label: "Dentist office", fieldType: .userInput(placeholder: "Dentist office name"))]
+        case "MANAGE_DOCTOR":
+            return [ConfirmField(label: "Doctor office", fieldType: .userInput(placeholder: "Doctor office name"))]
+        case "MANAGE_GOLF":
+            return [ConfirmField(label: "Golf course or club", fieldType: .userInput(placeholder: "Golf course or club name"))]
+        case "MANAGE_GYM":
+            return [ConfirmField(label: "Gym", fieldType: .userInput(placeholder: "Gym name"))]
+        case "MANAGE_MASSAGE":
+            return [ConfirmField(label: "Massage or spa", fieldType: .userInput(placeholder: "Massage or spa name"))]
+        case "MANAGE_SPIN":
+            return [ConfirmField(label: "Spin or cycling studio", fieldType: .userInput(placeholder: "Spin or cycling studio name"))]
+        case "MANAGE_VET":
+            return [ConfirmField(label: "Vet office", fieldType: .userInput(placeholder: "Vet office name"))]
+        case "MANAGE_YOGA":
+            return [ConfirmField(label: "Yoga studio", fieldType: .userInput(placeholder: "Yoga studio name"))]
+        case "UPDATE_INVESTMENT":
+            return [ConfirmField(label: "Investment firm", fieldType: .userInput(placeholder: "Investment firm name"))]
+        case "UPDATE_STUDENT_LOANS":
+            return [ConfirmField(label: "Student loan provider", fieldType: .userInput(placeholder: "Student loan provider name"))]
+
+        // SKIP — no confirmation needed
+        case "RENT_TRUCK":
+            return []
+
+        // DEFAULT
+        default:
+            return [
+                ConfirmField(label: "New address", fieldType: .newAddress),
+                ConfirmField(label: "Move date", fieldType: .moveDate)
+            ]
+        }
+    }
+}
+
+// MARK: - ConfirmDetailsView
+
 struct ConfirmDetailsView: View {
     let task: PeezyCard
     let userState: UserState?
     let onConfirm: ([String: String]) -> Void
     let onBack: () -> Void
 
-    @State private var currentAddress: String
-    @State private var newAddress: String
-    @State private var moveDateText: String
+    private let fields: [ConfirmField]
 
-    @State private var editingField: EditableField? = nil
+    @State private var fieldValues: [UUID: String]
+    @State private var editingFieldId: UUID?
 
-    enum EditableField {
-        case currentAddress, newAddress, moveDate
-    }
-
-    init(task: PeezyCard, userState: UserState?, onConfirm: @escaping ([String: String]) -> Void, onBack: @escaping () -> Void) {
+    init(
+        task: PeezyCard,
+        userState: UserState?,
+        onConfirm: @escaping ([String: String]) -> Void,
+        onBack: @escaping () -> Void
+    ) {
         self.task = task
         self.userState = userState
         self.onConfirm = onConfirm
         self.onBack = onBack
 
-        let currentParts = [userState?.originCity, userState?.originState].compactMap { $0 }
-        _currentAddress = State(initialValue: currentParts.isEmpty ? "Not provided" : currentParts.joined(separator: ", "))
+        let computedFields = ConfirmField.fields(for: task.taskId)
+        self.fields = computedFields
 
-        let newParts = [userState?.destinationCity, userState?.destinationState].compactMap { $0 }
-        _newAddress = State(initialValue: newParts.isEmpty ? "Not provided" : newParts.joined(separator: ", "))
+        let currentAddressValue: String = {
+            let parts = [userState?.originCity, userState?.originState].compactMap { $0 }
+            return parts.isEmpty ? "Not provided" : parts.joined(separator: ", ")
+        }()
 
-        if let moveDate = userState?.moveDate {
+        let newAddressValue: String = {
+            let parts = [userState?.destinationCity, userState?.destinationState].compactMap { $0 }
+            return parts.isEmpty ? "Not provided" : parts.joined(separator: ", ")
+        }()
+
+        let moveDateValue: String = {
+            guard let moveDate = userState?.moveDate else { return "Not set" }
             let formatter = DateFormatter()
             formatter.dateStyle = .medium
-            _moveDateText = State(initialValue: formatter.string(from: moveDate))
-        } else {
-            _moveDateText = State(initialValue: "Not set")
+            return formatter.string(from: moveDate)
+        }()
+
+        var initialValues: [UUID: String] = [:]
+        for field in computedFields {
+            switch field.fieldType {
+            case .currentAddress:
+                initialValues[field.id] = currentAddressValue
+            case .newAddress:
+                initialValues[field.id] = newAddressValue
+            case .moveDate:
+                initialValues[field.id] = moveDateValue
+            case .userInput:
+                initialValues[field.id] = ""
+            }
         }
+        _fieldValues = State(initialValue: initialValues)
     }
 
     var body: some View {
@@ -42,113 +192,119 @@ struct ConfirmDetailsView: View {
             InteractiveBackground()
                 .ignoresSafeArea()
 
-            ScrollView {
-                glassCard {
-                    VStack(alignment: .leading, spacing: 0) {
+            glassCard {
+                VStack(alignment: .leading, spacing: 0) {
+                    // Fixed header
+                    VStack(alignment: .leading, spacing: 6) {
                         Text("Just to confirm...")
-                            .font(.system(size: 26, weight: .heavy))
+                            .font(.system(size: 44, weight: .heavy))
                             .foregroundStyle(PeezyTheme.Colors.deepInk)
-                            .padding(.horizontal, 30)
-                            .padding(.top, 30)
+                            .lineLimit(2)
+                            .minimumScaleFactor(0.5)
 
                         Text("For: \(task.title)")
                             .font(.system(size: 13, weight: .medium))
                             .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.4))
-                            .padding(.horizontal, 30)
-                            .padding(.top, 4)
 
                         Rectangle()
                             .fill(Color.black.opacity(0.15))
                             .frame(width: 50, height: 2)
-                            .padding(.horizontal, 30)
-                            .padding(.top, 14)
-
-                        VStack(spacing: 14) {
-                            detailRow(
-                                label: "Current address",
-                                value: $currentAddress,
-                                isEditing: editingField == .currentAddress,
-                                onEdit: { editingField = editingField == .currentAddress ? nil : .currentAddress }
-                            )
-                            detailRow(
-                                label: "New address",
-                                value: $newAddress,
-                                isEditing: editingField == .newAddress,
-                                onEdit: { editingField = editingField == .newAddress ? nil : .newAddress }
-                            )
-                            detailRow(
-                                label: "Move date",
-                                value: $moveDateText,
-                                isEditing: editingField == .moveDate,
-                                onEdit: { editingField = editingField == .moveDate ? nil : .moveDate }
-                            )
-                        }
-                        .padding(.horizontal, 30)
-                        .padding(.top, 20)
-
-                        VStack(spacing: 12) {
-                            PeezyAssessmentButton("Looks Good — Go Ahead") {
-                                onConfirm([
-                                    "currentAddress": currentAddress,
-                                    "newAddress": newAddress,
-                                    "moveDate": moveDateText
-                                ])
-                            }
-
-                            Button("Go Back") {
-                                onBack()
-                            }
-                            .font(.system(size: 16, weight: .medium))
-                            .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.5))
-                        }
-                        .padding(.horizontal, 30)
-                        .padding(.top, 24)
-                        .padding(.bottom, 30)
+                            .padding(.top, 8)
                     }
+                    .padding(.horizontal, 30)
+                    .padding(.top, 30)
+
+                    // Scrollable fields
+                    ScrollView {
+                        VStack(spacing: 14) {
+                            ForEach(fields) { field in
+                                fieldRow(field)
+                            }
+                        }
+                        .padding(.horizontal, 30)
+                        .padding(.vertical, 20)
+                    }
+                    .scrollIndicators(.hidden)
+
+                    // Fixed bottom buttons
+                    VStack(spacing: 12) {
+                        PeezyAssessmentButton("Looks Good — Go Ahead") {
+                            let result = fields.reduce(into: [String: String]()) { dict, field in
+                                dict[field.label] = fieldValues[field.id, default: ""]
+                            }
+                            onConfirm(result)
+                        }
+
+                        Button("Go Back") {
+                            onBack()
+                        }
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.5))
+                    }
+                    .padding(.horizontal, 30)
+                    .padding(.bottom, 30)
                 }
-                .padding(.horizontal, 20)
-                .padding(.vertical, 40)
             }
         }
     }
 
     @ViewBuilder
-    private func detailRow(label: String, value: Binding<String>, isEditing: Bool, onEdit: @escaping () -> Void) -> some View {
+    private func fieldRow(_ field: ConfirmField) -> some View {
+        let isEditing = editingFieldId == field.id
+
         VStack(alignment: .leading, spacing: 4) {
             HStack {
-                Text(label)
+                Text(field.label)
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.45))
                     .tracking(0.5)
                     .textCase(.uppercase)
                 Spacer()
-                Button(isEditing ? "Done" : "Edit") {
-                    onEdit()
+                if case .userInput = field.fieldType {
+                    // No edit toggle for free-entry fields
+                } else {
+                    Button(isEditing ? "Done" : "Edit") {
+                        editingFieldId = isEditing ? nil : field.id
+                    }
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.4))
                 }
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.4))
             }
 
-            if isEditing {
-                TextField(label, text: value)
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundStyle(PeezyTheme.Colors.deepInk)
-                    .padding(.vertical, 10)
-                    .padding(.horizontal, 12)
-                    .background {
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .foregroundStyle(.regularMaterial)
-                            .overlay {
-                                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                    .stroke(Color.black.opacity(0.1), lineWidth: 1)
-                            }
-                    }
+            if case .userInput(let placeholder) = field.fieldType {
+                inputField(placeholder: placeholder, id: field.id)
+            } else if isEditing {
+                inputField(placeholder: field.label, id: field.id)
             } else {
-                Text(value.wrappedValue)
+                Text(fieldValues[field.id, default: ""])
                     .font(.system(size: 16, weight: .medium))
                     .foregroundStyle(PeezyTheme.Colors.deepInk)
             }
         }
+    }
+
+    @ViewBuilder
+    private func inputField(placeholder: String, id: UUID) -> some View {
+        TextField(placeholder, text: valueBinding(for: id))
+            .font(.system(size: 16, weight: .medium))
+            .foregroundStyle(PeezyTheme.Colors.deepInk)
+            .padding(.vertical, 10)
+            .padding(.horizontal, 12)
+            .background {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .foregroundStyle(.regularMaterial)
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .stroke(Color.black.opacity(0.1), lineWidth: 1)
+                    }
+            }
+    }
+
+    private func valueBinding(for id: UUID) -> Binding<String> {
+        Binding(
+            get: { self.fieldValues[id, default: ""] },
+            set: { self.fieldValues[id] = $0 }
+        )
     }
 
     private func glassCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
@@ -168,27 +324,34 @@ struct ConfirmDetailsView: View {
 
             content()
         }
-        .frame(width: 340)
+        .frame(width: 340, height: 500)
     }
 }
 
-#Preview {
+// MARK: - Previews
+
+#Preview("Research - Parking") {
     ConfirmDetailsView(
-        task: PeezyCard(
-            type: .task,
-            title: "Transfer Internet Service",
-            subtitle: "Let us notify your provider of your move.",
-            taskType: "research"
-        ),
-        userState: {
-            var state = UserState(userId: "preview", name: "Alex")
-            state.originCity = "Austin"
-            state.originState = "TX"
-            state.destinationCity = "Denver"
-            state.destinationState = "CO"
-            state.moveDate = Calendar.current.date(byAdding: .day, value: 30, to: Date())
-            return state
-        }(),
+        task: .previewResearch,
+        userState: .preview,
+        onConfirm: { _ in },
+        onBack: {}
+    )
+}
+
+#Preview("Transfer - Bank") {
+    ConfirmDetailsView(
+        task: .previewTransfer,
+        userState: .preview,
+        onConfirm: { _ in },
+        onBack: {}
+    )
+}
+
+#Preview("Transfer - Gym") {
+    ConfirmDetailsView(
+        task: .previewTransferGym,
+        userState: .preview,
         onConfirm: { _ in },
         onBack: {}
     )

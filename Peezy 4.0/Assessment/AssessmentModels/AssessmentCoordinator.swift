@@ -299,17 +299,8 @@ class AssessmentCoordinator: ObservableObject {
         // Section 6: Accounts
         addStep(.addressChangeIntro)
         addStep(.financialInstitutions)
-        if !dataManager.financialInstitutions.isEmpty {
-            addStep(.financialDetails)
-        }
         addStep(.healthcareProviders)
-        if !dataManager.healthcareProviders.isEmpty {
-            addStep(.healthcareDetails)
-        }
         addStep(.fitnessWellness)
-        if !dataManager.fitnessWellness.isEmpty {
-            addStep(.fitnessDetails)
-        }
         
         // Wrap-up
         addStep(.howHeard)

@@ -27,10 +27,10 @@ struct TransferDecisionView: View {
 
                     VStack(alignment: .leading, spacing: 12) {
                         Text(task.title)
-                            .font(.system(size: 30, weight: .heavy))
+                            .font(.system(size: 44, weight: .heavy))
                             .foregroundStyle(PeezyTheme.Colors.deepInk)
-                            .lineLimit(3)
-                            .minimumScaleFactor(0.6)
+                            .lineLimit(2)
+                            .minimumScaleFactor(0.5)
 
                         Rectangle()
                             .fill(Color.black.opacity(0.15))
@@ -75,9 +75,7 @@ struct TransferDecisionView: View {
                     .padding(.horizontal, 30)
                     .padding(.bottom, 30)
                 }
-                .frame(minHeight: 440)
             }
-            .padding(.horizontal, 20)
         }
     }
 
@@ -104,34 +102,14 @@ struct TransferDecisionView: View {
 
             content()
         }
-        .frame(width: 340)
+        .frame(width: 340, height: 500)
     }
 }
 
 #Preview("Local Move") {
-    TransferDecisionView(
-        task: PeezyCard(
-            type: .task,
-            title: "Transfer or Cancel Gym Membership",
-            subtitle: "Decide what to do with your current gym contract.",
-            taskType: "transfer_cancel"
-        ),
-        isInterstate: false,
-        onUpdate: {},
-        onCancel: {}
-    )
+    TransferDecisionView(task: .previewTransfer, isInterstate: false, onUpdate: {}, onCancel: {})
 }
 
 #Preview("Interstate Move") {
-    TransferDecisionView(
-        task: PeezyCard(
-            type: .task,
-            title: "Transfer or Cancel Gym Membership",
-            subtitle: "Decide what to do with your current gym contract.",
-            taskType: "transfer_cancel"
-        ),
-        isInterstate: true,
-        onUpdate: {},
-        onCancel: {}
-    )
+    TransferDecisionView(task: .previewTransfer, isInterstate: true, onUpdate: {}, onCancel: {})
 }

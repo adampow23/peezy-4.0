@@ -42,8 +42,8 @@ struct TaskFlowView: View {
                     TransferDecisionView(
                         task: task,
                         isInterstate: userState?.isLongDistance ?? false,
-                        onUpdate: { flowState = .confirmDetails },
-                        onCancel: { flowState = .confirmDetails }
+                        onUpdate: { transitionToConfirmOrSubmit() },
+                        onCancel: { transitionToConfirmOrSubmit() }
                     )
 
                 case .confirmDetails:
@@ -73,31 +73,6 @@ struct TaskFlowView: View {
                 removal: .move(edge: .leading).combined(with: .opacity)
             ))
 
-            // Dismiss button
-            VStack {
-                HStack {
-                    Spacer()
-                    Button {
-                        onDismiss()
-                    } label: {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.5))
-                            .frame(width: 36, height: 36)
-                            .background {
-                                Circle()
-                                    .foregroundStyle(.regularMaterial)
-                                    .overlay {
-                                        Circle()
-                                            .stroke(Color.black.opacity(0.06), lineWidth: 1)
-                                    }
-                            }
-                    }
-                    .padding(.trailing, 24)
-                    .padding(.top, 16)
-                }
-                Spacer()
-            }
         }
         .animation(.easeInOut(duration: 0.3), value: flowState)
     }
@@ -120,8 +95,12 @@ struct TaskFlowView: View {
             onDismiss()
             onStartWorkflow?()
         } else {
-            flowState = .confirmDetails
+            transitionToConfirmOrSubmit()
         }
+    }
+
+    private func transitionToConfirmOrSubmit() {
+        flowState = task.taskId == "RENT_TRUCK" ? .submitted : .confirmDetails
     }
 
     private func handleBack() {
@@ -136,65 +115,37 @@ struct TaskFlowView: View {
 
 // MARK: - Previews
 
-#Preview("Research Task") {
+#Preview("Research Flow") {
     TaskFlowView(
-        task: PeezyCard(
-            type: .task,
-            title: "Research Internet Providers",
-            subtitle: "Find the best internet plan at your new address.",
-            taskType: "research"
-        ),
-        userState: {
-            var state = UserState(userId: "preview", name: "Alex")
-            state.originCity = "Austin"
-            state.originState = "TX"
-            state.destinationCity = "Denver"
-            state.destinationState = "CO"
-            state.moveDate = Calendar.current.date(byAdding: .day, value: 30, to: Date())
-            return state
-        }(),
+        task: .previewResearch,
+        userState: .preview,
         onDismiss: {},
         onStartWorkflow: nil
     )
 }
 
-#Preview("Survey Task") {
+#Preview("Survey Flow") {
     TaskFlowView(
-        task: PeezyCard(
-            type: .task,
-            title: "Moving Preferences Survey",
-            subtitle: "Help us personalize your moving plan.",
-            taskType: "survey"
-        ),
-        userState: nil,
+        task: .previewSurvey,
+        userState: .preview,
         onDismiss: {},
-        onStartWorkflow: {}
+        onStartWorkflow: { print("Workflow launched") }
     )
 }
 
-#Preview("Transfer Cancel Task") {
+#Preview("Transfer Flow") {
     TaskFlowView(
-        task: PeezyCard(
-            type: .task,
-            title: "Transfer Gym Membership",
-            subtitle: "Decide whether to transfer or cancel your current membership.",
-            taskType: "transfer_cancel"
-        ),
-        userState: nil,
+        task: .previewTransfer,
+        userState: .preview,
         onDismiss: {},
         onStartWorkflow: nil
     )
 }
 
-#Preview("Provide Info Task") {
+#Preview("Provide Info Flow") {
     TaskFlowView(
-        task: PeezyCard(
-            type: .task,
-            title: "Set Up Utilities",
-            subtitle: "Contact your utility providers before move day.",
-            taskType: "provide_info"
-        ),
-        userState: nil,
+        task: .previewProvideInfo,
+        userState: .preview,
         onDismiss: {},
         onStartWorkflow: nil
     )

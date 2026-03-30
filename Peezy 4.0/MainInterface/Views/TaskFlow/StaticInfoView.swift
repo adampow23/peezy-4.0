@@ -10,59 +10,65 @@ struct StaticInfoView: View {
             InteractiveBackground()
                 .ignoresSafeArea()
 
-            ScrollView {
-                glassCard {
-                    VStack(alignment: .leading, spacing: 0) {
+            glassCard {
+                VStack(alignment: .leading, spacing: 0) {
+                    VStack(alignment: .leading, spacing: 12) {
                         Text(task.title)
-                            .font(.system(size: 22, weight: .bold))
+                            .font(.system(size: 44, weight: .heavy))
                             .foregroundStyle(PeezyTheme.Colors.deepInk)
-                            .padding(.horizontal, 30)
-                            .padding(.top, 30)
+                            .lineLimit(2)
+                            .minimumScaleFactor(0.5)
 
                         Rectangle()
                             .fill(Color.black.opacity(0.15))
                             .frame(width: 50, height: 2)
-                            .padding(.horizontal, 30)
-                            .padding(.top, 12)
-
-                        sectionLabel("Why this matters")
-                        Text(task.subtitle)
-                            .font(.body)
-                            .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.7))
-                            .fixedSize(horizontal: false, vertical: true)
-                            .padding(.horizontal, 30)
-
-                        sectionLabel("What to do")
-                        Text(task.briefingMessage ?? task.subtitle)
-                            .font(.body)
-                            .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.7))
-                            .fixedSize(horizontal: false, vertical: true)
-                            .padding(.horizontal, 30)
-
-                        sectionLabel("Tips")
-                        Text("Check with your provider early — some transfers take 2–3 weeks to process.")
-                            .font(.body)
-                            .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.5))
-                            .padding(.horizontal, 30)
-
-                        VStack(spacing: 12) {
-                            PeezyAssessmentButton("Already done") {
-                                onComplete()
-                            }
-
-                            Button("I'll take care of it") {
-                                onLater()
-                            }
-                            .font(.system(size: 16, weight: .medium))
-                            .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.5))
-                        }
-                        .padding(.horizontal, 30)
-                        .padding(.top, 24)
-                        .padding(.bottom, 30)
                     }
+                    .padding(.horizontal, 30)
+                    .padding(.top, 30)
+
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 0) {
+                            sectionLabel("Why this matters")
+                            Text(task.subtitle)
+                                .font(.title3)
+                                .fontWeight(.medium)
+                                .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.6))
+                                .fixedSize(horizontal: false, vertical: true)
+                                .padding(.horizontal, 30)
+
+                            sectionLabel("What to do")
+                            Text(task.briefingMessage ?? task.subtitle)
+                                .font(.title3)
+                                .fontWeight(.medium)
+                                .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.6))
+                                .fixedSize(horizontal: false, vertical: true)
+                                .padding(.horizontal, 30)
+
+                            sectionLabel("Tips")
+                            Text("Check with your provider early — some transfers take 2–3 weeks to process.")
+                                .font(.title3)
+                                .fontWeight(.medium)
+                                .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.5))
+                                .padding(.horizontal, 30)
+                                .padding(.bottom, 8)
+                        }
+                    }
+
+                    VStack(spacing: 12) {
+                        PeezyAssessmentButton("Already done") {
+                            onComplete()
+                        }
+
+                        Button("I'll take care of it") {
+                            onLater()
+                        }
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.5))
+                    }
+                    .padding(.horizontal, 30)
+                    .padding(.top, 12)
+                    .padding(.bottom, 30)
                 }
-                .padding(.horizontal, 20)
-                .padding(.vertical, 40)
             }
         }
     }
@@ -96,19 +102,10 @@ struct StaticInfoView: View {
 
             content()
         }
-        .frame(width: 340)
+        .frame(width: 340, height: 500)
     }
 }
 
 #Preview {
-    StaticInfoView(
-        task: PeezyCard(
-            type: .task,
-            title: "Set Up Utilities",
-            subtitle: "Contact your utility providers to transfer or set up service at your new address before move day.",
-            taskType: "provide_info"
-        ),
-        onComplete: {},
-        onLater: {}
-    )
+    StaticInfoView(task: .previewProvideInfo, onComplete: {}, onLater: {})
 }
