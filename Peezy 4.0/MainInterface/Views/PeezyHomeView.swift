@@ -297,6 +297,8 @@ struct PeezyHomeView: View {
     // Task list navigation — when set, this task is loaded as currentTask
     @Binding var focusedTask: PeezyCard?
 
+    @EnvironmentObject private var subscriptionManager: SubscriptionManager
+
     // View model — owned by this view
     @State private var viewModel = PeezyHomeViewModel()
 
@@ -436,6 +438,7 @@ struct PeezyHomeView: View {
                         viewModel.startWorkflowForCurrentTask()
                     }
                 )
+                .environmentObject(subscriptionManager)
             }
         }
         .onChange(of: focusedTask) { _, task in

@@ -26,6 +26,8 @@ struct PeezyTaskStream: View {
     var viewModel: PeezyStackViewModel?
     var userState: UserState?
 
+    @EnvironmentObject private var subscriptionManager: SubscriptionManager
+
     // Navigation callbacks
     var onNavigateToTask: ((PeezyCard) -> Void)?
     var onNavigateHome: (() -> Void)?
@@ -184,6 +186,7 @@ struct PeezyTaskStream: View {
                     },
                     onStartWorkflow: nil
                 )
+                .environmentObject(subscriptionManager)
             }
         }
         .task {

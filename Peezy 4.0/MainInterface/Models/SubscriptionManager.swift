@@ -28,8 +28,19 @@ class SubscriptionManager: ObservableObject {
     // MARK: - Product Identifiers
 
     enum ProductID: String, CaseIterable {
-        case monthly = "peezy.monthly"
-        case yearly = "peezy.yearly"
+        case weekly = "peezy.plus.weekly"
+        case annual = "peezy.plus.annual"
+    }
+
+    // MARK: - Computed Subscription State
+
+    var isSubscribed: Bool {
+        subscriptionStatus.isActive
+    }
+
+    var isTrialActive: Bool {
+        if case .trial = subscriptionStatus { return true }
+        return false
     }
 
     // MARK: - Published State
@@ -114,9 +125,9 @@ class SubscriptionManager: ObservableObject {
             let productIDs = ProductID.allCases.map(\.rawValue)
             let storeProducts = try await Product.products(for: Set(productIDs))
 
-            // Sort: yearly first (highlighted plan)
+            // Sort: annual first (highlighted plan)
             products = storeProducts.sorted { p1, _ in
-                p1.id == ProductID.yearly.rawValue
+                p1.id == ProductID.annual.rawValue
             }
 
             isLoaded = true

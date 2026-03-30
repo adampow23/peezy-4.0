@@ -17,6 +17,7 @@ import SwiftUI
 struct CompletionFlowView: View {
 
     @ObservedObject var coordinator: AssessmentCoordinator
+    @EnvironmentObject private var subscriptionManager: SubscriptionManager
 
     // MARK: - Stage Machine
 
@@ -24,6 +25,7 @@ struct CompletionFlowView: View {
         case generating = 0
         case ready = 1
         case summary = 2
+        case paywall = 3
 
         static func < (lhs: Stage, rhs: Stage) -> Bool {
             lhs.rawValue < rhs.rawValue
@@ -69,6 +71,26 @@ struct CompletionFlowView: View {
                         userName: coordinator.dataManager.userName,
                         taskCount: taskCount,
                         onGetStarted: {
+                            advanceStage(to: .paywall)
+                        }
+                    )
+
+                case .paywall:
+                    PaywallValueView(
+                        onStartTrial: {
+                            guard let product = subscriptionManager.product(for: .annual) else {
+                                routeToMainApp()
+                                return
+                            }
+                            Task {
+                                let result = await subscriptionManager.purchase(product)
+                                if case .success = result {
+                                    routeToMainApp()
+                                }
+                                // Cancelled/failed: stay on paywall screen
+                            }
+                        },
+                        onSkip: {
                             routeToMainApp()
                         }
                     )

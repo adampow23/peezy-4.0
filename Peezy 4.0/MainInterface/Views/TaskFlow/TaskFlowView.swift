@@ -8,6 +8,8 @@ struct TaskFlowView: View {
     let onDismiss: () -> Void
     let onStartWorkflow: (() -> Void)?
 
+    @EnvironmentObject private var subscriptionManager: SubscriptionManager
+
     @State private var flowState: FlowState = .entry
     @State private var confirmedData: [String: String] = [:]
     @State private var transferChoiceLabel: String? = nil
@@ -19,6 +21,7 @@ struct TaskFlowView: View {
         case confirmDetails // Pre-filled confirmation
         case submitted      // "We're on it"
         case staticInfo     // Tips/guidance for self-handle OR provide_info
+        case paywall        // Subscription gate for gated task types
     }
 
     var body: some View {
@@ -73,6 +76,15 @@ struct TaskFlowView: View {
                         onComplete: { onDismiss() },
                         onLater: { onDismiss() }
                     )
+
+                case .paywall:
+                    PaywallGateView(onDismiss: {
+                        if subscriptionManager.isSubscribed {
+                            handleStart()
+                        } else {
+                            onDismiss()
+                        }
+                    })
                 }
             }
             .transition(.asymmetric(
@@ -86,12 +98,12 @@ struct TaskFlowView: View {
 
     private func handleStart() {
         switch task.taskType {
-        case "research", "survey":
-            flowState = .choiceScreen
-        case "transfer_cancel":
-            flowState = .transferChoice
         case "provide_info":
             flowState = .staticInfo
+        case "research", "survey":
+            flowState = subscriptionManager.isSubscribed ? .choiceScreen : .paywall
+        case "transfer_cancel":
+            flowState = subscriptionManager.isSubscribed ? .transferChoice : .paywall
         default:
             flowState = .staticInfo
         }

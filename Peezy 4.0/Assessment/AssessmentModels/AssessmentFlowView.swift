@@ -47,6 +47,7 @@ struct AssessmentFlowView: View {
         .environmentObject(dataManager)
         .fullScreenCover(isPresented: $coordinator.isComplete) {
             CompletionFlowView(coordinator: coordinator)
+                .environmentObject(SubscriptionManager.shared)
         }
     }
     
