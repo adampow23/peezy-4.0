@@ -32,35 +32,25 @@ struct StaticInfoView: View {
                             .fixedSize(horizontal: false, vertical: true)
                             .padding(.horizontal, 30)
 
-                        sectionLabel("How to do it")
-                        Text(task.subtitle)
+                        sectionLabel("What to do")
+                        Text(task.briefingMessage ?? task.subtitle)
                             .font(.body)
                             .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.7))
                             .fixedSize(horizontal: false, vertical: true)
                             .padding(.horizontal, 30)
 
                         sectionLabel("Tips")
-                        Text("Tips will appear here")
+                        Text("Check with your provider early — some transfers take 2–3 weeks to process.")
                             .font(.body)
                             .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.5))
                             .padding(.horizontal, 30)
 
-                        HStack(spacing: 6) {
-                            Image(systemName: "clock")
-                                .font(.caption)
-                            Text("~1 hour")
-                                .font(.caption)
-                        }
-                        .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.5))
-                        .padding(.horizontal, 30)
-                        .padding(.top, 20)
-
                         VStack(spacing: 12) {
-                            PeezyAssessmentButton("I've Handled This") {
+                            PeezyAssessmentButton("Already done") {
                                 onComplete()
                             }
 
-                            Button("I'll Do It Later") {
+                            Button("I'll take care of it") {
                                 onLater()
                             }
                             .font(.system(size: 16, weight: .medium))

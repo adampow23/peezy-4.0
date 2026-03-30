@@ -429,6 +429,11 @@ struct PeezyHomeView: View {
                     onDismiss: {
                         showTaskFlow = false
                         taskFlowCard = nil
+                    },
+                    onStartWorkflow: {
+                        showTaskFlow = false
+                        taskFlowCard = nil
+                        viewModel.startWorkflowForCurrentTask()
                     }
                 )
             }
@@ -706,7 +711,7 @@ struct PeezyHomeView: View {
             task: task,
             onStartWorkflow: {
                 let taskType = task.taskType ?? ""
-                if taskType == "research" || taskType == "transfer_cancel" || taskType == "provide_info" {
+                if taskType == "research" || taskType == "transfer_cancel" || taskType == "provide_info" || taskType == "survey" {
                     taskFlowCard = task
                     showTaskFlow = true
                 } else {

@@ -103,6 +103,7 @@ async function seedCollection() {
         actionCategory: task.actionCategory,
         category: task.category,
         actionType: task.actionType,
+      taskType: task.taskType || "provide_info",
         conditions: task.conditions, // stored as map: { key: [values] }
         desc: task.desc,
         estHours: task.estHours,

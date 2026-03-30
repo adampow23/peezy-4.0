@@ -4,18 +4,17 @@ struct TaskFlowView: View {
     let task: PeezyCard
     let userState: UserState?
     let onDismiss: () -> Void
+    let onStartWorkflow: (() -> Void)?
 
     @State private var flowState: FlowState = .entry
 
     enum FlowState {
-        case entry
-        case researchIntro
-        case confirmDetails
-        case submitted
-        case transferDecision
-        case survey
-        case staticInfo
-        case selfHandle
+        case entry          // Universal entry (all types)
+        case choiceScreen   // Research + Survey: "Peezy handle" / "self handle"
+        case transferChoice // Transfer/Cancel: "update" / "cancel"
+        case confirmDetails // Pre-filled confirmation
+        case submitted      // "We're on it"
+        case staticInfo     // Tips/guidance for self-handle OR provide_info
     }
 
     var body: some View {
@@ -25,29 +24,34 @@ struct TaskFlowView: View {
 
             Group {
                 switch flowState {
-                case .entry, .survey:
-                    ResearchIntroView(
+                case .entry:
+                    TaskEntryView(
                         task: task,
-                        onPeezyHandle: { flowState = .confirmDetails },
-                        onSelfHandle: { flowState = .selfHandle }
+                        onStart: { handleStart() },
+                        onSkip: { onDismiss() }
                     )
 
-                case .researchIntro:
-                    ResearchIntroView(
+                case .choiceScreen:
+                    TaskChoiceView(
                         task: task,
-                        onPeezyHandle: { flowState = .confirmDetails },
-                        onSelfHandle: { flowState = .selfHandle }
+                        onPeezyHandle: { handlePeezyHandle() },
+                        onSelfHandle: { flowState = .staticInfo }
+                    )
+
+                case .transferChoice:
+                    TransferDecisionView(
+                        task: task,
+                        isInterstate: userState?.isLongDistance ?? false,
+                        onUpdate: { flowState = .confirmDetails },
+                        onCancel: { flowState = .confirmDetails }
                     )
 
                 case .confirmDetails:
                     ConfirmDetailsView(
                         task: task,
                         userState: userState,
-                        onConfirm: { confirmedData in
-                            print("[TaskFlow] Confirmed details: \(confirmedData)")
-                            flowState = .submitted
-                        },
-                        onBack: { flowState = .researchIntro }
+                        onConfirm: { _ in flowState = .submitted },
+                        onBack: { handleBack() }
                     )
 
                 case .submitted:
@@ -56,27 +60,11 @@ struct TaskFlowView: View {
                         onDone: { onDismiss() }
                     )
 
-                case .transferDecision:
-                    TransferDecisionView(
-                        task: task,
-                        isInterstate: userState?.isLongDistance ?? false,
-                        onUpdate: { flowState = .confirmDetails },
-                        onCancel: { flowState = .confirmDetails },
-                        onNotSure: { flowState = .confirmDetails }
-                    )
-
                 case .staticInfo:
                     StaticInfoView(
                         task: task,
                         onComplete: { onDismiss() },
-                        onLater: { flowState = .selfHandle }
-                    )
-
-                case .selfHandle:
-                    SelfHandleView(
-                        task: task,
-                        onSelectDate: { _ in onDismiss() },
-                        onAlreadyDone: { onDismiss() }
+                        onLater: { onDismiss() }
                     )
                 }
             }
@@ -112,26 +100,41 @@ struct TaskFlowView: View {
             }
         }
         .animation(.easeInOut(duration: 0.3), value: flowState)
-        .onAppear {
-            flowState = initialFlowState(for: task)
+    }
+
+    private func handleStart() {
+        switch task.taskType {
+        case "research", "survey":
+            flowState = .choiceScreen
+        case "transfer_cancel":
+            flowState = .transferChoice
+        case "provide_info":
+            flowState = .staticInfo
+        default:
+            flowState = .staticInfo
         }
     }
 
-    private func initialFlowState(for task: PeezyCard) -> FlowState {
+    private func handlePeezyHandle() {
+        if task.taskType == "survey" {
+            onDismiss()
+            onStartWorkflow?()
+        } else {
+            flowState = .confirmDetails
+        }
+    }
+
+    private func handleBack() {
         switch task.taskType {
-        case "provide_info":
-            return .staticInfo
-        case "survey":
-            return .entry
         case "transfer_cancel":
-            return .transferDecision
-        case "research":
-            return .researchIntro
+            flowState = .transferChoice
         default:
-            return .staticInfo
+            flowState = .choiceScreen
         }
     }
 }
+
+// MARK: - Previews
 
 #Preview("Research Task") {
     TaskFlowView(
@@ -150,7 +153,22 @@ struct TaskFlowView: View {
             state.moveDate = Calendar.current.date(byAdding: .day, value: 30, to: Date())
             return state
         }(),
-        onDismiss: {}
+        onDismiss: {},
+        onStartWorkflow: nil
+    )
+}
+
+#Preview("Survey Task") {
+    TaskFlowView(
+        task: PeezyCard(
+            type: .task,
+            title: "Moving Preferences Survey",
+            subtitle: "Help us personalize your moving plan.",
+            taskType: "survey"
+        ),
+        userState: nil,
+        onDismiss: {},
+        onStartWorkflow: {}
     )
 }
 
@@ -163,7 +181,8 @@ struct TaskFlowView: View {
             taskType: "transfer_cancel"
         ),
         userState: nil,
-        onDismiss: {}
+        onDismiss: {},
+        onStartWorkflow: nil
     )
 }
 
@@ -176,6 +195,7 @@ struct TaskFlowView: View {
             taskType: "provide_info"
         ),
         userState: nil,
-        onDismiss: {}
+        onDismiss: {},
+        onStartWorkflow: nil
     )
 }

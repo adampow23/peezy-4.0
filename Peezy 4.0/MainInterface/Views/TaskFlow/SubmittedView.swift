@@ -28,7 +28,7 @@ struct SubmittedView: View {
                         .foregroundStyle(PeezyTheme.Colors.deepInk)
                         .padding(.bottom, 10)
 
-                    Text("We typically get back to you within 24–48 hours.")
+                    Text("We'll notify you when we have more information.")
                         .font(.title3)
                         .fontWeight(.medium)
                         .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.6))

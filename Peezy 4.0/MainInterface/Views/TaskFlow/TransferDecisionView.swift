@@ -5,7 +5,6 @@ struct TransferDecisionView: View {
     let isInterstate: Bool
     let onUpdate: () -> Void
     let onCancel: () -> Void
-    let onNotSure: () -> Void
 
     var body: some View {
         ZStack {
@@ -48,25 +47,30 @@ struct TransferDecisionView: View {
                     Spacer()
 
                     VStack(spacing: 12) {
-                        // Primary recommended action
-                        PeezyAssessmentButton(primaryButtonLabel) {
-                            isInterstate ? onCancel() : onUpdate()
+                        PeezyAssessmentButton("Update with current provider") {
+                            onUpdate()
                         }
 
-                        // Secondary alternative
-                        Button(secondaryButtonLabel) {
-                            isInterstate ? onUpdate() : onCancel()
+                        Button("Cancel and find a new one") {
+                            onCancel()
                         }
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.55))
-
-                        // Not sure option
-                        Button("Not sure? Let Peezy figure it out.") {
-                            onNotSure()
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.7))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 16)
+                        .background {
+                            ZStack {
+                                RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadius, style: .continuous)
+                                    .foregroundStyle(.regularMaterial)
+                                RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadius, style: .continuous)
+                                    .fill(Color.white.opacity(0.2))
+                            }
+                            .overlay {
+                                RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadius, style: .continuous)
+                                    .stroke(Color.black.opacity(0.08), lineWidth: 1)
+                            }
                         }
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.35))
-                        .padding(.top, 4)
+                        .buttonStyle(.plain)
                     }
                     .padding(.horizontal, 30)
                     .padding(.bottom, 30)
@@ -81,14 +85,6 @@ struct TransferDecisionView: View {
         isInterstate
             ? "Moving to a new state — you may want to cancel and set up fresh."
             : "You're staying local — updating your address is probably all you need."
-    }
-
-    private var primaryButtonLabel: String {
-        isInterstate ? "Cancel & Set Up New" : "Update My Address"
-    }
-
-    private var secondaryButtonLabel: String {
-        isInterstate ? "Just update my address" : "Actually, I want to cancel and start fresh"
     }
 
     private func glassCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
@@ -122,8 +118,7 @@ struct TransferDecisionView: View {
         ),
         isInterstate: false,
         onUpdate: {},
-        onCancel: {},
-        onNotSure: {}
+        onCancel: {}
     )
 }
 
@@ -137,7 +132,6 @@ struct TransferDecisionView: View {
         ),
         isInterstate: true,
         onUpdate: {},
-        onCancel: {},
-        onNotSure: {}
+        onCancel: {}
     )
 }

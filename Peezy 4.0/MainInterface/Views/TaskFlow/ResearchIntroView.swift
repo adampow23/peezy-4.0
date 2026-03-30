@@ -1,9 +1,9 @@
 import SwiftUI
 
-struct ResearchIntroView: View {
+struct TaskEntryView: View {
     let task: PeezyCard
-    let onPeezyHandle: () -> Void
-    let onSelfHandle: () -> Void
+    let onStart: () -> Void
+    let onSkip: () -> Void
 
     var body: some View {
         ZStack {
@@ -41,23 +41,18 @@ struct ResearchIntroView: View {
                             .fontWeight(.medium)
                             .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.65))
                             .fixedSize(horizontal: false, vertical: true)
-
-                        Text("A few quick details to confirm. We'll handle the rest.")
-                            .font(.subheadline)
-                            .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.45))
-                            .fixedSize(horizontal: false, vertical: true)
                     }
                     .padding(.horizontal, 30)
 
                     Spacer()
 
                     VStack(spacing: 12) {
-                        PeezyAssessmentButton("Let Peezy Handle This") {
-                            onPeezyHandle()
+                        PeezyAssessmentButton("Start task") {
+                            onStart()
                         }
 
-                        Button("I'll take care of it myself") {
-                            onSelfHandle()
+                        Button("Skip for now") {
+                            onSkip()
                         }
                         .font(.system(size: 16, weight: .medium))
                         .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.5))
@@ -93,14 +88,14 @@ struct ResearchIntroView: View {
 }
 
 #Preview {
-    ResearchIntroView(
+    TaskEntryView(
         task: PeezyCard(
             type: .task,
-            title: "Find Internet Providers",
+            title: "Research Internet Providers",
             subtitle: "We'll research the best options available at your new address and send you a summary.",
             taskType: "research"
         ),
-        onPeezyHandle: {},
-        onSelfHandle: {}
+        onStart: {},
+        onSkip: {}
     )
 }
