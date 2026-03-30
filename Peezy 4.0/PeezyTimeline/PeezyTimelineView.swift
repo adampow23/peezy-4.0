@@ -43,6 +43,10 @@ struct PeezyTaskStream: View {
     // Active tab
     @State private var selectedTab: TaskTab = .todo
 
+    // TaskFlowView presentation
+    @State private var showTaskFlow = false
+    @State private var taskFlowCard: PeezyCard? = nil
+
     // Preview/test data injection
     private var previewTasks: [PeezyCard]?
 
@@ -169,6 +173,19 @@ struct PeezyTaskStream: View {
             }
         }
         .edgesIgnoringSafeArea(.bottom)
+        .fullScreenCover(isPresented: $showTaskFlow) {
+            if let card = taskFlowCard {
+                TaskFlowView(
+                    task: card,
+                    userState: userState,
+                    onDismiss: {
+                        showTaskFlow = false
+                        taskFlowCard = nil
+                    },
+                    onStartWorkflow: nil
+                )
+            }
+        }
         .task {
             if let previewTasks {
                 allTasks = previewTasks
@@ -280,7 +297,7 @@ struct PeezyTaskStream: View {
                                 task: task,
                                 isExpanded: expandedTaskId == task.id,
                                 onExpand: { toggleExpand(task.id) },
-                                onStart: onNavigateToTask != nil ? { onNavigateToTask?(task) } : nil,
+                                onStart: onStartHandler(for: task),
                                 onComplete: nil
                             )
                         }
@@ -327,7 +344,7 @@ struct PeezyTaskStream: View {
                                 task: task,
                                 isExpanded: expandedTaskId == task.id,
                                 onExpand: { toggleExpand(task.id) },
-                                onStart: onNavigateToTask != nil ? { onNavigateToTask?(task) } : nil,
+                                onStart: onStartHandler(for: task),
                                 onComplete: nil
                             )
                         }
@@ -386,6 +403,20 @@ struct PeezyTaskStream: View {
     }
 
     // MARK: - Helpers
+
+    private static let flowTaskTypes: Set<String> = ["research", "transfer_cancel", "provide_info"]
+
+    private func onStartHandler(for task: PeezyCard) -> (() -> Void)? {
+        if Self.flowTaskTypes.contains(task.taskType ?? "") {
+            return {
+                taskFlowCard = task
+                showTaskFlow = true
+            }
+        } else if onNavigateToTask != nil {
+            return { onNavigateToTask?(task) }
+        }
+        return nil
+    }
 
     private func toggleExpand(_ id: String) {
         withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {

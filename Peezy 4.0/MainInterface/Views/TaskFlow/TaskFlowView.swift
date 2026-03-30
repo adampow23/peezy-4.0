@@ -1,4 +1,6 @@
 import SwiftUI
+import FirebaseFirestore
+import FirebaseAuth
 
 struct TaskFlowView: View {
     let task: PeezyCard
@@ -7,6 +9,8 @@ struct TaskFlowView: View {
     let onStartWorkflow: (() -> Void)?
 
     @State private var flowState: FlowState = .entry
+    @State private var confirmedData: [String: String] = [:]
+    @State private var transferChoiceLabel: String? = nil
 
     enum FlowState {
         case entry          // Universal entry (all types)
@@ -42,15 +46,18 @@ struct TaskFlowView: View {
                     TransferDecisionView(
                         task: task,
                         isInterstate: userState?.isLongDistance ?? false,
-                        onUpdate: { transitionToConfirmOrSubmit() },
-                        onCancel: { transitionToConfirmOrSubmit() }
+                        onUpdate: { transferChoiceLabel = "update"; transitionToConfirmOrSubmit() },
+                        onCancel: { transferChoiceLabel = "cancel"; transitionToConfirmOrSubmit() }
                     )
 
                 case .confirmDetails:
                     ConfirmDetailsView(
                         task: task,
                         userState: userState,
-                        onConfirm: { _ in flowState = .submitted },
+                        onConfirm: { data in
+                            confirmedData = data
+                            submitTask(with: data)
+                        },
                         onBack: { handleBack() }
                     )
 
@@ -109,6 +116,37 @@ struct TaskFlowView: View {
             flowState = .transferChoice
         default:
             flowState = .choiceScreen
+        }
+    }
+
+    private func submitTask(with data: [String: String]) {
+        flowState = .submitted
+
+        // Fire webhook — failure is silent
+        WebhookService.sendTaskSubmission(
+            userId: userState?.userId ?? "unknown",
+            userName: userState?.name ?? "Unknown",
+            taskId: task.taskId ?? "unknown",
+            taskTitle: task.title,
+            taskType: task.taskType ?? "unknown",
+            confirmedFields: data,
+            transferChoice: transferChoiceLabel
+        )
+
+        // Update Firestore task status
+        guard let userId = Auth.auth().currentUser?.uid,
+              let taskId = task.taskId else { return }
+
+        let db = Firestore.firestore()
+        let taskRef = db.collection("users").document(userId)
+            .collection("tasks").document(taskId)
+
+        Task {
+            try? await taskRef.updateData([
+                "status": "PendingPeezy",
+                "confirmedFields": data,
+                "submittedAt": FieldValue.serverTimestamp()
+            ])
         }
     }
 }
