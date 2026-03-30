@@ -306,6 +306,10 @@ struct PeezyHomeView: View {
     // Onboarding pagination — tracks current welcome page (0, 1, 2)
     @State private var welcomePage: Int = 0
 
+    // TaskFlow presentation state
+    @State private var showTaskFlow = false
+    @State private var taskFlowCard: PeezyCard? = nil
+
     // Deep ink text color for light theme
     private let deepInk = PeezyTheme.Colors.deepInk
 
@@ -416,6 +420,18 @@ struct PeezyHomeView: View {
             }
         }) {
             InventoryFlowView()
+        }
+        .fullScreenCover(isPresented: $showTaskFlow) {
+            if let card = taskFlowCard {
+                TaskFlowView(
+                    task: card,
+                    userState: userState,
+                    onDismiss: {
+                        showTaskFlow = false
+                        taskFlowCard = nil
+                    }
+                )
+            }
         }
         .onChange(of: focusedTask) { _, task in
             if let task {
@@ -688,7 +704,15 @@ struct PeezyHomeView: View {
     private func simpleTaskCard(task: PeezyCard) -> some View {
         InteractiveHomeTaskCard(
             task: task,
-            onStartWorkflow: { viewModel.startWorkflowForCurrentTask() },
+            onStartWorkflow: {
+                let taskType = task.taskType ?? ""
+                if taskType == "research" || taskType == "transfer_cancel" || taskType == "provide_info" {
+                    taskFlowCard = task
+                    showTaskFlow = true
+                } else {
+                    viewModel.startWorkflowForCurrentTask()
+                }
+            },
             onComplete: { viewModel.completeCurrentTask() },
             onUserHandle: { viewModel.markCurrentTaskUserInProgress() },
             onSkip: { viewModel.skipCurrentTask() }

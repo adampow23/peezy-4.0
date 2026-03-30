@@ -92,6 +92,7 @@ class TaskGenerationService {
                     "category": taskData["category"] ?? "custom",
                     "actionCategory": taskData["actionCategory"] ?? "",
                     "actionType": taskData["actionType"] ?? "off-app",
+                    "taskType": taskData["taskType"] as? String ?? "provide_info",
                     "urgencyPercentage": urgencyPercentage,
                     "estHours": taskData["estHours"] ?? 0,
                     "tips": taskData["tips"] ?? "",

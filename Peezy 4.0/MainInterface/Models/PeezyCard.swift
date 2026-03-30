@@ -57,7 +57,10 @@ struct PeezyCard: Identifiable, Equatable, Codable {
 
     // Action type from catalog (e.g. "off-app", "in-app-inventory", "workflow")
     var actionType: String?
-    
+
+    // Task type from catalog (e.g. "provide_info", "schedule", "purchase")
+    var taskType: String?
+
     // MARK: - Card Types
     enum CardType: String, Codable {
         case intro          // "Good morning, 3 updates ready"
@@ -195,7 +198,8 @@ struct PeezyCard: Identifiable, Equatable, Codable {
         userInProgressDate: Date? = nil,
         userInProgressReturnDate: Date? = nil,
         selfServiceOnly: Bool = false,
-        actionType: String? = nil
+        actionType: String? = nil,
+        taskType: String? = nil
     ) {
         self.id = id
         self.type = type
@@ -219,6 +223,7 @@ struct PeezyCard: Identifiable, Equatable, Codable {
         self.userInProgressReturnDate = userInProgressReturnDate
         self.selfServiceOnly = selfServiceOnly
         self.actionType = actionType
+        self.taskType = taskType
     }
     
     // MARK: - Factory Methods

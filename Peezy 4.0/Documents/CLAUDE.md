@@ -2,7 +2,7 @@
 
 ## What This Is
 
-iOS moving concierge app. Swift/SwiftUI + Firebase backend (Cloud Functions, Node.js). Users complete an assessment, get personalized tasks, interact via card stack with button actions (complete, snooze, open chat), and chat with AI for help.
+iOS moving concierge app. Swift/SwiftUI + Firebase backend (Cloud Functions, Node.js). Users complete an assessment, get personalized tasks, interact via card stack with button actions (complete, snooze), and complete vendor workflows to coordinate services.
 
 ## Architecture
 
@@ -10,7 +10,7 @@ iOS moving concierge app. Swift/SwiftUI + Firebase backend (Cloud Functions, Nod
 Auth → Assessment → Task Generation → Main App
                                         ├── Card Stack (home tab)
                                         ├── Timeline (tab 2)
-                                        └── Profile (tab 3)
+                                        └── Settings (tab 3)
 ```
 
 ### Assessment Flow (Template System)
@@ -39,6 +39,25 @@ AssessmentCoordinator.completeAssessment()
     → batch.setData → users/{userId}/tasks/{docId}
 ```
 
+### Task Type System
+
+Every task has a `taskType` field in `taskCatalogData.json` (catalog source of truth). **Note: PeezyCard.swift does NOT parse `taskType` yet — only `actionType`. Adding `taskType` to the Swift model is a pending Phase 3 task.**
+
+| Type | Count | Meaning |
+|------|-------|---------|
+| `research` | 25 | Peezy contacts someone on user's behalf |
+| `survey` | 5 | Guided workflow questionnaire (existing workflows) |
+| `transfer_cancel` | 11 | Update address vs cancel decision, then research |
+| `provide_info` | 15 | Static guidance — user handles it themselves |
+
+### Timeline Sub-Tabs (PeezyTaskStream)
+
+The Tasks tab has 4 sub-tabs defined in `TaskTab` enum in `PeezyTimelineView.swift`:
+- **To-Do** — upcoming tasks, sorted by urgency
+- **In Progress** — tasks with status `.inProgress` or `.userInProgress`
+- **Later** — snoozed tasks with return dates
+- **Done** — completed tasks
+
 ### Key Files
 
 | File | Purpose |
@@ -50,9 +69,11 @@ AssessmentCoordinator.completeAssessment()
 | `Peezy 4.0/MainInterface/Models/PeezyHomeViewModel.swift` | Home tab state machine, card stack logic |
 | `Peezy 4.0/MainInterface/Models/WorkflowManager.swift` | Vendor workflow card progression |
 | `Peezy 4.0/MainInterface/Views/PeezyHomeView.swift` | Home tab UI |
-| `Peezy 4.0/MainInterface/Views/PeezyMainContainer.swift` | Tab container |
+| `Peezy 4.0/MainInterface/Views/PeezyMainContainer.swift` | Tab container (3 tabs: Home, Tasks, Settings) |
+| `Peezy 4.0/PeezyTimeline/PeezyTimelineView.swift` | Task list with 4 sub-tabs (To-Do, In Progress, Later, Done) |
+| `Peezy 4.0/Menu/PeezySettingsView.swift` | Settings with account deletion, privacy/terms links |
 | `functions/seedTaskCatalog.js` | Wipes and reseeds Firestore taskCatalog |
-| `functions/taskCatalogData.json` | 70 task definitions (source of truth for catalog) |
+| `functions/taskCatalogData.json` | 56 task definitions with taskType field (source of truth for catalog) |
 
 ### Condition Format
 
@@ -68,6 +89,7 @@ If a condition value is NOT `[String]` (e.g., raw string, number), the parser re
 - **PeezyHomeViewModel** drives the home card stack (primary)
 - **PeezyStackViewModel** drives Timeline tab ONLY (legacy, demoted)
 - PeezyStackView is DEAD CODE — not instantiated anywhere
+- ChatView is DEAD CODE — chat removed from v1.0 launch
 
 ## Build Commands
 
@@ -83,6 +105,11 @@ cd functions && node seedTaskCatalog.js && cd ..
 # Deploy Cloud Functions
 cd functions && firebase deploy --only functions --project peezy-1ecrdl && cd ..
 ```
+
+## Active Skills
+
+- **peezy-dev** — Build protocol with mandatory verification steps, Read-Verify-Fix-Verify workflow
+- **swiftui-pro** — SwiftUI best practices, deprecated API detection, performance and accessibility guidance
 
 ## MCP Servers (Active)
 
@@ -143,15 +170,59 @@ hasVet, hasVehicles, hireMovers, hireCleaners, wantsTruckRental, hasDeclutter, w
 12. **DO NOT skip xcodebuild verification after changes.** Build after every set of changes.
 13. **DO NOT mark a task complete without proving it works.** Run tests, check logs, demonstrate correctness.
 
-## Known Bugs and Gotchas
+## DANGER ZONE FILES — Verify Unchanged After Every Change
 
-1. **Ghost tasks from stale Firestore data.** If `taskCatalog` has old documents not in `taskCatalogData.json`, they generate for users. Fix: re-run seed script.
-2. **Assessment value mismatch.** `getAllAssessmentData()` maps values directly now. hireMovers and hireCleaners save "Yes"/"No" from UI. hasVehicles maps "0"/"1"/"2"/"3+" to "Yes"/"No".
-3. **Multi-select labels must match catalog exactly.** "Bank / Credit Union" (with spaces around slash) ≠ "Bank/Credit Union" (without). See exact labels section above.
-4. **`computeDistanceAndInterstate()` needs real addresses.** Test addresses like "11" and "12" can't be geocoded. ~40 catalog tasks depend on `moveDistance` and `isInterstate`. Defaults to "Long Distance"/"Yes" on failure.
-5. **Firestore numeric casting.** Use `(as? NSNumber)?.intValue` for integers from Firestore, not `as? Int`.
-6. **iPhone 16 simulator does not exist.** Use iPhone 17 Pro for xcodebuild destination.
-7. **Single-select auto-advance timing.** Workflow cards auto-advance after 0.3s delay. Demo phase tracking depends on this call chain.
+These files are fragile and interconnected. After ANY code change, verify these were NOT modified unless your prompt explicitly targeted them:
+
+```
+TaskGenerationService.swift        — task generation pipeline
+TaskConditionerParser.swift        — condition evaluation logic
+AssessmentCoordinator.swift        — assessment flow and completion
+AssessmentDataManager.swift        — answer storage and data contracts
+PeezyHomeViewModel.swift           — home card stack state machine
+PeezyMainContainer.swift           — tab navigation (3 tabs: Home, Tasks, Settings)
+PeezyTimelineView.swift            — task list sub-tabs and filtering logic
+WorkflowManager.swift              — vendor workflow progression
+functions/taskCatalogData.json     — task catalog source of truth
+functions/seedTaskCatalog.js       — catalog seeding script
+GoogleService-Info.plist           — Firebase configuration
+functions/.env                     — API keys and secrets
+```
+
+If ANY of these files show up in your git diff and they weren't in the prompt's change list, you have a problem. Revert and investigate before proceeding.
+
+## NEVER MODIFY (absolute restrictions)
+
+These files must NEVER be touched by Claude Code under any circumstances:
+
+```
+Peezy 4.0.xcodeproj/project.pbxproj
+*.xcworkspace files
+GoogleService-Info.plist
+functions/.env
+```
+
+## Task Catalog Entry Format
+
+```json
+{
+    "taskId": "UPPER_SNAKE_CASE",
+    "title": "Human readable title",
+    "actionCategory": "book-schedule|prepare-plan|document-record|contact-notify",
+    "category": "moving|services|packing|admin|home",
+    "actionType": "off-app|workflow|in-app-inventory",
+    "taskType": "research|survey|transfer_cancel|provide_info",
+    "workflowId": "only_if_actionType_is_workflow",
+    "conditions": {
+        "conditionKey": ["AcceptableValue1", "AcceptableValue2"]
+    },
+    "desc": "Description shown to user",
+    "estHours": 1.5,
+    "tips": "Helpful tips for the user",
+    "urgencyPercentage": 75,
+    "whyNeeded": "Why this task matters"
+}
+```
 
 ## When Builds Fail (CRITICAL)
 
@@ -175,8 +246,9 @@ If you've tried Level 1 and Level 2 twice each and it still fails, STOP. Do NOT 
 3. Make changes — one feature at a time
 4. Build with `--quiet` flag to verify
 5. If build fails, follow "When Builds Fail" ladder above
-6. Git commit after each successful change
-7. If you hit Level 3, stop and ask — do not freelance
+6. Check danger zone files are unchanged (git diff)
+7. Git commit after each successful change
+8. If you hit Level 3, stop and ask — do not freelance
 
 ## Self-Improvement Loop
 
@@ -187,3 +259,13 @@ If you've tried Level 1 and Level 2 twice each and it still fails, STOP. Do NOT 
 ## When Unsure
 
 If you're not sure what a file contains, what a method does, or how two systems connect: **read the file first, then explain what you found.** Do not guess. Do not say "this likely does X." Read it and know.
+
+## v1.0 Launch State
+
+- **Chat is removed.** No AI chat in v1.0. ChatView exists as dead code but is not reachable from any navigation path.
+- **3 tabs only:** Home, Tasks, Settings. The chat tab was removed from PeezyMainContainer.
+- **Privacy/Terms hosted:** https://peezy-1ecrdl.web.app/privacy.html and /terms.html
+- **Account deletion:** Available in Settings via "Delete Account" button
+- **Privacy manifest:** PrivacyInfo.xcprivacy with UserDefaults CA92.1
+- **Bundle ID:** peezy.Peezy-4-0 (matches App Store Connect and Firebase)
+- **Note:** `peezy-conventions.md` still references chat in its navigation structure — it is outdated. This CLAUDE.md takes precedence for current app state.
