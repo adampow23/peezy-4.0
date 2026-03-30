@@ -2,8 +2,8 @@
 //  PeezyMainContainer.swift
 //  Peezy
 //
-//  Main app container with floating tab bar.
-//  Four tabs: Home, Tasks, Chat, Settings.
+//  Main tab container for the app.
+//  Three tabs: Home, Tasks, Settings.
 //
 
 import SwiftUI
@@ -46,9 +46,6 @@ struct PeezyMainContainer: View {
                         }
                     )
 
-                case .chat:
-                    ChatView(userState: userState, card: nil)
-
                 case .settings:
                     PeezySettingsView(userState: $userState)
                 }
@@ -76,14 +73,12 @@ struct PeezyMainContainer: View {
 enum PeezyTab: String, CaseIterable {
     case home
     case tasks
-    case chat
     case settings
 
     var icon: String {
         switch self {
         case .home:     return "house"
         case .tasks:    return "checklist"
-        case .chat:     return "bubble.left"
         case .settings: return "gearshape"
         }
     }
@@ -92,7 +87,6 @@ enum PeezyTab: String, CaseIterable {
         switch self {
         case .home:     return "Home"
         case .tasks:    return "Tasks"
-        case .chat:     return "Chat"
         case .settings: return "Settings"
         }
     }
@@ -116,27 +110,27 @@ struct PeezyFloatingTabBar: View {
                         .font(.system(size: 20, weight: .medium))
                         .foregroundStyle(
                             selectedTab == tab
-                                ? PeezyTheme.Colors.deepInk.opacity(0.8)
-                                : PeezyTheme.Colors.deepInk.opacity(0.2)
+                                ? PeezyTheme.Colors.deepInk
+                                : PeezyTheme.Colors.deepInk.opacity(0.3)
                         )
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
+                        .frame(height: 50)
                 }
-                .buttonStyle(.peezyTab)
             }
         }
-        .padding(.horizontal, 20)
-        .padding(.top, 8)
-        .padding(.bottom, 8)
         .background(
             Capsule()
-                .fill(Color.white.opacity(0.85))
-                .shadow(color: Color.black.opacity(0.06), radius: 12, y: 4)
-                .padding(.horizontal, 24)
+                .fill(.regularMaterial)
+                .overlay(
+                    Capsule()
+                        .fill(Color.white.opacity(0.15))
+                )
+                .overlay(
+                    Capsule()
+                        .stroke(Color.black.opacity(0.05), lineWidth: 1)
+                )
+                .shadow(color: Color.black.opacity(0.1), radius: 12, x: 0, y: 5)
         )
+        .frame(width: 200)
     }
-}
-
-#Preview {
-    PeezyMainContainer(userState: .constant(UserState(userId: "preview", name: "Adam")))
 }

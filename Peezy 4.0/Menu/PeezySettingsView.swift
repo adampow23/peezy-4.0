@@ -53,7 +53,8 @@ struct PeezySettingsView: View {
     
     // Toast feedback
     @State private var toastMessage: String? = nil
-    
+    @State private var showDeleteAccountConfirmation = false
+
     // Theme
     private let deepInk = PeezyTheme.Colors.deepInk
     
@@ -182,6 +183,14 @@ struct PeezySettingsView: View {
             }
         } message: {
             Text("You'll need to sign back in to access your tasks.")
+        }
+        .alert("Delete Account?", isPresented: $showDeleteAccountConfirmation) {
+            Button("Cancel", role: .cancel) { }
+            Button("Delete Everything", role: .destructive) {
+                deleteAccount()
+            }
+        } message: {
+            Text("This will permanently delete your account, all your tasks, and all your data. This cannot be undone.\n\nIf you have an active subscription, please cancel it first in your Apple ID settings.")
         }
         .fullScreenCover(isPresented: $showInventoryScanner) {
             InventoryFlowView()
@@ -445,6 +454,16 @@ struct PeezySettingsView: View {
                 ) {
                     showSignOutAlert = true
                 }
+
+                Divider().background(deepInk.opacity(0.06))
+
+                settingsRow(
+                    icon: "trash",
+                    label: "Delete Account",
+                    color: PeezyTheme.Colors.emotionalRed
+                ) {
+                    showDeleteAccountConfirmation = true
+                }
             }
             .background(glassBackground)
         }
@@ -601,7 +620,66 @@ struct PeezySettingsView: View {
             }
         }
     }
-    
+
+    private func deleteAccount() {
+        guard let uid = Auth.auth().currentUser?.uid else { return }
+        isProcessing = true
+
+        Task {
+            do {
+                let db = Firestore.firestore()
+
+                // 1. Delete all tasks
+                let tasksSnapshot = try await db.collection("users").document(uid)
+                    .collection("tasks").getDocuments()
+                for doc in tasksSnapshot.documents {
+                    try await doc.reference.delete()
+                }
+
+                // 2. Delete assessment docs
+                let assessmentSnapshot = try await db.collection("users").document(uid)
+                    .collection("user_assessments").getDocuments()
+                for doc in assessmentSnapshot.documents {
+                    try await doc.reference.delete()
+                }
+
+                // 3. Delete mini-assessment docs
+                let miniSnapshot = try await db.collection("users").document(uid)
+                    .collection("miniAssessments").getDocuments()
+                for doc in miniSnapshot.documents {
+                    try await doc.reference.delete()
+                }
+
+                // 4. Delete workflow responses
+                let workflowSnapshot = try await db.collection("users").document(uid)
+                    .collection("workflowResponses").getDocuments()
+                for doc in workflowSnapshot.documents {
+                    try await doc.reference.delete()
+                }
+
+                // 5. Delete userKnowledge doc
+                try? await db.collection("userKnowledge").document(uid).delete()
+
+                // 6. Delete the root user document
+                try? await db.collection("users").document(uid).delete()
+
+                // 7. Delete Firebase Auth account
+                try await Auth.auth().currentUser?.delete()
+
+                // 8. Sign out and return to auth screen
+                await MainActor.run {
+                    isProcessing = false
+                    try? authViewModel.signOut()
+                }
+            } catch {
+                await MainActor.run {
+                    isProcessing = false
+                    toastMessage = "Failed to delete account: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+
     // MARK: - Helpers
     
     private var initials: String {

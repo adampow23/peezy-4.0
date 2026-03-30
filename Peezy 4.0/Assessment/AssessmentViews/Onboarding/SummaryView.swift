@@ -38,7 +38,7 @@ struct SummaryView: View {
                 VStack(spacing: 32) {
                     // Header
                     VStack(spacing: 8) {
-                        Text(displayName + " Personalized Moving Plan")
+                        Text(displayName + "\nPersonalized Moving Plan")
                             .font(.system(size: 28, weight: .bold))
                             .foregroundColor(PeezyTheme.Colors.deepInk)
                             .multilineTextAlignment(.center)

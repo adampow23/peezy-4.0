@@ -525,7 +525,7 @@ struct PeezyHomeView: View {
         case 1:
             return "The Tasks tab has everything — upcoming, in progress, and done. You can also start tasks ahead of schedule from there.\n\nNeed to update your move details? Head to Settings."
         default:
-            return "Tap the Chat tab at the bottom to talk to Peezy. It can help answer questions, walk you through tasks, or just point you in the right direction."
+            return "Need help with a task? Tap it to learn more, or head to Settings to contact support."
         }
     }
 

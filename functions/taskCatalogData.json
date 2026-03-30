@@ -5,6 +5,7 @@
     "actionCategory": "book-schedule",
     "category": "moving",
     "actionType": "workflow",
+    "taskType": "research",
     "conditions": {
       "newDwellingType": [
         "Apartment",
@@ -24,6 +25,7 @@
     "actionCategory": "book-schedule",
     "category": "moving",
     "actionType": "workflow",
+    "taskType": "research",
     "conditions": {
       "currentDwellingType": [
         "Apartment",
@@ -43,6 +45,7 @@
     "actionCategory": "book-schedule",
     "category": "moving",
     "actionType": "workflow",
+    "taskType": "research",
     "conditions": {
       "newFloorAccess": [
         "Reserved Elevator"
@@ -61,6 +64,7 @@
     "actionCategory": "book-schedule",
     "category": "moving",
     "actionType": "workflow",
+    "taskType": "research",
     "conditions": {
       "currentFloorAccess": [
         "Reserved Elevator"
@@ -79,6 +83,7 @@
     "actionCategory": "book-schedule",
     "category": "moving",
     "actionType": "workflow",
+    "taskType": "survey",
     "workflowId": "book_movers",
     "conditions": {
       "hireMovers": [
@@ -97,6 +102,7 @@
     "actionCategory": "book-schedule",
     "category": "services",
     "actionType": "workflow",
+    "taskType": "survey",
     "workflowId": "book_cleaners",
     "conditions": {
       "hireCleaners": [
@@ -115,6 +121,7 @@
     "actionCategory": "book-schedule",
     "category": "moving",
     "actionType": "workflow",
+    "taskType": "research",
     "workflowId": "rent_truck",
     "conditions": {
       "wantsTruckRental": [
@@ -133,6 +140,7 @@
     "actionCategory": "book-schedule",
     "category": "utilities",
     "actionType": "workflow",
+    "taskType": "survey",
     "workflowId": "setup_internet",
     "conditions": {},
     "desc": "Book installation for internet service at your new home.",
@@ -147,6 +155,7 @@
     "actionCategory": "prepare-plan",
     "category": "packing",
     "actionType": "workflow",
+    "taskType": "survey",
     "workflowId": "sell_items",
     "conditions": {
       "hasDeclutter": [
@@ -168,6 +177,7 @@
     "actionCategory": "prepare-plan",
     "category": "packing",
     "actionType": "workflow",
+    "taskType": "survey",
     "workflowId": "remove_items",
     "conditions": {
       "hasDeclutter": [
@@ -189,6 +199,7 @@
     "actionCategory": "manage-service",
     "category": "finance",
     "actionType": "workflow",
+    "taskType": "transfer_cancel",
     "workflowId": "manage_bank",
     "conditions": {
       "financialInstitutions": [
@@ -207,6 +218,7 @@
     "actionCategory": "manage-service",
     "category": "health",
     "actionType": "workflow",
+    "taskType": "transfer_cancel",
     "workflowId": "manage_doctor",
     "conditions": {
       "healthcareProviders": [
@@ -225,6 +237,7 @@
     "actionCategory": "manage-service",
     "category": "health",
     "actionType": "workflow",
+    "taskType": "transfer_cancel",
     "workflowId": "manage_dentist",
     "conditions": {
       "healthcareProviders": [
@@ -243,6 +256,7 @@
     "actionCategory": "manage-service",
     "category": "pets",
     "actionType": "workflow",
+    "taskType": "transfer_cancel",
     "workflowId": "manage_vet",
     "conditions": {
       "hasVet": [
@@ -261,6 +275,7 @@
     "actionCategory": "manage-service",
     "category": "fitness",
     "actionType": "workflow",
+    "taskType": "transfer_cancel",
     "workflowId": "manage_gym",
     "conditions": {
       "fitnessWellness": [
@@ -279,6 +294,7 @@
     "actionCategory": "manage-service",
     "category": "fitness",
     "actionType": "workflow",
+    "taskType": "transfer_cancel",
     "workflowId": "manage_yoga",
     "conditions": {
       "fitnessWellness": [
@@ -297,6 +313,7 @@
     "actionCategory": "manage-service",
     "category": "fitness",
     "actionType": "workflow",
+    "taskType": "transfer_cancel",
     "workflowId": "manage_spin",
     "conditions": {
       "fitnessWellness": [
@@ -315,6 +332,7 @@
     "actionCategory": "manage-service",
     "category": "fitness",
     "actionType": "workflow",
+    "taskType": "transfer_cancel",
     "workflowId": "manage_massage",
     "conditions": {
       "fitnessWellness": [
@@ -333,6 +351,7 @@
     "actionCategory": "manage-service",
     "category": "fitness",
     "actionType": "workflow",
+    "taskType": "transfer_cancel",
     "workflowId": "manage_golf",
     "conditions": {
       "fitnessWellness": [
@@ -351,6 +370,7 @@
     "actionCategory": "update-notify",
     "category": "finance",
     "actionType": "workflow",
+    "taskType": "provide_info",
     "conditions": {
       "financialInstitutions": [
         "Credit Card"
@@ -369,6 +389,7 @@
     "actionCategory": "update-notify",
     "category": "finance",
     "actionType": "workflow",
+    "taskType": "transfer_cancel",
     "conditions": {
       "financialInstitutions": [
         "Investment Account"
@@ -387,6 +408,7 @@
     "actionCategory": "update-notify",
     "category": "finance",
     "actionType": "workflow",
+    "taskType": "transfer_cancel",
     "conditions": {
       "financialInstitutions": [
         "Student Loans"
@@ -405,6 +427,7 @@
     "actionCategory": "update-notify",
     "category": "administrative",
     "actionType": "workflow",
+    "taskType": "provide_info",
     "conditions": {},
     "desc": "File a change of address with the postal service so your mail is forwarded from your old address to your new one.",
     "estHours": 0.5,
@@ -419,6 +442,7 @@
     "actionCategory": "plan-schedule",
     "category": "administrative",
     "actionType": "off-app",
+    "taskType": "provide_info",
     "selfServiceOnly": true,
     "conditions": {},
     "desc": "Submit PTO requests to ensure you're available for move-related tasks.",
@@ -433,6 +457,7 @@
     "actionCategory": "update-notify",
     "category": "administrative",
     "actionType": "off-app",
+    "taskType": "provide_info",
     "selfServiceOnly": true,
     "conditions": {},
     "desc": "Update your home address with your employer's HR department.",
@@ -447,6 +472,7 @@
     "actionCategory": "update-notify",
     "category": "administrative",
     "actionType": "off-app",
+    "taskType": "research",
     "selfServiceOnly": true,
     "conditions": {
       "isInterstate": [
@@ -465,6 +491,7 @@
     "actionCategory": "update-notify",
     "category": "administrative",
     "actionType": "off-app",
+    "taskType": "research",
     "selfServiceOnly": true,
     "conditions": {
       "isInterstate": [
@@ -483,6 +510,7 @@
     "actionCategory": "update-notify",
     "category": "administrative",
     "actionType": "off-app",
+    "taskType": "research",
     "selfServiceOnly": true,
     "conditions": {
       "isInterstate": [
@@ -504,6 +532,7 @@
     "actionCategory": "document-record",
     "category": "administrative",
     "actionType": "off-app",
+    "taskType": "provide_info",
     "selfServiceOnly": true,
     "conditions": {
       "currentRentOrOwn": [
@@ -522,6 +551,7 @@
     "actionCategory": "finalize-closeout",
     "category": "administrative",
     "actionType": "off-app",
+    "taskType": "provide_info",
     "selfServiceOnly": true,
     "conditions": {
       "currentRentOrOwn": [
@@ -540,6 +570,7 @@
     "actionCategory": "cancel-stop",
     "category": "utilities",
     "actionType": "workflow",
+    "taskType": "research",
     "conditions": {
       "moveDistance": [
         "Long Distance"
@@ -558,6 +589,7 @@
     "actionCategory": "setup-establish",
     "category": "utilities",
     "actionType": "workflow",
+    "taskType": "research",
     "conditions": {
       "moveDistance": [
         "Long Distance"
@@ -576,6 +608,7 @@
     "actionCategory": "transfer-update",
     "category": "utilities",
     "actionType": "workflow",
+    "taskType": "research",
     "conditions": {
       "moveDistance": [
         "Local"
@@ -594,6 +627,7 @@
     "actionCategory": "update-notify",
     "category": "children",
     "actionType": "workflow",
+    "taskType": "provide_info",
     "conditions": {
       "childrenInSchool": [
         "Yes"
@@ -615,6 +649,7 @@
     "actionCategory": "book-schedule",
     "category": "children",
     "actionType": "workflow",
+    "taskType": "provide_info",
     "conditions": {
       "childrenInSchool": [
         "Yes"
@@ -636,6 +671,7 @@
     "actionCategory": "update-notify",
     "category": "children",
     "actionType": "workflow",
+    "taskType": "provide_info",
     "conditions": {
       "childrenInSchool": [
         "Yes"
@@ -657,6 +693,7 @@
     "actionCategory": "setup-establish",
     "category": "children",
     "actionType": "workflow",
+    "taskType": "research",
     "conditions": {
       "childrenInDaycare": [
         "Yes"
@@ -678,6 +715,7 @@
     "actionCategory": "update-notify",
     "category": "children",
     "actionType": "workflow",
+    "taskType": "research",
     "conditions": {
       "childrenInDaycare": [
         "Yes"
@@ -699,6 +737,7 @@
     "actionCategory": "transfer-records",
     "category": "health",
     "actionType": "workflow",
+    "taskType": "research",
     "conditions": {
       "healthcareProviders": [
         "Pharmacy"
@@ -720,6 +759,7 @@
     "actionCategory": "transfer-records",
     "category": "health",
     "actionType": "workflow",
+    "taskType": "research",
     "conditions": {
       "healthcareProviders": [
         "Specialists"
@@ -741,6 +781,7 @@
     "actionCategory": "update-notify",
     "category": "insurance",
     "actionType": "workflow",
+    "taskType": "research",
     "conditions": {
       "hasVehicles": [
         "Yes"
@@ -759,6 +800,7 @@
     "actionCategory": "cancel-stop",
     "category": "insurance",
     "actionType": "workflow",
+    "taskType": "research",
     "conditions": {
       "newDwellingType": [
         "Apartment",
@@ -781,6 +823,7 @@
     "actionCategory": "cancel-stop",
     "category": "insurance",
     "actionType": "workflow",
+    "taskType": "research",
     "conditions": {
       "newRentOrOwn": [
         "Own"
@@ -802,6 +845,7 @@
     "actionCategory": "setup-establish",
     "category": "insurance",
     "actionType": "workflow",
+    "taskType": "research",
     "conditions": {
       "newDwellingType": [
         "Condo"
@@ -824,6 +868,7 @@
     "actionCategory": "setup-establish",
     "category": "insurance",
     "actionType": "workflow",
+    "taskType": "research",
     "conditions": {
       "newDwellingType": [
         "House"
@@ -845,6 +890,7 @@
     "actionCategory": "setup-establish",
     "category": "insurance",
     "actionType": "workflow",
+    "taskType": "research",
     "conditions": {
       "currentRentOrOwn": [
         "Own"
@@ -866,6 +912,7 @@
     "actionCategory": "transfer-update",
     "category": "insurance",
     "actionType": "workflow",
+    "taskType": "research",
     "conditions": {
       "currentDwellingType": [
         "Condo"
@@ -887,6 +934,7 @@
     "actionCategory": "transfer-update",
     "category": "insurance",
     "actionType": "workflow",
+    "taskType": "research",
     "conditions": {
       "currentRentOrOwn": [
         "Own"
@@ -914,6 +962,7 @@
     "actionCategory": "transfer-update",
     "category": "insurance",
     "actionType": "workflow",
+    "taskType": "research",
     "conditions": {
       "currentRentOrOwn": [
         "Rent"
@@ -935,6 +984,7 @@
     "actionCategory": "purchase-get",
     "category": "packing",
     "actionType": "off-app",
+    "taskType": "provide_info",
     "selfServiceOnly": true,
     "conditions": {},
     "desc": "Purchase boxes, tape, bubble wrap, and other materials needed to pack your belongings safely.",
@@ -949,6 +999,7 @@
     "actionCategory": "purchase-get",
     "category": "services",
     "actionType": "off-app",
+    "taskType": "provide_info",
     "selfServiceOnly": true,
     "conditions": {
       "hireCleaners": [
@@ -967,6 +1018,7 @@
     "actionCategory": "document-record",
     "category": "packing",
     "actionType": "in-app-inventory",
+    "taskType": "provide_info",
     "conditions": {
       "hireMovers": [
         "Yes"
@@ -984,6 +1036,7 @@
     "actionCategory": "pack-clean",
     "category": "packing",
     "actionType": "off-app",
+    "taskType": "provide_info",
     "selfServiceOnly": true,
     "conditions": {},
     "desc": "Prepare your refrigerator/freezer for moving by emptying, defrosting, and thoroughly cleaning it.",
@@ -998,6 +1051,7 @@
     "actionCategory": "pack-clean",
     "category": "services",
     "actionType": "off-app",
+    "taskType": "provide_info",
     "selfServiceOnly": true,
     "conditions": {
       "hireCleaners": [
@@ -1016,6 +1070,7 @@
     "actionCategory": "pack-clean",
     "category": "services",
     "actionType": "off-app",
+    "taskType": "provide_info",
     "selfServiceOnly": true,
     "conditions": {
       "hireCleaners": [
@@ -1034,6 +1089,7 @@
     "actionCategory": "cancel-stop",
     "category": "insurance",
     "actionType": "workflow",
+    "taskType": "research",
     "conditions": {
       "currentRentOrOwn": [
         "Own"
