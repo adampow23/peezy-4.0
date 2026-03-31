@@ -97,13 +97,17 @@ struct TaskFlowView: View {
     }
 
     private func handleStart() {
+        guard subscriptionManager.isSubscribed else {
+            flowState = .paywall
+            return
+        }
         switch task.taskType {
         case "provide_info":
             flowState = .staticInfo
         case "research", "survey":
-            flowState = subscriptionManager.isSubscribed ? .choiceScreen : .paywall
+            flowState = .choiceScreen
         case "transfer_cancel":
-            flowState = subscriptionManager.isSubscribed ? .transferChoice : .paywall
+            flowState = .transferChoice
         default:
             flowState = .staticInfo
         }

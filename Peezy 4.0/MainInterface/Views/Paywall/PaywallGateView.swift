@@ -4,8 +4,7 @@ import StoreKit
 // MARK: - PaywallGateView
 //
 // Shown when trial expires or a non-subscriber taps a gated task type.
-// Presents annual vs. weekly plan selection and triggers StoreKit purchase.
-// onDismiss: called after successful purchase OR when user taps "Not now"
+// 3-tier CTA hierarchy: Primary (subscribe) → Secondary (not now) → Tertiary (redeem code)
 
 struct PaywallGateView: View {
 
@@ -20,68 +19,87 @@ struct PaywallGateView: View {
             InteractiveBackground()
                 .ignoresSafeArea()
 
-            glassCard {
-                VStack(spacing: 0) {
-                    // Header label
+            VStack(spacing: 0) {
+                Spacer()
+
+                // MARK: - Header & Copy
+                VStack(spacing: 12) {
                     Text("PEEZY+")
-                        .font(.caption)
-                        .fontWeight(.semibold)
-                        .tracking(1.5)
+                        .font(.system(size: 13, weight: .black, design: .rounded))
+                        .tracking(2)
                         .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.5))
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 30)
-                        .padding(.top, 30)
+                        .multilineTextAlignment(.center)
 
-                    Spacer()
-
-                    // Value copy
-                    VStack(alignment: .leading, spacing: 16) {
-                        Text("Your easiest move ever. Or your money back.")
-                            .font(.system(size: 28, weight: .heavy))
-                            .foregroundStyle(PeezyTheme.Colors.deepInk)
-                            .fixedSize(horizontal: false, vertical: true)
-
-                        Text("We handle the vendors. We handle the calls. We handle the stuff you keep putting off.")
-                            .font(.system(size: 16))
-                            .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.6))
-                            .fixedSize(horizontal: false, vertical: true)
-
-                        Text("The average move costs people 25+ hours of admin headaches. Peezy costs less than one hour of therapy.")
-                            .font(.system(size: 15))
-                            .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.5))
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    .padding(.horizontal, 30)
-
-                    Spacer()
-
-                    // Plan selector
-                    HStack(spacing: 12) {
-                        planCard(for: .annual)
-                        planCard(for: .weekly)
-                    }
-                    .padding(.horizontal, 30)
-
-                    Spacer()
-
-                    // CTA
-                    VStack(spacing: 12) {
-                        PeezyAssessmentButton(
-                            subscriptionManager.isPurchasing ? "Processing..." : "Let's do this",
-                            disabled: subscriptionManager.isPurchasing,
-                            action: purchaseSelected
-                        )
-                        .padding(.horizontal, 30)
-
-                        Button(action: onDismiss) {
-                            Text("Not now")
-                                .font(.subheadline)
-                                .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.4))
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    .padding(.bottom, 30)
+                    Text("Your easiest move ever.\nOr your money back.")
+                        .font(.system(size: 32, weight: .heavy))
+                        .foregroundStyle(PeezyTheme.Colors.deepInk)
+                        .multilineTextAlignment(.center)
+                        .lineSpacing(2)
                 }
+                .padding(.horizontal, 24)
+
+                Spacer().frame(height: 32)
+
+                // MARK: - Value Props
+                VStack(spacing: 20) {
+                    Text("We handle the vendors. We handle the calls.\nWe handle the stuff you keep putting off.")
+                        .font(.system(size: 17, weight: .medium))
+                        .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.7))
+                        .multilineTextAlignment(.center)
+                        .lineSpacing(4)
+
+                    Text("The average move costs people 25+ hours of\nadmin headaches. Peezy costs less than\none hour of therapy.")
+                        .font(.system(size: 14, weight: .regular))
+                        .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.5))
+                        .multilineTextAlignment(.center)
+                        .lineSpacing(2)
+                }
+                .padding(.horizontal, 32)
+
+                Spacer().frame(height: 40)
+
+                // MARK: - Plan Selector
+                HStack(spacing: 16) {
+                    planCard(for: .annual)
+                    planCard(for: .weekly)
+                }
+                .padding(.horizontal, 24)
+
+                Spacer().frame(height: 48)
+
+                // MARK: - Primary Decision Zone
+                VStack(spacing: 16) {
+                    PeezyAssessmentButton(
+                        subscriptionManager.isPurchasing ? "Processing..." : "Let's do this",
+                        action: purchaseSelected
+                    )
+
+                    // Binary alternative — tightly coupled to primary CTA
+                    Button(action: onDismiss) {
+                        Text("Not now")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.6))
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.horizontal, 24)
+
+                Spacer().frame(height: 32)
+
+                // MARK: - Utility Footer
+                Button {
+                    Task {
+                        guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene else { return }
+                        try? await AppStore.presentOfferCodeRedeemSheet(in: windowScene)
+                    }
+                } label: {
+                    Text("Redeem a code")
+                        .font(.system(size: 12, weight: .regular))
+                        .underline()
+                        .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.4))
+                }
+                .buttonStyle(.plain)
+                .padding(.bottom, 24)
             }
         }
     }
@@ -93,47 +111,45 @@ struct PaywallGateView: View {
         let isSelected = selectedPlan == plan
 
         Button(action: { selectedPlan = plan }) {
-            VStack(spacing: 6) {
+            ZStack(alignment: .top) {
                 if plan == .annual {
                     Text("BEST VALUE")
-                        .font(.system(size: 9, weight: .bold))
-                        .tracking(0.8)
+                        .font(.system(size: 10, weight: .bold))
+                        .tracking(1)
                         .foregroundStyle(.white)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
-                        .background(
-                            Capsule()
-                                .fill(PeezyTheme.Colors.deepInk)
-                        )
-                } else {
-                    // Spacer to keep card heights equal
-                    Color.clear.frame(height: 20)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(Capsule().fill(PeezyTheme.Colors.deepInk))
+                        .padding(.top, 12)
                 }
 
-                Text(plan == .annual ? "YEARLY" : "WEEKLY")
-                    .font(.system(size: 11, weight: .bold))
-                    .tracking(1)
-                    .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.5))
+                VStack(spacing: 6) {
+                    Text(plan == .annual ? "YEARLY" : "WEEKLY")
+                        .font(.system(size: 12, weight: .bold))
+                        .tracking(1)
+                        .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.5))
 
-                Text(plan == .annual ? "$49.99" : "$6.99")
-                    .font(.system(size: 22, weight: .heavy))
-                    .foregroundStyle(PeezyTheme.Colors.deepInk)
+                    Text(plan == .annual ? "$49.99" : "$6.99")
+                        .font(.system(size: 26, weight: .heavy))
+                        .foregroundStyle(PeezyTheme.Colors.deepInk)
 
-                Text(plan == .annual ? "3-day free trial" : "per week")
-                    .font(.system(size: 11))
-                    .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.5))
+                    Text(plan == .annual ? "3-day free trial" : "per week")
+                        .font(.system(size: 12))
+                        .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.5))
+                }
+                .padding(.top, 44)
+                .padding(.bottom, 24)
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 16)
-            .background(
+            .background {
                 ZStack {
                     RoundedRectangle(cornerRadius: 20, style: .continuous)
                         .foregroundStyle(.regularMaterial)
                     RoundedRectangle(cornerRadius: 20, style: .continuous)
                         .fill(Color.white.opacity(0.1))
                 }
-            )
-            .overlay(
+            }
+            .overlay {
                 RoundedRectangle(cornerRadius: 20, style: .continuous)
                     .stroke(
                         isSelected
@@ -141,9 +157,10 @@ struct PaywallGateView: View {
                             : PeezyTheme.Colors.deepInk.opacity(0.1),
                         lineWidth: isSelected ? 2 : 1
                     )
-            )
+            }
         }
         .buttonStyle(.plain)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
         .animation(.easeInOut(duration: 0.15), value: isSelected)
     }
 
@@ -156,41 +173,11 @@ struct PaywallGateView: View {
             if case .success = result {
                 onDismiss()
             }
-            // Cancelled/failed: stay on screen (silent)
         }
-    }
-
-    // MARK: - Glass Card
-
-    private func glassCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
-        ZStack {
-            ZStack {
-                RoundedRectangle(cornerRadius: 36, style: .continuous)
-                    .foregroundStyle(.regularMaterial)
-                RoundedRectangle(cornerRadius: 36, style: .continuous)
-                    .fill(Color.white.opacity(0.15))
-            }
-            .overlay {
-                RoundedRectangle(cornerRadius: 36, style: .continuous)
-                    .stroke(Color.black.opacity(0.05), lineWidth: 1)
-                    .padding(1)
-            }
-            .shadow(color: Color.black.opacity(0.1), radius: 20, x: 0, y: 15)
-
-            content()
-        }
-        .frame(width: 340, height: 500)
     }
 }
 
-// MARK: - Preview
-
-#Preview("Annual selected") {
-    PaywallGateView(onDismiss: { print("Dismissed") })
-        .environmentObject(SubscriptionManager.shared)
-}
-
-#Preview("Weekly selected") {
-    PaywallGateView(onDismiss: { print("Dismissed") })
+#Preview {
+    PaywallGateView(onDismiss: {})
         .environmentObject(SubscriptionManager.shared)
 }

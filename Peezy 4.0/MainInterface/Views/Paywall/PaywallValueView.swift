@@ -3,10 +3,8 @@ import StoreKit
 
 // MARK: - PaywallValueView
 //
-// Shown once after assessment completion, before entering the main app.
-// Presents the value proposition and offers a 3-day free trial.
-// onStartTrial: triggers purchase of the annual plan (with trial)
-// onSkip: lets user enter the app without subscribing
+// Shown once after assessment completion, before entering the app.
+// 3-tier CTA hierarchy: Primary (try free) → Secondary (skip) → Tertiary (redeem code)
 
 struct PaywallValueView: View {
 
@@ -15,97 +13,103 @@ struct PaywallValueView: View {
     let onStartTrial: () -> Void
     let onSkip: () -> Void
 
+    private func startTrial() {
+        guard let product = subscriptionManager.product(for: .annual) else {
+            onStartTrial()
+            return
+        }
+        Task {
+            let result = await subscriptionManager.purchase(product)
+            if case .success = result {
+                onStartTrial()
+            }
+        }
+    }
+
     var body: some View {
         ZStack {
             InteractiveBackground()
                 .ignoresSafeArea()
 
-            glassCard {
-                VStack(spacing: 0) {
-                    // Header label
+            VStack(spacing: 0) {
+                Spacer()
+
+                // MARK: - Header & Copy
+                VStack(spacing: 12) {
                     Text("YOUR PLAN IS READY")
-                        .font(.caption)
-                        .fontWeight(.semibold)
-                        .tracking(1.5)
+                        .font(.system(size: 13, weight: .black, design: .rounded))
+                        .tracking(2)
                         .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.5))
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 30)
-                        .padding(.top, 30)
+                        .multilineTextAlignment(.center)
 
-                    Spacer()
-
-                    // Value copy
-                    VStack(alignment: .leading, spacing: 16) {
-                        Text("Can you really put a price on peace of mind?")
-                            .font(.system(size: 28, weight: .heavy))
-                            .foregroundStyle(PeezyTheme.Colors.deepInk)
-                            .fixedSize(horizontal: false, vertical: true)
-
-                        Text("We did. And then we made it free for 3 days so you don't have to take our word for it.")
-                            .font(.system(size: 16))
-                            .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.6))
-                            .fixedSize(horizontal: false, vertical: true)
-
-                        Text("25+ hours saved. Zero stress. And less than a dollar a week.")
-                            .font(.system(size: 15))
-                            .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.5))
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    .padding(.horizontal, 30)
-
-                    Spacer()
-
-                    // CTA
-                    VStack(spacing: 14) {
-                        PeezyAssessmentButton("Try it free", action: onStartTrial)
-                            .padding(.horizontal, 30)
-
-                        Text("3-day free trial · Then $49.99/year")
-                            .font(.caption)
-                            .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.4))
-
-                        Button(action: onSkip) {
-                            Text("Skip")
-                                .font(.caption)
-                                .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.3))
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    .padding(.bottom, 30)
+                    Text("Can you really put\na price on peace\nof mind?")
+                        .font(.system(size: 32, weight: .heavy))
+                        .foregroundStyle(PeezyTheme.Colors.deepInk)
+                        .multilineTextAlignment(.center)
+                        .lineSpacing(2)
                 }
+                .padding(.horizontal, 24)
+
+                Spacer().frame(height: 32)
+
+                // MARK: - Value Props
+                VStack(spacing: 20) {
+                    Text("We did. And then we made it free\nfor 3 days so you don't have to\ntake our word for it.")
+                        .font(.system(size: 17, weight: .medium))
+                        .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.7))
+                        .multilineTextAlignment(.center)
+                        .lineSpacing(4)
+
+                    Text("25+ hours saved. Zero stress.\nAnd less than a dollar a week.")
+                        .font(.system(size: 14, weight: .regular))
+                        .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.5))
+                        .multilineTextAlignment(.center)
+                        .lineSpacing(2)
+                }
+                .padding(.horizontal, 32)
+
+                Spacer()
+
+                // MARK: - Primary Decision Zone
+                VStack(spacing: 16) {
+                    PeezyAssessmentButton(subscriptionManager.isPurchasing ? "Processing..." : "Try it free", action: startTrial)
+
+                    Text("3-day free trial · Then $49.99/year")
+                        .font(.system(size: 13))
+                        .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.4))
+
+                    // Binary alternative — tightly coupled to primary CTA
+                    Button(action: onSkip) {
+                        Text("Skip")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.6))
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.horizontal, 24)
+
+                Spacer().frame(height: 32)
+
+                // MARK: - Utility Footer
+                Button {
+                    Task {
+                        guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene else { return }
+                        try? await AppStore.presentOfferCodeRedeemSheet(in: windowScene)
+                    }
+                } label: {
+                    Text("Redeem a code")
+                        .font(.system(size: 12, weight: .regular))
+                        .underline()
+                        .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.4))
+                }
+                .buttonStyle(.plain)
+                .padding(.bottom, 24)
             }
         }
-    }
-
-    // MARK: - Glass Card
-
-    private func glassCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
-        ZStack {
-            ZStack {
-                RoundedRectangle(cornerRadius: 36, style: .continuous)
-                    .foregroundStyle(.regularMaterial)
-                RoundedRectangle(cornerRadius: 36, style: .continuous)
-                    .fill(Color.white.opacity(0.15))
-            }
-            .overlay {
-                RoundedRectangle(cornerRadius: 36, style: .continuous)
-                    .stroke(Color.black.opacity(0.05), lineWidth: 1)
-                    .padding(1)
-            }
-            .shadow(color: Color.black.opacity(0.1), radius: 20, x: 0, y: 15)
-
-            content()
-        }
-        .frame(width: 340, height: 500)
     }
 }
 
-// MARK: - Preview
-
 #Preview {
-    PaywallValueView(
-        onStartTrial: { print("Start trial") },
-        onSkip: { print("Skipped") }
-    )
-    .environmentObject(SubscriptionManager.shared)
+    PaywallValueView(onStartTrial: {}, onSkip: {})
+        .environmentObject(SubscriptionManager.shared)
 }

@@ -714,15 +714,32 @@ struct PeezyHomeView: View {
             task: task,
             onStartWorkflow: {
                 let taskType = task.taskType ?? ""
-                if taskType == "research" || taskType == "transfer_cancel" || taskType == "provide_info" || taskType == "survey" {
+                if !subscriptionManager.isSubscribed {
+                    taskFlowCard = task
+                    showTaskFlow = true
+                } else if taskType == "research" || taskType == "transfer_cancel" || taskType == "provide_info" || taskType == "survey" {
                     taskFlowCard = task
                     showTaskFlow = true
                 } else {
                     viewModel.startWorkflowForCurrentTask()
                 }
             },
-            onComplete: { viewModel.completeCurrentTask() },
-            onUserHandle: { viewModel.markCurrentTaskUserInProgress() },
+            onComplete: {
+                if subscriptionManager.isSubscribed {
+                    viewModel.completeCurrentTask()
+                } else {
+                    taskFlowCard = task
+                    showTaskFlow = true
+                }
+            },
+            onUserHandle: {
+                if subscriptionManager.isSubscribed {
+                    viewModel.markCurrentTaskUserInProgress()
+                } else {
+                    taskFlowCard = task
+                    showTaskFlow = true
+                }
+            },
             onSkip: { viewModel.skipCurrentTask() }
         )
     }
