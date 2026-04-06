@@ -3,72 +3,45 @@
 //  Peezy
 //
 //  Complete page template for date picker assessment questions.
-//  Typewriter + morph, then inline date wheel centered, Continue button at bottom.
+//  Typewriter + morph, then native graphical date picker in a glass card, Continue button at bottom.
 //  ALL layout values are in the CONTROL BOARD below.
 //
 
 import SwiftUI
 
+// MARK: - Date Picker Template (Native Graphical Version)
 struct DatePickerTemplate: View {
 
-    // ╔═══════════════════════════════════════════════════════════╗
-    // ║  CONTENT — passed from the question file                 ║
-    // ╚═══════════════════════════════════════════════════════════╝
     let header: String
     let subtext: String?
-    let date: Binding<Date>
+    @Binding var date: Date
     let buttonText: String
     let onContinue: () -> Void
 
-    // ╔═══════════════════════════════════════════════════════════╗
-    // ║  CONTROL BOARD — change any number, see it in preview    ║
-    // ╠═══════════════════════════════════════════════════════════╣
-    // ║                                                          ║
-    // ║  TYPEWRITER                                              ║
-    var speed: Double = 0.04            //  seconds per character
-    // ║                                                          ║
-    // ║  HERO STATE (centered, large)                            ║
-    var heroFontSize: CGFloat = 32      //  header text size
-    var heroSubtextSize: CGFloat = 16   //  subtext size
-    // ║                                                          ║
-    // ║  MORPHED STATE (top-left, small)                         ║
-    var morphedFontSize: CGFloat = 22   //  header after morph
-    var morphedSubtextSize: CGFloat = 14 // subtext after morph
-    var morphTopPad: CGFloat = 24       //  space above text
-    var morphBottomPad: CGFloat = 40    //  space between text and picker
-    // ║                                                          ║
-    // ║  DATE PICKER                                             ║
-    var pickerPadH: CGFloat = 24        //  picker side padding
-    // ║                                                          ║
-    // ║  BUTTON                                                  ║
-    var buttonPadH: CGFloat = 24        //  button side padding
-    var buttonPadBottom: CGFloat = 32   //  button bottom padding
-    // ║                                                          ║
-    // ║  TIMING                                                  ║
-    var morphDelay: Double = 0.4        //  pause after typing before morph
-    // ║                                                          ║
-    // ║  TEXT                                                     ║
-    var textSidePad: CGFloat = 24       //  text left/right padding
-    var lineSpacing: CGFloat = 4        //  header line spacing
-    var subtextLineSpacing: CGFloat = 3 //  subtext line spacing
-    // ║                                                          ║
-    // ╚═══════════════════════════════════════════════════════════╝
+    // ── CONTROL BOARD ──
+    var speed: Double = 0.04
+    var heroFontSize: CGFloat = 32
+    var heroSubtextSize: CGFloat = 16
+    var morphedFontSize: CGFloat = 22
+    var morphedSubtextSize: CGFloat = 14
+    var morphTopPad: CGFloat = 24
+    var morphBottomPad: CGFloat = 24
+    var textSidePad: CGFloat = 24
+    var morphDelay: Double = 0.4
 
-    // ── ANIMATION STATE (don't touch) ───────────────────────────
+    // ── STATE ──
     @State private var headerDone = false
     @State private var subtextDone = false
     @State private var showControls = false
     @State private var isHero = true
     @State private var skipped = false
+    @State private var dateWasSelected = false
 
-    // ── BODY ────────────────────────────────────────────────────
     var body: some View {
         ZStack {
             InteractiveBackground()
-                .ignoresSafeArea(.keyboard)
 
             VStack(spacing: 0) {
-
                 if isHero { Spacer() }
 
                 // ── TEXT AREA ──
@@ -88,9 +61,8 @@ struct DatePickerTemplate: View {
                             )
                         }
                     }
-                    .font(.system(size: isHero ? heroFontSize : morphedFontSize, weight: .semibold))
-                    .foregroundColor(PeezyTheme.Colors.deepInk)
-                    .lineSpacing(lineSpacing)
+                    .font(.system(size: isHero ? heroFontSize : morphedFontSize, weight: .semibold, design: .rounded))
+                    .foregroundStyle(PeezyTheme.Colors.deepInk)
                     .multilineTextAlignment(isHero ? .center : .leading)
                     .frame(maxWidth: .infinity, alignment: isHero ? .center : .leading)
 
@@ -111,9 +83,8 @@ struct DatePickerTemplate: View {
                                     )
                                 }
                             }
-                            .font(.system(size: isHero ? heroSubtextSize : morphedSubtextSize))
-                            .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.5))
-                            .lineSpacing(subtextLineSpacing)
+                            .font(.system(size: isHero ? heroSubtextSize : morphedSubtextSize, design: .rounded))
+                            .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.5))
                             .multilineTextAlignment(isHero ? .center : .leading)
                             .frame(maxWidth: .infinity, alignment: isHero ? .center : .leading)
                         }
@@ -122,39 +93,62 @@ struct DatePickerTemplate: View {
                 .padding(.horizontal, textSidePad)
                 .padding(.top, isHero ? 0 : morphTopPad)
                 .padding(.bottom, isHero ? 0 : morphBottomPad)
-
-                if isHero { Spacer() }
-
-                // Center picker between header and button
-                if !isHero && showControls { Spacer() }
-
-                // ── DATE PICKER ──
-                if showControls {
-                    DatePicker("", selection: date, in: Date()..., displayedComponents: .date)
-                        .datePickerStyle(.wheel)
-                        .labelsHidden()
-                        .padding(.horizontal, pickerPadH)
-                        .transition(.opacity.combined(with: .move(edge: .bottom)))
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    skipToControls()
                 }
 
-                if !isHero && showControls { Spacer() }
+                if isHero { Spacer() }
+                if !isHero && showControls { Spacer(minLength: 16) }
+
+                // ── NATIVE DATE PICKER IN GLASS CARD ──
+                if showControls {
+                    DatePicker(
+                        "Select Move Date",
+                        selection: $date,
+                        in: Date()...,
+                        displayedComponents: [.date]
+                    )
+                    .onChange(of: date) { _, _ in
+                        dateWasSelected = true
+                    }
+                    .datePickerStyle(.graphical)
+                    .labelsHidden()
+                    .tint(PeezyTheme.Colors.deepInk)
+                    .padding(16)
+                    .background(
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                                .fill(.regularMaterial)
+                            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                                .fill(Color.white.opacity(0.6))
+                        }
+                    )
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 24, style: .continuous)
+                            .stroke(Color.black.opacity(0.04), lineWidth: 1)
+                    }
+                    .shadow(color: Color.black.opacity(0.03), radius: 20, y: 10)
+                    .padding(.horizontal, 24)
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+                }
+
+                if !isHero && showControls { Spacer(minLength: 32) }
 
                 // ── CONTINUE BUTTON ──
                 if showControls {
-                    PeezyAssessmentButton(buttonText) {
+                    PeezyAssessmentButton(buttonText, disabled: !dateWasSelected) {
                         onContinue()
                     }
-                    .padding(.horizontal, buttonPadH)
-                    .padding(.bottom, buttonPadBottom)
+                    .padding(.horizontal, 24)
+                    .padding(.bottom, 32)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .contentShape(Rectangle())
-        .onTapGesture { skipToControls() }
     }
 
-    // ── MORPH LOGIC ─────────────────────────────────────────────
+    // ── MORPH LOGIC ──
 
     private func triggerMorph() {
         DispatchQueue.main.asyncAfter(deadline: .now() + morphDelay) {
@@ -183,7 +177,7 @@ struct DatePickerTemplate: View {
     }
 }
 
-// ── PREVIEW ─────────────────────────────────────────────────
+// ── PREVIEW ──
 #Preview {
     @Previewable @State var date = Date()
     DatePickerTemplate(

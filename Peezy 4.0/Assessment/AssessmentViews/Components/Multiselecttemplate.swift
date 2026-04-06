@@ -23,6 +23,8 @@ struct MultiSelectTemplate: View {
     let onToggle: (String) -> Void
     let onContinue: () -> Void
     var counts: [String: Int] = [:]          // optional — enables number badges
+    var onIncrement: ((String) -> Void)? = nil
+    var onDecrement: ((String) -> Void)? = nil
 
     // ╔═══════════════════════════════════════════════════════════╗
     // ║  CONTROL BOARD — change any number, see it in preview    ║
@@ -143,7 +145,9 @@ struct MultiSelectTemplate: View {
                                 icon: option.1,
                                 isSelected: selected.contains(option.0),
                                 onTap: { onToggle(option.0) },
-                                count: counts[option.0] ?? 0
+                                count: counts[option.0] ?? 0,
+                                onIncrement: { onIncrement?(option.0) },
+                                onDecrement: { onDecrement?(option.0) }
                             )
                             .opacity(showTiles ? 1 : 0)
                             .offset(y: showTiles ? 0 : 30)

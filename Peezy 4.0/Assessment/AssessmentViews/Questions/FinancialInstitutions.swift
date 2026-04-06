@@ -25,10 +25,7 @@ struct FinancialInstitutions: View {
             selected: selected,
             buttonText: buttonText,
             onToggle: { option in
-                if selected.contains(option) {
-                    selected.remove(option)
-                    data.financialCounts.removeValue(forKey: option)
-                } else {
+                if !selected.contains(option) {
                     selected.insert(option)
                     data.financialCounts[option] = 1
                 }
@@ -37,7 +34,20 @@ struct FinancialInstitutions: View {
                 data.financialInstitutions = Array(selected)
                 coordinator.goToNext()
             },
-            counts: data.financialCounts
+            counts: data.financialCounts,
+            onIncrement: { option in
+                let current = data.financialCounts[option] ?? 1
+                data.financialCounts[option] = current + 1
+            },
+            onDecrement: { option in
+                let current = data.financialCounts[option] ?? 1
+                if current <= 1 {
+                    selected.remove(option)
+                    data.financialCounts.removeValue(forKey: option)
+                } else {
+                    data.financialCounts[option] = current - 1
+                }
+            }
         )
         .onAppear {
             selected = Set(data.financialInstitutions)

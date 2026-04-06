@@ -26,6 +26,7 @@ struct CompletionFlowView: View {
         case ready = 1
         case summary = 2
         case paywall = 3
+        case paywallGate = 4
 
         static func < (lhs: Stage, rhs: Stage) -> Bool {
             lhs.rawValue < rhs.rawValue
@@ -76,24 +77,19 @@ struct CompletionFlowView: View {
                     )
 
                 case .paywall:
-                    PaywallValueView(
-                        onStartTrial: {
-                            guard let product = subscriptionManager.product(for: .annual) else {
-                                routeToMainApp()
-                                return
-                            }
-                            Task {
-                                let result = await subscriptionManager.purchase(product)
-                                if case .success = result {
-                                    routeToMainApp()
-                                }
-                                // Cancelled/failed: stay on paywall screen
-                            }
-                        },
-                        onSkip: {
-                            routeToMainApp()
+                    PaywallValueView(onContinue: {
+                        withAnimation {
+                            stage = .paywallGate
                         }
-                    )
+                    })
+                    .transition(.opacity)
+
+                case .paywallGate:
+                    PaywallGateView(onDismiss: {
+                        routeToMainApp()
+                    })
+                    .environmentObject(subscriptionManager)
+                    .transition(.opacity)
                 }
             }
         }

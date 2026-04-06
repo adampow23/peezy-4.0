@@ -25,10 +25,7 @@ struct HealthcareProviders: View {
             selected: selected,
             buttonText: buttonText,
             onToggle: { option in
-                if selected.contains(option) {
-                    selected.remove(option)
-                    data.healthcareCounts.removeValue(forKey: option)
-                } else {
+                if !selected.contains(option) {
                     selected.insert(option)
                     data.healthcareCounts[option] = 1
                 }
@@ -37,7 +34,20 @@ struct HealthcareProviders: View {
                 data.healthcareProviders = Array(selected)
                 coordinator.goToNext()
             },
-            counts: data.healthcareCounts
+            counts: data.healthcareCounts,
+            onIncrement: { option in
+                let current = data.healthcareCounts[option] ?? 1
+                data.healthcareCounts[option] = current + 1
+            },
+            onDecrement: { option in
+                let current = data.healthcareCounts[option] ?? 1
+                if current <= 1 {
+                    selected.remove(option)
+                    data.healthcareCounts.removeValue(forKey: option)
+                } else {
+                    data.healthcareCounts[option] = current - 1
+                }
+            }
         )
         .onAppear {
             selected = Set(data.healthcareProviders)

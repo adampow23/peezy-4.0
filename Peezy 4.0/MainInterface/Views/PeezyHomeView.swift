@@ -311,6 +311,7 @@ struct PeezyHomeView: View {
     // TaskFlow presentation state
     @State private var showTaskFlow = false
     @State private var taskFlowCard: PeezyCard? = nil
+    @State private var startWorkflowOnDismiss = false
 
     // Deep ink text color for light theme
     private let deepInk = PeezyTheme.Colors.deepInk
@@ -425,6 +426,10 @@ struct PeezyHomeView: View {
         }
         .fullScreenCover(isPresented: $showTaskFlow, onDismiss: {
             taskFlowCard = nil
+            if startWorkflowOnDismiss {
+                startWorkflowOnDismiss = false
+                viewModel.startWorkflowForCurrentTask()
+            }
         }) {
             if let card = taskFlowCard {
                 TaskFlowView(
@@ -434,9 +439,8 @@ struct PeezyHomeView: View {
                         showTaskFlow = false
                     },
                     onStartWorkflow: {
+                        startWorkflowOnDismiss = true
                         showTaskFlow = false
-                        taskFlowCard = nil
-                        viewModel.startWorkflowForCurrentTask()
                     }
                 )
                 .environmentObject(subscriptionManager)

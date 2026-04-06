@@ -11,6 +11,7 @@ const { getWorkflowQualifying, submitWorkflowAnswers } = require('./getWorkflowQ
 const { processInventory } = require('./processInventory');
 const { packageInventory } = require('./packageInventory');
 const { validateSubscription } = require('./validateSubscription');
+const { joinWaitlist } = require('./joinWaitlist');
 
 // Set global options
 setGlobalOptions({ maxInstances: 10 });
@@ -449,3 +450,4 @@ exports.submitWorkflowAnswers = submitWorkflowAnswers;
 exports.validateSubscription = validateSubscription;
 exports.processInventory = processInventory;
 exports.packageInventory = packageInventory;
+exports.joinWaitlist = joinWaitlist;

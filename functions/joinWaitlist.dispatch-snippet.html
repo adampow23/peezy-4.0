@@ -1,0 +1,87 @@
+<!--
+  Peezy waitlist — replacement for the current peezymove.com handleSubmit.
+
+  WHERE TO PASTE THIS:
+    In Dispatch, find the code block that defines `handleSubmit` on the site
+    (or wherever custom JS lives — usually Site Settings → Custom Code → Footer,
+    or directly inside the page that contains the form). REPLACE the existing
+    `handleSubmit` function with the one below.
+
+  IMPORTANT:
+    1. Replace the ENDPOINT_URL placeholder with the real Cloud Function URL
+       once you deploy (it will look like:
+         https://us-central1-peezy-1ecrdl.cloudfunctions.net/joinWaitlist
+       — `firebase deploy --only functions:joinWaitlist` will print it, or you
+       can copy it from the Firebase console → Functions tab).
+
+    2. Your existing form HTML stays exactly the same:
+         <form class="email-row reveal d3 v" onsubmit="handleSubmit(event)">
+           <input type="email" class="email-in" placeholder="Enter your email" required>
+           <button type="submit" class="email-btn">Join Waitlist</button>
+         </form>
+
+    3. This script provides inline visual feedback (button text + row state)
+       without needing any extra HTML. If you want custom "thanks" UI, add an
+       element like <div id="waitlist-msg"></div> after the form and uncomment
+       the two lines marked OPTIONAL below.
+-->
+
+<script>
+  // === Peezy waitlist submit handler ===
+  const PEEZY_WAITLIST_ENDPOINT = "https://us-central1-peezy-1ecrdl.cloudfunctions.net/joinWaitlist";
+
+  async function handleSubmit(event) {
+    event.preventDefault();
+    const form = event.currentTarget || event.target;
+    const input = form.querySelector('input[type="email"]');
+    const button = form.querySelector('button[type="submit"]');
+    // const msgEl = document.getElementById('waitlist-msg'); // OPTIONAL
+
+    if (!input || !button) return;
+
+    const email = (input.value || '').trim();
+    if (!email) {
+      input.focus();
+      return;
+    }
+
+    const originalButtonText = button.textContent;
+    button.disabled = true;
+    input.disabled = true;
+    button.textContent = "Adding you…";
+
+    try {
+      const res = await fetch(PEEZY_WAITLIST_ENDPOINT, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email })
+      });
+
+      let data = null;
+      try { data = await res.json(); } catch (_) { /* ignore parse errors */ }
+
+      if (res.ok && data && data.ok) {
+        // Success (new signup or duplicate — both are "you're on the list")
+        button.textContent = data.alreadySignedUp ? "Already in ✓" : "You're in ✓";
+        input.value = "";
+        form.classList.add("waitlist-success");
+        // if (msgEl) msgEl.textContent = "Thanks — check your inbox for a welcome from Adam."; // OPTIONAL
+      } else {
+        const errMsg = (data && data.error) || "Something went wrong. Please try again.";
+        button.textContent = "Try again";
+        button.disabled = false;
+        input.disabled = false;
+        // if (msgEl) msgEl.textContent = errMsg; // OPTIONAL
+        console.warn("Peezy waitlist submit failed:", errMsg);
+      }
+    } catch (err) {
+      button.textContent = "Try again";
+      button.disabled = false;
+      input.disabled = false;
+      console.error("Peezy waitlist network error:", err);
+    }
+  }
+
+  // Expose on window in case the inline onsubmit binds to window.handleSubmit
+  window.handleSubmit = handleSubmit;
+</script>

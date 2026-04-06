@@ -193,27 +193,6 @@ private struct UnitNumberField: View {
             .autocorrectionDisabled()
             .focused(isUnitFieldFocused)
             .submitLabel(.done)
-            .onChange(of: unitNumber) { _, newValue in
-                if newValue.hasPrefix("N/A") && newValue.count > 3 {
-                    unitNumber = String(newValue.dropFirst(3))
-                }
-            }
-
-            Button {
-                unitNumber = "N/A"
-            } label: {
-                Text("N/A")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(unitNumber == "N/A" ? .white : PeezyTheme.Colors.deepInk.opacity(0.5))
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(
-                        Capsule()
-                            .fill(unitNumber == "N/A" ? PeezyTheme.Colors.deepInk : Color.gray.opacity(0.08))
-                            .overlay(Capsule().stroke(Color.gray.opacity(0.25), lineWidth: 1))
-                    )
-            }
-            .animation(.easeOut(duration: 0.15), value: unitNumber)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)

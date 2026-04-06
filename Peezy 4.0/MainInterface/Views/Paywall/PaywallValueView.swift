@@ -1,30 +1,12 @@
 import SwiftUI
-import StoreKit
 
 // MARK: - PaywallValueView
 //
-// Shown once after assessment completion, before entering the app.
-// 3-tier CTA hierarchy: Primary (try free) → Secondary (skip) → Tertiary (redeem code)
+// Pure value builder — no purchase logic. Single CTA advances to PaywallGateView.
 
 struct PaywallValueView: View {
 
-    @EnvironmentObject private var subscriptionManager: SubscriptionManager
-
-    let onStartTrial: () -> Void
-    let onSkip: () -> Void
-
-    private func startTrial() {
-        guard let product = subscriptionManager.product(for: .annual) else {
-            onStartTrial()
-            return
-        }
-        Task {
-            let result = await subscriptionManager.purchase(product)
-            if case .success = result {
-                onStartTrial()
-            }
-        }
-    }
+    let onContinue: () -> Void
 
     var body: some View {
         ZStack {
@@ -36,7 +18,7 @@ struct PaywallValueView: View {
 
                 // MARK: - Header & Copy
                 VStack(spacing: 12) {
-                    Text("YOUR PLAN IS READY")
+                    Text("PEEZY+")
                         .font(.system(size: 13, weight: .black, design: .rounded))
                         .tracking(2)
                         .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.5))
@@ -70,46 +52,21 @@ struct PaywallValueView: View {
 
                 Spacer()
 
-                // MARK: - Primary Decision Zone
-                VStack(spacing: 16) {
-                    PeezyAssessmentButton(subscriptionManager.isPurchasing ? "Processing..." : "Try it free", action: startTrial)
+                // MARK: - Single CTA
+                VStack(spacing: 12) {
+                    PeezyAssessmentButton("Try it free", action: onContinue)
 
                     Text("3-day free trial · Then $49.99/year")
                         .font(.system(size: 13))
                         .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.4))
-
-                    // Binary alternative — tightly coupled to primary CTA
-                    Button(action: onSkip) {
-                        Text("Skip")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.6))
-                    }
-                    .buttonStyle(.plain)
                 }
                 .padding(.horizontal, 24)
-
-                Spacer().frame(height: 32)
-
-                // MARK: - Utility Footer
-                Button {
-                    Task {
-                        guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene else { return }
-                        try? await AppStore.presentOfferCodeRedeemSheet(in: windowScene)
-                    }
-                } label: {
-                    Text("Redeem a code")
-                        .font(.system(size: 12, weight: .regular))
-                        .underline()
-                        .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.4))
-                }
-                .buttonStyle(.plain)
-                .padding(.bottom, 24)
+                .padding(.bottom, 48)
             }
         }
     }
 }
 
 #Preview {
-    PaywallValueView(onStartTrial: {}, onSkip: {})
-        .environmentObject(SubscriptionManager.shared)
+    PaywallValueView(onContinue: {})
 }

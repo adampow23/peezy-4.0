@@ -26,10 +26,7 @@ struct FitnessWellness: View {
             selected: selected,
             buttonText: buttonText,
             onToggle: { option in
-                if selected.contains(option) {
-                    selected.remove(option)
-                    data.fitnessCounts.removeValue(forKey: option)
-                } else {
+                if !selected.contains(option) {
                     selected.insert(option)
                     data.fitnessCounts[option] = 1
                 }
@@ -38,7 +35,20 @@ struct FitnessWellness: View {
                 data.fitnessWellness = Array(selected)
                 coordinator.goToNext()
             },
-            counts: data.fitnessCounts
+            counts: data.fitnessCounts,
+            onIncrement: { option in
+                let current = data.fitnessCounts[option] ?? 1
+                data.fitnessCounts[option] = current + 1
+            },
+            onDecrement: { option in
+                let current = data.fitnessCounts[option] ?? 1
+                if current <= 1 {
+                    selected.remove(option)
+                    data.fitnessCounts.removeValue(forKey: option)
+                } else {
+                    data.fitnessCounts[option] = current - 1
+                }
+            }
         )
         .onAppear {
             selected = Set(data.fitnessWellness)

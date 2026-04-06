@@ -472,7 +472,7 @@
     "actionCategory": "update-notify",
     "category": "administrative",
     "actionType": "off-app",
-    "taskType": "research",
+    "taskType": "provide_info",
     "selfServiceOnly": true,
     "conditions": {
       "isInterstate": [
@@ -491,7 +491,7 @@
     "actionCategory": "update-notify",
     "category": "administrative",
     "actionType": "off-app",
-    "taskType": "research",
+    "taskType": "provide_info",
     "selfServiceOnly": true,
     "conditions": {
       "isInterstate": [
@@ -510,7 +510,7 @@
     "actionCategory": "update-notify",
     "category": "administrative",
     "actionType": "off-app",
-    "taskType": "research",
+    "taskType": "provide_info",
     "selfServiceOnly": true,
     "conditions": {
       "isInterstate": [

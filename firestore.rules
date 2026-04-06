@@ -21,5 +21,12 @@ service cloud.firestore {
     match /taskCatalog/{document=**} {
       allow read: if request.auth != null;
     }
+
+    // Marketing-site waitlist signups — writes only from the joinWaitlist
+    // Cloud Function (via Admin SDK, which bypasses these rules).
+    // No client read or write access.
+    match /waitlistSignups/{document=**} {
+      allow read, write: if false;
+    }
   }
 }
