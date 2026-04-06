@@ -13,6 +13,7 @@
 //
 
 import SwiftUI
+import MapKit
 import FirebaseAuth
 import FirebaseFirestore
 
@@ -37,6 +38,9 @@ struct PeezySettingsView: View {
     @State private var showEditNewAddress = false
     @State private var moveDetailsLoaded = false
     
+    // Edit profile
+    @State private var showEditProfile = false
+
     // Sign out confirmation
     @State private var showSignOutAlert = false
 
@@ -54,6 +58,7 @@ struct PeezySettingsView: View {
     // Toast feedback
     @State private var toastMessage: String? = nil
     @State private var showDeleteAccountConfirmation = false
+    @State private var restoreMessage: String? = nil
 
     // Theme
     private let deepInk = PeezyTheme.Colors.deepInk
@@ -168,13 +173,19 @@ struct PeezySettingsView: View {
                 toastMessage = "New address updated"
             }
         }
+        .sheet(isPresented: $showEditProfile) {
+            EditNameEmailSheet(userState: userState) { newName in
+                userState?.name = newName
+                toastMessage = "Profile updated"
+            }
+        }
         .alert("Retake Assessment?", isPresented: $showRetakeAlert) {
             Button("Cancel", role: .cancel) { }
-            Button("Delete & Start Over", role: .destructive) {
+            Button("Retake", role: .destructive) {
                 retakeAssessment()
             }
         } message: {
-            Text("This will delete all your tasks and start the assessment over from scratch. You'll need to sign back in.")
+            Text("This will reset your tasks and personalized plan. Your account will not be affected.")
         }
         .alert("Sign Out?", isPresented: $showSignOutAlert) {
             Button("Cancel", role: .cancel) { }
@@ -191,6 +202,14 @@ struct PeezySettingsView: View {
             }
         } message: {
             Text("This will permanently delete your account, all your tasks, and all your data. This cannot be undone.\n\nIf you have an active subscription, please cancel it first in your Apple ID settings.")
+        }
+        .alert("Restore Purchases", isPresented: .init(
+            get: { restoreMessage != nil },
+            set: { if !$0 { restoreMessage = nil } }
+        )) {
+            Button("OK") { restoreMessage = nil }
+        } message: {
+            Text(restoreMessage ?? "")
         }
         .fullScreenCover(isPresented: $showInventoryScanner) {
             InventoryFlowView()
@@ -217,8 +236,9 @@ struct PeezySettingsView: View {
     // MARK: - Profile Card
     
     private var profileCard: some View {
-        VStack(spacing: 0) {
-            // Avatar + name
+        Button {
+            showEditProfile = true
+        } label: {
             HStack(spacing: 16) {
                 // Avatar circle
                 ZStack {
@@ -230,23 +250,29 @@ struct PeezySettingsView: View {
                         .font(.system(size: 22, weight: .bold))
                         .foregroundColor(PeezyTheme.Colors.lightBase)
                 }
-                
+
                 VStack(alignment: .leading, spacing: 4) {
                     Text(userState?.name ?? "Peezy User")
                         .font(.title3.bold())
                         .foregroundColor(deepInk)
-                    
+
                     if let email = Auth.auth().currentUser?.email {
                         Text(email)
                             .font(PeezyTheme.Typography.callout)
                             .foregroundColor(deepInk.opacity(0.5))
                     }
                 }
-                
+
                 Spacer()
+
+                Image(systemName: "pencil.circle")
+                    .font(.system(size: 22))
+                    .foregroundStyle(deepInk.opacity(0.4))
             }
             .padding(20)
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.peezyPress)
         .background(glassBackground)
     }
     
@@ -345,7 +371,14 @@ struct PeezySettingsView: View {
                 Divider().background(deepInk.opacity(0.06))
 
                 settingsRow(icon: "arrow.triangle.2.circlepath", label: "Restore Purchases", color: deepInk.opacity(0.4)) {
-                    Task { await subscriptionManager.restorePurchases() }
+                    Task {
+                        await subscriptionManager.restorePurchases()
+                        if subscriptionManager.purchaseError == nil {
+                            restoreMessage = "Purchases restored successfully."
+                        } else {
+                            restoreMessage = "Unable to restore purchases. Please try again."
+                        }
+                    }
                 }
             }
             .background(glassBackground)
@@ -412,13 +445,13 @@ struct PeezySettingsView: View {
                 Divider().background(deepInk.opacity(0.06))
 
                 settingsRow(icon: "doc.text", label: "Privacy Policy", color: deepInk.opacity(0.4)) {
-                    openURL("https://peezy.move/privacy")
+                    openURL("https://peezy-1ecrdl.web.app/privacy.html")
                 }
 
                 Divider().background(deepInk.opacity(0.06))
 
                 settingsRow(icon: "doc.text", label: "Terms of Service", color: deepInk.opacity(0.4)) {
-                    openURL("https://peezy.move/terms")
+                    openURL("https://peezy-1ecrdl.web.app/terms.html")
                 }
             }
             .background(glassBackground)
@@ -510,6 +543,7 @@ struct PeezySettingsView: View {
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 14)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.peezyPress)
     }
@@ -546,6 +580,7 @@ struct PeezySettingsView: View {
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 14)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.peezyPress)
     }
@@ -606,11 +641,11 @@ struct PeezySettingsView: View {
                 // 3. Delete userKnowledge doc
                 try? await db.collection("userKnowledge").document(uid).delete()
                 
-                // 4. Sign out — AppRootView will re-evaluate and route to auth
-                //    On sign-in, no assessment found → assessment flow starts
+                // 4. Post notification — AppRootView will call checkAssessmentStatus(),
+                //    find no assessment docs, and route to .needsAssessment
                 await MainActor.run {
                     isProcessing = false
-                    try? authViewModel.signOut()
+                    NotificationCenter.default.post(name: .retakeAssessment, object: nil)
                 }
             } catch {
                 await MainActor.run {
@@ -622,51 +657,44 @@ struct PeezySettingsView: View {
     }
 
     private func deleteAccount() {
-        guard let uid = Auth.auth().currentUser?.uid else { return }
+        guard let user = Auth.auth().currentUser else { return }
+        let uid = user.uid
         isProcessing = true
 
         Task {
             do {
-                let db = Firestore.firestore()
+                // 1. Delete Firebase Auth account FIRST — if this fails (needs re-auth),
+                //    Firestore data is still intact and the user can try again.
+                try await user.delete()
 
-                // 1. Delete all tasks
-                let tasksSnapshot = try await db.collection("users").document(uid)
-                    .collection("tasks").getDocuments()
+                // 2. Auth succeeded — safe to delete Firestore data
+                let db = Firestore.firestore()
+                let userRef = db.collection("users").document(uid)
+
+                let tasksSnapshot = try await userRef.collection("tasks").getDocuments()
                 for doc in tasksSnapshot.documents {
                     try await doc.reference.delete()
                 }
 
-                // 2. Delete assessment docs
-                let assessmentSnapshot = try await db.collection("users").document(uid)
-                    .collection("user_assessments").getDocuments()
+                let assessmentSnapshot = try await userRef.collection("user_assessments").getDocuments()
                 for doc in assessmentSnapshot.documents {
                     try await doc.reference.delete()
                 }
 
-                // 3. Delete mini-assessment docs
-                let miniSnapshot = try await db.collection("users").document(uid)
-                    .collection("miniAssessments").getDocuments()
+                let miniSnapshot = try await userRef.collection("miniAssessments").getDocuments()
                 for doc in miniSnapshot.documents {
                     try await doc.reference.delete()
                 }
 
-                // 4. Delete workflow responses
-                let workflowSnapshot = try await db.collection("users").document(uid)
-                    .collection("workflowResponses").getDocuments()
+                let workflowSnapshot = try await userRef.collection("workflowResponses").getDocuments()
                 for doc in workflowSnapshot.documents {
                     try await doc.reference.delete()
                 }
 
-                // 5. Delete userKnowledge doc
                 try? await db.collection("userKnowledge").document(uid).delete()
+                try? await userRef.delete()
 
-                // 6. Delete the root user document
-                try? await db.collection("users").document(uid).delete()
-
-                // 7. Delete Firebase Auth account
-                try await Auth.auth().currentUser?.delete()
-
-                // 8. Sign out and return to auth screen
+                // 3. Sign out and return to auth screen
                 await MainActor.run {
                     isProcessing = false
                     try? authViewModel.signOut()
@@ -674,7 +702,7 @@ struct PeezySettingsView: View {
             } catch {
                 await MainActor.run {
                     isProcessing = false
-                    toastMessage = "Failed to delete account: \(error.localizedDescription)"
+                    toastMessage = "Please sign out and sign back in, then try again."
                 }
             }
         }
@@ -784,7 +812,13 @@ struct EditMoveDateSheet: View {
 
     @Environment(\.dismiss) private var dismiss
     @State private var selectedDate: Date = Date()
+    @State private var originalDate: Date = Date()
+    @State private var showUpdateConfirmation = false
     private let deepInk = PeezyTheme.Colors.deepInk
+
+    private var hasChanged: Bool {
+        !Calendar.current.isDate(selectedDate, inSameDayAs: originalDate)
+    }
 
     var body: some View {
         NavigationView {
@@ -795,17 +829,12 @@ struct EditMoveDateSheet: View {
                     DatePicker(
                         "Move Date",
                         selection: $selectedDate,
+                        in: Date()...,
                         displayedComponents: .date
                     )
                     .datePickerStyle(.graphical)
                     .tint(deepInk)
                     .padding(20)
-
-                    PeezyAssessmentButton("Save") {
-                        onSave(selectedDate)
-                        dismiss()
-                    }
-                    .padding(.horizontal, 20)
 
                     Spacer()
                 }
@@ -817,12 +846,33 @@ struct EditMoveDateSheet: View {
                     Button("Cancel") { dismiss() }
                         .foregroundColor(deepInk)
                 }
+                if hasChanged {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Update") {
+                            showUpdateConfirmation = true
+                        }
+                        .fontWeight(.semibold)
+                        .foregroundColor(deepInk)
+                    }
+                }
             }
             .toolbarColorScheme(.light, for: .navigationBar)
+            .alert("Update Move Date?", isPresented: $showUpdateConfirmation) {
+                Button("Cancel", role: .cancel) { }
+                Button("Update") {
+                    onSave(selectedDate)
+                    dismiss()
+                }
+            } message: {
+                Text("This will update your tasks and timeline to reflect the new date.")
+            }
         }
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
-        .onAppear { selectedDate = currentDate }
+        .onAppear {
+            selectedDate = currentDate
+            originalDate = currentDate
+        }
     }
 }
 
@@ -834,45 +884,103 @@ struct EditAddressSheet: View {
     var onSave: (String) -> Void
 
     @Environment(\.dismiss) private var dismiss
-    @State private var address: String = ""
+    @State private var searchManager = AddressSearchManager()
     @FocusState private var isFocused: Bool
     private let deepInk = PeezyTheme.Colors.deepInk
+
+    private var saveValue: String {
+        searchManager.queryFragment.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
 
     var body: some View {
         NavigationView {
             ZStack {
                 PeezyTheme.Colors.lightBase.ignoresSafeArea()
 
-                VStack(spacing: 24) {
+                VStack(alignment: .leading, spacing: 16) {
                     VStack(alignment: .leading, spacing: 8) {
                         Text(title.uppercased())
                             .font(PeezyTheme.Typography.captionMedium)
                             .foregroundColor(deepInk.opacity(0.4))
                             .tracking(0.5)
 
-                        TextField("Enter address", text: $address)
+                        TextField("Enter address", text: $searchManager.queryFragment)
                             .textContentType(.fullStreetAddress)
                             .font(PeezyTheme.Typography.body)
                             .foregroundColor(deepInk)
                             .focused($isFocused)
                             .tint(deepInk)
+                            .autocorrectionDisabled()
+                            .textInputAutocapitalization(.words)
                             .padding(16)
                             .background(
                                 RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadiusSmall, style: .continuous)
                                     .fill(deepInk.opacity(0.04))
                                     .overlay(
                                         RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadiusSmall, style: .continuous)
-                                            .stroke(deepInk.opacity(0.06), lineWidth: 0.5)
+                                            .stroke(isFocused ? deepInk.opacity(0.2) : deepInk.opacity(0.06), lineWidth: isFocused ? 1 : 0.5)
                                     )
                             )
                     }
                     .padding(.horizontal, 20)
                     .padding(.top, 20)
 
-                    PeezyAssessmentButton("Save", disabled: address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) {
-                        let trimmed = address.trimmingCharacters(in: .whitespacesAndNewlines)
-                        guard !trimmed.isEmpty else { return }
-                        onSave(trimmed)
+                    if !searchManager.suggestions.isEmpty {
+                        VStack(spacing: 0) {
+                            ForEach(Array(searchManager.suggestions.enumerated()), id: \.offset) { index, suggestion in
+                                Button {
+                                    isFocused = false
+                                    Task {
+                                        await searchManager.selectSuggestion(suggestion)
+                                    }
+                                } label: {
+                                    HStack(spacing: 12) {
+                                        Image(systemName: "mappin.circle.fill")
+                                            .font(.system(size: 16))
+                                            .foregroundColor(deepInk.opacity(0.35))
+
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(suggestion.title)
+                                                .font(PeezyTheme.Typography.body)
+                                                .foregroundColor(deepInk)
+                                                .lineLimit(1)
+                                            if !suggestion.subtitle.isEmpty {
+                                                Text(suggestion.subtitle)
+                                                    .font(PeezyTheme.Typography.caption)
+                                                    .foregroundColor(deepInk.opacity(0.5))
+                                                    .lineLimit(1)
+                                            }
+                                        }
+                                        Spacer()
+                                    }
+                                    .padding(.horizontal, 20)
+                                    .padding(.vertical, 12)
+                                    .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+
+                                if index < searchManager.suggestions.count - 1 {
+                                    Divider()
+                                        .background(deepInk.opacity(0.06))
+                                        .padding(.horizontal, 20)
+                                }
+                            }
+                        }
+                        .background(
+                            RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadiusSmall, style: .continuous)
+                                .fill(deepInk.opacity(0.03))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadiusSmall, style: .continuous)
+                                        .stroke(deepInk.opacity(0.06), lineWidth: 0.5)
+                                )
+                        )
+                        .padding(.horizontal, 20)
+                        .animation(.easeOut(duration: 0.2), value: searchManager.suggestions.count)
+                    }
+
+                    PeezyAssessmentButton("Save", disabled: saveValue.isEmpty) {
+                        guard !saveValue.isEmpty else { return }
+                        onSave(saveValue)
                         dismiss()
                     }
                     .padding(.horizontal, 20)
@@ -890,10 +998,10 @@ struct EditAddressSheet: View {
             }
             .toolbarColorScheme(.light, for: .navigationBar)
         }
-        .presentationDetents([.medium])
+        .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
         .onAppear {
-            address = currentValue
+            searchManager.queryFragment = currentValue
             isFocused = true
         }
     }

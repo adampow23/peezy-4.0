@@ -70,7 +70,7 @@ struct TextEntryTemplate: View {
     @State private var headerDone = false
     @State private var subtextDone = false
     @State private var showControls = false
-    @State private var isHero = true
+    @State private var isHero = false
     @State private var skipped = false
     @FocusState private var isFocused: Bool
 
@@ -206,33 +206,36 @@ struct TextEntryTemplate: View {
     // ── MORPH LOGIC ─────────────────────────────────────────────
 
     private func triggerMorph() {
-        DispatchQueue.main.asyncAfter(deadline: .now() + morphDelay) {
-            guard isHero else { return }
-            performMorph()
-        }
-    }
-
-    private func performMorph() {
-        withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) {
-            isHero = false
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
             withAnimation(.easeOut(duration: 0.35)) {
                 showControls = true
             }
-            // Auto-focus the text field so keyboard opens automatically
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
                 isFocused = true
             }
         }
     }
 
+    private func performMorph() {
+        withAnimation(.easeOut(duration: 0.35)) {
+            showControls = true
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            isFocused = true
+        }
+    }
+
     private func skipToControls() {
-        guard isHero else { return }
+        guard !showControls else { return }
         skipped = true
         headerDone = true
         subtextDone = true
-        performMorph()
+        withAnimation(.easeOut(duration: 0.2)) {
+            showControls = true
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            isFocused = true
+        }
     }
 }
 

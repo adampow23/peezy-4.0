@@ -9,7 +9,7 @@ import SwiftUI
 import FirebaseAuth
 import FirebaseFirestore
 
-// Note: Notification.Name.assessmentCompleted is defined in AssessmentCoordinator.swift
+// Note: Notification.Name.assessmentCompleted and .retakeAssessment are defined in AssessmentCoordinator.swift
 
 enum AppState {
     case loading
@@ -49,6 +49,11 @@ struct AppRootView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .assessmentCompleted)) { _ in
             print("📢 Received AssessmentCompleted notification - rechecking state")
+            checkAssessmentStatus()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .retakeAssessment)) { _ in
+            print("📢 Received retakeAssessment notification - routing to assessment")
+            userState = nil
             checkAssessmentStatus()
         }
         .onChange(of: authViewModel.isAuthenticated) { _, isAuthenticated in

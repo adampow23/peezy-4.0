@@ -686,4 +686,5 @@ class AssessmentCoordinator: ObservableObject {
 
 extension Notification.Name {
     static let assessmentCompleted = Notification.Name("assessmentCompleted")
+    static let retakeAssessment = Notification.Name("retakeAssessment")
 }

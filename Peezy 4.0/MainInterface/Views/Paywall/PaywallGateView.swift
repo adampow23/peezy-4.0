@@ -99,7 +99,24 @@ struct PaywallGateView: View {
                         .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.4))
                 }
                 .buttonStyle(.plain)
-                .padding(.bottom, 24)
+                .padding(.bottom, 12)
+
+                // MARK: - Subscription Terms (Apple 3.1.2)
+                Text("Payment will be charged to your Apple ID account at confirmation of purchase. Subscription automatically renews unless cancelled at least 24 hours before the end of the current period. Manage subscriptions in Settings > Apple ID > Subscriptions.")
+                    .font(.system(size: 10))
+                    .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.3))
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 32)
+                    .padding(.bottom, 8)
+
+                HStack(spacing: 4) {
+                    Link("Privacy Policy", destination: URL(string: "https://peezy-1ecrdl.web.app/privacy.html")!)
+                    Text("·")
+                    Link("Terms of Service", destination: URL(string: "https://peezy-1ecrdl.web.app/terms.html")!)
+                }
+                .font(.system(size: 10))
+                .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.3))
+                .padding(.bottom, 16)
             }
         }
     }
