@@ -188,8 +188,8 @@ class AssessmentDataManager: ObservableObject {
         data["moveDistance"] = moveDistance.isEmpty ? "Long Distance" : moveDistance
         data["isInterstate"] = isInterstate.isEmpty ? "Yes" : isInterstate
 
-        // Vehicle mapping — UI stores "None"/"One"/"Two"/"Three+", catalog expects "Yes"/"No"
-        data["hasVehicles"] = (hasVehicles.isEmpty || hasVehicles == "None" || hasVehicles == "0") ? "No" : "Yes"
+        // Vehicle mapping — UI stores "Yes"/"No" directly, pass through to catalog
+        data["hasVehicles"] = (hasVehicles.isEmpty || hasVehicles == "No" || hasVehicles == "None" || hasVehicles == "0") ? "No" : "Yes"
 
         // Service hire mapping — UI now stores "Yes"/"No" directly for hireMovers
         data["hireMovers"] = hireMovers

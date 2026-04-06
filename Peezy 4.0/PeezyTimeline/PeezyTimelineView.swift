@@ -175,14 +175,15 @@ struct PeezyTaskStream: View {
             }
         }
         .edgesIgnoringSafeArea(.bottom)
-        .fullScreenCover(isPresented: $showTaskFlow) {
+        .fullScreenCover(isPresented: $showTaskFlow, onDismiss: {
+            taskFlowCard = nil
+        }) {
             if let card = taskFlowCard {
                 TaskFlowView(
                     task: card,
                     userState: userState,
                     onDismiss: {
                         showTaskFlow = false
-                        taskFlowCard = nil
                     },
                     onStartWorkflow: nil
                 )

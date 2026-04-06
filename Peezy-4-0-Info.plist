@@ -9,13 +9,9 @@
 			<string>Editor</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>com.googleusercontent.apps.833904565407-bln5r57ncg6eh34ff4hndbjebitrkaod</string>
+				<string>com.googleusercontent.apps.833904565407-m9jhkhdhvih0aeeknk4fpcfbnv3g4oso</string>
 			</array>
 		</dict>
 	</array>
-	<key>NSCameraUsageDescription</key>
-	<string>Peezy uses your camera to scan rooms and create your moving inventory.</string>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>Peezy uses your microphone to capture audio notes during room scanning.</string>
 </dict>
 </plist>

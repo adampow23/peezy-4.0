@@ -2,92 +2,58 @@
 //  TypingText.swift
 //  Peezy
 //
-//  Typewriter text reveal using AttributedString.
-//
-//  HOW IT WORKS:
-//  The full text is ALWAYS rendered. Unrevealed characters have .clear foreground color.
-//  On each timer tick, one more character becomes visible. Because the string content
-//  never changes, SwiftUI computes the layout exactly once. No shake, no jitter,
-//  no alignment shift — structurally impossible.
+//  Animated text reveal — fade-in with subtle upward slide.
+//  Replaces character-by-character typewriter with a faster, cleaner animation.
+//  Keeps identical public interface for backward compatibility with all templates.
 //
 
 import SwiftUI
 
 struct TypingText: View {
-
-    // ═══════════════════════════════════════════
-    //  PUBLIC API — same as before, drop-in replacement
-    // ═══════════════════════════════════════════
     let fullText: String
-    let speed: Double                        // seconds per character
-    var visibleColor: Color = Color(red: 0.05, green: 0.1, blue: 0.2)
-    var onComplete: (() -> Void)? = nil
+    let speed: Double  // Kept for API compatibility — not used
+    let visibleColor: Color
+    let onComplete: (() -> Void)?
 
-    // ═══════════════════════════════════════════
-    //  INTERNAL STATE
-    // ═══════════════════════════════════════════
-    @State private var revealedCount: Int = 0
-    @State private var timer: Timer?
+    @State private var appeared = false
+    @State private var completionFired = false
 
-    // ═══════════════════════════════════════════
-    //  ATTRIBUTED STRING — the magic
-    // ═══════════════════════════════════════════
-    private var styledText: AttributedString {
-        var result = AttributedString(fullText)
-
-        // Everything starts with the visible color
-        result.foregroundColor = visibleColor
-
-        // Hide unrevealed characters
-        if revealedCount < fullText.count {
-            let hideStart = result.index(result.startIndex, offsetByCharacters: revealedCount)
-            result[hideStart..<result.endIndex].foregroundColor = .clear
-        }
-
-        return result
+    init(
+        fullText: String,
+        speed: Double,
+        visibleColor: Color = Color(red: 0.05, green: 0.10, blue: 0.20),
+        onComplete: (() -> Void)? = nil
+    ) {
+        self.fullText = fullText
+        self.speed = speed
+        self.visibleColor = visibleColor
+        self.onComplete = onComplete
     }
 
-    // ═══════════════════════════════════════════
-    //  BODY
-    // ═══════════════════════════════════════════
     var body: some View {
-        Text(styledText)
+        Text(fullText)
+            .foregroundStyle(visibleColor)
             .accessibilityLabel(fullText)
-            .onAppear { startTyping() }
-            .onChange(of: fullText) { _, _ in
-                revealedCount = 0
-                timer?.invalidate()
-                startTyping()
-            }
-            .onDisappear {
-                timer?.invalidate()
+            .opacity(appeared ? 1 : 0)
+            .offset(y: appeared ? 0 : 8)
+            .animation(.easeOut(duration: 0.4), value: appeared)
+            .onAppear {
+                // Trigger the animation on next frame
+                DispatchQueue.main.async {
+                    appeared = true
+                }
+                // Fire onComplete after animation finishes
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
+                    guard !completionFired else { return }
+                    completionFired = true
+                    onComplete?()
+                }
             }
     }
 
-    // ═══════════════════════════════════════════
-    //  TIMER
-    // ═══════════════════════════════════════════
-    private func startTyping() {
-        guard revealedCount < fullText.count else {
-            onComplete?()
-            return
-        }
-        timer = Timer.scheduledTimer(withTimeInterval: speed, repeats: true) { t in
-            if revealedCount < fullText.count {
-                revealedCount += 1
-            }
-            if revealedCount >= fullText.count {
-                t.invalidate()
-                onComplete?()
-            }
-        }
-    }
-
-    /// Instantly reveal all text (for skip-on-tap)
+    // Legacy method — kept for API compatibility, no longer needed
     func revealAll() {
-        timer?.invalidate()
-        revealedCount = fullText.count
-        onComplete?()
+        // No-op: text is always fully visible
     }
 }
 

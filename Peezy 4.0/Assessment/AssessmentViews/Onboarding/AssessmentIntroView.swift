@@ -28,7 +28,6 @@ struct AssessmentIntroView: View {
             Image(systemName: "wand.and.stars")
                 .font(.system(size: 80))
                 .foregroundColor(PeezyTheme.Colors.deepInk)
-                .symbolEffect(.variableColor.iterative.reversing, options: .repeating, value: showIcon)
                 .padding(.bottom, 32)
                 .scaleEffect(showIcon ? 1.0 : 0.3)
                 .opacity(showIcon ? 1 : 0)

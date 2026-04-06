@@ -423,14 +423,15 @@ struct PeezyHomeView: View {
         }) {
             InventoryFlowView()
         }
-        .fullScreenCover(isPresented: $showTaskFlow) {
+        .fullScreenCover(isPresented: $showTaskFlow, onDismiss: {
+            taskFlowCard = nil
+        }) {
             if let card = taskFlowCard {
                 TaskFlowView(
                     task: card,
                     userState: userState,
                     onDismiss: {
                         showTaskFlow = false
-                        taskFlowCard = nil
                     },
                     onStartWorkflow: {
                         showTaskFlow = false
@@ -725,20 +726,12 @@ struct PeezyHomeView: View {
                 }
             },
             onComplete: {
-                if subscriptionManager.isSubscribed {
-                    viewModel.completeCurrentTask()
-                } else {
-                    taskFlowCard = task
-                    showTaskFlow = true
-                }
+                taskFlowCard = task
+                showTaskFlow = true
             },
             onUserHandle: {
-                if subscriptionManager.isSubscribed {
-                    viewModel.markCurrentTaskUserInProgress()
-                } else {
-                    taskFlowCard = task
-                    showTaskFlow = true
-                }
+                taskFlowCard = task
+                showTaskFlow = true
             },
             onSkip: { viewModel.skipCurrentTask() }
         )

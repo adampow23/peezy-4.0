@@ -1,10 +1,10 @@
 import SwiftUI
 
 struct HasVehicles: View {
-    let header      = "How many vehicles will be moving with you?"
+    let header      = "Will any vehicles be moving with you?"
     let subtext     : String? = nil
-    let options     = ["0", "1", "2", "3+"]
-    let icons       = ["xmark.circle.fill", "car.fill", "car.2.fill", "car.2.fill"]
+    let options     = ["Yes", "No"]
+    let icons       = ["hand.thumbsup.fill", "hand.thumbsdown.fill"]
 
     @EnvironmentObject var data: AssessmentDataManager
     @EnvironmentObject var coordinator: AssessmentCoordinator

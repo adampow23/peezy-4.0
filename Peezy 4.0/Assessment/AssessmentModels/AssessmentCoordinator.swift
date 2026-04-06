@@ -493,7 +493,7 @@ class AssessmentCoordinator: ObservableObject {
 
         case .hasVehicles:
             return InputContext(
-                header: "How many vehicles will be moving with you?",
+                header: "Will any vehicles be moving with you?",
                 subheader: nil
             )
 
