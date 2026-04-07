@@ -26,7 +26,7 @@ struct FinancialDetails: View {
 
     // Morph state — only morphs on first entry
     @State private var headerDone = false
-    @State private var isHero = true
+    @State private var isHero = false
     @State private var skipped = false
     @State private var showControls = false
 
@@ -70,7 +70,7 @@ struct FinancialDetails: View {
                 // ── TEXT AREA ──
                 VStack(spacing: 8) {
                     Group {
-                        if skipped || !isHero {
+                        if skipped {
                             Text(headerText)
                         } else {
                             TypingText(
@@ -157,27 +157,26 @@ struct FinancialDetails: View {
     // ── MORPH LOGIC ─────────────────────────────────────────────
 
     private func triggerMorph() {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-            guard isHero else { return }
-            performMorph()
-        }
-    }
-
-    private func performMorph() {
-        withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) {
-            isHero = false
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
             withAnimation(.easeOut(duration: 0.35)) {
                 showControls = true
             }
         }
     }
 
+    private func performMorph() {
+        withAnimation(.easeOut(duration: 0.35)) {
+            showControls = true
+        }
+    }
+
     private func skipToControls() {
+        guard !showControls else { return }
         skipped = true
         headerDone = true
-        performMorph()
+        withAnimation(.easeOut(duration: 0.2)) {
+            showControls = true
+        }
     }
 
     // ── HELPERS ─────────────────────────────────────────────────

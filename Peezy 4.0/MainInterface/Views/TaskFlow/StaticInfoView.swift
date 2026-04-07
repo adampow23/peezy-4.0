@@ -45,7 +45,7 @@ struct StaticInfoView: View {
                                 .padding(.horizontal, 30)
 
                             sectionLabel("Tips")
-                            Text("Check with your provider early — some transfers take 2–3 weeks to process.")
+                            Text(task.briefingMessage ?? task.subtitle)
                                 .font(.title3)
                                 .fontWeight(.medium)
                                 .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.5))

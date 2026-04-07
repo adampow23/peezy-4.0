@@ -21,63 +21,18 @@
 
 import SwiftUI
 
-// MARK: - Card Success State
-
-enum CardSuccessState: Equatable {
-    case userHandling
-    case completed
-
-    var icon: String {
-        switch self {
-        case .userHandling: return "hand.thumbsup.fill"
-        case .completed:    return "checkmark.circle.fill"
-        }
-    }
-
-    var title: String {
-        switch self {
-        case .userHandling: return "You've got this!"
-        case .completed:    return "Done!"
-        }
-    }
-
-    var subtitle: String {
-        switch self {
-        case .userHandling: return "We moved it to your In Progress list."
-        case .completed:    return "Great job checking that off."
-        }
-    }
-
-    var iconColor: Color {
-        switch self {
-        case .userHandling: return PeezyTheme.Colors.deepInk.opacity(0.8)
-        case .completed:    return .green
-        }
-    }
-}
-
 // MARK: - Interactive Home Task Card
 
 struct InteractiveHomeTaskCard: View {
     let task: PeezyCard
-
-    // Actions from view model — called AFTER celebration pause
     let onStartWorkflow: () -> Void
-    let onComplete: () -> Void
-    let onUserHandle: () -> Void
     let onSkip: () -> Void
 
-    // Internal celebration state
-    @State private var successState: CardSuccessState? = nil
     @State private var dismissOffset: CGFloat = 0
-
-    private var isWorkflow: Bool {
-        !(task.workflowId ?? "").isEmpty
-    }
 
     var body: some View {
         ZStack {
-            // Glass card background (same as glassCard helper)
+            // Glass card background
             ZStack {
                 RoundedRectangle(cornerRadius: 36, style: .continuous)
                     .foregroundStyle(.regularMaterial)
@@ -91,81 +46,46 @@ struct InteractiveHomeTaskCard: View {
             )
             .shadow(color: Color.black.opacity(0.1), radius: 20, x: 0, y: 15)
 
-            // Content switcher — crossfade between task and celebration
-            ZStack {
-                if let state = successState {
-                    // MARK: Celebration State
-                    VStack(spacing: 20) {
-                        Image(systemName: state.icon)
-                            .font(.system(size: 72))
-                            .foregroundColor(state.iconColor)
-                            .transition(.scale(scale: 0.5).combined(with: .opacity))
-
-                        VStack(spacing: 8) {
-                            Text(state.title)
-                                .font(.system(size: 28, weight: .heavy, design: .rounded))
-                                .foregroundColor(PeezyTheme.Colors.deepInk)
-
-                            Text(state.subtitle)
-                                .font(.title3)
-                                .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.6))
-                                .multilineTextAlignment(.center)
-                        }
-                    }
-                    .padding(.horizontal, 30)
-                    .transition(.asymmetric(
-                        insertion: .scale(scale: 0.8).combined(with: .opacity),
-                        removal: .opacity
-                    ))
-
-                } else {
-                    // MARK: Standard Task Content
-                    VStack(spacing: 0) {
-                        // Header
-                        HStack {
-                            Image(systemName: task.icon)
-                            Text(task.headerLabel)
-                            Spacer()
-                        }
-                        .font(.caption).bold()
-                        .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.5))
-                        .padding(.top, 30)
-                        .padding(.horizontal, 30)
-
-                        Spacer()
-
-                        // Content
-                        VStack(alignment: .leading, spacing: 15) {
-                            Text(task.title)
-                                .font(.system(size: 44, weight: .heavy))
-                                .foregroundColor(PeezyTheme.Colors.deepInk)
-                                .lineLimit(2)
-                                .minimumScaleFactor(0.5)
-                                .fixedSize(horizontal: false, vertical: true)
-
-                            Text(task.subtitle)
-                                .font(.title3)
-                                .fontWeight(.medium)
-                                .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.6))
-                                .lineLimit(nil)
-                                .minimumScaleFactor(0.8)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                        .padding(.horizontal, 30)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-
-                        Spacer()
-
-                        // Action buttons
-                        actionButtons
-                    }
-                    .transition(.asymmetric(
-                        insertion: .opacity,
-                        removal: .scale(scale: 0.95).combined(with: .opacity)
-                    ))
+            // Task content
+            VStack(spacing: 0) {
+                // Header
+                HStack {
+                    Image(systemName: task.icon)
+                    Text(task.headerLabel)
+                    Spacer()
                 }
+                .font(.caption).bold()
+                .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.5))
+                .padding(.top, 30)
+                .padding(.horizontal, 30)
+
+                Spacer()
+
+                // Content
+                VStack(alignment: .leading, spacing: 15) {
+                    Text(task.title)
+                        .font(.system(size: 44, weight: .heavy))
+                        .foregroundColor(PeezyTheme.Colors.deepInk)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.5)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    Text(task.subtitle)
+                        .font(.title3)
+                        .fontWeight(.medium)
+                        .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.6))
+                        .lineLimit(nil)
+                        .minimumScaleFactor(0.8)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.horizontal, 30)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                Spacer()
+
+                // Action buttons
+                actionButtons
             }
-            .animation(.spring(response: 0.5, dampingFraction: 0.8), value: successState)
         }
         .frame(width: 340, height: 500)
         .offset(x: dismissOffset)
@@ -178,7 +98,7 @@ struct InteractiveHomeTaskCard: View {
     private var actionButtons: some View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
-                // Later (skip) — NO celebration, fly off left
+                // Later (skip) — fly off left
                 Button(action: {
                     PeezyHaptics.light()
                     withAnimation(.easeIn(duration: 0.3)) {
@@ -208,47 +128,15 @@ struct InteractiveHomeTaskCard: View {
                 }
                 .buttonStyle(.peezySecondary)
 
-                // I'm on it (user in progress) — CELEBRATION then action
-                if !isWorkflow {
-                    Button(action: {
-                        triggerSuccess(state: .userHandling, finalAction: onUserHandle)
-                    }) {
-                        VStack(spacing: 4) {
-                            Image(systemName: "figure.walk.circle.fill")
-                                .font(.system(size: 18))
-                            Text("I'm on it")
-                                .font(.system(size: 12, weight: .medium))
-                        }
-                        .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.7))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
-                        .background(
-                            RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadius, style: .continuous)
-                                .fill(.regularMaterial)
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadius, style: .continuous)
-                                .stroke(Color.black.opacity(0.05), lineWidth: 1)
-                        )
-                    }
-                    .buttonStyle(.peezySecondary)
-                }
-
-                // Done / Start
+                // Start task — single primary action for all task types
                 Button(action: {
-                    if isWorkflow {
-                        // Start workflow — NO celebration, begins multi-step flow
-                        PeezyHaptics.medium()
-                        onStartWorkflow()
-                    } else {
-                        // Complete — CELEBRATION then action
-                        triggerSuccess(state: .completed, finalAction: onComplete)
-                    }
+                    PeezyHaptics.medium()
+                    onStartWorkflow()
                 }) {
                     VStack(spacing: 4) {
-                        Image(systemName: isWorkflow ? "arrow.forward.circle.fill" : "checkmark.circle.fill")
+                        Image(systemName: "arrow.forward.circle.fill")
                             .font(.system(size: 18))
-                        Text(isWorkflow ? "Start" : "Done")
+                        Text("Start task")
                             .font(.system(size: 12, weight: .semibold))
                     }
                     .foregroundColor(.white)
@@ -263,26 +151,6 @@ struct InteractiveHomeTaskCard: View {
             }
             .padding(.horizontal, 30)
             .padding(.bottom, 30)
-        }
-    }
-
-    // MARK: - Celebration Trigger
-
-    private func triggerSuccess(state: CardSuccessState, finalAction: @escaping () -> Void) {
-        PeezyHaptics.medium()
-
-        // 1. Morph the card to celebration state
-        successState = state
-
-        // 2. Hold for 1.5 seconds, then fly off right
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-            withAnimation(.easeIn(duration: 0.3)) {
-                dismissOffset = UIScreen.main.bounds.width
-            }
-            // 3. After fly-off completes, fire the backend action
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                finalAction()
-            }
         }
     }
 }
@@ -728,14 +596,6 @@ struct PeezyHomeView: View {
                 } else {
                     viewModel.startWorkflowForCurrentTask()
                 }
-            },
-            onComplete: {
-                taskFlowCard = task
-                showTaskFlow = true
-            },
-            onUserHandle: {
-                taskFlowCard = task
-                showTaskFlow = true
             },
             onSkip: { viewModel.skipCurrentTask() }
         )
