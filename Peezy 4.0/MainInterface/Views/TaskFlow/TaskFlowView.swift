@@ -13,6 +13,9 @@ struct TaskFlowView: View {
     @State private var flowState: FlowState = .entry
     @State private var confirmedData: [String: String] = [:]
     @State private var transferChoiceLabel: String? = nil
+    @State private var submitError: String? = nil
+
+    @Environment(\.accessibilityReduceMotion) var reduceMotion
 
     enum FlowState {
         case entry          // Universal entry (all types)
@@ -87,13 +90,26 @@ struct TaskFlowView: View {
                     })
                 }
             }
-            .transition(.asymmetric(
+            .transition(reduceMotion ? .opacity : .asymmetric(
                 insertion: .move(edge: .trailing).combined(with: .opacity),
                 removal: .move(edge: .leading).combined(with: .opacity)
             ))
 
+            // Submission error toast — shown if Firestore write fails
+            if let error = submitError {
+                VStack {
+                    Spacer()
+                    ErrorToast(message: error) {
+                        submitError = nil
+                    }
+                    .padding(.bottom, 16)
+                }
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .zIndex(1)
+            }
         }
-        .animation(.easeInOut(duration: 0.3), value: flowState)
+        .animation(reduceMotion ? .easeOut(duration: 0.2) : .easeInOut(duration: 0.3), value: flowState)
+        .animation(.spring(response: 0.4), value: submitError != nil)
     }
 
     private func handleStart() {
@@ -136,9 +152,7 @@ struct TaskFlowView: View {
     }
 
     private func submitTask(with data: [String: String]) {
-        flowState = .submitted
-
-        // Fire webhook — failure is silent
+        // Fire webhook — failure is intentionally silent (best-effort notification)
         WebhookService.sendTaskSubmission(
             userId: userState?.userId ?? "unknown",
             userName: userState?.name ?? "Unknown",
@@ -149,20 +163,30 @@ struct TaskFlowView: View {
             transferChoice: transferChoiceLabel
         )
 
-        // Update Firestore task status
+        // If no auth/taskId, advance optimistically — nothing to write
         guard let userId = Auth.auth().currentUser?.uid,
-              let taskId = task.taskId else { return }
+              let taskId = task.taskId else {
+            flowState = .submitted
+            return
+        }
 
         let db = Firestore.firestore()
         let taskRef = db.collection("users").document(userId)
             .collection("tasks").document(taskId)
 
         Task {
-            try? await taskRef.updateData([
-                "status": "PendingPeezy",
-                "confirmedFields": data,
-                "submittedAt": FieldValue.serverTimestamp()
-            ])
+            do {
+                try await taskRef.updateData([
+                    "status": "PendingPeezy",
+                    "confirmedFields": data,
+                    "submittedAt": FieldValue.serverTimestamp()
+                ])
+                await MainActor.run { flowState = .submitted }
+            } catch {
+                await MainActor.run {
+                    submitError = "Submission failed. Please check your connection and try again."
+                }
+            }
         }
     }
 }

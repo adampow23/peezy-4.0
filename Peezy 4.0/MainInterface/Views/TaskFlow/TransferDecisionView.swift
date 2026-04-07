@@ -15,11 +15,12 @@ struct TransferDecisionView: View {
                 VStack(alignment: .leading, spacing: 0) {
                     HStack {
                         Image(systemName: task.icon)
+                            .accessibilityHidden(true)
                         Text(task.headerLabel)
                         Spacer()
                     }
                     .font(.caption).bold()
-                    .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.5))
+                    .foregroundStyle(.secondary)
                     .padding(.horizontal, 30)
                     .padding(.top, 30)
 
@@ -33,7 +34,7 @@ struct TransferDecisionView: View {
                             .minimumScaleFactor(0.5)
 
                         Rectangle()
-                            .fill(Color.black.opacity(0.15))
+                            .fill(Color.primary.opacity(0.15))
                             .frame(width: 50, height: 2)
 
                         Text(recommendationText)
@@ -55,7 +56,7 @@ struct TransferDecisionView: View {
                             onCancel()
                         }
                         .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.7))
+                        .foregroundStyle(PeezyTheme.Colors.deepInk)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 16)
                         .background {
@@ -67,7 +68,7 @@ struct TransferDecisionView: View {
                             }
                             .overlay {
                                 RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadius, style: .continuous)
-                                    .stroke(Color.black.opacity(0.08), lineWidth: 1)
+                                    .stroke(Color.primary.opacity(0.08), lineWidth: 1)
                             }
                         }
                         .buttonStyle(.plain)
@@ -95,7 +96,7 @@ struct TransferDecisionView: View {
             }
             .overlay {
                 RoundedRectangle(cornerRadius: 36, style: .continuous)
-                    .stroke(Color.black.opacity(0.05), lineWidth: 1)
+                    .stroke(Color.primary.opacity(0.07), lineWidth: 1)
                     .padding(1)
             }
             .shadow(color: Color.black.opacity(0.1), radius: 20, x: 0, y: 15)

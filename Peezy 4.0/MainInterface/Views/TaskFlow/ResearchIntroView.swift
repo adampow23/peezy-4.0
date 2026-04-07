@@ -15,11 +15,12 @@ struct TaskEntryView: View {
                     // Header
                     HStack {
                         Image(systemName: task.icon)
+                            .accessibilityHidden(true)
                         Text(task.headerLabel)
                         Spacer()
                     }
                     .font(.caption).bold()
-                    .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.5))
+                    .foregroundStyle(.secondary)
                     .padding(.horizontal, 30)
                     .padding(.top, 30)
 
@@ -33,7 +34,7 @@ struct TaskEntryView: View {
                             .minimumScaleFactor(0.5)
 
                         Rectangle()
-                            .fill(Color.black.opacity(0.15))
+                            .fill(Color.primary.opacity(0.15))
                             .frame(width: 50, height: 2)
 
                         Text(task.subtitle)
@@ -55,7 +56,8 @@ struct TaskEntryView: View {
                             onSkip()
                         }
                         .font(.system(size: 16, weight: .medium))
-                        .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.5))
+                        .foregroundStyle(.secondary)
+                        .frame(minWidth: 44, minHeight: 44)
                     }
                     .padding(.horizontal, 30)
                     .padding(.bottom, 30)
@@ -74,7 +76,7 @@ struct TaskEntryView: View {
             }
             .overlay {
                 RoundedRectangle(cornerRadius: 36, style: .continuous)
-                    .stroke(Color.black.opacity(0.05), lineWidth: 1)
+                    .stroke(Color.primary.opacity(0.07), lineWidth: 1)
                     .padding(1)
             }
             .shadow(color: Color.black.opacity(0.1), radius: 20, x: 0, y: 15)
