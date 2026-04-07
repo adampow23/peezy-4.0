@@ -1,9 +1,11 @@
 import Foundation
+import FirebaseFunctions
 
 enum WebhookService {
-    // Hardcode for now — will move to config later
-    static let webhookURL = "PLACEHOLDER_WEBHOOK_URL"
 
+    /// Sends task flow submission to the backend via Cloud Function.
+    /// Called when user confirms details on a research or transfer/cancel task.
+    /// Fire-and-forget — failure is silent, app flow continues regardless.
     static func sendTaskSubmission(
         userId: String,
         userName: String,
@@ -13,28 +15,28 @@ enum WebhookService {
         confirmedFields: [String: String],
         transferChoice: String? = nil
     ) {
-        guard let url = URL(string: webhookURL) else { return }
+        let callable = Functions.functions().httpsCallable("submitTaskFlow")
 
-        var body: [String: Any] = [
+        var payload: [String: Any] = [
             "userId": userId,
             "userName": userName,
             "taskId": taskId,
             "taskTitle": taskTitle,
             "taskType": taskType,
-            "confirmedFields": confirmedFields,
-            "submittedAt": ISO8601DateFormatter().string(from: Date())
+            "confirmedFields": confirmedFields
         ]
 
         if let choice = transferChoice {
-            body["transferChoice"] = choice
+            payload["transferChoice"] = choice
         }
 
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
-
         // Fire and forget — failure is silent, app flow continues
-        URLSession.shared.dataTask(with: request).resume()
+        Task {
+            do {
+                _ = try await callable.call(payload)
+            } catch {
+                print("Task flow submission failed: \(error.localizedDescription)")
+            }
+        }
     }
 }

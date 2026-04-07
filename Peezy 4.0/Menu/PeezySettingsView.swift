@@ -44,10 +44,8 @@ struct PeezySettingsView: View {
     // Sign out confirmation
     @State private var showSignOutAlert = false
 
-    // Inventory scanner
-    @State private var showInventoryScanner = false
-
     #if DEBUG
+    @State private var showInventoryScanner = false
     @State private var showInventoryTestHarness = false
     #endif
     
@@ -84,9 +82,11 @@ struct PeezySettingsView: View {
                     subscriptionSection
                         .padding(.top, 20)
 
+                    #if DEBUG
                     // Inventory
                     inventorySection
                         .padding(.top, 20)
+                    #endif
 
                     // Support
                     supportSection
@@ -211,10 +211,10 @@ struct PeezySettingsView: View {
         } message: {
             Text(restoreMessage ?? "")
         }
+        #if DEBUG
         .fullScreenCover(isPresented: $showInventoryScanner) {
             InventoryFlowView()
         }
-        #if DEBUG
         .sheet(isPresented: $showInventoryTestHarness) {
             InventoryTestHarness()
         }
@@ -416,6 +416,7 @@ struct PeezySettingsView: View {
         }
     }
 
+    #if DEBUG
     // MARK: - Inventory Section
 
     private var inventorySection: some View {
@@ -430,6 +431,7 @@ struct PeezySettingsView: View {
             .background(glassBackground)
         }
     }
+    #endif
 
     // MARK: - Support Section
 

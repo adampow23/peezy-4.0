@@ -42,6 +42,7 @@ struct AppRootView: View {
                 
             case .hasAssessment:
                 PeezyMainContainer(userState: $userState)
+                    .environmentObject(authViewModel)
             }
         }
         .onAppear {

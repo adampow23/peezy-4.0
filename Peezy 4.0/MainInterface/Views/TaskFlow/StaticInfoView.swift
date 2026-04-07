@@ -29,7 +29,7 @@ struct StaticInfoView: View {
                     ScrollView {
                         VStack(alignment: .leading, spacing: 0) {
                             sectionLabel("Why this matters")
-                            Text(task.subtitle)
+                            Text(task.whyNeeded ?? task.subtitle)
                                 .font(.title3)
                                 .fontWeight(.medium)
                                 .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.6))
@@ -37,7 +37,7 @@ struct StaticInfoView: View {
                                 .padding(.horizontal, 30)
 
                             sectionLabel("What to do")
-                            Text(task.briefingMessage ?? task.subtitle)
+                            Text(task.subtitle)
                                 .font(.title3)
                                 .fontWeight(.medium)
                                 .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.6))
@@ -45,7 +45,7 @@ struct StaticInfoView: View {
                                 .padding(.horizontal, 30)
 
                             sectionLabel("Tips")
-                            Text(task.briefingMessage ?? task.subtitle)
+                            Text(task.tips ?? task.subtitle)
                                 .font(.title3)
                                 .fontWeight(.medium)
                                 .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.5))

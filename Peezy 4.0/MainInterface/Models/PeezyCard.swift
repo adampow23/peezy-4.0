@@ -61,6 +61,12 @@ struct PeezyCard: Identifiable, Equatable, Codable {
     // Task type from catalog (e.g. "provide_info", "schedule", "purchase")
     var taskType: String?
 
+    // Catalog tips (actionable advice for self-service tasks)
+    var tips: String?
+
+    // Catalog whyNeeded (explains why this task matters)
+    var whyNeeded: String?
+
     // MARK: - Card Types
     enum CardType: String, Codable {
         case intro          // "Good morning, 3 updates ready"
@@ -199,7 +205,9 @@ struct PeezyCard: Identifiable, Equatable, Codable {
         userInProgressReturnDate: Date? = nil,
         selfServiceOnly: Bool = false,
         actionType: String? = nil,
-        taskType: String? = nil
+        taskType: String? = nil,
+        tips: String? = nil,
+        whyNeeded: String? = nil
     ) {
         self.id = id
         self.type = type
@@ -224,6 +232,8 @@ struct PeezyCard: Identifiable, Equatable, Codable {
         self.selfServiceOnly = selfServiceOnly
         self.actionType = actionType
         self.taskType = taskType
+        self.tips = tips
+        self.whyNeeded = whyNeeded
     }
     
     // MARK: - Factory Methods

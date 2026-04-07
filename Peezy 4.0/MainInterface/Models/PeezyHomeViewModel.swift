@@ -348,7 +348,9 @@ final class PeezyHomeViewModel {
                     userInProgressReturnDate: userInProgressReturnDate,
                     selfServiceOnly: (data["selfServiceOnly"] as? Bool) ?? false,
                     actionType: data["actionType"] as? String,
-                    taskType: data["taskType"] as? String
+                    taskType: data["taskType"] as? String,
+                    tips: data["tips"] as? String,
+                    whyNeeded: data["whyNeeded"] as? String
                 )
 
                 if card.status == .inProgress {

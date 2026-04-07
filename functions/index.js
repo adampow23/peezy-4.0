@@ -430,6 +430,54 @@ exports.requestConcierge = onCall(
 );
 
 /**
+ * Submit task flow — user confirmed details for a research/transfer/cancel task
+ * Called from the iOS TaskFlowView after user taps "Looks Good — Go Ahead"
+ */
+exports.submitTaskFlow = onCall(
+  { region: 'us-central1', timeoutSeconds: 10, memory: '256MiB' },
+  async (request) => {
+    const { userId, userName, taskId, taskTitle, taskType, confirmedFields, transferChoice } = request.data;
+
+    const db = admin.firestore();
+    await db.collection('taskFlowSubmissions').add({
+      userId: userId || '',
+      userName: userName || '',
+      taskId: taskId || '',
+      taskTitle: taskTitle || '',
+      taskType: taskType || '',
+      confirmedFields: confirmedFields || {},
+      transferChoice: transferChoice || null,
+      submittedAt: admin.firestore.FieldValue.serverTimestamp(),
+      status: 'pending'
+    });
+
+    const webhookUrl = process.env.NOTIFICATION_WEBHOOK_URL;
+    if (webhookUrl) {
+      fetch(webhookUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'task_flow_submission',
+          userId: userId || '',
+          userName: userName || '',
+          taskId: taskId || '',
+          taskTitle: taskTitle || '',
+          taskType: taskType || '',
+          confirmedFields: confirmedFields || {},
+          transferChoice: transferChoice || null,
+          submittedAt: new Date().toISOString(),
+          status: 'pending'
+        })
+      }).catch(err => console.error('Task flow webhook failed:', err.message));
+    } else {
+      console.warn('NOTIFICATION_WEBHOOK_URL not configured');
+    }
+
+    return { success: true };
+  }
+);
+
+/**
  * Health check endpoint
  */
 exports.healthCheck = onRequest((req, res) => {
