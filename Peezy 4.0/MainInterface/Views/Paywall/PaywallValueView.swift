@@ -1,4 +1,5 @@
 import SwiftUI
+import StoreKit
 
 // MARK: - PaywallValueView
 //
@@ -7,6 +8,8 @@ import SwiftUI
 struct PaywallValueView: View {
 
     let onContinue: () -> Void
+
+    @EnvironmentObject private var subscriptionManager: SubscriptionManager
 
     var body: some View {
         ZStack {
@@ -56,7 +59,7 @@ struct PaywallValueView: View {
                 VStack(spacing: 12) {
                     PeezyAssessmentButton("Try it free", action: onContinue)
 
-                    Text("3-day free trial · Then $49.99/year")
+                    Text(trialPriceText)
                         .font(.system(size: 13))
                         .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.4))
                 }
@@ -65,8 +68,22 @@ struct PaywallValueView: View {
             }
         }
     }
+
+    private var trialPriceText: String {
+        guard let product = subscriptionManager.product(for: .annual) else {
+            return "3-day free trial · Then $49.99/year"
+        }
+        let price = product.displayPrice
+        if let intro = product.subscription?.introductoryOffer,
+           intro.paymentMode == .freeTrial {
+            let days = intro.period.value
+            return "\(days)-day free trial · Then \(price)/year"
+        }
+        return "\(price)/year"
+    }
 }
 
 #Preview {
     PaywallValueView(onContinue: {})
+        .environmentObject(SubscriptionManager.shared)
 }

@@ -99,6 +99,21 @@ struct PaywallGateView: View {
                         .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.4))
                 }
                 .buttonStyle(.plain)
+
+                Button {
+                    Task {
+                        await subscriptionManager.restorePurchases()
+                        if subscriptionManager.isSubscribed {
+                            onDismiss()
+                        }
+                    }
+                } label: {
+                    Text("Restore Purchases")
+                        .font(.system(size: 12, weight: .regular))
+                        .underline()
+                        .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.4))
+                }
+                .buttonStyle(.plain)
                 .padding(.bottom, 12)
 
                 // MARK: - Subscription Terms (Apple 3.1.2)
@@ -146,11 +161,11 @@ struct PaywallGateView: View {
                         .tracking(1)
                         .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.5))
 
-                    Text(plan == .annual ? "$49.99" : "$6.99")
+                    Text(priceText(for: plan))
                         .font(.system(size: 26, weight: .heavy))
                         .foregroundStyle(PeezyTheme.Colors.deepInk)
 
-                    Text(plan == .annual ? "3-day free trial" : "per week")
+                    Text(subtitleText(for: plan))
                         .font(.system(size: 12))
                         .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.5))
                 }
@@ -179,6 +194,26 @@ struct PaywallGateView: View {
         .buttonStyle(.plain)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
         .animation(.easeInOut(duration: 0.15), value: isSelected)
+    }
+
+    // MARK: - Dynamic Price Helpers
+
+    private func priceText(for plan: SubscriptionManager.ProductID) -> String {
+        subscriptionManager.product(for: plan)?.displayPrice ?? (plan == .annual ? "$49.99" : "$6.99")
+    }
+
+    private func subtitleText(for plan: SubscriptionManager.ProductID) -> String {
+        guard let product = subscriptionManager.product(for: plan) else {
+            return plan == .annual ? "per year" : "per week"
+        }
+        if plan == .annual,
+           let intro = product.subscription?.introductoryOffer,
+           intro.paymentMode == .freeTrial {
+            let days = intro.period.value
+            let unit = intro.period.unit == .day ? (days == 1 ? "day" : "days") : ""
+            return "\(days)-\(unit) free trial"
+        }
+        return plan == .annual ? "per year" : "per week"
     }
 
     // MARK: - Purchase

@@ -1,15 +1,205 @@
 {
   "version": 1,
   "skills": {
+    "ab-test-store-listing": {
+      "source": "eronred/aso-skills",
+      "sourceType": "github",
+      "computedHash": "a146d36a8725cee8a93893d8399dcc7eebd9889849aea2ce5eb033da7db0cad3"
+    },
+    "app-analytics": {
+      "source": "eronred/aso-skills",
+      "sourceType": "github",
+      "computedHash": "d448c0b063be9aaf8a50e34e396708a705cf5a03553ecd7d6a09d621b6e11cc4"
+    },
+    "app-launch": {
+      "source": "eronred/aso-skills",
+      "sourceType": "github",
+      "computedHash": "8297e9160f591268bc6005c6f8996efd8dbfc2000811ffe5b1a79c75ebd9123d"
+    },
+    "app-marketing-context": {
+      "source": "eronred/aso-skills",
+      "sourceType": "github",
+      "computedHash": "190347fce5aee1aad7c946d954289547c0475b325d46359cbde83323f3d5fb02"
+    },
+    "app-store": {
+      "source": "rshankras/claude-code-apple-skills",
+      "sourceType": "github",
+      "computedHash": "afdf4cd49051d795c452cab049f9ac5a6d13a9a09e97dbdc7c6d3277ddd1e5c5"
+    },
+    "app-store-featured": {
+      "source": "eronred/aso-skills",
+      "sourceType": "github",
+      "computedHash": "775924f2040d0895ab321cf726adb45a2130420351d9ae26c7ca1e1801a59395"
+    },
     "app-store-review": {
       "source": "safaiyeh/app-store-review-skill",
       "sourceType": "github",
       "computedHash": "b853ae894c4d9fbdd4a075b2130e1eeff175090bf8b94d29947742b81369f2c6"
     },
+    "aso-audit": {
+      "source": "eronred/aso-skills",
+      "sourceType": "github",
+      "computedHash": "3d2eb475a58f5913bb78802491f6845f713da3bbf1d5581e2a2c54f0ae540941"
+    },
+    "ckm:banner-design": {
+      "source": "nextlevelbuilder/ui-ux-pro-max-skill",
+      "sourceType": "github",
+      "computedHash": "7bbf0f48704f5c40436e3466d7ef9bcbafe35a84eb8c3e9d0ab76408a57bac5c"
+    },
+    "ckm:brand": {
+      "source": "nextlevelbuilder/ui-ux-pro-max-skill",
+      "sourceType": "github",
+      "computedHash": "89c8579d232e6e14152a8b898d49eb94f59aa7288ed8ca103cd3b38cb082e00a"
+    },
+    "ckm:design": {
+      "source": "nextlevelbuilder/ui-ux-pro-max-skill",
+      "sourceType": "github",
+      "computedHash": "2020e511bb6fbc1dbc233d1da335ec7e8cb553d6e321d34cec4555efcc9ec8f1"
+    },
+    "ckm:design-system": {
+      "source": "nextlevelbuilder/ui-ux-pro-max-skill",
+      "sourceType": "github",
+      "computedHash": "49b8308dc428c66b0983f4b3d102c522c495f62538121064d1e82a040b1afd2c"
+    },
+    "ckm:slides": {
+      "source": "nextlevelbuilder/ui-ux-pro-max-skill",
+      "sourceType": "github",
+      "computedHash": "6d753831914ed6703b7222153f2710efc2f195f0ab24fd2119c76c2b6d1a6ba1"
+    },
+    "ckm:ui-styling": {
+      "source": "nextlevelbuilder/ui-ux-pro-max-skill",
+      "sourceType": "github",
+      "computedHash": "9ae38e4e201f338b6150e462b98a2db0f2ae7c180c77e8cfb1d33eba9d33bf33"
+    },
+    "competitor-analysis": {
+      "source": "eronred/aso-skills",
+      "sourceType": "github",
+      "computedHash": "0cb970b55d107547a5edd9eb833d06644fd27f9c6aef6126b7c3fe5cd045ef0e"
+    },
+    "core-ml": {
+      "source": "rshankras/claude-code-apple-skills",
+      "sourceType": "github",
+      "computedHash": "010059f589988267c8b61136446f519dd4fbff7a76b2110c93704d8c4dda68af"
+    },
+    "design": {
+      "source": "rshankras/claude-code-apple-skills",
+      "sourceType": "github",
+      "computedHash": "09a095a1550f225e9264633931cc3c7d027ab2d09ecf5dcbc7e14f4c3cc15461"
+    },
+    "generators": {
+      "source": "rshankras/claude-code-apple-skills",
+      "sourceType": "github",
+      "computedHash": "9fc0c5f668216dbf6d86bc544d1ec31c3b75f2723ea72e3c460c0ced8612467a"
+    },
+    "growth": {
+      "source": "rshankras/claude-code-apple-skills",
+      "sourceType": "github",
+      "computedHash": "745d9fcd38b5f5196385b4cac7fd466ed110e3a8ad6e2e3240858fe15e72d49a"
+    },
+    "ios-development": {
+      "source": "rshankras/claude-code-apple-skills",
+      "sourceType": "github",
+      "computedHash": "d96bf1934ca2c01ca846f0babb6da4018c831a504a697d8d0519c827f4f4c683"
+    },
+    "keyword-research": {
+      "source": "eronred/aso-skills",
+      "sourceType": "github",
+      "computedHash": "16189d57cc4e195b71ddc82445b3a16e8b2f9090669e01fb39e8c8d094f6a06c"
+    },
+    "localization": {
+      "source": "eronred/aso-skills",
+      "sourceType": "github",
+      "computedHash": "279d66d00f89289182335e62a3bb780058c9daf0944c1584676501df66aeb2a5"
+    },
+    "macos-development": {
+      "source": "rshankras/claude-code-apple-skills",
+      "sourceType": "github",
+      "computedHash": "ff7fba1c081a1efb29e67526abc4e281fbb482f10e2b364f11fbbe85c2d34e05"
+    },
+    "market-movers": {
+      "source": "eronred/aso-skills",
+      "sourceType": "github",
+      "computedHash": "a80f5778b19cce22278923e653dd7f69b2463f25de46c0ccb2926e72b5ceb638"
+    },
+    "market-pulse": {
+      "source": "eronred/aso-skills",
+      "sourceType": "github",
+      "computedHash": "2a118a484a70877347bc1f28699ac8451ee64d6e148b41b7c234147557cef47f"
+    },
+    "metadata-optimization": {
+      "source": "eronred/aso-skills",
+      "sourceType": "github",
+      "computedHash": "16ad5203b36914d9b19b46f67c394931c9c2eb82fa45c3d3d0f46c1c994c80fd"
+    },
+    "monetization": {
+      "source": "rshankras/claude-code-apple-skills",
+      "sourceType": "github",
+      "computedHash": "d3c9c87c883f3e2a8817ca230267e76caa39f2673eb5522b9a34f6084d412309"
+    },
+    "monetization-strategy": {
+      "source": "eronred/aso-skills",
+      "sourceType": "github",
+      "computedHash": "7b175044a2f7c1e5e747a0c3c8a24f5e2f74c1e52ef8b3fbd463a3badf150fb5"
+    },
+    "product-development": {
+      "source": "rshankras/claude-code-apple-skills",
+      "sourceType": "github",
+      "computedHash": "32642c76dd61cd7a6efb16145000cb340d9c3b24203da67babe092eee2d39564"
+    },
+    "release-review": {
+      "source": "rshankras/claude-code-apple-skills",
+      "sourceType": "github",
+      "computedHash": "e958cd9335854f73bfd7bee005632dcb4580d0acd1cd62f60a14ff8ba89df8d9"
+    },
+    "retention-optimization": {
+      "source": "eronred/aso-skills",
+      "sourceType": "github",
+      "computedHash": "396b63944c41a206b6c1971a74266ce75ef086a679d72f8054d0f531bf4afc25"
+    },
+    "review-management": {
+      "source": "eronred/aso-skills",
+      "sourceType": "github",
+      "computedHash": "3bf51fff1800b1a8b7984cd232c89ee62f58a1d4b2c2cd88107d1260acfbe21d"
+    },
+    "screenshot-optimization": {
+      "source": "eronred/aso-skills",
+      "sourceType": "github",
+      "computedHash": "c48beb6c88a9a56d89fc302d5c1dfe2c48929cad719136edf0029d9d4577d244"
+    },
+    "security": {
+      "source": "rshankras/claude-code-apple-skills",
+      "sourceType": "github",
+      "computedHash": "0630926283229a4393f89e893f3654922499d92315b3cf5409189f502d53e63d"
+    },
+    "subscription-lifecycle": {
+      "source": "eronred/aso-skills",
+      "sourceType": "github",
+      "computedHash": "c37ae50bd23c541fddee4ed232d56c2aefcad267dd3a98a4f0b136078570d2ee"
+    },
+    "swift-development": {
+      "source": "rshankras/claude-code-apple-skills",
+      "sourceType": "github",
+      "computedHash": "288fb175cd0742b10c16f147028ae031cbd9ec6bcd4417d2bd264a771bbaed70"
+    },
     "swiftui-pro": {
       "source": "twostraws/swiftui-agent-skill",
       "sourceType": "github",
       "computedHash": "ce653d19fd00a4874489003025e9235be542e7134ff3c543e20afeb53fc3bc9a"
+    },
+    "testing": {
+      "source": "rshankras/claude-code-apple-skills",
+      "sourceType": "github",
+      "computedHash": "b49549bb712467f8de97e702a31e4c894d18c70db10bf85aa42f297c8dc6b32e"
+    },
+    "ua-campaign": {
+      "source": "eronred/aso-skills",
+      "sourceType": "github",
+      "computedHash": "fd7e9079c30e86943060ab7da00d3ef36034b9c318820d28dd53b8424fc7b96d"
+    },
+    "ui-ux-pro-max": {
+      "source": "nextlevelbuilder/ui-ux-pro-max-skill",
+      "sourceType": "github",
+      "computedHash": "0a413bf988d06481f69bb81df2070741c3ba12dd9f1be2706d57f259c905992d"
     }
   }
 }

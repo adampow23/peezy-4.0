@@ -229,6 +229,7 @@ struct ChatHeader: View {
                     .font(.title2)
                     .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.5))
             }
+            .accessibilityLabel("Close")
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 14)
@@ -320,6 +321,7 @@ struct MessageBubble: View {
                                 .foregroundColor(feedback == true ? PeezyTheme.Colors.deepInk.opacity(0.9) : PeezyTheme.Colors.deepInk.opacity(0.35))
                         }
                         .buttonStyle(.plain)
+                        .accessibilityLabel(feedback == true ? "Remove helpful rating" : "Mark as helpful")
 
                         Button {
                             if feedback == false {
@@ -333,6 +335,7 @@ struct MessageBubble: View {
                                 .foregroundColor(feedback == false ? PeezyTheme.Colors.deepInk.opacity(0.9) : PeezyTheme.Colors.deepInk.opacity(0.35))
                         }
                         .buttonStyle(.plain)
+                        .accessibilityLabel(feedback == false ? "Remove unhelpful rating" : "Mark as unhelpful")
                     }
                     .padding(.leading, 12)
                     .padding(.top, 2)

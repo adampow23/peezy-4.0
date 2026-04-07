@@ -106,7 +106,8 @@ struct PeezyFloatingTabBar: View {
                         selectedTab = tab
                     }
                 } label: {
-                    Image(systemName: tab.icon)
+                    Label(tab.label, systemImage: tab.icon)
+                        .labelStyle(.iconOnly)
                         .font(.system(size: 20, weight: .medium))
                         .foregroundStyle(
                             selectedTab == tab
@@ -116,6 +117,7 @@ struct PeezyFloatingTabBar: View {
                         .frame(maxWidth: .infinity)
                         .frame(height: 50)
                 }
+                .accessibilityLabel(tab.label)
             }
         }
         .background(
