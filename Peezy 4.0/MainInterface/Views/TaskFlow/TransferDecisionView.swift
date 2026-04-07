@@ -13,68 +13,75 @@ struct TransferDecisionView: View {
 
             glassCard {
                 VStack(alignment: .leading, spacing: 0) {
+                    
+                    // MARK: - Header Label
                     HStack {
                         Image(systemName: task.icon)
                             .accessibilityHidden(true)
                         Text(task.headerLabel)
                         Spacer()
                     }
-                    .font(.caption).bold()
+                    .font(.system(size: 12, weight: .bold))
                     .foregroundStyle(.secondary)
-                    .padding(.horizontal, 30)
-                    .padding(.top, 30)
+                    .tracking(1)
+                    .textCase(.uppercase)
+                    .padding(.horizontal, 24)
+                    .padding(.top, 24)
 
                     Spacer()
 
+                    // MARK: - Main Content
                     VStack(alignment: .leading, spacing: 12) {
                         Text(task.title)
-                            .font(.system(size: 44, weight: .heavy))
+                            .font(.system(size: 34, weight: .heavy))
                             .foregroundStyle(PeezyTheme.Colors.deepInk)
                             .lineLimit(2)
-                            .minimumScaleFactor(0.5)
+                            .minimumScaleFactor(0.7)
+                            .accessibilityAddTraits(.isHeader)
 
                         Rectangle()
                             .fill(Color.primary.opacity(0.15))
                             .frame(width: 50, height: 2)
 
                         Text(recommendationText)
-                            .font(.title3)
-                            .fontWeight(.medium)
-                            .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.65))
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
-                    .padding(.horizontal, 30)
+                    .padding(.horizontal, 24)
 
                     Spacer()
 
+                    // MARK: - 50/50 Decision Buttons
                     VStack(spacing: 12) {
                         PeezyAssessmentButton("Update with current provider") {
                             onUpdate()
                         }
 
-                        Button("Cancel and find a new one") {
-                            onCancel()
+                        Button(action: onCancel) {
+                            Text("Cancel and find a new one")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundStyle(PeezyTheme.Colors.deepInk)
+                                .frame(maxWidth: .infinity, minHeight: 56)
                         }
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(PeezyTheme.Colors.deepInk)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 16)
                         .background {
                             ZStack {
-                                RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadius, style: .continuous)
+                                // UX Fix: Swapped to Capsule() to perfectly match the primary button shape
+                                Capsule()
                                     .foregroundStyle(.regularMaterial)
-                                RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadius, style: .continuous)
+                                Capsule()
                                     .fill(Color.white.opacity(0.2))
                             }
                             .overlay {
-                                RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadius, style: .continuous)
+                                Capsule()
                                     .stroke(Color.primary.opacity(0.08), lineWidth: 1)
                             }
                         }
                         .buttonStyle(.plain)
+                        .contentShape(Rectangle())
                     }
-                    .padding(.horizontal, 30)
-                    .padding(.bottom, 30)
+                    .padding(.horizontal, 24)
+                    .padding(.bottom, 24)
                 }
             }
         }
@@ -86,6 +93,8 @@ struct TransferDecisionView: View {
             : "You're staying local — updating your address is probably all you need."
     }
 
+    // MARK: - Glass Card Container
+    
     private func glassCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
         ZStack {
             ZStack {
@@ -96,7 +105,7 @@ struct TransferDecisionView: View {
             }
             .overlay {
                 RoundedRectangle(cornerRadius: 36, style: .continuous)
-                    .stroke(Color.primary.opacity(0.07), lineWidth: 1)
+                    .stroke(Color.primary.opacity(0.05), lineWidth: 1)
                     .padding(1)
             }
             .shadow(color: Color.black.opacity(0.1), radius: 20, x: 0, y: 15)

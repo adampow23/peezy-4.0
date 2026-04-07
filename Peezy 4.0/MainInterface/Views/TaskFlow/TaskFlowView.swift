@@ -102,14 +102,15 @@ struct TaskFlowView: View {
                     ErrorToast(message: error) {
                         submitError = nil
                     }
-                    .padding(.bottom, 16)
+                    .padding(.bottom, 24) // UX Fix: Standardized to 24pt margin
                 }
-                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
                 .zIndex(1)
             }
         }
-        .animation(reduceMotion ? .easeOut(duration: 0.2) : .easeInOut(duration: 0.3), value: flowState)
-        .animation(.spring(response: 0.4), value: submitError != nil)
+        // UX Fix: Upgraded the mechanical easeInOut to a premium spatial spring curve for organic card transitions
+        .animation(reduceMotion ? .easeOut(duration: 0.2) : .spring(response: 0.4, dampingFraction: 0.8), value: flowState)
+        .animation(reduceMotion ? .easeOut(duration: 0.2) : .spring(response: 0.4, dampingFraction: 0.8), value: submitError != nil)
     }
 
     private func handleStart() {

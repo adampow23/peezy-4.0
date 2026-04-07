@@ -194,39 +194,44 @@ struct ConfirmDetailsView: View {
 
             glassCard {
                 VStack(alignment: .leading, spacing: 0) {
-                    // Fixed header
+                    
+                    // MARK: - Fixed Header
                     VStack(alignment: .leading, spacing: 6) {
                         Text("Just to confirm...")
-                            .font(.system(size: 44, weight: .heavy))
+                            // UX Fix: Scaled down from 44 to 34 to fit dynamically populated lists
+                            .font(.system(size: 34, weight: .heavy))
                             .foregroundStyle(PeezyTheme.Colors.deepInk)
-                            .lineLimit(2)
-                            .minimumScaleFactor(0.5)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                            .accessibilityAddTraits(.isHeader)
 
                         Text("For: \(task.title)")
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.4))
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
 
                         Rectangle()
                             .fill(Color.black.opacity(0.15))
                             .frame(width: 50, height: 2)
                             .padding(.top, 8)
                     }
-                    .padding(.horizontal, 30)
-                    .padding(.top, 30)
+                    .padding(.horizontal, 24)
+                    .padding(.top, 24)
 
-                    // Scrollable fields
+                    // MARK: - Scrollable Fields
                     ScrollView {
-                        VStack(spacing: 14) {
+                        VStack(spacing: 20) { // UX Fix: Better breathing room between fields
                             ForEach(fields) { field in
                                 fieldRow(field)
                             }
                         }
-                        .padding(.horizontal, 30)
-                        .padding(.vertical, 20)
+                        .padding(.horizontal, 24)
+                        .padding(.vertical, 24)
                     }
                     .scrollIndicators(.hidden)
 
-                    // Fixed bottom buttons
+                    // MARK: - Fixed Bottom Buttons
                     VStack(spacing: 12) {
                         PeezyAssessmentButton("Looks Good — Go Ahead") {
                             let result = fields.reduce(into: [String: String]()) { dict, field in
@@ -238,36 +243,47 @@ struct ConfirmDetailsView: View {
                         Button("Go Back") {
                             onBack()
                         }
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.5))
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(minHeight: 44)
                     }
-                    .padding(.horizontal, 30)
-                    .padding(.bottom, 30)
+                    .padding(.horizontal, 24)
+                    .padding(.top, 8)
+                    .padding(.bottom, 24)
                 }
             }
         }
     }
 
+    // MARK: - Field Row Components
+    
     @ViewBuilder
     private func fieldRow(_ field: ConfirmField) -> some View {
         let isEditing = editingFieldId == field.id
 
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Text(field.label)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.45))
-                    .tracking(0.5)
+                    .font(.system(size: 12, weight: .bold)) // UX Fix: Bold for better label hierarchy
+                    .foregroundStyle(.secondary)
+                    .tracking(1)
                     .textCase(.uppercase)
+                
                 Spacer()
+                
                 if case .userInput = field.fieldType {
-                    // No edit toggle for free-entry fields
+                    // No edit toggle for free-entry fields (they are always editable)
                 } else {
                     Button(isEditing ? "Done" : "Edit") {
-                        editingFieldId = isEditing ? nil : field.id
+                        PeezyHaptics.light()
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                            editingFieldId = isEditing ? nil : field.id
+                        }
                     }
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.4))
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(isEditing ? PeezyTheme.Colors.accentBlue : .secondary)
+                    .frame(minHeight: 44)
+                    .padding(.leading, 8)
                 }
             }
 
@@ -279,24 +295,27 @@ struct ConfirmDetailsView: View {
                 Text(fieldValues[field.id, default: ""])
                     .font(.system(size: 16, weight: .medium))
                     .foregroundStyle(PeezyTheme.Colors.deepInk)
+                    .fixedSize(horizontal: false, vertical: true) // UX Fix: Allows multi-line addresses
             }
         }
     }
 
     @ViewBuilder
     private func inputField(placeholder: String, id: UUID) -> some View {
-        TextField(placeholder, text: valueBinding(for: id))
+        // UX Fix: axis: .vertical allows the text field to grow if they type a long address
+        TextField(placeholder, text: valueBinding(for: id), axis: .vertical)
             .font(.system(size: 16, weight: .medium))
             .foregroundStyle(PeezyTheme.Colors.deepInk)
+            .frame(minHeight: 44)
             .padding(.vertical, 10)
-            .padding(.horizontal, 12)
+            .padding(.horizontal, 14)
             .background {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .foregroundStyle(.regularMaterial)
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .stroke(Color.black.opacity(0.1), lineWidth: 1)
-                    }
+                ZStack {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Color.black.opacity(0.04))
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(Color.primary.opacity(0.06), lineWidth: 1)
+                }
             }
     }
 
@@ -307,6 +326,8 @@ struct ConfirmDetailsView: View {
         )
     }
 
+    // MARK: - Glass Card Container
+    
     private func glassCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
         ZStack {
             ZStack {
@@ -317,14 +338,15 @@ struct ConfirmDetailsView: View {
             }
             .overlay {
                 RoundedRectangle(cornerRadius: 36, style: .continuous)
-                    .stroke(Color.black.opacity(0.05), lineWidth: 1)
+                    .stroke(Color.primary.opacity(0.05), lineWidth: 1)
                     .padding(1)
             }
             .shadow(color: Color.black.opacity(0.1), radius: 20, x: 0, y: 15)
 
             content()
         }
-        .frame(width: 340, height: 500)
+        .frame(width: 340)
+        .frame(maxHeight: 500)
     }
 }
 

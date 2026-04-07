@@ -13,7 +13,7 @@ import SwiftUI
 struct ExplainerTemplate: View {
 
     // ╔═══════════════════════════════════════════════════════════╗
-    // ║  CONTENT — passed from the question file                 ║
+    // ║  CONTENT — passed from the question file                  ║
     // ╚═══════════════════════════════════════════════════════════╝
     let icon: String
     let header: String
@@ -22,29 +22,29 @@ struct ExplainerTemplate: View {
     let onContinue: () -> Void
 
     // ╔═══════════════════════════════════════════════════════════╗
-    // ║  CONTROL BOARD — change any number, see it in preview    ║
+    // ║  CONTROL BOARD — change any number, see it in preview     ║
     // ╠═══════════════════════════════════════════════════════════╣
-    // ║                                                          ║
-    // ║  TYPEWRITER                                              ║
+    // ║                                                           ║
+    // ║  TYPEWRITER                                               ║
     var speed: Double = 0.04            //  seconds per character
-    // ║                                                          ║
-    // ║  ICON                                                    ║
-    var iconSize: CGFloat = 60          //  icon size
+    // ║                                                           ║
+    // ║  ICON                                                     ║
+    var iconSize: CGFloat = 72          // UX Fix: Standardized to 72pt to match SubmittedView hero icons
     var iconColor: Color = PeezyTheme.Colors.deepInk.opacity(0.3)
     var iconBottomPad: CGFloat = 24     //  space between icon and header
-    // ║                                                          ║
+    // ║                                                           ║
     // ║  TEXT                                                     ║
-    var headerFontSize: CGFloat = 32    //  header text size
-    var subtextFontSize: CGFloat = 16   //  subtext size
-    var textSidePad: CGFloat = 24       //  text left/right padding
+    var headerFontSize: CGFloat = 34    // UX Fix: Standardized to 34pt Large Title
+    var subtextFontSize: CGFloat = 16   //  subtext size (Already correct at 16pt!)
+    var textSidePad: CGFloat = 24       //  text left/right padding (Already correct at 24pt!)
     var lineSpacing: CGFloat = 4        //  header line spacing
     var subtextLineSpacing: CGFloat = 3 //  subtext line spacing
     var subtextTopPad: CGFloat = 12     //  space between header and subtext
-    // ║                                                          ║
-    // ║  BUTTON                                                  ║
+    // ║                                                           ║
+    // ║  BUTTON                                                   ║
     var buttonPadH: CGFloat = 24        //  button side padding
-    var buttonPadBottom: CGFloat = 32   //  button bottom padding
-    // ║                                                          ║
+    var buttonPadBottom: CGFloat = 24   // UX Fix: Standardized to 24pt bottom margin
+    // ║                                                           ║
     // ╚═══════════════════════════════════════════════════════════╝
 
     // ── STATE ───────────────────────────────────────────────────
@@ -89,7 +89,8 @@ struct ExplainerTemplate: View {
                         )
                     }
                 }
-                .font(.system(size: headerFontSize, weight: .semibold))
+                // UX Fix: Standardized to .heavy weight to match all primary titles
+                .font(.system(size: headerFontSize, weight: .heavy))
                 .foregroundColor(PeezyTheme.Colors.deepInk)
                 .lineSpacing(lineSpacing)
                 .multilineTextAlignment(.center)
@@ -113,7 +114,8 @@ struct ExplainerTemplate: View {
                                 )
                             }
                         }
-                        .font(.system(size: subtextFontSize))
+                        // UX Fix: Added .medium weight to match 16pt body text standard
+                        .font(.system(size: subtextFontSize, weight: .medium))
                         .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.5))
                         .lineSpacing(subtextLineSpacing)
                         .multilineTextAlignment(.center)

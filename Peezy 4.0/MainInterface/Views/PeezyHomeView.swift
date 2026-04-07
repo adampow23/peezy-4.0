@@ -42,7 +42,7 @@ struct InteractiveHomeTaskCard: View {
             }
             .overlay(
                 RoundedRectangle(cornerRadius: 36, style: .continuous)
-                    .stroke(Color.primary.opacity(0.07), lineWidth: 1)
+                    .stroke(Color.primary.opacity(0.05), lineWidth: 1) // UX Fix: Standardized to 0.05
                     .padding(1)
             )
             .shadow(color: Color.black.opacity(0.1), radius: 20, x: 0, y: 15)
@@ -56,31 +56,35 @@ struct InteractiveHomeTaskCard: View {
                     Text(task.headerLabel)
                     Spacer()
                 }
-                .font(.caption).bold()
-                .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.5))
-                .padding(.top, 30)
-                .padding(.horizontal, 30)
+                // UX Fix: Unified with the 12pt uppercase style from other cards
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(.secondary)
+                .tracking(1)
+                .textCase(.uppercase)
+                .padding(.top, 24) // UX Fix: 30 -> 24
+                .padding(.horizontal, 24) // UX Fix: 30 -> 24
 
                 Spacer()
 
                 // Content
                 VStack(alignment: .leading, spacing: 15) {
                     Text(task.title)
-                        .font(.system(size: 44, weight: .heavy))
+                        // UX Fix: Standardized to 34pt Large Title
+                        .font(.system(size: 34, weight: .heavy))
                         .foregroundStyle(PeezyTheme.Colors.deepInk)
                         .lineLimit(2)
                         .minimumScaleFactor(0.5)
                         .fixedSize(horizontal: false, vertical: true)
 
                     Text(task.subtitle)
-                        .font(.title3)
-                        .fontWeight(.medium)
+                        // UX Fix: Standardized to 16pt body text
+                        .font(.system(size: 16, weight: .medium))
                         .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.6))
                         .lineLimit(nil)
                         .minimumScaleFactor(0.8)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                .padding(.horizontal, 30)
+                .padding(.horizontal, 24) // UX Fix: 30 -> 24
                 .frame(maxWidth: .infinity, alignment: .leading)
 
                 Spacer()
@@ -150,8 +154,8 @@ struct InteractiveHomeTaskCard: View {
                 }
                 .buttonStyle(.peezyPrimary)
             }
-            .padding(.horizontal, 30)
-            .padding(.bottom, 30)
+            .padding(.horizontal, 24) // UX Fix: 30 -> 24
+            .padding(.bottom, 24) // UX Fix: 30 -> 24
         }
     }
 }
@@ -259,7 +263,7 @@ struct PeezyHomeView: View {
                         ErrorToast(message: errorMessage) {
                             viewModel.error = nil
                         }
-                        .padding(.bottom, 16)
+                        .padding(.bottom, 24) // UX Fix: Standardized to 24pt
                     }
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
@@ -330,7 +334,8 @@ struct PeezyHomeView: View {
                 // Header pinned at top
                 VStack(alignment: .leading, spacing: 15) {
                     Text(welcomePageHeadline)
-                        .font(.system(size: 38, weight: .heavy))
+                        // UX Fix: Standardized to 34pt
+                        .font(.system(size: 34, weight: .heavy))
                         .foregroundStyle(PeezyTheme.Colors.deepInk)
                         .lineLimit(2)
                         .minimumScaleFactor(0.5)
@@ -339,19 +344,19 @@ struct PeezyHomeView: View {
                         .fill(Color.primary.opacity(0.15))
                         .frame(width: 50, height: 2)
                 }
-                .padding(.horizontal, 30)
-                .padding(.top, 30)
+                .padding(.horizontal, 24) // UX Fix: 30 -> 24
+                .padding(.top, 24) // UX Fix: 30 -> 24
                 .frame(maxWidth: .infinity, alignment: .leading)
 
                 // Body text centered in remaining space between divider and dots
                 Spacer()
 
                 Text(welcomePageBody)
-                    .font(.subheadline)
-                    .fontWeight(.medium)
+                    // UX Fix: Standardized to 16pt
+                    .font(.system(size: 16, weight: .medium))
                     .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.6))
                     .fixedSize(horizontal: false, vertical: true)
-                    .padding(.horizontal, 30)
+                    .padding(.horizontal, 24) // UX Fix: 30 -> 24
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .id(welcomePage)
                     .transition(.opacity)
@@ -374,7 +379,7 @@ struct PeezyHomeView: View {
                     Text("Swipe to continue")
                         .font(.caption)
                         .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.3))
-                        .padding(.bottom, 30)
+                        .padding(.bottom, 24) // UX Fix: 30 -> 24
                         .accessibilityAction(named: "Next page") {
                             withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.3)) {
                                 welcomePage += 1
@@ -384,8 +389,8 @@ struct PeezyHomeView: View {
                     PeezyAssessmentButton("Start My First Task") {
                         viewModel.dismissFirstTimeWelcome()
                     }
-                    .padding(.horizontal, 30)
-                    .padding(.bottom, 30)
+                    .padding(.horizontal, 24) // UX Fix: 30 -> 24
+                    .padding(.bottom, 24) // UX Fix: 30 -> 24
                 }
             }
         }
@@ -441,7 +446,8 @@ struct PeezyHomeView: View {
                 VStack(alignment: .leading, spacing: 15) {
                     // Greeting
                     Text(viewModel.greetingText)
-                        .font(.system(size: 40, weight: .heavy))
+                        // UX Fix: Standardized to 34pt
+                        .font(.system(size: 34, weight: .heavy))
                         .foregroundStyle(PeezyTheme.Colors.deepInk)
                         .lineLimit(2)
                         .minimumScaleFactor(0.5)
@@ -453,11 +459,11 @@ struct PeezyHomeView: View {
 
                     // Today's count only
                     Text(viewModel.dailyGreetingSubtitle)
-                        .font(.title3)
-                        .fontWeight(.medium)
+                        // UX Fix: Standardized to 16pt
+                        .font(.system(size: 16, weight: .medium))
                         .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.6))
                 }
-                .padding(.horizontal, 30)
+                .padding(.horizontal, 24) // UX Fix: 30 -> 24
                 .frame(maxWidth: .infinity, alignment: .leading)
 
                 Spacer()
@@ -466,8 +472,8 @@ struct PeezyHomeView: View {
                 PeezyAssessmentButton("Get started") {
                     viewModel.startNextTask()
                 }
-                .padding(.horizontal, 30)
-                .padding(.bottom, 30)
+                .padding(.horizontal, 24) // UX Fix: 30 -> 24
+                .padding(.bottom, 24) // UX Fix: 30 -> 24
             }
         }
     }
@@ -482,7 +488,8 @@ struct PeezyHomeView: View {
                 VStack(alignment: .leading, spacing: 15) {
                     // Greeting
                     Text(viewModel.returningGreeting)
-                        .font(.system(size: 40, weight: .heavy))
+                        // UX Fix: Standardized to 34pt
+                        .font(.system(size: 34, weight: .heavy))
                         .foregroundStyle(PeezyTheme.Colors.deepInk)
                         .lineLimit(2)
                         .minimumScaleFactor(0.5)
@@ -494,11 +501,11 @@ struct PeezyHomeView: View {
 
                     // Progress
                     Text(viewModel.returningMidDaySubtitle)
-                        .font(.title3)
-                        .fontWeight(.medium)
+                        // UX Fix: Standardized to 16pt
+                        .font(.system(size: 16, weight: .medium))
                         .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.6))
                 }
-                .padding(.horizontal, 30)
+                .padding(.horizontal, 24) // UX Fix: 30 -> 24
                 .frame(maxWidth: .infinity, alignment: .leading)
 
                 Spacer()
@@ -507,8 +514,8 @@ struct PeezyHomeView: View {
                 PeezyAssessmentButton("Pick up where I left off") {
                     viewModel.startNextTask()
                 }
-                .padding(.horizontal, 30)
-                .padding(.bottom, 30)
+                .padding(.horizontal, 24) // UX Fix: 30 -> 24
+                .padding(.bottom, 24) // UX Fix: 30 -> 24
             }
         }
     }
@@ -626,7 +633,8 @@ struct PeezyHomeView: View {
 
                     VStack(alignment: .leading, spacing: 15) {
                         Text("You're all done\nfor today!")
-                            .font(.system(size: 36, weight: .heavy))
+                            // UX Fix: Standardized to 34pt
+                            .font(.system(size: 34, weight: .heavy))
                             .foregroundStyle(PeezyTheme.Colors.deepInk)
                             .lineLimit(3)
                             .minimumScaleFactor(0.5)
@@ -636,13 +644,13 @@ struct PeezyHomeView: View {
                             .frame(width: 50, height: 2)
 
                         Text(viewModel.celebrationSubtext)
-                            .font(.title3)
-                            .fontWeight(.medium)
+                            // UX Fix: Standardized to 16pt
+                            .font(.system(size: 16, weight: .medium))
                             .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.6))
                             .lineLimit(3)
                             .fixedSize(horizontal: false, vertical: true)
                     }
-                    .padding(.horizontal, 30)
+                    .padding(.horizontal, 24) // UX Fix: 30 -> 24
                     .frame(maxWidth: .infinity, alignment: .leading)
 
                     Spacer()
@@ -654,8 +662,8 @@ struct PeezyHomeView: View {
                             confettiActive = false
                             viewModel.getAhead()
                         }
-                        .padding(.horizontal, 30)
-                        .padding(.bottom, 30)
+                        .padding(.horizontal, 24) // UX Fix: 30 -> 24
+                        .padding(.bottom, 24) // UX Fix: 30 -> 24
                     }
                 }
             }
@@ -682,7 +690,8 @@ struct PeezyHomeView: View {
 
                     let name = viewModel.userState?.name ?? ""
                     Text(name.isEmpty ? "You're all set!" : "You're all set, \(name)!")
-                        .font(.system(size: 36, weight: .heavy))
+                        // UX Fix: Standardized to 34pt
+                        .font(.system(size: 34, weight: .heavy))
                         .foregroundStyle(PeezyTheme.Colors.deepInk)
                         .lineLimit(2)
                         .minimumScaleFactor(0.5)
@@ -692,12 +701,12 @@ struct PeezyHomeView: View {
                         .frame(width: 50, height: 2)
 
                     Text(viewModel.allCompleteSubtext)
-                        .font(.title3)
-                        .fontWeight(.medium)
+                        // UX Fix: Standardized to 16pt
+                        .font(.system(size: 16, weight: .medium))
                         .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.6))
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                .padding(.horizontal, 30)
+                .padding(.horizontal, 24) // UX Fix: 30 -> 24
                 .frame(maxWidth: .infinity, alignment: .leading)
 
                 Spacer()
@@ -720,7 +729,7 @@ struct PeezyHomeView: View {
             }
             .overlay(
                 RoundedRectangle(cornerRadius: 36, style: .continuous)
-                    .stroke(Color.primary.opacity(0.07), lineWidth: 1)
+                    .stroke(Color.primary.opacity(0.05), lineWidth: 1) // UX Fix: 0.07 -> 0.05
                     .padding(1)
             )
             .shadow(color: Color.black.opacity(0.1), radius: 20, x: 0, y: 15)

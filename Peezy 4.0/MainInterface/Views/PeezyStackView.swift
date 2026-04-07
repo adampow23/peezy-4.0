@@ -26,9 +26,6 @@ struct PeezyStackView: View {
         self.externalViewModel = viewModel
         self.userState = userState
     }
-    
-    // Chat sheet
-    @State private var showChat = false
 
     var body: some View {
         GeometryReader { geometry in
@@ -71,28 +68,6 @@ struct PeezyStackView: View {
                     Spacer()
                 }
 
-                // Swipe Up Detection Zone (bottom half of screen)
-                VStack {
-                    Spacer()
-                    Color.clear
-                        .frame(height: geometry.size.height * 0.5)
-                        .contentShape(Rectangle())
-                        .gesture(
-                            DragGesture(minimumDistance: 50)
-                                .onEnded { gesture in
-                                    // Detect upward swipe (negative Y = up)
-                                    // Require more vertical than horizontal movement
-                                    let verticalMovement = gesture.translation.height
-                                    let horizontalMovement = abs(gesture.translation.width)
-
-                                    // Swipe up: at least 80pt upward, and more vertical than horizontal
-                                    if verticalMovement < -80 && abs(verticalMovement) > horizontalMovement {
-                                        showChat = true
-                                    }
-                                }
-                        )
-                }
-
                 // Top Bar (Logo + Undo button)
                 VStack(spacing: 0) {
                     // Peezy Logo - positioned close to Dynamic Island/camera area
@@ -118,25 +93,6 @@ struct PeezyStackView: View {
                     }
 
                     Spacer()
-                }
-
-                // Bottom Handle (opens chat on tap)
-                VStack {
-                    Spacer()
-                    Button(action: { showChat = true }) {
-                        VStack(spacing: 4) {
-                            Image(systemName: "chevron.up")
-                                .font(.caption)
-                                .foregroundStyle(Color.gray.opacity(0.5))
-                            Capsule()
-                                .fill(.regularMaterial)
-                                .frame(width: 60, height: 6)
-                            Text("Swipe up to chat")
-                                .font(.caption2)
-                                .foregroundStyle(Color.gray)
-                        }
-                        .padding(.bottom, 10)
-                    }
                 }
 
                 // Error Toast
@@ -170,11 +126,6 @@ struct PeezyStackView: View {
         }
         .refreshable {
             await viewModel.refreshCards()
-        }
-        .sheet(isPresented: $showChat) {
-            ChatView(userState: userState, card: viewModel.cards.last)
-                .presentationDetents([.medium, .large])
-                .presentationDragIndicator(.visible)
         }
     }
 

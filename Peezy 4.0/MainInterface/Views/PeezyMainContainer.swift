@@ -3,7 +3,7 @@
 //  Peezy
 //
 //  Main tab container for the app.
-//  Three tabs: Home, Tasks, Settings.
+//  Four tabs: Home, Tasks, Chat, Settings.
 //
 
 import SwiftUI
@@ -18,6 +18,9 @@ struct PeezyMainContainer: View {
     // Timeline still uses PeezyStackViewModel for its data loading
     @State private var timelineViewModel = PeezyStackViewModel()
     @State private var hasLoadedTimeline = false
+
+    // Support chat service — owned here so the unread badge updates regardless of which tab is active
+    @State private var chatService = SupportChatService()
 
     // Task list → Home navigation: when set, switches to Home and focuses this task
     @State private var focusedTask: PeezyCard? = nil
@@ -51,6 +54,9 @@ struct PeezyMainContainer: View {
                         }
                     )
 
+                case .chat:
+                    SupportChatView(userState: userState)
+
                 case .settings:
                     PeezySettingsView(userState: $userState)
                 }
@@ -60,7 +66,7 @@ struct PeezyMainContainer: View {
             }
 
             // Floating tab bar — height is measured and fed back into tabBarHeight
-            PeezyFloatingTabBar(selectedTab: $selectedTab)
+            PeezyFloatingTabBar(selectedTab: $selectedTab, chatUnreadCount: chatService.unreadCount)
                 .padding(.bottom, 16)
                 .onGeometryChange(for: CGFloat.self) { proxy in
                     proxy.size.height
@@ -69,6 +75,9 @@ struct PeezyMainContainer: View {
                 }
         }
         .ignoresSafeArea(.keyboard, edges: .bottom)
+        .onAppear {
+            chatService.startListening()
+        }
         .onChange(of: selectedTab) { _, newValue in
             if newValue == .tasks && !hasLoadedTimeline {
                 timelineViewModel.userState = userState
@@ -86,12 +95,14 @@ struct PeezyMainContainer: View {
 enum PeezyTab: String, CaseIterable {
     case home
     case tasks
+    case chat
     case settings
 
     var icon: String {
         switch self {
         case .home:     return "house"
         case .tasks:    return "checklist"
+        case .chat:     return "bubble.left.and.bubble.right"
         case .settings: return "gearshape"
         }
     }
@@ -100,6 +111,7 @@ enum PeezyTab: String, CaseIterable {
         switch self {
         case .home:     return "house.fill"
         case .tasks:    return "checklist"       // no filled SF Symbol variant
+        case .chat:     return "bubble.left.and.bubble.right.fill"
         case .settings: return "gearshape.fill"
         }
     }
@@ -108,6 +120,7 @@ enum PeezyTab: String, CaseIterable {
         switch self {
         case .home:     return "Home"
         case .tasks:    return "Tasks"
+        case .chat:     return "Chat"
         case .settings: return "Settings"
         }
     }
@@ -117,6 +130,7 @@ enum PeezyTab: String, CaseIterable {
 
 struct PeezyFloatingTabBar: View {
     @Binding var selectedTab: PeezyTab
+    var chatUnreadCount: Int = 0
     @Environment(\.accessibilityReduceMotion) var reduceMotion
     @ScaledMetric(relativeTo: .body) private var tabIconSize: CGFloat = 20
 
@@ -124,6 +138,7 @@ struct PeezyFloatingTabBar: View {
         HStack(spacing: 0) {
             ForEach(PeezyTab.allCases, id: \.self) { tab in
                 let isSelected = selectedTab == tab
+                let showUnreadDot = tab == .chat && chatUnreadCount > 0 && !isSelected
                 Button {
                     PeezyHaptics.light()
                     withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) {
@@ -140,6 +155,14 @@ struct PeezyFloatingTabBar: View {
                         )
                         .frame(maxWidth: .infinity)
                         .frame(height: 50)
+                        .overlay(alignment: .topTrailing) {
+                            if showUnreadDot {
+                                Circle()
+                                    .fill(PeezyTheme.Colors.emotionalRed)
+                                    .frame(width: 8, height: 8)
+                                    .offset(x: -10, y: 12)
+                            }
+                        }
                 }
                 .accessibilityLabel(tab.label)
                 .accessibilityAddTraits(isSelected ? .isSelected : [])
@@ -159,6 +182,6 @@ struct PeezyFloatingTabBar: View {
                 )
                 .shadow(color: Color.black.opacity(0.1), radius: 12, x: 0, y: 5)
         )
-        .frame(width: 200)
+        .frame(width: 240)
     }
 }

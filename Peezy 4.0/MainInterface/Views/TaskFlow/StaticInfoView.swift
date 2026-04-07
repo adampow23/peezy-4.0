@@ -12,48 +12,71 @@ struct StaticInfoView: View {
 
             glassCard {
                 VStack(alignment: .leading, spacing: 0) {
+                    
+                    // MARK: - Header Label (Unified with TaskChoiceView)
+                    HStack {
+                        Image(systemName: task.icon)
+                            .accessibilityHidden(true)
+                        Text(task.headerLabel)
+                        Spacer()
+                    }
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(.secondary)
+                    .tracking(1)
+                    .textCase(.uppercase)
+                    .padding(.horizontal, 24)
+                    .padding(.top, 24)
+                    
+                    // MARK: - Title
                     VStack(alignment: .leading, spacing: 12) {
                         Text(task.title)
-                            .font(.system(size: 44, weight: .heavy))
+                            .font(.system(size: 34, weight: .heavy))
                             .foregroundStyle(PeezyTheme.Colors.deepInk)
                             .lineLimit(2)
-                            .minimumScaleFactor(0.5)
+                            .minimumScaleFactor(0.7)
+                            .accessibilityAddTraits(.isHeader)
 
                         Rectangle()
-                            .fill(Color.black.opacity(0.15))
+                            .fill(Color.primary.opacity(0.15))
                             .frame(width: 50, height: 2)
                     }
-                    .padding(.horizontal, 30)
-                    .padding(.top, 30)
+                    .padding(.horizontal, 24)
+                    .padding(.top, 16) // UX Fix: Tightened to sit cleanly under the new header
+                    .padding(.bottom, 20)
 
-                    ScrollView {
+                    // MARK: - Scrollable Content
+                    ScrollView(showsIndicators: false) {
                         VStack(alignment: .leading, spacing: 0) {
-                            sectionLabel("Why this matters")
-                            Text(task.whyNeeded ?? task.subtitle)
-                                .font(.title3)
-                                .fontWeight(.medium)
-                                .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.6))
-                                .fixedSize(horizontal: false, vertical: true)
-                                .padding(.horizontal, 30)
+                            
+                            if let why = task.whyNeeded, !why.isEmpty {
+                                sectionLabel("Why this matters")
+                                Text(why)
+                                    .font(.system(size: 16, weight: .medium))
+                                    .foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .padding(.horizontal, 24)
+                            }
 
                             sectionLabel("What to do")
                             Text(task.subtitle)
-                                .font(.title3)
-                                .fontWeight(.medium)
-                                .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.6))
+                                .font(.system(size: 16, weight: .medium))
+                                .foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
-                                .padding(.horizontal, 30)
+                                .padding(.horizontal, 24)
 
-                            sectionLabel("Tips")
-                            Text(task.tips ?? task.subtitle)
-                                .font(.title3)
-                                .fontWeight(.medium)
-                                .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.5))
-                                .padding(.horizontal, 30)
-                                .padding(.bottom, 8)
+                            if let tips = task.tips, !tips.isEmpty {
+                                sectionLabel("Tips")
+                                Text(tips)
+                                    .font(.system(size: 16, weight: .medium))
+                                    .foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .padding(.horizontal, 24)
+                                    .padding(.bottom, 8)
+                            }
                         }
                     }
 
+                    // MARK: - Footer Actions
                     VStack(spacing: 12) {
                         PeezyAssessmentButton("Already done") {
                             onComplete()
@@ -62,12 +85,13 @@ struct StaticInfoView: View {
                         Button("I'll take care of it") {
                             onLater()
                         }
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.5))
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(minHeight: 44)
                     }
-                    .padding(.horizontal, 30)
-                    .padding(.top, 12)
-                    .padding(.bottom, 30)
+                    .padding(.horizontal, 24)
+                    .padding(.top, 16)
+                    .padding(.bottom, 24)
                 }
             }
         }
@@ -76,13 +100,14 @@ struct StaticInfoView: View {
     @ViewBuilder
     private func sectionLabel(_ title: String) -> some View {
         Text(title)
-            .font(.system(size: 12, weight: .semibold))
-            .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.45))
+            .font(.system(size: 12, weight: .bold))
+            .foregroundStyle(.secondary)
             .tracking(1)
             .textCase(.uppercase)
-            .padding(.horizontal, 30)
-            .padding(.top, 20)
+            .padding(.horizontal, 24)
+            .padding(.top, 16) // UX Fix: Reduced slightly so scroll content feels cohesive
             .padding(.bottom, 6)
+            .accessibilityAddTraits(.isHeader)
     }
 
     private func glassCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
@@ -95,9 +120,10 @@ struct StaticInfoView: View {
             }
             .overlay {
                 RoundedRectangle(cornerRadius: 36, style: .continuous)
-                    .stroke(Color.black.opacity(0.05), lineWidth: 1)
+                    .stroke(Color.primary.opacity(0.05), lineWidth: 1)
                     .padding(1)
             }
+            // UX Fix: Standardized shadow to match ConfirmDetailsView & TaskChoiceView
             .shadow(color: Color.black.opacity(0.1), radius: 20, x: 0, y: 15)
 
             content()
@@ -107,5 +133,6 @@ struct StaticInfoView: View {
 }
 
 #Preview {
+    // Note: Assuming .previewProvideInfo exists in your project extensions
     StaticInfoView(task: .previewProvideInfo, onComplete: {}, onLater: {})
 }

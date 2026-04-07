@@ -32,6 +32,7 @@ struct TaskEntryView: View {
                             .foregroundStyle(PeezyTheme.Colors.deepInk)
                             .lineLimit(2)
                             .minimumScaleFactor(0.5)
+                            .accessibilityAddTraits(.isHeader)
 
                         Rectangle()
                             .fill(Color.primary.opacity(0.15))
@@ -40,7 +41,7 @@ struct TaskEntryView: View {
                         Text(task.subtitle)
                             .font(.title3)
                             .fontWeight(.medium)
-                            .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.65))
+                            .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     .padding(.horizontal, 30)
@@ -79,7 +80,7 @@ struct TaskEntryView: View {
                     .stroke(Color.primary.opacity(0.07), lineWidth: 1)
                     .padding(1)
             }
-            .shadow(color: Color.black.opacity(0.1), radius: 20, x: 0, y: 15)
+            .shadow(color: Color.primary.opacity(0.1), radius: 20, x: 0, y: 15)
 
             content()
         }

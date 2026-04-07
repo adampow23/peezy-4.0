@@ -478,6 +478,36 @@ exports.submitTaskFlow = onCall(
 );
 
 /**
+ * Submit support chat message — notifies team when user sends a message
+ */
+exports.submitSupportMessage = onCall(
+  { region: 'us-central1', timeoutSeconds: 10, memory: '256MiB' },
+  async (request) => {
+    const { userId, userName, messageId, text } = request.data;
+
+    const webhookUrl = process.env.NOTIFICATION_WEBHOOK_URL;
+    if (webhookUrl) {
+      fetch(webhookUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'support_message',
+          userId: userId || '',
+          userName: userName || '',
+          messageId: messageId || '',
+          text: text || '',
+          sentAt: new Date().toISOString()
+        })
+      }).catch(err => console.error('Support message webhook failed:', err.message));
+    } else {
+      console.warn('NOTIFICATION_WEBHOOK_URL not configured');
+    }
+
+    return { success: true };
+  }
+);
+
+/**
  * Health check endpoint
  */
 exports.healthCheck = onRequest((req, res) => {

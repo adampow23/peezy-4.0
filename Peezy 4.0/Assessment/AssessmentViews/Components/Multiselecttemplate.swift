@@ -13,7 +13,7 @@ import SwiftUI
 struct MultiSelectTemplate: View {
 
     // ╔═══════════════════════════════════════════════════════════╗
-    // ║  CONTENT — passed from the question file                 ║
+    // ║  CONTENT — passed from the question file                  ║
     // ╚═══════════════════════════════════════════════════════════╝
     let header: String
     let subtext: String?
@@ -27,39 +27,39 @@ struct MultiSelectTemplate: View {
     var onDecrement: ((String) -> Void)? = nil
 
     // ╔═══════════════════════════════════════════════════════════╗
-    // ║  CONTROL BOARD — change any number, see it in preview    ║
+    // ║  CONTROL BOARD — change any number, see it in preview     ║
     // ╠═══════════════════════════════════════════════════════════╣
-    // ║                                                          ║
-    // ║  TYPEWRITER                                              ║
+    // ║                                                           ║
+    // ║  TYPEWRITER                                               ║
     var speed: Double = 0.04            //  seconds per character
-    // ║                                                          ║
-    // ║  HERO STATE (centered, large)                            ║
-    var heroFontSize: CGFloat = 32      //  header text size
+    // ║                                                           ║
+    // ║  HERO STATE (centered, large)                             ║
+    var heroFontSize: CGFloat = 34      // UX Fix: Standardized to 34pt Large Title
     var heroSubtextSize: CGFloat = 16   //  subtext size
-    // ║                                                          ║
-    // ║  MORPHED STATE (top-left, small)                         ║
-    var morphedFontSize: CGFloat = 22   //  header after morph
+    // ║                                                           ║
+    // ║  MORPHED STATE (top-left, small)                          ║
+    var morphedFontSize: CGFloat = 24   // UX Fix: Bumped to 24pt for better hierarchy
     var morphedSubtextSize: CGFloat = 14 // subtext after morph
     var morphTopPad: CGFloat = 24       //  space above text
     var morphBottomPad: CGFloat = 24    //  space between text and tiles
-    // ║                                                          ║
-    // ║  TILES                                                   ║
-    var tilePadH: CGFloat = 20          //  tiles outer side padding
+    // ║                                                           ║
+    // ║  TILES                                                    ║
+    var tilePadH: CGFloat = 24          // UX Fix: Standardized 20 -> 24pt for grid alignment
     var tileSpacing: CGFloat = 12       //  space between tiles
-    // ║                                                          ║
-    // ║  BUTTON                                                  ║
+    // ║                                                           ║
+    // ║  BUTTON                                                   ║
     var buttonPadH: CGFloat = 24        //  button side padding
-    var buttonPadBottom: CGFloat = 32   //  button bottom padding
-    // ║                                                          ║
-    // ║  TIMING                                                  ║
+    var buttonPadBottom: CGFloat = 24   // UX Fix: Standardized 32 -> 24pt
+    // ║                                                           ║
+    // ║  TIMING                                                   ║
     var morphDelay: Double = 0.4        //  pause after typing before morph
     var tileStagger: Double = 0.06      //  delay between each tile appearing
-    // ║                                                          ║
+    // ║                                                           ║
     // ║  TEXT                                                     ║
     var textSidePad: CGFloat = 24       //  text left/right padding
     var lineSpacing: CGFloat = 4        //  space between lines of header
     var subtextLineSpacing: CGFloat = 3 //  space between lines of subtext
-    // ║                                                          ║
+    // ║                                                           ║
     // ╚═══════════════════════════════════════════════════════════╝
 
     // ── ANIMATION STATE (don't touch) ───────────────────────────
@@ -96,7 +96,8 @@ struct MultiSelectTemplate: View {
                             )
                         }
                     }
-                    .font(.system(size: isHero ? heroFontSize : morphedFontSize, weight: .semibold))
+                    // UX Fix: Swapped .semibold to .heavy to match primary app typography
+                    .font(.system(size: isHero ? heroFontSize : morphedFontSize, weight: .heavy))
                     .foregroundColor(PeezyTheme.Colors.deepInk)
                     .lineSpacing(lineSpacing)
                     .multilineTextAlignment(isHero ? .center : .leading)
@@ -119,7 +120,8 @@ struct MultiSelectTemplate: View {
                                     )
                                 }
                             }
-                            .font(.system(size: isHero ? heroSubtextSize : morphedSubtextSize))
+                            // UX Fix: Added .medium weight to match 16pt body text standard
+                            .font(.system(size: isHero ? heroSubtextSize : morphedSubtextSize, weight: .medium))
                             .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.5))
                             .lineSpacing(subtextLineSpacing)
                             .multilineTextAlignment(isHero ? .center : .leading)
