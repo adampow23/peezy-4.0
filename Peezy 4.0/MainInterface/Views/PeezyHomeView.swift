@@ -29,6 +29,7 @@ struct InteractiveHomeTaskCard: View {
     let onSkip: () -> Void
 
     @State private var dismissOffset: CGFloat = 0
+    @Environment(\.accessibilityReduceMotion) var reduceMotion
 
     var body: some View {
         ZStack {
@@ -41,7 +42,7 @@ struct InteractiveHomeTaskCard: View {
             }
             .overlay(
                 RoundedRectangle(cornerRadius: 36, style: .continuous)
-                    .stroke(Color.black.opacity(0.05), lineWidth: 1)
+                    .stroke(Color.primary.opacity(0.07), lineWidth: 1)
                     .padding(1)
             )
             .shadow(color: Color.black.opacity(0.1), radius: 20, x: 0, y: 15)
@@ -51,11 +52,12 @@ struct InteractiveHomeTaskCard: View {
                 // Header
                 HStack {
                     Image(systemName: task.icon)
+                        .accessibilityHidden(true)
                     Text(task.headerLabel)
                     Spacer()
                 }
                 .font(.caption).bold()
-                .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.5))
+                .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.5))
                 .padding(.top, 30)
                 .padding(.horizontal, 30)
 
@@ -65,7 +67,7 @@ struct InteractiveHomeTaskCard: View {
                 VStack(alignment: .leading, spacing: 15) {
                     Text(task.title)
                         .font(.system(size: 44, weight: .heavy))
-                        .foregroundColor(PeezyTheme.Colors.deepInk)
+                        .foregroundStyle(PeezyTheme.Colors.deepInk)
                         .lineLimit(2)
                         .minimumScaleFactor(0.5)
                         .fixedSize(horizontal: false, vertical: true)
@@ -73,7 +75,7 @@ struct InteractiveHomeTaskCard: View {
                     Text(task.subtitle)
                         .font(.title3)
                         .fontWeight(.medium)
-                        .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.6))
+                        .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.6))
                         .lineLimit(nil)
                         .minimumScaleFactor(0.8)
                         .fixedSize(horizontal: false, vertical: true)
@@ -101,10 +103,9 @@ struct InteractiveHomeTaskCard: View {
                 // Later (skip) — fly off left
                 Button(action: {
                     PeezyHaptics.light()
-                    withAnimation(.easeIn(duration: 0.3)) {
-                        dismissOffset = -UIScreen.main.bounds.width
-                    }
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    withAnimation(reduceMotion ? .easeOut(duration: 0.15) : .easeOut(duration: 0.3)) {
+                        dismissOffset = -500
+                    } completion: {
                         onSkip()
                     }
                 }) {
@@ -114,7 +115,7 @@ struct InteractiveHomeTaskCard: View {
                         Text("Later")
                             .font(.system(size: 12, weight: .medium))
                     }
-                    .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.5))
+                    .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.5))
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 14)
                     .background(
@@ -123,7 +124,7 @@ struct InteractiveHomeTaskCard: View {
                     )
                     .overlay(
                         RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadius, style: .continuous)
-                            .stroke(Color.black.opacity(0.05), lineWidth: 1)
+                            .stroke(Color.primary.opacity(0.07), lineWidth: 1)
                     )
                 }
                 .buttonStyle(.peezySecondary)
@@ -139,7 +140,7 @@ struct InteractiveHomeTaskCard: View {
                         Text("Start task")
                             .font(.system(size: 12, weight: .semibold))
                     }
-                    .foregroundColor(.white)
+                    .foregroundStyle(.white)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 14)
                     .background(
@@ -184,6 +185,8 @@ struct PeezyHomeView: View {
     // Deep ink text color for light theme
     private let deepInk = PeezyTheme.Colors.deepInk
 
+    @Environment(\.accessibilityReduceMotion) var reduceMotion
+
     // MARK: - Initializers
 
     init(userState: UserState?, focusedTask: Binding<PeezyCard?>) {
@@ -202,8 +205,7 @@ struct PeezyHomeView: View {
     #endif
 
     var body: some View {
-        GeometryReader { geometry in
-            ZStack {
+        ZStack {
                 // Background (same as existing stack view)
                 InteractiveBackground()
                     .ignoresSafeArea()
@@ -257,15 +259,13 @@ struct PeezyHomeView: View {
                         ErrorToast(message: errorMessage) {
                             viewModel.error = nil
                         }
-                        .padding(.bottom, 80)
+                        .padding(.bottom, 16)
                     }
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
 
             }
-            .padding(.bottom, 80)
-        }
-        .onAppear {
+            .onAppear {
             #if DEBUG
             if ProcessInfo.processInfo.environment["XCODE_RUNNING_FOR_PREVIEWS"] == "1" {
                 return // Skip loading in previews — use injected state
@@ -331,12 +331,12 @@ struct PeezyHomeView: View {
                 VStack(alignment: .leading, spacing: 15) {
                     Text(welcomePageHeadline)
                         .font(.system(size: 38, weight: .heavy))
-                        .foregroundColor(PeezyTheme.Colors.deepInk)
+                        .foregroundStyle(PeezyTheme.Colors.deepInk)
                         .lineLimit(2)
                         .minimumScaleFactor(0.5)
 
                     Rectangle()
-                        .fill(Color.black.opacity(0.15))
+                        .fill(Color.primary.opacity(0.15))
                         .frame(width: 50, height: 2)
                 }
                 .padding(.horizontal, 30)
@@ -349,7 +349,7 @@ struct PeezyHomeView: View {
                 Text(welcomePageBody)
                     .font(.subheadline)
                     .fontWeight(.medium)
-                    .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.6))
+                    .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.6))
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, 30)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -362,7 +362,7 @@ struct PeezyHomeView: View {
                 HStack(spacing: 8) {
                     ForEach(0..<3, id: \.self) { i in
                         Circle()
-                            .fill(i == welcomePage ? Color.black.opacity(0.4) : Color.black.opacity(0.12))
+                            .fill(i == welcomePage ? Color.primary.opacity(0.4) : Color.primary.opacity(0.12))
                             .frame(width: 7, height: 7)
                     }
                 }
@@ -373,8 +373,13 @@ struct PeezyHomeView: View {
                 if welcomePage < 2 {
                     Text("Swipe to continue")
                         .font(.caption)
-                        .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.3))
+                        .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.3))
                         .padding(.bottom, 30)
+                        .accessibilityAction(named: "Next page") {
+                            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.3)) {
+                                welcomePage += 1
+                            }
+                        }
                 } else {
                     PeezyAssessmentButton("Start My First Task") {
                         viewModel.dismissFirstTimeWelcome()
@@ -389,11 +394,11 @@ struct PeezyHomeView: View {
                 .onEnded { gesture in
                     let horizontal = gesture.translation.width
                     if horizontal < -50 && welcomePage < 2 {
-                        withAnimation(.easeInOut(duration: 0.3)) {
+                        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.3)) {
                             welcomePage += 1
                         }
                     } else if horizontal > 50 && welcomePage > 0 {
-                        withAnimation(.easeInOut(duration: 0.3)) {
+                        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.3)) {
                             welcomePage -= 1
                         }
                     }
@@ -437,20 +442,20 @@ struct PeezyHomeView: View {
                     // Greeting
                     Text(viewModel.greetingText)
                         .font(.system(size: 40, weight: .heavy))
-                        .foregroundColor(PeezyTheme.Colors.deepInk)
+                        .foregroundStyle(PeezyTheme.Colors.deepInk)
                         .lineLimit(2)
                         .minimumScaleFactor(0.5)
 
                     // Thin accent divider
                     Rectangle()
-                        .fill(Color.black.opacity(0.15))
+                        .fill(Color.primary.opacity(0.15))
                         .frame(width: 50, height: 2)
 
                     // Today's count only
                     Text(viewModel.dailyGreetingSubtitle)
                         .font(.title3)
                         .fontWeight(.medium)
-                        .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.6))
+                        .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.6))
                 }
                 .padding(.horizontal, 30)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -478,20 +483,20 @@ struct PeezyHomeView: View {
                     // Greeting
                     Text(viewModel.returningGreeting)
                         .font(.system(size: 40, weight: .heavy))
-                        .foregroundColor(PeezyTheme.Colors.deepInk)
+                        .foregroundStyle(PeezyTheme.Colors.deepInk)
                         .lineLimit(2)
                         .minimumScaleFactor(0.5)
 
                     // Thin accent divider
                     Rectangle()
-                        .fill(Color.black.opacity(0.15))
+                        .fill(Color.primary.opacity(0.15))
                         .frame(width: 50, height: 2)
 
                     // Progress
                     Text(viewModel.returningMidDaySubtitle)
                         .font(.title3)
                         .fontWeight(.medium)
-                        .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.6))
+                        .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.6))
                 }
                 .padding(.horizontal, 30)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -565,15 +570,17 @@ struct PeezyHomeView: View {
             Button(action: { viewModel.skipCurrentTask() }) {
                 Text("Skip for now")
                     .font(.subheadline)
-                    .foregroundStyle(Color.gray)
+                    .foregroundStyle(.secondary)
+                    .frame(minWidth: 44, minHeight: 44)
+                    .padding(.horizontal, 8)
             }
             .padding(.top, 4)
 
             // Workflow error
             if let workflowError = viewModel.workflowManager.error {
-                Text(workflowError)
+                Label(workflowError, systemImage: "exclamationmark.triangle.fill")
                     .font(.caption)
-                    .foregroundColor(.orange)
+                    .foregroundStyle(.orange)
                     .padding(.horizontal, 30)
             }
         }
@@ -587,7 +594,15 @@ struct PeezyHomeView: View {
             task: task,
             onStartWorkflow: {
                 let taskType = task.taskType ?? ""
-                if !subscriptionManager.isSubscribed {
+                let actionType = task.actionType ?? ""
+                if actionType == "in-app-inventory" {
+                    if subscriptionManager.isSubscribed {
+                        viewModel.showInventoryScanner = true
+                    } else {
+                        taskFlowCard = task
+                        showTaskFlow = true
+                    }
+                } else if !subscriptionManager.isSubscribed {
                     taskFlowCard = task
                     showTaskFlow = true
                 } else if taskType == "research" || taskType == "transfer_cancel" || taskType == "provide_info" || taskType == "survey" {
@@ -612,18 +627,18 @@ struct PeezyHomeView: View {
                     VStack(alignment: .leading, spacing: 15) {
                         Text("You're all done\nfor today!")
                             .font(.system(size: 36, weight: .heavy))
-                            .foregroundColor(PeezyTheme.Colors.deepInk)
+                            .foregroundStyle(PeezyTheme.Colors.deepInk)
                             .lineLimit(3)
                             .minimumScaleFactor(0.5)
 
                         Rectangle()
-                            .fill(Color.black.opacity(0.15))
+                            .fill(Color.primary.opacity(0.15))
                             .frame(width: 50, height: 2)
 
                         Text(viewModel.celebrationSubtext)
                             .font(.title3)
                             .fontWeight(.medium)
-                            .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.6))
+                            .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.6))
                             .lineLimit(3)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -649,7 +664,7 @@ struct PeezyHomeView: View {
                 .frame(width: 340, height: 500)
                 .allowsHitTesting(false)
         }
-        .onAppear { confettiActive = true }
+        .onAppear { if !reduceMotion { confettiActive = true } }
         .onDisappear { confettiActive = false }
     }
 
@@ -663,23 +678,23 @@ struct PeezyHomeView: View {
                 VStack(alignment: .leading, spacing: 15) {
                     Image(systemName: "checkmark.seal.fill")
                         .font(.system(size: 56))
-                        .foregroundStyle(.green)
+                        .foregroundStyle(Color(uiColor: .systemGreen))
 
                     let name = viewModel.userState?.name ?? ""
                     Text(name.isEmpty ? "You're all set!" : "You're all set, \(name)!")
                         .font(.system(size: 36, weight: .heavy))
-                        .foregroundColor(PeezyTheme.Colors.deepInk)
+                        .foregroundStyle(PeezyTheme.Colors.deepInk)
                         .lineLimit(2)
                         .minimumScaleFactor(0.5)
 
                     Rectangle()
-                        .fill(Color.black.opacity(0.15))
+                        .fill(Color.primary.opacity(0.15))
                         .frame(width: 50, height: 2)
 
                     Text(viewModel.allCompleteSubtext)
                         .font(.title3)
                         .fontWeight(.medium)
-                        .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.6))
+                        .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.6))
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(.horizontal, 30)
@@ -705,7 +720,7 @@ struct PeezyHomeView: View {
             }
             .overlay(
                 RoundedRectangle(cornerRadius: 36, style: .continuous)
-                    .stroke(Color.black.opacity(0.05), lineWidth: 1)
+                    .stroke(Color.primary.opacity(0.07), lineWidth: 1)
                     .padding(1)
             )
             .shadow(color: Color.black.opacity(0.1), radius: 20, x: 0, y: 15)

@@ -4,7 +4,7 @@ import StoreKit
 // MARK: - PaywallGateView
 //
 // Shown when trial expires or a non-subscriber taps a gated task type.
-// 3-tier CTA hierarchy: Primary (subscribe) → Secondary (not now) → Tertiary (redeem code)
+// 3-tier CTA hierarchy: Primary (subscribe) → Secondary (not now) → Tertiary (utilities)
 
 struct PaywallGateView: View {
 
@@ -22,7 +22,7 @@ struct PaywallGateView: View {
             VStack(spacing: 0) {
                 Spacer()
 
-                // MARK: - Header & Copy
+                // MARK: - Header & Value Prop
                 VStack(spacing: 12) {
                     Text("PEEZY+")
                         .font(.system(size: 13, weight: .black, design: .rounded))
@@ -35,28 +35,21 @@ struct PaywallGateView: View {
                         .foregroundStyle(PeezyTheme.Colors.deepInk)
                         .multilineTextAlignment(.center)
                         .lineSpacing(2)
-                }
-                .padding(.horizontal, 24)
+                        .minimumScaleFactor(0.8)
 
-                Spacer().frame(height: 32)
-
-                // MARK: - Value Props
-                VStack(spacing: 20) {
-                    Text("We handle the vendors. We handle the calls.\nWe handle the stuff you keep putting off.")
+                    // UX Fix: Bumped size up to 17, weight to medium, and opacity to 0.7
+                    // to give this statement the authority it deserves.
+                    Text("The average move costs people 25+ hours of\nadmin headaches. Peezy costs less than\none hour of therapy.")
                         .font(.system(size: 17, weight: .medium))
                         .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.7))
                         .multilineTextAlignment(.center)
                         .lineSpacing(4)
-
-                    Text("The average move costs people 25+ hours of\nadmin headaches. Peezy costs less than\none hour of therapy.")
-                        .font(.system(size: 14, weight: .regular))
-                        .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.5))
-                        .multilineTextAlignment(.center)
-                        .lineSpacing(2)
+                        .minimumScaleFactor(0.9)
+                        .padding(.top, 8)
                 }
-                .padding(.horizontal, 32)
+                .padding(.horizontal, 24)
 
-                Spacer().frame(height: 40)
+                Spacer(minLength: 24)
 
                 // MARK: - Plan Selector
                 HStack(spacing: 16) {
@@ -65,72 +58,77 @@ struct PaywallGateView: View {
                 }
                 .padding(.horizontal, 24)
 
-                Spacer().frame(height: 48)
+                Spacer(minLength: 32)
 
-                // MARK: - Primary Decision Zone
+                // MARK: - Primary Action
+                PeezyAssessmentButton(
+                    subscriptionManager.isPurchasing ? "Processing..." : "Let's do this",
+                    action: purchaseSelected
+                )
+                .padding(.horizontal, 24)
+
+                Spacer(minLength: 20)
+
+                // MARK: - Dismiss & Utilities (Grouped at the bottom)
                 VStack(spacing: 16) {
-                    PeezyAssessmentButton(
-                        subscriptionManager.isPurchasing ? "Processing..." : "Let's do this",
-                        action: purchaseSelected
-                    )
-
-                    // Binary alternative — tightly coupled to primary CTA
+                    
+                    // Secondary Action
                     Button(action: onDismiss) {
                         Text("Not now")
                             .font(.system(size: 16, weight: .semibold))
                             .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.6))
                     }
                     .buttonStyle(.plain)
-                }
-                .padding(.horizontal, 24)
+                    .contentShape(Rectangle())
 
-                Spacer().frame(height: 32)
-
-                // MARK: - Utility Footer
-                Button {
-                    Task {
-                        guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene else { return }
-                        try? await AppStore.presentOfferCodeRedeemSheet(in: windowScene)
-                    }
-                } label: {
-                    Text("Redeem a code")
-                        .font(.system(size: 12, weight: .regular))
-                        .underline()
-                        .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.4))
-                }
-                .buttonStyle(.plain)
-
-                Button {
-                    Task {
-                        await subscriptionManager.restorePurchases()
-                        if subscriptionManager.isSubscribed {
-                            onDismiss()
+                    // Tertiary Utilities (Side-by-Side)
+                    HStack(spacing: 12) {
+                        Button {
+                            Task {
+                                guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene else { return }
+                                try? await AppStore.presentOfferCodeRedeemSheet(in: windowScene)
+                            }
+                        } label: {
+                            Text("Redeem a code").underline()
                         }
+                        .buttonStyle(.plain)
+
+                        Text("·")
+
+                        Button {
+                            Task {
+                                await subscriptionManager.restorePurchases()
+                                if subscriptionManager.isSubscribed {
+                                    onDismiss()
+                                }
+                            }
+                        } label: {
+                            Text("Restore Purchases").underline()
+                        }
+                        .buttonStyle(.plain)
                     }
-                } label: {
-                    Text("Restore Purchases")
-                        .font(.system(size: 12, weight: .regular))
-                        .underline()
-                        .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.4))
+                    .font(.system(size: 12, weight: .regular))
+                    .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.4))
                 }
-                .buttonStyle(.plain)
-                .padding(.bottom, 12)
+
+                Spacer(minLength: 16)
 
                 // MARK: - Subscription Terms (Apple 3.1.2)
-                Text("Payment will be charged to your Apple ID account at confirmation of purchase. Subscription automatically renews unless cancelled at least 24 hours before the end of the current period. Manage subscriptions in Settings > Apple ID > Subscriptions.")
-                    .font(.system(size: 10))
-                    .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.3))
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 32)
-                    .padding(.bottom, 8)
+                VStack(spacing: 8) {
+                    Text("Payment will be charged to your Apple ID account at confirmation of purchase. Subscription automatically renews unless cancelled at least 24 hours before the end of the current period. Manage subscriptions in Settings > Apple ID > Subscriptions.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.3))
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 32)
 
-                HStack(spacing: 4) {
-                    Link("Privacy Policy", destination: URL(string: "https://peezy-1ecrdl.web.app/privacy.html")!)
-                    Text("·")
-                    Link("Terms of Service", destination: URL(string: "https://peezy-1ecrdl.web.app/terms.html")!)
+                    HStack(spacing: 4) {
+                        Link("Privacy Policy", destination: URL(string: "https://peezy-1ecrdl.web.app/privacy.html")!)
+                        Text("·")
+                        Link("Terms of Service", destination: URL(string: "https://peezy-1ecrdl.web.app/terms.html")!)
+                    }
+                    .font(.caption)
+                    .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.3))
                 }
-                .font(.system(size: 10))
-                .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.3))
                 .padding(.bottom, 16)
             }
         }
@@ -152,10 +150,10 @@ struct PaywallGateView: View {
                         .padding(.horizontal, 10)
                         .padding(.vertical, 4)
                         .background(Capsule().fill(PeezyTheme.Colors.deepInk))
-                        .padding(.top, 12)
+                        .padding(.top, 10)
                 }
 
-                VStack(spacing: 6) {
+                VStack(spacing: 4) {
                     Text(plan == .annual ? "YEARLY" : "WEEKLY")
                         .font(.system(size: 12, weight: .bold))
                         .tracking(1)
@@ -169,8 +167,8 @@ struct PaywallGateView: View {
                         .font(.system(size: 12))
                         .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.5))
                 }
-                .padding(.top, 44)
-                .padding(.bottom, 24)
+                .padding(.top, 36)
+                .padding(.bottom, 20)
             }
             .frame(maxWidth: .infinity)
             .background {
@@ -228,6 +226,7 @@ struct PaywallGateView: View {
         }
     }
 }
+// MARK: - Preview
 
 #Preview {
     PaywallGateView(onDismiss: {})

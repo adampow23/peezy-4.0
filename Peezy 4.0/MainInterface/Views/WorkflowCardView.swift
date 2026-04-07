@@ -31,7 +31,7 @@ struct WorkflowCardView: View {
                 }
                 .overlay(
                     RoundedRectangle(cornerRadius: 36, style: .continuous)
-                        .stroke(Color.black.opacity(0.05), lineWidth: 1)
+                        .stroke(Color.primary.opacity(0.07), lineWidth: 1)
                 )
                 .shadow(color: Color.black.opacity(0.1), radius: 20, x: 0, y: 15)
 
@@ -49,7 +49,7 @@ struct WorkflowCardView: View {
                         WorkflowIntroContent(
                             intro: card.qualifying.intro,
                             onContinue: {
-                                dismissLeft { onContinue() }
+                                dismissLeft(in: geometry) { onContinue() }
                             }
                         )
 
@@ -61,13 +61,11 @@ struct WorkflowCardView: View {
                                 onSelect: { optionId, isExclusive in
                                     onSelect(question.id, optionId, isExclusive)
                                     if question.type == .single_select {
-                                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                                            dismissLeft { onContinue() }
-                                        }
+                                        dismissLeft(in: geometry) { onContinue() }
                                     }
                                 },
                                 onContinue: {
-                                    dismissLeft { onContinue() }
+                                    dismissLeft(in: geometry) { onContinue() }
                                 }
                             )
                         }
@@ -78,7 +76,7 @@ struct WorkflowCardView: View {
                             answers: answers,
                             questions: card.qualifying.questions,
                             onComplete: {
-                                dismissLeft { onComplete() }
+                                dismissLeft(in: geometry) { onComplete() }
                             }
                         )
                     }
@@ -94,11 +92,10 @@ struct WorkflowCardView: View {
 
     // MARK: - Dismiss Animation
 
-    private func dismissLeft(then action: @escaping () -> Void) {
-        withAnimation(.easeIn(duration: 0.25)) {
-            offset = CGSize(width: -UIScreen.main.bounds.width * 1.5, height: 0)
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+    private func dismissLeft(in geometry: GeometryProxy, then action: @escaping () -> Void) {
+        withAnimation(.easeOut(duration: 0.25)) {
+            offset = CGSize(width: -geometry.size.width * 1.5, height: 0)
+        } completion: {
             action()
         }
     }
@@ -114,7 +111,7 @@ struct WorkflowCardHeader: View {
         HStack {
             Text(workflowTitle.uppercased())
                 .font(.system(size: 12, weight: .bold))
-                .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.35))
+                .foregroundStyle(.secondary)
                 .tracking(1.5)
 
             Spacer()
@@ -122,7 +119,7 @@ struct WorkflowCardHeader: View {
             if let progress = progress {
                 Text(progress)
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.3))
+                    .foregroundStyle(.tertiary)
             }
         }
         .padding(.horizontal, 28)
@@ -144,13 +141,13 @@ struct WorkflowIntroContent: View {
             VStack(alignment: .leading, spacing: 12) {
                 Text(intro.title)
                     .font(.system(size: 32, weight: .heavy))
-                    .foregroundColor(PeezyTheme.Colors.deepInk)
+                    .foregroundStyle(PeezyTheme.Colors.deepInk)
                     .fixedSize(horizontal: false, vertical: true)
 
                 if let subtitle = intro.subtitle {
                     Text(subtitle)
                         .font(.title3)
-                        .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.6))
+                        .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.6))
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -176,6 +173,8 @@ struct WorkflowQuestionContent: View {
     let onSelect: (String, Bool) -> Void
     let onContinue: () -> Void
 
+    @Environment(\.accessibilityReduceMotion) var reduceMotion
+
     private let columns = [
         GridItem(.flexible(), spacing: 12),
         GridItem(.flexible(), spacing: 12)
@@ -188,13 +187,13 @@ struct WorkflowQuestionContent: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text(question.question)
                     .font(.system(size: 22, weight: .bold))
-                    .foregroundColor(PeezyTheme.Colors.deepInk)
+                    .foregroundStyle(PeezyTheme.Colors.deepInk)
                     .fixedSize(horizontal: false, vertical: true)
 
                 if let subtitle = question.subtitle {
                     Text(subtitle)
                         .font(PeezyTheme.Typography.callout)
-                        .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.5))
+                        .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.5))
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -240,14 +239,14 @@ struct WorkflowQuestionContent: View {
                 }
                 .padding(.horizontal, 28)
                 .padding(.bottom, 28)
-                .transition(.move(edge: .bottom).combined(with: .opacity))
-                .animation(.spring(response: 0.4, dampingFraction: 0.7), value: selectedIds.isEmpty)
-            } else if question.type == .single_select {
-                // Single-select: no button needed (auto-advances)
-                Color.clear.frame(height: 28)
+                .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
+                .animation(reduceMotion ? nil : .spring(response: 0.4, dampingFraction: 0.7), value: selectedIds.isEmpty)
             } else {
-                // Multi-select with no selection yet: reserve space
-                Color.clear.frame(height: 28)
+                // Single-select (auto-advances) or multi-select with no selection yet: reserve button space
+                PeezyAssessmentButton("Continue") { }
+                    .padding(.horizontal, 28)
+                    .padding(.bottom, 28)
+                    .hidden()
             }
         }
     }
@@ -268,7 +267,7 @@ struct WorkflowRecapContent: View {
             VStack(alignment: .leading, spacing: 16) {
                 Text(recap.title)
                     .font(.system(size: 22, weight: .bold))
-                    .foregroundColor(PeezyTheme.Colors.deepInk)
+                    .foregroundStyle(PeezyTheme.Colors.deepInk)
 
                 // Answer summary
                 ForEach(questions, id: \.id) { question in
@@ -277,7 +276,7 @@ struct WorkflowRecapContent: View {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(question.question)
                                 .font(.system(size: 13, weight: .medium))
-                                .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.4))
+                                .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.4))
 
                             let labels = question.options
                                 .filter { answerIds.contains($0.id) }
@@ -286,14 +285,15 @@ struct WorkflowRecapContent: View {
 
                             Text(labels)
                                 .font(.system(size: 16, weight: .medium))
-                                .foregroundColor(PeezyTheme.Colors.deepInk)
+                                .foregroundStyle(PeezyTheme.Colors.deepInk)
                         }
+                        .accessibilityElement(children: .combine)
                     }
                 }
 
                 Text(recap.closing)
                     .font(PeezyTheme.Typography.callout)
-                    .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.6))
+                    .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.6))
                     .padding(.top, 4)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -318,6 +318,7 @@ struct WorkflowOptionTile: View {
     let onTap: () -> Void
 
     @State private var isPressed = false
+    @Environment(\.accessibilityReduceMotion) var reduceMotion
 
     var body: some View {
         Button(action: {
@@ -326,21 +327,22 @@ struct WorkflowOptionTile: View {
             onTap()
         }) {
             VStack(spacing: 8) {
-                // Icon
+                // Icon — decorative; label carries the meaning
                 Image(systemName: option.icon)
                     .font(.system(size: 24))
-                    .foregroundColor(
+                    .foregroundStyle(
                         isSelected
                             ? PeezyTheme.Colors.lightBase
-                            : PeezyTheme.Colors.deepInk.opacity(0.12)
+                            : PeezyTheme.Colors.deepInk.opacity(0.4)
                     )
                     .scaleEffect(isSelected ? 1.05 : 1.0)
-                    .animation(.spring(response: 0.5, dampingFraction: 0.5), value: isSelected)
+                    .animation(reduceMotion ? nil : .spring(response: 0.5, dampingFraction: 0.5), value: isSelected)
+                    .accessibilityHidden(true)
 
                 // Label
                 Text(option.label)
                     .font(PeezyTheme.Typography.calloutSemibold)
-                    .foregroundColor(isSelected ? PeezyTheme.Colors.lightBase : PeezyTheme.Colors.deepInk)
+                    .foregroundStyle(isSelected ? PeezyTheme.Colors.lightBase : PeezyTheme.Colors.deepInk)
                     .multilineTextAlignment(.center)
                     .lineLimit(2)
                     .minimumScaleFactor(0.8)
@@ -349,7 +351,7 @@ struct WorkflowOptionTile: View {
                 if let subtitle = option.subtitle {
                     Text(subtitle)
                         .font(PeezyTheme.Typography.caption)
-                        .foregroundColor(
+                        .foregroundStyle(
                             isSelected
                                 ? PeezyTheme.Colors.lightBase.opacity(0.8)
                                 : PeezyTheme.Colors.deepInk.opacity(0.5)
@@ -378,7 +380,7 @@ struct WorkflowOptionTile: View {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadiusLarge, style: .continuous)
-                    .stroke(isSelected ? Color.clear : Color.black.opacity(0.05), lineWidth: 1)
+                    .stroke(isSelected ? Color.clear : Color.primary.opacity(0.07), lineWidth: 1)
             )
             .shadow(
                 color: isSelected ? PeezyTheme.Colors.deepInk.opacity(0.25) : Color.black.opacity(0.1),
@@ -386,11 +388,14 @@ struct WorkflowOptionTile: View {
                 x: 0,
                 y: isPressed ? 1 : (isSelected ? 4 : 8)
             )
-            .scaleEffect(isPressed ? 0.96 : 1.0)
-            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isSelected)
-            .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isPressed)
+            .scaleEffect(isPressed && !reduceMotion ? 0.96 : 1.0)
+            .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.7), value: isSelected)
+            .animation(reduceMotion ? nil : .spring(response: 0.25, dampingFraction: 0.7), value: isPressed)
         }
         .buttonStyle(PlainButtonStyle())
+        .accessibilityLabel(option.label)
+        .accessibilityHint(option.subtitle ?? "")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
         .simultaneousGesture(
             DragGesture(minimumDistance: 0)
                 .onChanged { _ in isPressed = true }
@@ -436,6 +441,7 @@ struct WorkflowOptionTile: View {
 
     ZStack {
         InteractiveBackground()
+            .ignoresSafeArea()
 
         WorkflowCardView(
             card: card,
@@ -444,7 +450,6 @@ struct WorkflowOptionTile: View {
             onSelect: { q, o, e in print("Selected \(o)") },
             onComplete: { print("Complete") }
         )
-        .padding(.horizontal, 20)
-        .padding(.vertical, 40)
+        .frame(width: 340, height: 500)
     }
 }

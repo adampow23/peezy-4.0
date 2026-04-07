@@ -83,8 +83,8 @@ struct ChatView: View {
 
                 // AI disclaimer
                 Text("Peezy can make mistakes")
-                    .font(.caption2)
-                    .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.3))
+                    .font(.caption)
+                    .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.3))
                     .frame(maxWidth: .infinity)
                     .padding(.top, 4)
 
@@ -216,10 +216,10 @@ struct ChatHeader: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Peezy")
                     .font(.headline)
-                    .foregroundColor(PeezyTheme.Colors.deepInk)
+                    .foregroundStyle(PeezyTheme.Colors.deepInk)
                 Text("Your moving concierge")
                     .font(.caption)
-                    .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.5))
+                    .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.5))
             }
 
             Spacer()
@@ -304,7 +304,7 @@ struct MessageBubble: View {
                             }
                         }
                     )
-                    .foregroundColor(message.role == .user ? PeezyTheme.Colors.lightBase : PeezyTheme.Colors.deepInk)
+                    .foregroundStyle(message.role == .user ? PeezyTheme.Colors.lightBase : PeezyTheme.Colors.deepInk)
 
                 // Feedback buttons for non-welcome assistant messages
                 if showFeedback && message.role == .assistant {
@@ -318,7 +318,7 @@ struct MessageBubble: View {
                         } label: {
                             Image(systemName: feedback == true ? "hand.thumbsup.fill" : "hand.thumbsup")
                                 .font(.system(size: 13))
-                                .foregroundColor(feedback == true ? PeezyTheme.Colors.deepInk.opacity(0.9) : PeezyTheme.Colors.deepInk.opacity(0.35))
+                                .foregroundStyle(feedback == true ? PeezyTheme.Colors.deepInk.opacity(0.9) : PeezyTheme.Colors.deepInk.opacity(0.35))
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel(feedback == true ? "Remove helpful rating" : "Mark as helpful")
@@ -332,7 +332,7 @@ struct MessageBubble: View {
                         } label: {
                             Image(systemName: feedback == false ? "hand.thumbsdown.fill" : "hand.thumbsdown")
                                 .font(.system(size: 13))
-                                .foregroundColor(feedback == false ? PeezyTheme.Colors.deepInk.opacity(0.9) : PeezyTheme.Colors.deepInk.opacity(0.35))
+                                .foregroundStyle(feedback == false ? PeezyTheme.Colors.deepInk.opacity(0.9) : PeezyTheme.Colors.deepInk.opacity(0.35))
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel(feedback == false ? "Remove unhelpful rating" : "Mark as unhelpful")
@@ -363,7 +363,7 @@ struct ChatInputBar: View {
             // Text field with glass background
             TextField("Ask Peezy anything...", text: $text, axis: .vertical)
                 .textFieldStyle(.plain)
-                .foregroundColor(PeezyTheme.Colors.deepInk)
+                .foregroundStyle(PeezyTheme.Colors.deepInk)
                 .tint(PeezyTheme.Colors.deepInk)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
@@ -466,15 +466,15 @@ struct ErrorBanner: View {
     var body: some View {
         HStack {
             Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundColor(.orange)
+                .foregroundStyle(.orange)
             Text(message)
                 .font(.subheadline)
-                .foregroundColor(PeezyTheme.Colors.deepInk)
+                .foregroundStyle(PeezyTheme.Colors.deepInk)
             Spacer()
             Button(action: onDismiss) {
                 Image(systemName: "xmark")
                     .font(.caption)
-                    .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.5))
+                    .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.5))
             }
         }
         .padding()

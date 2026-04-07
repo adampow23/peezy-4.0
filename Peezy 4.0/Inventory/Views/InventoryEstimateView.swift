@@ -29,9 +29,6 @@ struct InventoryEstimateView: View {
                     }
                     .padding(.top, PeezyTheme.Layout.sectionSpacing)
 
-                    // Packing estimate card
-                    packingCard
-
                     // Furniture summary
                     if !estimate.furnitureItems.isEmpty {
                         furnitureCard
@@ -41,7 +38,7 @@ struct InventoryEstimateView: View {
                     warningBadges
 
                     // Disclaimer
-                    Text("Packing varies from person to person — these are ballpark numbers. Your inventory will be shared with moving companies so they can provide accurate estimates for your move.")
+                    Text("Your inventory will be shared with moving companies so they can provide accurate estimates for your move.")
                         .font(PeezyTheme.Typography.footnote)
                         .foregroundStyle(PeezyTheme.Colors.textTertiary)
                         .multilineTextAlignment(.center)
@@ -58,62 +55,6 @@ struct InventoryEstimateView: View {
                 appeared = true
             }
         }
-    }
-
-    // MARK: - Packing Card
-
-    private var packingCard: some View {
-        VStack(alignment: .leading, spacing: PeezyTheme.Layout.verticalSpacing) {
-            HStack(spacing: PeezyTheme.Layout.verticalSpacingSmall) {
-                Image(systemName: "shippingbox.fill")
-                    .font(.system(size: 18, weight: .medium))
-                    .foregroundStyle(PeezyTheme.Colors.warningOrange)
-
-                Text("Packing Estimate")
-                    .font(PeezyTheme.Typography.headline)
-                    .foregroundStyle(PeezyTheme.Colors.textPrimary)
-            }
-
-            HStack(spacing: PeezyTheme.Layout.sectionSpacing) {
-                // Boxes
-                VStack(spacing: 4) {
-                    Text(estimate.boxRangeDescription)
-                        .font(PeezyTheme.Typography.title2)
-                        .foregroundStyle(PeezyTheme.Colors.textPrimary)
-                    Text("estimated")
-                        .font(PeezyTheme.Typography.footnote)
-                        .foregroundStyle(PeezyTheme.Colors.textTertiary)
-                }
-                .frame(maxWidth: .infinity)
-
-                // Divider
-                Rectangle()
-                    .fill(Color.white.opacity(0.15))
-                    .frame(width: 1, height: 40)
-
-                // Packing time
-                VStack(spacing: 4) {
-                    Text(estimate.packingTimeDescription)
-                        .font(PeezyTheme.Typography.title2)
-                        .foregroundStyle(PeezyTheme.Colors.textPrimary)
-                    Text("to pack")
-                        .font(PeezyTheme.Typography.footnote)
-                        .foregroundStyle(PeezyTheme.Colors.textTertiary)
-                }
-                .frame(maxWidth: .infinity)
-            }
-
-            Text("Every household packs differently — this is a ballpark based on what we found during your scan.")
-                .font(PeezyTheme.Typography.caption)
-                .foregroundStyle(PeezyTheme.Colors.textTertiary)
-        }
-        .padding(PeezyTheme.Layout.cardPadding)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(cardBackground)
-        .shadow(color: PeezyTheme.Shadows.subtleShadowColor, radius: PeezyTheme.Shadows.subtleShadowRadius, x: 0, y: PeezyTheme.Shadows.subtleShadowY)
-        .padding(.horizontal, PeezyTheme.Layout.horizontalPadding)
-        .opacity(appeared ? 1 : 0)
-        .offset(y: appeared ? 0 : 20)
     }
 
     // MARK: - Furniture Card

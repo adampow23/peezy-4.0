@@ -411,7 +411,9 @@ struct PeezyTaskStream: View {
     private static let flowTaskTypes: Set<String> = ["research", "transfer_cancel", "provide_info"]
 
     private func onStartHandler(for task: PeezyCard) -> (() -> Void)? {
-        if Self.flowTaskTypes.contains(task.taskType ?? "") {
+        if task.actionType == "in-app-inventory", onNavigateToTask != nil {
+            return { onNavigateToTask?(task) }
+        } else if Self.flowTaskTypes.contains(task.taskType ?? "") {
             return {
                 taskFlowCard = task
                 showTaskFlow = true

@@ -42,7 +42,7 @@ struct AuthView: View {
 
                 // Header
                 TypewriterText(
-                    phrases: ["F*ck moving.", "Moving made peezy.", "Your move, on autopilot."],
+                    phrases: ["Moving made peezy.", "Your move, on autopilot."],
                     font: .system(size: 32, weight: .semibold),
                     foregroundColor: PeezyTheme.Colors.deepInk
                 )
@@ -129,9 +129,9 @@ struct AuthView: View {
                     } label: {
                         HStack(spacing: 4) {
                             Text("Already have an account?")
-                                .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.6))
+                                .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.6))
                             Text("Log in")
-                                .foregroundColor(PeezyTheme.Colors.accentBlue)
+                                .foregroundStyle(PeezyTheme.Colors.accentBlue)
                                 .fontWeight(.semibold)
                         }
                         .font(PeezyTheme.Typography.callout)
@@ -231,12 +231,12 @@ private struct AuthErrorToast: View {
 
                     Image(systemName: "exclamationmark.triangle.fill")
                         .font(.system(size: 16, weight: .semibold))
-                        .foregroundColor(PeezyTheme.Colors.emotionalRed)
+                        .foregroundStyle(PeezyTheme.Colors.emotionalRed)
                 }
 
                 Text(message)
                     .font(PeezyTheme.Typography.calloutMedium)
-                    .foregroundColor(PeezyTheme.Colors.deepInk)
+                    .foregroundStyle(PeezyTheme.Colors.deepInk)
                     .multilineTextAlignment(.leading)
 
                 Spacer()
@@ -304,7 +304,7 @@ private struct AuthButton: View {
                     Text(title)
                         .font(.system(size: 18, weight: .semibold, design: .rounded))
                 }
-                .foregroundColor(effectiveDisabled ? .white.opacity(0.5) : .white)
+                .foregroundStyle(effectiveDisabled ? .white.opacity(0.5) : .white)
                 .opacity(isLoading ? 0 : 1)
 
                 if isLoading {

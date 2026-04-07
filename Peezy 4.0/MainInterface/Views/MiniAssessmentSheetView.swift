@@ -30,7 +30,7 @@ struct MiniAssessmentSheetView: View {
     }
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ZStack {
                 // Background
                 Color(red: 0.02, green: 0.02, blue: 0.06)
@@ -141,7 +141,7 @@ struct MiniAssessmentSheetView: View {
 
             if currentQuestionIndex < questions.count {
                 Text("\(currentQuestionIndex + 1) of \(questions.count)")
-                    .font(.caption2)
+                    .font(.caption)
                     .foregroundColor(Color.gray)
             }
         }

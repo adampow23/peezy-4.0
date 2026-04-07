@@ -22,13 +22,18 @@ struct PeezyMainContainer: View {
     // Task list → Home navigation: when set, switches to Home and focuses this task
     @State private var focusedTask: PeezyCard? = nil
 
+    // Measured height of the floating tab bar (including its bottom padding)
+    @State private var tabBarHeight: CGFloat = 0
+
+    @Environment(\.accessibilityReduceMotion) var reduceMotion
+
     var body: some View {
         ZStack(alignment: .bottom) {
             // Full-bleed background — spans entire screen including safe areas
             InteractiveBackground()
                 .ignoresSafeArea()
 
-            // Main content
+            // Main content — inset so nothing hides behind the floating tab bar
             Group {
                 switch selectedTab {
                 case .home:
@@ -40,7 +45,7 @@ struct PeezyMainContainer: View {
                         userState: userState,
                         onNavigateToTask: { task in
                             focusedTask = task
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                            withAnimation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.8)) {
                                 selectedTab = .home
                             }
                         }
@@ -50,10 +55,18 @@ struct PeezyMainContainer: View {
                     PeezySettingsView(userState: $userState)
                 }
             }
+            .safeAreaInset(edge: .bottom) {
+                Color.clear.frame(height: tabBarHeight)
+            }
 
-            // Floating tab bar
+            // Floating tab bar — height is measured and fed back into tabBarHeight
             PeezyFloatingTabBar(selectedTab: $selectedTab)
                 .padding(.bottom, 16)
+                .onGeometryChange(for: CGFloat.self) { proxy in
+                    proxy.size.height
+                } action: { height in
+                    tabBarHeight = height
+                }
         }
         .ignoresSafeArea(.keyboard, edges: .bottom)
         .onChange(of: selectedTab) { _, newValue in
@@ -83,6 +96,14 @@ enum PeezyTab: String, CaseIterable {
         }
     }
 
+    var selectedIcon: String {
+        switch self {
+        case .home:     return "house.fill"
+        case .tasks:    return "checklist"       // no filled SF Symbol variant
+        case .settings: return "gearshape.fill"
+        }
+    }
+
     var label: String {
         switch self {
         case .home:     return "Home"
@@ -96,21 +117,24 @@ enum PeezyTab: String, CaseIterable {
 
 struct PeezyFloatingTabBar: View {
     @Binding var selectedTab: PeezyTab
+    @Environment(\.accessibilityReduceMotion) var reduceMotion
+    @ScaledMetric(relativeTo: .body) private var tabIconSize: CGFloat = 20
 
     var body: some View {
         HStack(spacing: 0) {
             ForEach(PeezyTab.allCases, id: \.self) { tab in
+                let isSelected = selectedTab == tab
                 Button {
                     PeezyHaptics.light()
-                    withAnimation(.easeOut(duration: 0.2)) {
+                    withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) {
                         selectedTab = tab
                     }
                 } label: {
-                    Label(tab.label, systemImage: tab.icon)
+                    Label(tab.label, systemImage: isSelected ? tab.selectedIcon : tab.icon)
                         .labelStyle(.iconOnly)
-                        .font(.system(size: 20, weight: .medium))
+                        .font(.system(size: tabIconSize, weight: .medium))
                         .foregroundStyle(
-                            selectedTab == tab
+                            isSelected
                                 ? PeezyTheme.Colors.deepInk
                                 : PeezyTheme.Colors.deepInk.opacity(0.3)
                         )
@@ -118,6 +142,8 @@ struct PeezyFloatingTabBar: View {
                         .frame(height: 50)
                 }
                 .accessibilityLabel(tab.label)
+                .accessibilityAddTraits(isSelected ? .isSelected : [])
+                .accessibilityHint(isSelected ? "" : "Switches to \(tab.label) tab")
             }
         }
         .background(

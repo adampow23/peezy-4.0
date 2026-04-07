@@ -44,8 +44,9 @@ struct PeezySettingsView: View {
     // Sign out confirmation
     @State private var showSignOutAlert = false
 
-    #if DEBUG
     @State private var showInventoryScanner = false
+
+    #if DEBUG
     @State private var showInventoryTestHarness = false
     #endif
     
@@ -82,11 +83,9 @@ struct PeezySettingsView: View {
                     subscriptionSection
                         .padding(.top, 20)
 
-                    #if DEBUG
                     // Inventory
                     inventorySection
                         .padding(.top, 20)
-                    #endif
 
                     // Support
                     supportSection
@@ -211,10 +210,10 @@ struct PeezySettingsView: View {
         } message: {
             Text(restoreMessage ?? "")
         }
-        #if DEBUG
         .fullScreenCover(isPresented: $showInventoryScanner) {
             InventoryFlowView()
         }
+        #if DEBUG
         .sheet(isPresented: $showInventoryTestHarness) {
             InventoryTestHarness()
         }
@@ -403,11 +402,11 @@ struct PeezySettingsView: View {
     private var subscriptionDetailLabel: String {
         switch subscriptionManager.subscriptionStatus {
         case .trial(let productId, let expires):
-            let planName = productId == "peezy.plus.annual" ? "Yearly" : "Monthly"
+            let planName = productId == "peezy.yearly" ? "Yearly" : "Monthly"
             let daysLeft = Calendar.current.dateComponents([.day], from: Date(), to: expires).day ?? 0
             return "\(planName) plan — trial ends in \(daysLeft) day\(daysLeft == 1 ? "" : "s")"
         case .subscribed(let productId, let expires):
-            let planName = productId == "peezy.plus.annual" ? "Yearly" : "Monthly"
+            let planName = productId == "peezy.yearly" ? "Yearly" : "Monthly"
             return "\(planName) plan — renews \(formattedDate(expires))"
         case .expired:
             return "Resubscribe to access all features"
@@ -416,7 +415,6 @@ struct PeezySettingsView: View {
         }
     }
 
-    #if DEBUG
     // MARK: - Inventory Section
 
     private var inventorySection: some View {
@@ -431,7 +429,6 @@ struct PeezySettingsView: View {
             .background(glassBackground)
         }
     }
-    #endif
 
     // MARK: - Support Section
 
