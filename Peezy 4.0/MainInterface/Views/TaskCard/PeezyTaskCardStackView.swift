@@ -39,6 +39,9 @@ struct PeezyTaskCardStackView: View {
                     onSecondary: { handleSecondary(spec: spec) },
                     onSelect: { optionId, isExclusive in
                         handleSelect(spec: spec, optionId: optionId, isExclusive: isExclusive)
+                    },
+                    onConfirmSubmit: { fieldValues in
+                        confirmFieldValues = fieldValues
                     }
                 )
                 .scaleEffect(1.0 - CGFloat(idx) * 0.05)

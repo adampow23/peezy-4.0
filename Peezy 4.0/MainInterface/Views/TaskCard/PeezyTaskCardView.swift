@@ -13,6 +13,7 @@ struct PeezyTaskCardView: View {
     let onPrimary: () -> Void
     let onSecondary: (() -> Void)?
     let onSelect: ((String, Bool) -> Void)?
+    var onConfirmSubmit: (([String: String]) -> Void)?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -233,7 +234,7 @@ struct PeezyTaskCardView: View {
             userState: userState,
             showVerifiedBadge: showVerifiedBadge,
             onConfirm: { fieldValues in
-                // Store field values — parent handles via onPrimary
+                onConfirmSubmit?(fieldValues)
                 onPrimary()
             },
             onBack: {
@@ -316,7 +317,8 @@ struct PeezyTaskCardView: View {
             userState: nil,
             onPrimary: {},
             onSecondary: {},
-            onSelect: nil
+            onSelect: nil,
+            onConfirmSubmit: nil
         )
     }
 }
@@ -339,7 +341,8 @@ struct PeezyTaskCardView: View {
             userState: nil,
             onPrimary: {},
             onSecondary: nil,
-            onSelect: nil
+            onSelect: nil,
+            onConfirmSubmit: nil
         )
     }
 }
@@ -368,7 +371,8 @@ struct PeezyTaskCardView: View {
             userState: nil,
             onPrimary: {},
             onSecondary: nil,
-            onSelect: { _, _ in }
+            onSelect: { _, _ in },
+            onConfirmSubmit: nil
         )
     }
 }
@@ -391,7 +395,8 @@ struct PeezyTaskCardView: View {
             userState: nil,
             onPrimary: {},
             onSecondary: nil,
-            onSelect: nil
+            onSelect: nil,
+            onConfirmSubmit: nil
         )
     }
 }
