@@ -7,11 +7,13 @@ import SwiftUI
 struct PeezyTaskCardView: View {
     let spec: TaskCardSpec
     let isTopCard: Bool
+    let showBackButton: Bool
     let showVerifiedBadge: Bool
     let selectedAnswers: Set<String>
     let userState: UserState?
     let onPrimary: () -> Void
     let onSecondary: (() -> Void)?
+    let onBack: (() -> Void)? // UX Fix: Dedicated navigation closure
     let onSelect: ((String, Bool) -> Void)?
     var onConfirmSubmit: (([String: String]) -> Void)?
 
@@ -41,32 +43,51 @@ struct PeezyTaskCardView: View {
 
     @ViewBuilder
     private func cardHeader(category: String, icon: String) -> some View {
-        if showVerifiedBadge {
-            HStack(spacing: 6) {
+        HStack(spacing: 6) {
+
+            // UX Fix: Subtle Back Button, only shown if it's not the first card
+            if showBackButton, let onBack {
+                Button(action: {
+                    PeezyHaptics.light()
+                    onBack()
+                }) {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.5))
+                        // Generous tap target so users don't miss it
+                        .frame(width: 24, height: 24)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Back")
+                .padding(.trailing, 4)
+            }
+
+            // UX Fix: Unified HStack container cleans up duplicated code
+            if showVerifiedBadge {
                 Image(systemName: "checkmark.shield.fill")
                     .font(.system(size: 11))
                     .foregroundStyle(PeezyTheme.Colors.successGreen)
+
                 Text("PEEZY VERIFIED")
                     .font(.system(size: 12, weight: .bold))
                     .tracking(1.5)
                     .foregroundStyle(PeezyTheme.Colors.successGreen)
-                Spacer()
-            }
-            .padding(.top, 24)
-            .padding(.horizontal, 24)
-        } else {
-            HStack(spacing: 6) {
+            } else {
                 Image(systemName: icon)
                     .font(.system(size: 11))
+                    .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.5))
+
                 Text(category.uppercased())
                     .font(.system(size: 12, weight: .bold))
                     .tracking(1.5)
-                Spacer()
+                    .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.5))
             }
-            .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.5))
-            .padding(.top, 24)
-            .padding(.horizontal, 24)
+
+            Spacer()
         }
+        .padding(.top, 24)
+        .padding(.horizontal, 24)
     }
 
     // MARK: - Shared Divider
@@ -238,7 +259,7 @@ struct PeezyTaskCardView: View {
                 onPrimary()
             },
             onBack: {
-                onSecondary?()
+                onBack?()
             }
         )
     }
@@ -311,12 +332,14 @@ struct PeezyTaskCardView: View {
                 primaryLabel: "Let's Go",
                 secondaryLabel: "Later"
             )),
-            isTopCard: true,
+            isTopCard: false,
+            showBackButton: false,
             showVerifiedBadge: false,
             selectedAnswers: [],
             userState: nil,
             onPrimary: {},
             onSecondary: {},
+            onBack: {},
             onSelect: nil,
             onConfirmSubmit: nil
         )
@@ -336,11 +359,13 @@ struct PeezyTaskCardView: View {
                 primaryLabel: "Continue"
             )),
             isTopCard: true,
+            showBackButton: false,
             showVerifiedBadge: false,
             selectedAnswers: [],
             userState: nil,
             onPrimary: {},
             onSecondary: nil,
+            onBack: nil,
             onSelect: nil,
             onConfirmSubmit: nil
         )
@@ -366,11 +391,13 @@ struct PeezyTaskCardView: View {
                 workflowQuestionId: nil
             )),
             isTopCard: true,
+            showBackButton: false,
             showVerifiedBadge: true,
             selectedAnswers: [],
             userState: nil,
             onPrimary: {},
             onSecondary: nil,
+            onBack: nil,
             onSelect: { _, _ in },
             onConfirmSubmit: nil
         )
@@ -390,11 +417,13 @@ struct PeezyTaskCardView: View {
                 primaryLabel: "Done"
             )),
             isTopCard: true,
+            showBackButton: false,
             showVerifiedBadge: false,
             selectedAnswers: [],
             userState: nil,
             onPrimary: {},
             onSecondary: nil,
+            onBack: nil,
             onSelect: nil,
             onConfirmSubmit: nil
         )

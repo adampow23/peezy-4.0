@@ -27,37 +27,56 @@ struct PeezyTaskCardStackView: View {
     }
 
     var body: some View {
-        ZStack {
-            ForEach(visibleCards, id: \.spec.id) { idx, spec in
-                PeezyTaskCardView(
-                    spec: spec,
-                    isTopCard: idx == 0,
-                    showVerifiedBadge: sequence.showVerifiedBadge,
-                    selectedAnswers: answersForSpec(spec),
-                    userState: userState,
-                    onPrimary: { handlePrimary(spec: spec) },
-                    onSecondary: { handleSecondary(spec: spec) },
-                    onSelect: { optionId, isExclusive in
-                        handleSelect(spec: spec, optionId: optionId, isExclusive: isExclusive)
-                    },
-                    onConfirmSubmit: { fieldValues in
-                        confirmFieldValues = fieldValues
-                    }
-                )
-                .scaleEffect(1.0 - CGFloat(idx) * 0.05)
-                .offset(y: CGFloat(idx) * 25)
-                .zIndex(Double(3 - idx))
-                .allowsHitTesting(idx == 0)
-                .transition(.asymmetric(
-                    insertion: .scale(scale: 0.92).combined(with: .opacity),
-                    removal: .move(edge: .leading).combined(with: .opacity)
-                ))
+        VStack(spacing: 0) {
+            ZStack {
+                ForEach(visibleCards, id: \.spec.id) { idx, spec in
+                    PeezyTaskCardView(
+                        spec: spec,
+                        isTopCard: idx == 0,
+                        showBackButton: currentIndex > 0,
+                        showVerifiedBadge: sequence.showVerifiedBadge,
+                        selectedAnswers: answersForSpec(spec),
+                        userState: userState,
+                        onPrimary: { handlePrimary(spec: spec) },
+                        onSecondary: { handleSecondary(spec: spec) },
+                        onBack: {
+                            if currentIndex > 0 { currentIndex -= 1 }
+                        },
+                        onSelect: { optionId, isExclusive in
+                            handleSelect(spec: spec, optionId: optionId, isExclusive: isExclusive)
+                        },
+                        onConfirmSubmit: { fieldValues in
+                            confirmFieldValues = fieldValues
+                        }
+                    )
+                    .scaleEffect(1.0 - CGFloat(idx) * 0.05)
+                    .offset(y: CGFloat(idx) * 25)
+                    .zIndex(Double(3 - idx))
+                    .allowsHitTesting(idx == 0)
+                    .transition(.asymmetric(
+                        insertion: .scale(scale: 0.92).combined(with: .opacity),
+                        removal: .move(edge: .leading).combined(with: .opacity)
+                    ))
+                }
+            }
+            .animation(
+                reduceMotion ? .easeOut(duration: 0.2) : .spring(response: 0.4, dampingFraction: 0.85),
+                value: currentIndex
+            )
+
+            if case .summary = sequence.cards[currentIndex] {
+                // No skip on summary — user already committed
+            } else {
+                Button(action: { onSkip() }) {
+                    Text("Skip for now")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .frame(minWidth: 44, minHeight: 44)
+                        .padding(.horizontal, 8)
+                }
+                .padding(.top, 4)
             }
         }
-        .animation(
-            reduceMotion ? .easeOut(duration: 0.2) : .spring(response: 0.4, dampingFraction: 0.85),
-            value: currentIndex
-        )
     }
 
     // MARK: - Answer Lookup
