@@ -14,6 +14,7 @@ struct AssessmentFlowView: View {
     @Binding var showAssessment: Bool
     @StateObject private var coordinator: AssessmentCoordinator
     @StateObject private var dataManager: AssessmentDataManager
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     
     init(showAssessment: Binding<Bool>) {
         _showAssessment = showAssessment
@@ -40,8 +41,16 @@ struct AssessmentFlowView: View {
                 if let node = coordinator.currentNode {
                     questionView(for: node)
                         .id(coordinator.currentIndex)
+                        .transition(.asymmetric(
+                            insertion: .move(edge: .trailing).combined(with: .opacity),
+                            removal: .move(edge: .leading).combined(with: .opacity)
+                        ))
                 }
             }
+            .animation(
+                reduceMotion ? .easeOut(duration: 0.2) : .spring(response: 0.35, dampingFraction: 0.85),
+                value: coordinator.currentIndex
+            )
         }
         .environmentObject(coordinator)
         .environmentObject(dataManager)

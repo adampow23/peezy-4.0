@@ -33,6 +33,7 @@ struct CompletionFlowView: View {
         }
     }
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var stage: Stage = .generating
     @State private var taskCount: Int = 0
     @State private var showContent = true
@@ -40,7 +41,7 @@ struct CompletionFlowView: View {
     /// Ensures stage can only advance forward, never go back.
     private func advanceStage(to newStage: Stage) {
         guard newStage.rawValue > stage.rawValue else { return }
-        withAnimation(.easeInOut(duration: 0.4)) {
+        withAnimation(reduceMotion ? .easeOut(duration: 0.2) : .spring(response: 0.35, dampingFraction: 0.85)) {
             stage = newStage
         }
     }
@@ -78,18 +79,24 @@ struct CompletionFlowView: View {
 
                 case .paywall:
                     PaywallValueView(onContinue: {
-                        withAnimation {
+                        withAnimation(reduceMotion ? .easeOut(duration: 0.2) : .spring(response: 0.35, dampingFraction: 0.85)) {
                             stage = .paywallGate
                         }
                     })
-                    .transition(.opacity)
+                    .transition(.asymmetric(
+                        insertion: .move(edge: .trailing).combined(with: .opacity),
+                        removal: .move(edge: .leading).combined(with: .opacity)
+                    ))
 
                 case .paywallGate:
                     PaywallGateView(onDismiss: {
                         routeToMainApp()
                     })
                     .environmentObject(subscriptionManager)
-                    .transition(.opacity)
+                    .transition(.asymmetric(
+                        insertion: .move(edge: .trailing).combined(with: .opacity),
+                        removal: .move(edge: .leading).combined(with: .opacity)
+                    ))
                 }
             }
         }
