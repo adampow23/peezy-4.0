@@ -1,7 +1,7 @@
 [
   {
     "taskId": "ARRANGE_PARKING_NEW",
-    "title": "Reserve parking for unloading",
+    "title": "Reserve unloading parking",
     "actionCategory": "book-schedule",
     "category": "moving",
     "actionType": "workflow",
@@ -12,16 +12,17 @@
         "Condo"
       ]
     },
-    "desc": "Secure a designated parking space at your new building for moving day.",
+    "desc": "Reserve a truck-sized loading spot at your new building two weeks out. Most charge a deposit and require a Certificate of Insurance.",
     "estHours": 1,
-    "tips": "Contact building management 2-3 weeks prior to confirm permit requirements. Obtain written confirmation and share parking instructions with movers.",
+    "estPeezy": "1 min",
+    "tips": "Ask the building to cone off the spot the night before.",
     "urgencyPercentage": 72,
-    "whyNeeded": "Advance reservations prevent citations, long carry distances, and denied access on move day.",
+    "whyNeeded": "Without it, you'll be hauling boxes from wherever you can park.",
     "workflowId": "arrange_parking_new"
   },
   {
     "taskId": "ARRANGE_PARKING_OLD",
-    "title": "Reserve parking for loading",
+    "title": "Reserve loading parking",
     "actionCategory": "book-schedule",
     "category": "moving",
     "actionType": "workflow",
@@ -32,16 +33,17 @@
         "Condo"
       ]
     },
-    "desc": "Book a legal and accessible parking space at your current building for efficient loading.",
+    "desc": "Reserve a truck-sized loading spot at your current building two weeks out. Most charge a deposit and require a Certificate of Insurance.",
     "estHours": 1,
-    "tips": "Contact your property manager 2 weeks prior. Fees may range from $50-$100, and you might need truck measurements or a Certificate of Insurance.",
+    "estPeezy": "1 min",
+    "tips": "Reserve two adjacent spots — trucks need ramp clearance too.",
     "urgencyPercentage": 73,
-    "whyNeeded": "Strict parking rules in apartments and condos can lead to fines, towing, or long carry distances if space isn't reserved.",
+    "whyNeeded": "Every block away adds 30+ minutes to your move — and your bill.",
     "workflowId": "arrange_parking_old"
   },
   {
     "taskId": "RESERVE_ELEVATORS_NEW",
-    "title": "Reserve elevator for unloading",
+    "title": "Reserve unloading elevator",
     "actionCategory": "book-schedule",
     "category": "moving",
     "actionType": "workflow",
@@ -51,16 +53,17 @@
         "Reserved Elevator"
       ]
     },
-    "desc": "Reserve an elevator time slot at your new building for efficient loading and unloading.",
+    "desc": "Lock in a service elevator window at your new building. Most allow 2-4 hours; overtime runs $100-200 per hour after.",
     "estHours": 0.75,
-    "tips": "Contact building management 2 to 3 weeks before move-in to inquire about time windows, fees, and required insurance documents from movers.",
+    "estPeezy": "1 min",
+    "tips": "Book the first morning slot — overtime starts at $100/hour.",
     "urgencyPercentage": 70,
-    "whyNeeded": "High-rise buildings often require elevator reservations for moves.",
+    "whyNeeded": "Without a slot, you're competing with every other resident's groceries and laundry.",
     "workflowId": "reserve_elevators_new"
   },
   {
     "taskId": "RESERVE_ELEVATORS_OLD",
-    "title": "Reserve elevator for loading",
+    "title": "Reserve loading elevator",
     "actionCategory": "book-schedule",
     "category": "moving",
     "actionType": "workflow",
@@ -70,16 +73,17 @@
         "Reserved Elevator"
       ]
     },
-    "desc": "Reserve an elevator time slot at your current building for moving out.",
+    "desc": "Lock in a service elevator window at your current building. Most allow 2-4 hours; overtime runs $100-200 per hour after.",
     "estHours": 0.75,
-    "tips": "High-rise buildings typically require reservations 2-3 weeks in advance. Time slots fill quickly, especially in the mornings.",
+    "estPeezy": "1 min",
+    "tips": "Measure your couch against the elevator BEFORE move day.",
     "urgencyPercentage": 71,
-    "whyNeeded": "Without a reserved elevator, movers may face delays, increasing labor time and costs.",
+    "whyNeeded": "Without one, you lose 10 minutes every time a neighbor calls it.",
     "workflowId": "reserve_elevators_old"
   },
   {
     "taskId": "BOOK_MOVERS",
-    "title": "Book movers",
+    "title": "Book your movers",
     "actionCategory": "book-schedule",
     "category": "moving",
     "actionType": "workflow",
@@ -90,15 +94,16 @@
         "Yes"
       ]
     },
-    "desc": "Research and reserve a moving company for safe and efficient relocation.",
+    "desc": "Get binding estimates from three USDOT-licensed movers. Book 8-12 weeks out for summer moves, 4-6 weeks off-season.",
     "estHours": 3,
-    "tips": "Obtain at least three quotes from licensed movers. Book 8-12 weeks in advance during peak season (May-September) and 4-6 weeks off-season. Verify insurance, USDOT registration, and reviews.",
+    "estPeezy": "90 secs",
+    "tips": "Get a binding estimate — federal law caps your final bill at 110%.",
     "urgencyPercentage": 94,
-    "whyNeeded": "Booking early secures better availability, competitive pricing, and reliable crews."
+    "whyNeeded": "Booking late means leftover dates, leftover crews, and leftover quality."
   },
   {
     "taskId": "BOOK_CLEANERS",
-    "title": "Book cleaners",
+    "title": "Book your cleaners",
     "actionCategory": "book-schedule",
     "category": "services",
     "actionType": "workflow",
@@ -109,15 +114,16 @@
         "Yes"
       ]
     },
-    "desc": "Book a professional cleaning team to deep clean your home after you move out.",
+    "desc": "Schedule a move-out deep clean for the day after your movers finish. Get three quotes and confirm scope in writing.",
     "estHours": 1.5,
-    "tips": "Schedule cleaners 2\u20133 weeks in advance for the day after the movers finish. Get quotes from at least three companies and review your lease or sale agreement for specific cleaning requirements.",
+    "estPeezy": "90 secs",
+    "tips": "Insist 'inside appliances' is in writing — most charge extra otherwise.",
     "urgencyPercentage": 25,
-    "whyNeeded": "A professional cleaning often determines how much of your security deposit you get back."
+    "whyNeeded": "One missed area can cost you your entire security deposit."
   },
   {
     "taskId": "RENT_TRUCK",
-    "title": "Rent moving truck",
+    "title": "Rent your moving truck",
     "actionCategory": "book-schedule",
     "category": "moving",
     "actionType": "workflow",
@@ -128,11 +134,12 @@
         "Yes"
       ]
     },
-    "desc": "Get quotes and reserve a moving truck for your move.",
+    "desc": "Compare U-Haul, Penske, and Budget on size, mileage, and total cost. Reserve 4-6 weeks out — earlier in summer.",
     "estHours": 2,
-    "tips": "Compare pricing between U-Haul, Penske, and Budget. Reserve 4 to 6 weeks early, especially during peak season.",
+    "estPeezy": "1 min",
+    "tips": "Size up if borderline — one trip always beats two.",
     "urgencyPercentage": 91,
-    "whyNeeded": "Truck availability becomes limited close to your move. Early booking ensures better pricing and the right vehicle size."
+    "whyNeeded": "Late means the wrong size, wrong pickup location, or no truck at all."
   },
   {
     "taskId": "SETUP_INTERNET",
@@ -145,6 +152,7 @@
     "conditions": {},
     "desc": "Book installation for internet service at your new home.",
     "estHours": 1.5,
+    "estPeezy": "90 secs",
     "tips": "Schedule 2 to 3 weeks ahead. Compare providers and speeds. Installation often requires a 2 to 4 hour time window.",
     "urgencyPercentage": 81,
     "whyNeeded": "Internet is essential for work, school, streaming, and everyday life."
@@ -167,7 +175,8 @@
     },
     "desc": "List and sell items you don't want to bring to your new place.",
     "estHours": 6,
-    "tips": "Start listing high-value items early on Facebook Marketplace, OfferUp, or Craigslist. Price to sell fast \u2014 you have a deadline.",
+    "estPeezy": "90 secs",
+    "tips": "Start listing high-value items early on Facebook Marketplace, OfferUp, or Craigslist. Price to sell fast — you have a deadline.",
     "urgencyPercentage": 75,
     "whyNeeded": "Selling before the move puts cash in your pocket and reduces what the movers need to haul."
   },
@@ -189,6 +198,7 @@
     },
     "desc": "Arrange donation pickup or junk removal for items you're leaving behind.",
     "estHours": 4,
+    "estPeezy": "90 secs",
     "tips": "Schedule a donation pickup with a local charity or book a junk removal service. Many charities offer free pickup for furniture and large items.",
     "urgencyPercentage": 70,
     "whyNeeded": "Getting rid of unwanted items before packing saves time, money, and truck space on moving day."
@@ -206,8 +216,9 @@
         "Bank / Credit Union"
       ]
     },
-    "desc": "Decide how to handle your bank account for the move \u2014 update your address, close and open a new one, or let us know it's covered.",
+    "desc": "Decide how to handle your bank account for the move — update your address, close and open a new one, or let us know it's covered.",
     "estHours": 1.5,
+    "estPeezy": "1 min",
     "tips": "If your bank operates nationally, an address update is usually all you need. If it's regional, you may need to open a new account and transfer direct deposits.",
     "urgencyPercentage": 84,
     "whyNeeded": "Banks send important documents to your address and need accurate info for security and compliance."
@@ -225,9 +236,10 @@
         "Doctor"
       ]
     },
-    "desc": "Handle your doctor situation for the move \u2014 transfer records to a new provider or update your address with your current one.",
+    "desc": "Handle your doctor situation for the move — transfer records to a new provider or update your address with your current one.",
     "estHours": 2,
-    "tips": "If staying with your current doctor, a quick address update is all you need. If switching, request full medical records 3\u20134 weeks before moving.",
+    "estPeezy": "1 min",
+    "tips": "If staying with your current doctor, a quick address update is all you need. If switching, request full medical records 3–4 weeks before moving.",
     "urgencyPercentage": 68,
     "whyNeeded": "Your doctor needs accurate contact and insurance information, and new providers need your full medical history."
   },
@@ -244,9 +256,10 @@
         "Dentist"
       ]
     },
-    "desc": "Handle your dental care for the move \u2014 transfer records to a new dentist or update your address with your current one.",
+    "desc": "Handle your dental care for the move — transfer records to a new dentist or update your address with your current one.",
     "estHours": 1,
-    "tips": "If switching dentists, request records and X-rays 2\u20133 weeks before the move. If staying, just update your contact details.",
+    "estPeezy": "1 min",
+    "tips": "If switching dentists, request records and X-rays 2–3 weeks before the move. If staying, just update your contact details.",
     "urgencyPercentage": 59,
     "whyNeeded": "Dental records help your provider continue care without repeating exams or X-rays."
   },
@@ -263,9 +276,10 @@
         "Yes"
       ]
     },
-    "desc": "Handle your pet's vet care for the move \u2014 find a new vet and transfer records, or update your address with your current one.",
+    "desc": "Handle your pet's vet care for the move — find a new vet and transfer records, or update your address with your current one.",
     "estHours": 2,
-    "tips": "If switching vets, request full medical records, vaccination history, and lab results 2\u20133 weeks before moving.",
+    "estPeezy": "1 min",
+    "tips": "If switching vets, request full medical records, vaccination history, and lab results 2–3 weeks before moving.",
     "urgencyPercentage": 63,
     "whyNeeded": "Having your pet's complete records ready ensures continuity of care and is critical in emergencies."
   },
@@ -282,8 +296,9 @@
         "Gym / CrossFit"
       ]
     },
-    "desc": "Decide how to handle your gym membership \u2014 transfer to a new location, cancel, or update your address.",
+    "desc": "Decide how to handle your gym membership — transfer to a new location, cancel, or update your address.",
     "estHours": 1,
+    "estPeezy": "1 min",
     "tips": "Many national chains allow location transfers. Check your contract for cancellation terms if you need to switch.",
     "urgencyPercentage": 86,
     "whyNeeded": "Gym memberships continue billing monthly until formally canceled or transferred."
@@ -301,8 +316,9 @@
         "Yoga / Pilates"
       ]
     },
-    "desc": "Decide how to handle your yoga or pilates membership \u2014 transfer, cancel, or update your address.",
+    "desc": "Decide how to handle your yoga or pilates membership — transfer, cancel, or update your address.",
     "estHours": 1,
+    "estPeezy": "1 min",
     "tips": "Most studios require 30-day notice for cancellation. Ask about location transfers if your studio has multiple branches.",
     "urgencyPercentage": 87,
     "whyNeeded": "Studio memberships will keep charging until formally canceled."
@@ -320,8 +336,9 @@
         "Spin / Cycling"
       ]
     },
-    "desc": "Decide how to handle your spin or cycling membership \u2014 transfer, cancel, or update your address.",
+    "desc": "Decide how to handle your spin or cycling membership — transfer, cancel, or update your address.",
     "estHours": 1,
+    "estPeezy": "1 min",
     "tips": "Many cycling studios require 30-day written cancellation. Check if your studio has locations near your new home.",
     "urgencyPercentage": 82,
     "whyNeeded": "Cycling memberships continue billing monthly until formally addressed."
@@ -339,8 +356,9 @@
         "Massage / Spa"
       ]
     },
-    "desc": "Decide how to handle your massage or spa membership \u2014 transfer, cancel, or update your address.",
+    "desc": "Decide how to handle your massage or spa membership — transfer, cancel, or update your address.",
     "estHours": 1,
+    "estPeezy": "1 min",
     "tips": "National chains like Massage Envy allow location transfers. Local studios usually require cancellation.",
     "urgencyPercentage": 82,
     "whyNeeded": "Spa memberships continue billing monthly until formally canceled or transferred."
@@ -358,8 +376,9 @@
         "Country Club / Golf"
       ]
     },
-    "desc": "Decide how to handle your golf or country club membership \u2014 resign, transfer, or update your address.",
+    "desc": "Decide how to handle your golf or country club membership — resign, transfer, or update your address.",
     "estHours": 1,
+    "estPeezy": "1 min",
     "tips": "Review your membership agreement for resignation procedures and required notice periods. Some clubs have waitlists for new members.",
     "urgencyPercentage": 85,
     "whyNeeded": "Club memberships have ongoing dues that continue until formally canceled."
@@ -378,6 +397,7 @@
     },
     "desc": "Update the billing and mailing address for your credit cards.",
     "estHours": 0.5,
+    "estPeezy": "30 secs",
     "tips": "Log into your credit card account and update your billing address. Update all authorized users and set a travel notice if moving long distance.",
     "urgencyPercentage": 62,
     "whyNeeded": "Credit card companies use your address for billing, fraud checks, and shipping replacement cards.",
@@ -397,6 +417,7 @@
     },
     "desc": "Update your address with your investment or brokerage accounts.",
     "estHours": 1,
+    "estPeezy": "1 min",
     "tips": "Log into each brokerage or investment platform and update your mailing and billing address. Check for beneficiary info updates too.",
     "urgencyPercentage": 61,
     "whyNeeded": "Investment accounts send tax documents and statements that must reach your correct address.",
@@ -416,6 +437,7 @@
     },
     "desc": "Update your address with your student loan servicer.",
     "estHours": 0.5,
+    "estPeezy": "1 min",
     "tips": "Log into your loan servicer's website and update your mailing address. Check for autopay and communication preferences too.",
     "urgencyPercentage": 60,
     "whyNeeded": "Student loan servicers send important correspondence about repayment, forgiveness programs, and tax documents.",
@@ -431,6 +453,7 @@
     "conditions": {},
     "desc": "File a change of address with the postal service so your mail is forwarded from your old address to your new one.",
     "estHours": 0.5,
+    "estPeezy": "30 secs",
     "tips": "Complete this online at USPS.com (small verification fee) or at your local post office. You can schedule the start date up to a few months in advance.",
     "urgencyPercentage": 79,
     "whyNeeded": "Mail forwarding acts as a safety net so important letters and documents don't get lost during your move.",
@@ -447,6 +470,7 @@
     "conditions": {},
     "desc": "Submit PTO requests to ensure you're available for move-related tasks.",
     "estHours": 1.5,
+    "estPeezy": "30 secs",
     "tips": "Request 2 to 3 days off: one before the move, moving day itself, and optionally the day after. Submit at least 4 weeks ahead.",
     "urgencyPercentage": 92,
     "whyNeeded": "Being present for packing, movers, and installation appointments prevents delays and mistakes."
@@ -462,6 +486,7 @@
     "conditions": {},
     "desc": "Update your home address with your employer's HR department.",
     "estHours": 1.5,
+    "estPeezy": "30 secs",
     "tips": "Update for tax documents, benefits, and emergency contacts. Some employers require submitting a new W-4 if moving states.",
     "urgencyPercentage": 68,
     "whyNeeded": "Incorrect HR information can cause tax issues, lost documents, and incorrect benefit processing."
@@ -481,6 +506,7 @@
     },
     "desc": "Update the address on your driver's license at your local DMV.",
     "estHours": 3,
+    "estPeezy": "30 secs",
     "tips": "Make an appointment online if possible. Bring your current license and two proofs of your new address. Many states require updates within 30 days.",
     "urgencyPercentage": 84,
     "whyNeeded": "Your driver's license must reflect your correct address for legal compliance, voting, and identification."
@@ -500,7 +526,8 @@
     },
     "desc": "Obtain a new driver's license in your new state after you move.",
     "estHours": 3,
-    "tips": "Check your new state's DMV website for required documents. Many states require this within 30\u201360 days of moving.",
+    "estPeezy": "30 secs",
+    "tips": "Check your new state's DMV website for required documents. Many states require this within 30–60 days of moving.",
     "urgencyPercentage": 84,
     "whyNeeded": "Most locations legally require your license to reflect your current address and issuing state."
   },
@@ -522,6 +549,7 @@
     },
     "desc": "Update your vehicle registration with your new state after you move.",
     "estHours": 3,
+    "estPeezy": "30 secs",
     "tips": "Check your new state's DMV site for deadlines; many require registration within 30 days of establishing residency.",
     "urgencyPercentage": 82,
     "whyNeeded": "Driving with outdated registration can result in tickets, towing, or insurance issues."
@@ -541,6 +569,7 @@
     },
     "desc": "Take photos and videos of your empty rental unit after move-out to document its condition.",
     "estHours": 0.75,
+    "estPeezy": "30 secs",
     "tips": "Do this immediately after everything is moved out and cleaning is complete. Capture every room from multiple angles.",
     "urgencyPercentage": 4,
     "whyNeeded": "Photo evidence is often your best protection in security deposit disputes."
@@ -560,6 +589,7 @@
     },
     "desc": "Return all property access devices to your landlord or property manager.",
     "estHours": 1,
+    "estPeezy": "30 secs",
     "tips": "Gather everything: apartment keys, mailbox keys, gate fobs, garage remotes, parking tags, and storage keys. Get a receipt confirming all items were returned.",
     "urgencyPercentage": 1,
     "whyNeeded": "Returning all access devices is required for final move-out and prevents unnecessary charges."
@@ -578,6 +608,7 @@
     },
     "desc": "Schedule shutoffs for electricity, gas, water, and trash at your current address.",
     "estHours": 1.25,
+    "estPeezy": "1 min",
     "tips": "Identify all utilities tied to your home: electricity, gas, water, internet, trash, and sewer. Each may require separate cancellation. Plan shutoff for the day after you move out to keep lights and water available during cleaning.",
     "urgencyPercentage": 75,
     "whyNeeded": "Failing to cancel utilities can result in ongoing charges or new tenants using services under your name.",
@@ -597,6 +628,7 @@
     },
     "desc": "Arrange electric, gas, and water service for your new home.",
     "estHours": 2.5,
+    "estPeezy": "1 min",
     "tips": "Contact utility providers 2 to 3 weeks before move-in. Some may require deposits or credit checks.",
     "urgencyPercentage": 80,
     "whyNeeded": "Having power, water, and gas active when you arrive prevents a very unpleasant first night.",
@@ -616,6 +648,7 @@
     },
     "desc": "Move existing utility accounts from your current home to your new address for a local move.",
     "estHours": 1.5,
+    "estPeezy": "1 min",
     "tips": "Contact each utility company 1 to 2 weeks before your move. Set the shutoff date for the old home and the start date for the new home.",
     "urgencyPercentage": 72,
     "whyNeeded": "Transferring utilities properly prevents surprise shutoffs, double billing, or incorrect final charges.",
@@ -638,6 +671,7 @@
     },
     "desc": "Contact your child's current school to inform them of your upcoming move and begin the formal transfer process.",
     "estHours": 1,
+    "estPeezy": "30 secs",
     "tips": "Notify the school as early as possible because districts often require transcripts, vaccination records, and special program documentation.",
     "urgencyPercentage": 82,
     "whyNeeded": "School transfers can take time, especially if moving out of state.",
@@ -660,6 +694,7 @@
     },
     "desc": "Register your children in their new school district or school system at your destination.",
     "estHours": 4,
+    "estPeezy": "30 secs",
     "tips": "Begin researching schools as soon as your move is confirmed. Most districts require immunization records, birth certificates, prior report cards, and proof of residency.",
     "urgencyPercentage": 90,
     "whyNeeded": "School enrollment can be time-sensitive and capacity-limited.",
@@ -682,6 +717,7 @@
     },
     "desc": "Notify your child's current school of your new address so records, mail, and communication remain accurate.",
     "estHours": 1,
+    "estPeezy": "30 secs",
     "tips": "Provide proof of your new address, update emergency contacts, and ask whether additional documents are required.",
     "urgencyPercentage": 90,
     "whyNeeded": "Schools need accurate addresses for communication, transportation eligibility, and official records.",
@@ -704,6 +740,7 @@
     },
     "desc": "Find and enroll your child in daycare near your new home.",
     "estHours": 2.5,
+    "estPeezy": "1 min",
     "tips": "Daycares often have long waitlists. Contact centers early, tour multiple locations, ask about availability, staff ratios, and pricing.",
     "urgencyPercentage": 88,
     "whyNeeded": "Daycare availability varies widely. Early enrollment is essential to avoid gaps in childcare.",
@@ -726,6 +763,7 @@
     },
     "desc": "Update your daycare provider with your new address and any schedule changes if you are staying local.",
     "estHours": 0.5,
+    "estPeezy": "1 min",
     "tips": "Call or email the daycare with your new address, updated contact info, and any changes to pickup or drop-off routines.",
     "urgencyPercentage": 75,
     "whyNeeded": "Daycare providers need accurate contact information and address details for safety, billing, and communication.",
@@ -748,6 +786,7 @@
     },
     "desc": "Move your prescriptions and pharmacy records from your current pharmacy to one near your new home.",
     "estHours": 1.5,
+    "estPeezy": "1 min",
     "tips": "Contact your current pharmacy 2 to 3 weeks before the move. Controlled medications may need new prescriptions.",
     "urgencyPercentage": 55,
     "whyNeeded": "Transferring prescriptions early reduces the risk of running out of medications.",
@@ -770,6 +809,7 @@
     },
     "desc": "Request and transfer records from any specialists you see.",
     "estHours": 2,
+    "estPeezy": "1 min",
     "tips": "Make a list of all specialists you currently see. Contact each office 3 to 4 weeks before your move.",
     "urgencyPercentage": 69,
     "whyNeeded": "Specialists often manage key parts of your health. Having records ready helps new doctors continue treatment.",
@@ -789,6 +829,7 @@
     },
     "desc": "Notify your auto insurer of your new address and update your policy details.",
     "estHours": 1.5,
+    "estPeezy": "1 min",
     "tips": "Call your agent or update online. Rates can change by ZIP code, so ask for updated pricing.",
     "urgencyPercentage": 82,
     "whyNeeded": "Auto insurance premiums and coverage depend on where you live.",
@@ -812,6 +853,7 @@
     },
     "desc": "Notify your insurer to cancel your existing condo policy and update or start a new one for your next home.",
     "estHours": 1.5,
+    "estPeezy": "1 min",
     "tips": "You can set a future cancellation date for the old policy to avoid coverage gaps.",
     "urgencyPercentage": 76,
     "whyNeeded": "Insurance must match your physical address.",
@@ -834,6 +876,7 @@
     },
     "desc": "End your current renter's insurance policy or update it to reflect your new address.",
     "estHours": 1,
+    "estPeezy": "1 min",
     "tips": "Most insurers allow you to schedule a future cancellation date so you remain covered until move-out.",
     "urgencyPercentage": 77,
     "whyNeeded": "Insurance must match your physical address, and improper coverage can lead to denied claims.",
@@ -857,6 +900,7 @@
     },
     "desc": "Start or update a condo insurance policy for your new home.",
     "estHours": 1.5,
+    "estPeezy": "1 min",
     "tips": "Condo associations often require specific coverage. Set the effective date to your move-in day.",
     "urgencyPercentage": 76,
     "whyNeeded": "Condo insurance is required by most associations.",
@@ -879,6 +923,7 @@
     },
     "desc": "Start or update a homeowner's insurance policy for your new property.",
     "estHours": 1.5,
+    "estPeezy": "1 min",
     "tips": "Compare coverage and deductibles. Get the insurance binder early, as some lenders require it before closing.",
     "urgencyPercentage": 77,
     "whyNeeded": "Homeowner's insurance is required for mortgages and protects your property.",
@@ -901,6 +946,7 @@
     },
     "desc": "Start a renter's insurance policy for your new rental home.",
     "estHours": 1,
+    "estPeezy": "1 min",
     "tips": "Get quotes from a few insurers. Policies are usually quick to set up online and often cost $15 to $30 per month.",
     "urgencyPercentage": 77,
     "whyNeeded": "Renter's insurance protects your belongings and may be required by your new lease.",
@@ -923,6 +969,7 @@
     },
     "desc": "Move your existing condo insurance policy to your new condo.",
     "estHours": 2,
+    "estPeezy": "1 min",
     "tips": "Call your agent 3 to 4 weeks before the move. Provide details of the new condo.",
     "urgencyPercentage": 76,
     "whyNeeded": "Transferring your existing policy can be faster and easier than starting from scratch.",
@@ -951,6 +998,7 @@
     },
     "desc": "Move your existing homeowner's insurance policy from your current house to your new house.",
     "estHours": 2,
+    "estPeezy": "1 min",
     "tips": "Contact your insurance agent 3 to 4 weeks before your move. Provide details for the new home.",
     "urgencyPercentage": 77,
     "whyNeeded": "Transferring your existing policy keeps coverage continuous.",
@@ -973,6 +1021,7 @@
     },
     "desc": "Update your renter's insurance policy to cover your new rental address.",
     "estHours": 1,
+    "estPeezy": "1 min",
     "tips": "Contact your insurer 1 to 2 weeks before move-in. Provide your new address and move-in date.",
     "urgencyPercentage": 77,
     "whyNeeded": "Transferring the policy keeps your belongings and liability covered without gaps.",
@@ -989,7 +1038,8 @@
     "conditions": {},
     "desc": "Purchase boxes, tape, bubble wrap, and other materials needed to pack your belongings safely.",
     "estHours": 1.5,
-    "tips": "Start early\u2014people almost always underestimate how much they need. A typical one-bedroom move requires around 30 small boxes, 40 medium boxes, and 20 large boxes.",
+    "estPeezy": "30 secs",
+    "tips": "Start early—people almost always underestimate how much they need. A typical one-bedroom move requires around 30 small boxes, 40 medium boxes, and 20 large boxes.",
     "urgencyPercentage": 85,
     "whyNeeded": "Having the right supplies early prevents delays, protects fragile items, and helps you pack in an organized way."
   },
@@ -1008,7 +1058,8 @@
     },
     "desc": "Purchase essential cleaning products needed to complete your move-out cleaning.",
     "estHours": 1,
-    "tips": "Buy supplies 3\u20135 days before your move. Key items include: all-purpose cleaner, glass cleaner, mop, broom, gloves, trash bags, sponges, and paper towels.",
+    "estPeezy": "30 secs",
+    "tips": "Buy supplies 3–5 days before your move. Key items include: all-purpose cleaner, glass cleaner, mop, broom, gloves, trash bags, sponges, and paper towels.",
     "urgencyPercentage": 10,
     "whyNeeded": "Move-out cleaning requires multiple supplies that you may not want to unpack once boxes are sealed."
   },
@@ -1023,7 +1074,8 @@
     "conditions": {},
     "desc": "Walk through each room and let Peezy's camera identify your furniture and large items. Takes about 20 seconds per room.",
     "estHours": 0.25,
-    "tips": "Pan slowly across each room \u2014 the AI will automatically identify furniture, appliances, and large items. You'll review everything before it's saved.",
+    "estPeezy": "90 secs",
+    "tips": "Pan slowly across each room — the AI will automatically identify furniture, appliances, and large items. You'll review everything before it's saved.",
     "urgencyPercentage": 99,
     "whyNeeded": "An accurate inventory helps movers give you precise quotes and protects you if anything is damaged during the move."
   },
@@ -1038,6 +1090,7 @@
     "conditions": {},
     "desc": "Prepare your refrigerator/freezer for moving by emptying, defrosting, and thoroughly cleaning it.",
     "estHours": 4,
+    "estPeezy": "30 secs",
     "tips": "Start 48 hours before moving. Consume or donate frozen food. Unplug the appliance 24 hours in advance.",
     "urgencyPercentage": 8,
     "whyNeeded": "Moving companies will not transport wet or leaking appliances."
@@ -1057,6 +1110,7 @@
     },
     "desc": "Perform a full deep clean of your home before move-out to meet lease or sale requirements.",
     "estHours": 6,
+    "estPeezy": "30 secs",
     "tips": "Plan 6+ hours of physical work, ideally with two people. Clean appliances, walls, floors, windows, bathrooms, and baseboards.",
     "urgencyPercentage": 5,
     "whyNeeded": "A thorough cleaning is often required to receive your full deposit back."
@@ -1076,6 +1130,7 @@
     },
     "desc": "Do a last sweep of your empty home and document its condition before turning in keys.",
     "estHours": 2,
+    "estPeezy": "30 secs",
     "tips": "Walk every room, closet, and cabinet to confirm nothing is left behind. Take detailed photos or videos of the empty space.",
     "urgencyPercentage": 2,
     "whyNeeded": "A careful final walkthrough and photo record can be the difference between getting your deposit back and being charged for damage you didn't cause."
@@ -1101,6 +1156,7 @@
     },
     "desc": "Cancel your homeowner's insurance policy since your new place won't require one.",
     "estHours": 1,
+    "estPeezy": "1 min",
     "tips": "Contact your insurance agent 1 to 2 weeks before closing. Set the cancellation date for after you've fully moved out and closed on the sale. Ask about any refund on prepaid premiums.",
     "urgencyPercentage": 76,
     "whyNeeded": "Homeowner's insurance premiums will continue billing until formally canceled, and you'll need proof of cancellation for your records.",
