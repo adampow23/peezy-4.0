@@ -716,28 +716,10 @@ struct PeezyHomeView: View {
 
     // MARK: - Glass Card Container
 
-    /// Glass card matching assessment theme
+    /// Glass card matching assessment theme — uses unified chrome
     private func glassCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
-        ZStack {
-            // Glass stack
-            ZStack {
-                RoundedRectangle(cornerRadius: 36, style: .continuous)
-                    .foregroundStyle(.regularMaterial)
-
-                RoundedRectangle(cornerRadius: 36, style: .continuous)
-                    .fill(Color.white.opacity(0.15))
-            }
-            .overlay(
-                RoundedRectangle(cornerRadius: 36, style: .continuous)
-                    .stroke(Color.primary.opacity(0.05), lineWidth: 1) // UX Fix: 0.07 -> 0.05
-                    .padding(1)
-            )
-            .shadow(color: Color.black.opacity(0.1), radius: 20, x: 0, y: 15)
-
-            // Content
-            content()
-        }
-        .frame(width: 340, height: 500)
+        content()
+            .peezyCardChrome()
     }
 }
 
