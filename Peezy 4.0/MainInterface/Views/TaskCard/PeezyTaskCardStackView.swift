@@ -4,6 +4,7 @@ import SwiftUI
 // Renders a TaskCardSequence as a visible 3-card stack.
 // Top card is interactive. Cards behind show at reduced scale/offset for depth.
 // Advancing removes top card with a leading slide, next card scoots forward.
+// Smart advance() skips cards whose showWhen conditions aren't met.
 
 struct PeezyTaskCardStackView: View {
     let sequence: TaskCardSequence
@@ -19,11 +20,19 @@ struct PeezyTaskCardStackView: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    // Visible cards: up to 3 starting from currentIndex
+    // Visible cards: up to 3 starting from currentIndex, skipping hidden ones
     private var visibleCards: [(offset: Int, spec: TaskCardSpec)] {
-        let endIndex = min(currentIndex + 3, sequence.cards.count)
-        guard currentIndex < endIndex else { return [] }
-        return Array(sequence.cards[currentIndex..<endIndex]).enumerated().map { ($0.offset, $0.element) }
+        var result: [(Int, TaskCardSpec)] = []
+        var idx = currentIndex
+        while result.count < 3 && idx < sequence.cards.count {
+            let spec = sequence.cards[idx]
+            // Only include cards whose conditions are met (or have no condition)
+            if shouldShowCard(spec) {
+                result.append((result.count, spec))
+            }
+            idx += 1
+        }
+        return result
     }
 
     var body: some View {
@@ -38,9 +47,7 @@ struct PeezyTaskCardStackView: View {
                     userState: userState,
                     onPrimary: { handlePrimary(spec: spec) },
                     onSecondary: { handleSecondary(spec: spec) },
-                    onBack: {
-                        if currentIndex > 0 { currentIndex -= 1 }
-                    },
+                    onBack: { goBack() },
                     onSelect: { optionId, isExclusive in
                         handleSelect(spec: spec, optionId: optionId, isExclusive: isExclusive)
                     },
@@ -64,6 +71,14 @@ struct PeezyTaskCardStackView: View {
         )
     }
 
+    // MARK: - Condition Check
+
+    private func shouldShowCard(_ spec: TaskCardSpec) -> Bool {
+        guard let condition = spec.showWhen else { return true }
+        guard let userAnswers = answers[condition.answerKey] else { return false }
+        return !condition.requiredValues.isDisjoint(with: userAnswers)
+    }
+
     // MARK: - Answer Lookup
 
     private func answersForSpec(_ spec: TaskCardSpec) -> Set<String> {
@@ -85,7 +100,7 @@ struct PeezyTaskCardStackView: View {
 
         case .tiles(let data):
             if data.mode == .multi {
-                // Multi-select Continue button tapped
+                // Multi-select Continue button tapped (or "None" if empty)
                 advance()
                 if sequence.needsWorkflowContinue, data.workflowQuestionId != nil {
                     onWorkflowContinue()
@@ -94,18 +109,14 @@ struct PeezyTaskCardStackView: View {
             // Single-select handled via handleSelect
 
         case .confirm:
-            // "Looks Good" — submit and advance
             let transferChoice = answers["transferChoice"]?.first
             onSubmit(confirmFieldValues, transferChoice)
             advance()
 
         case .summary:
-            // "Done" — complete the task
             onComplete()
 
         case .paywall:
-            // If user subscribed, rebuild will show full sequence.
-            // If "Not now", skip the task entirely.
             onSkip()
         }
     }
@@ -115,14 +126,10 @@ struct PeezyTaskCardStackView: View {
     private func handleSecondary(spec: TaskCardSpec) {
         switch spec {
         case .title:
-            // "Later" — skip the whole task
             onSkip()
 
         case .confirm:
-            // "Go Back" — go back one card
-            if currentIndex > 0 {
-                currentIndex -= 1
-            }
+            goBack()
 
         default:
             break
@@ -135,13 +142,8 @@ struct PeezyTaskCardStackView: View {
         guard case .tiles(let data) = spec else { return }
 
         if data.mode == .single {
-            // Single-select: set answer and auto-advance
             answers[data.answerKey] = [optionId]
 
-            // Check if user chose "self" on a Peezy/self choice — adjust remaining sequence
-            // (The builder already included all possible cards; the stack just advances through them)
-
-            // Delay then advance
             Task {
                 try? await Task.sleep(for: .seconds(0.3))
                 advance()
@@ -150,13 +152,10 @@ struct PeezyTaskCardStackView: View {
                 }
             }
         } else {
-            // Multi-select: toggle
             var current = answers[data.answerKey] ?? []
             if isExclusive {
-                // Exclusive option: clear all others, set this one
                 current = [optionId]
             } else {
-                // Remove any exclusive options when selecting a non-exclusive
                 let exclusiveIds = Set(data.tiles.filter { $0.isExclusive }.map { $0.id })
                 current = current.subtracting(exclusiveIds)
 
@@ -172,9 +171,30 @@ struct PeezyTaskCardStackView: View {
 
     // MARK: - Navigation
 
+    /// Advance to the next card, skipping any whose showWhen condition isn't met.
     private func advance() {
-        guard currentIndex < sequence.cards.count - 1 else { return }
-        currentIndex += 1
+        var nextIndex = currentIndex + 1
+        while nextIndex < sequence.cards.count {
+            if shouldShowCard(sequence.cards[nextIndex]) {
+                break
+            }
+            nextIndex += 1
+        }
+        guard nextIndex < sequence.cards.count else { return }
+        currentIndex = nextIndex
+    }
+
+    /// Go back to the previous visible card, skipping hidden ones.
+    private func goBack() {
+        var prevIndex = currentIndex - 1
+        while prevIndex >= 0 {
+            if shouldShowCard(sequence.cards[prevIndex]) {
+                break
+            }
+            prevIndex -= 1
+        }
+        guard prevIndex >= 0 else { return }
+        currentIndex = prevIndex
     }
 }
 
@@ -189,35 +209,44 @@ struct PeezyTaskCardStackView: View {
             subtitle: "Find the right movers for your move"
         ),
         cards: [
-            .title(TaskCardTitleData(
+            .tiles(TaskCardTilesData(
                 cardId: "t1", category: "Moving", headerIcon: "shippingbox",
-                title: "Book Movers", body: "Find the right movers for your move.",
-                primaryLabel: "Let's Go", secondaryLabel: "Later"
+                title: "Any really heavy items?", body: "These need special equipment.",
+                tiles: [
+                    TileOption(id: "piano", label: "Piano / Organ", icon: "pianokeys"),
+                    TileOption(id: "safe", label: "Gun Safe / Safe", icon: "lock.shield"),
+                    TileOption(id: "hot_tub", label: "Hot Tub / Spa", icon: "drop.fill")
+                ],
+                mode: .multi, answerKey: "heavy_items", workflowQuestionId: "heavy_items"
             )),
-            .info(TaskCardInfoData(
+            .tiles(TaskCardTilesData(
                 cardId: "t2", category: "Moving", headerIcon: "shippingbox",
-                title: "Why this matters",
-                body: "Booking movers early gets you better rates and availability.",
-                primaryLabel: "Continue"
+                title: "Need storage?", body: nil,
+                tiles: [
+                    TileOption(id: "yes", label: "Yes", icon: "archivebox"),
+                    TileOption(id: "no", label: "No", icon: "xmark.circle")
+                ],
+                mode: .single, answerKey: "storage_needed", workflowQuestionId: "storage_needed"
             )),
             .tiles(TaskCardTilesData(
                 cardId: "t3", category: "Moving", headerIcon: "shippingbox",
-                title: "How would you like to handle this?", body: nil,
+                title: "Tell us about your storage", body: nil,
                 tiles: [
-                    TileOption(id: "peezy", label: "Let Peezy handle it", icon: "hands.sparkles.fill", subtitle: "~30 seconds"),
-                    TileOption(id: "self", label: "I'll do it myself", icon: "person.fill", subtitle: "Usually 2-3 hours")
+                    TileOption(id: "5x5_full", label: "Small (5×5) — full", icon: "square.grid.2x2.fill"),
+                    TileOption(id: "10x10_partial", label: "Medium (10×10) — partial", icon: "square.grid.3x3")
                 ],
-                mode: .single, answerKey: "choice", workflowQuestionId: nil
+                mode: .single, answerKey: "storage_details", workflowQuestionId: "storage_details",
+                showWhen: CardCondition(answerKey: "storage_needed", requiredValues: ["yes"])
             )),
             .summary(TaskCardSummaryData(
                 cardId: "t4", category: "Moving", headerIcon: "shippingbox",
-                title: "You're all set!",
-                body: "We'll take it from here.",
-                primaryLabel: "Done"
+                title: "Here's what we've got",
+                body: "We'll find the top 3 companies and get you quotes.",
+                primaryLabel: "Request Quotes"
             ))
         ],
         isPaywallGated: false,
-        needsWorkflowContinue: false,
+        needsWorkflowContinue: true,
         showVerifiedBadge: true
     )
 

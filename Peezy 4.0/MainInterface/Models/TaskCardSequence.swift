@@ -1,9 +1,15 @@
 import Foundation
 
+// MARK: - Card Condition (for conditional skip)
+// When present on a card spec, the card is only shown if the user's
+// previous answers match the condition. Otherwise advance() skips it.
+
+struct CardCondition: Equatable {
+    let answerKey: String
+    let requiredValues: Set<String>
+}
+
 // MARK: - Task Card Sequence
-// Describes a task as an ordered sequence of cards.
-// Each task type produces a different sequence, but every card
-// renders through the same template.
 
 struct TaskCardSequence: Identifiable, Equatable {
     let id: String
@@ -39,6 +45,16 @@ enum TaskCardSpec: Identifiable, Equatable {
         }
     }
 
+    /// Condition that must be met for this card to show.
+    /// If nil, card always shows. If present, advance() checks answers.
+    var showWhen: CardCondition? {
+        switch self {
+        case .tiles(let d): return d.showWhen
+        case .info(let d): return d.showWhen
+        default: return nil
+        }
+    }
+
     static func == (lhs: TaskCardSpec, rhs: TaskCardSpec) -> Bool {
         lhs.id == rhs.id
     }
@@ -63,6 +79,17 @@ struct TaskCardInfoData: Equatable {
     let title: String
     let body: String
     let primaryLabel: String
+    let showWhen: CardCondition?
+
+    init(cardId: String, category: String, headerIcon: String, title: String, body: String, primaryLabel: String, showWhen: CardCondition? = nil) {
+        self.cardId = cardId
+        self.category = category
+        self.headerIcon = headerIcon
+        self.title = title
+        self.body = body
+        self.primaryLabel = primaryLabel
+        self.showWhen = showWhen
+    }
 }
 
 struct TaskCardTilesData: Equatable {
@@ -75,10 +102,24 @@ struct TaskCardTilesData: Equatable {
     let mode: TileMode
     let answerKey: String
     let workflowQuestionId: String?
+    let showWhen: CardCondition?
 
     enum TileMode: Equatable {
         case single
         case multi
+    }
+
+    init(cardId: String, category: String, headerIcon: String, title: String, body: String? = nil, tiles: [TileOption], mode: TileMode, answerKey: String, workflowQuestionId: String? = nil, showWhen: CardCondition? = nil) {
+        self.cardId = cardId
+        self.category = category
+        self.headerIcon = headerIcon
+        self.title = title
+        self.body = body
+        self.tiles = tiles
+        self.mode = mode
+        self.answerKey = answerKey
+        self.workflowQuestionId = workflowQuestionId
+        self.showWhen = showWhen
     }
 }
 

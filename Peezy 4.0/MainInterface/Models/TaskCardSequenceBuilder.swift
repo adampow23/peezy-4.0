@@ -18,8 +18,7 @@ struct TaskCardSequenceBuilder {
         let category = task.taskCategory ?? "Task"
         let icon = task.icon
 
-        // Paywall gate — only after user has completed 3+ tasks
-        // completedTaskCount is passed in; first 3 tasks are free
+        // ── Paywall gate — only after user has completed 3+ tasks ──
         if !isSubscribed && completedTaskCount >= 3 {
             return TaskCardSequence(
                 id: taskId,
@@ -35,7 +34,7 @@ struct TaskCardSequenceBuilder {
             )
         }
 
-        // ── Inventory (scanner triggered separately) ──
+        // ── Inventory (scanner triggered separately via fullScreenCover) ──
         if task.actionType == "in-app-inventory" {
             return TaskCardSequence(
                 id: taskId,
@@ -60,11 +59,9 @@ struct TaskCardSequenceBuilder {
                 task: task,
                 cards: [
                     titleCard(task: task, category: category, icon: icon,
-                              primaryLabel: "Got It", secondaryLabel: "Later"),
-                    infoCard(id: "\(taskId)-why", category: category, icon: icon,
-                             title: "Why this matters", body: task.whyNeeded ?? task.subtitle),
-                    infoCard(id: "\(taskId)-tips", category: category, icon: icon,
-                             title: "Tips", body: task.tips ?? "Complete this task at your convenience."),
+                              primaryLabel: "On It", secondaryLabel: "Later"),
+                    infoCard(id: "\(taskId)-info", category: category, icon: icon,
+                             title: task.title, body: task.tips ?? task.whyNeeded ?? task.subtitle),
                     summaryCard(id: "\(taskId)-done", category: category, icon: icon)
                 ],
                 isPaywallGated: false,
@@ -90,15 +87,14 @@ struct TaskCardSequenceBuilder {
                                qualifying: qualifying)
 
         default:
-            // Fallback — simple info sequence
             return TaskCardSequence(
                 id: taskId,
                 task: task,
                 cards: [
                     titleCard(task: task, category: category, icon: icon,
-                              primaryLabel: "Got It", secondaryLabel: "Later"),
-                    infoCard(id: "\(taskId)-why", category: category, icon: icon,
-                             title: "Why this matters", body: task.whyNeeded ?? task.subtitle),
+                              primaryLabel: "On It", secondaryLabel: "Later"),
+                    infoCard(id: "\(taskId)-info", category: category, icon: icon,
+                             title: task.title, body: task.whyNeeded ?? task.subtitle),
                     summaryCard(id: "\(taskId)-done", category: category, icon: icon)
                 ],
                 isPaywallGated: false,
@@ -116,11 +112,9 @@ struct TaskCardSequenceBuilder {
             task: task,
             cards: [
                 titleCard(task: task, category: category, icon: icon,
-                          primaryLabel: "Learn More", secondaryLabel: "Later"),
-                infoCard(id: "\(taskId)-why", category: category, icon: icon,
-                         title: "Why this matters", body: task.whyNeeded ?? task.subtitle),
-                infoCard(id: "\(taskId)-tips", category: category, icon: icon,
-                         title: "What to do", body: task.tips ?? "Follow the guidance below."),
+                          primaryLabel: "On It", secondaryLabel: "Later"),
+                infoCard(id: "\(taskId)-info", category: category, icon: icon,
+                         title: task.title, body: task.tips ?? task.whyNeeded ?? task.subtitle),
                 summaryCard(id: "\(taskId)-done", category: category, icon: icon)
             ],
             isPaywallGated: false,
@@ -130,17 +124,13 @@ struct TaskCardSequenceBuilder {
     }
 
     private static func buildResearch(task: PeezyCard, taskId: String, category: String, icon: String) -> TaskCardSequence {
+        // No title card — user already committed on home screen
         var cards: [TaskCardSpec] = [
-            titleCard(task: task, category: category, icon: icon,
-                      primaryLabel: "Let's Go", secondaryLabel: "Later"),
-            infoCard(id: "\(taskId)-why", category: category, icon: icon,
-                     title: "Why this matters", body: task.whyNeeded ?? task.subtitle),
             .tiles(TaskCardTilesData(
                 cardId: "\(taskId)-choice",
                 category: category,
                 headerIcon: icon,
                 title: "How would you like to handle this?",
-                body: nil,
                 tiles: [
                     TileOption(id: "peezy", label: "Let Peezy handle it", icon: "hands.sparkles.fill",
                                subtitle: task.estPeezy),
@@ -148,8 +138,7 @@ struct TaskCardSequenceBuilder {
                                subtitle: formatEstHours(task.estHours))
                 ],
                 mode: .single,
-                answerKey: "handleChoice",
-                workflowQuestionId: nil
+                answerKey: "handleChoice"
             ))
         ]
 
@@ -178,17 +167,13 @@ struct TaskCardSequenceBuilder {
     }
 
     private static func buildTransferCancel(task: PeezyCard, taskId: String, category: String, icon: String) -> TaskCardSequence {
+        // No title card — user already committed on home screen
         var cards: [TaskCardSpec] = [
-            titleCard(task: task, category: category, icon: icon,
-                      primaryLabel: "Let's Go", secondaryLabel: "Later"),
-            infoCard(id: "\(taskId)-why", category: category, icon: icon,
-                     title: "Why this matters", body: task.whyNeeded ?? task.subtitle),
             .tiles(TaskCardTilesData(
                 cardId: "\(taskId)-choice",
                 category: category,
                 headerIcon: icon,
                 title: "What would you like to do?",
-                body: nil,
                 tiles: [
                     TileOption(id: "update", label: "Update with current provider", icon: "arrow.triangle.2.circlepath",
                                subtitle: task.estPeezy),
@@ -196,8 +181,7 @@ struct TaskCardSequenceBuilder {
                                subtitle: formatEstHours(task.estHours))
                 ],
                 mode: .single,
-                answerKey: "transferChoice",
-                workflowQuestionId: nil
+                answerKey: "transferChoice"
             ))
         ]
 
@@ -225,21 +209,10 @@ struct TaskCardSequenceBuilder {
     }
 
     private static func buildSurvey(task: PeezyCard, taskId: String, category: String, icon: String, qualifying: WorkflowQualifying?) -> TaskCardSequence {
-        var cards: [TaskCardSpec] = [
-            titleCard(task: task, category: category, icon: icon,
-                      primaryLabel: "Let's Go", secondaryLabel: "Later")
-        ]
+        // No title card — user already committed on home screen
+        var cards: [TaskCardSpec] = []
 
-        // Add intro info from qualifying data
         if let q = qualifying {
-            cards.append(infoCard(
-                id: "\(taskId)-intro",
-                category: category,
-                icon: icon,
-                title: q.intro.title,
-                body: q.intro.subtitle ?? task.subtitle
-            ))
-
             // Add tile card per workflow question
             for (index, question) in q.questions.enumerated() {
                 let tileOptions = question.options.map { opt in
@@ -252,21 +225,40 @@ struct TaskCardSequenceBuilder {
                     )
                 }
 
-                cards.append(.tiles(TaskCardTilesData(
-                    cardId: "\(taskId)-q\(index)",
-                    category: category,
-                    headerIcon: icon,
-                    title: question.question,
-                    body: question.subtitle,
-                    tiles: tileOptions,
-                    mode: question.type == .single_select ? .single : .multi,
-                    answerKey: question.id,
-                    workflowQuestionId: question.id
-                )))
+                // Determine if this question has a conditional skip
+                let condition = conditionForQuestion(questionId: question.id)
+
+                // Context-only cards (empty options) become info cards
+                if question.options.isEmpty {
+                    cards.append(infoCard(
+                        id: "\(taskId)-q\(index)",
+                        category: category,
+                        icon: icon,
+                        title: question.question,
+                        body: question.subtitle ?? "",
+                        showWhen: condition
+                    ))
+                } else {
+                    cards.append(.tiles(TaskCardTilesData(
+                        cardId: "\(taskId)-q\(index)",
+                        category: category,
+                        headerIcon: icon,
+                        title: question.question,
+                        body: question.subtitle,
+                        tiles: tileOptions,
+                        mode: question.type == .single_select ? .single : .multi,
+                        answerKey: question.id,
+                        workflowQuestionId: question.id,
+                        showWhen: condition
+                    )))
+                }
             }
         }
 
-        cards.append(summaryCard(id: "\(taskId)-done", category: category, icon: icon))
+        cards.append(summaryCard(id: "\(taskId)-done", category: category, icon: icon,
+                                 title: "Here's what we've got",
+                                 body: qualifying?.recap?.closing ?? "We'll reach out as soon as we have more information.",
+                                 primaryLabel: qualifying?.recap?.button ?? "Request Quotes"))
 
         return TaskCardSequence(
             id: taskId,
@@ -276,6 +268,29 @@ struct TaskCardSequenceBuilder {
             needsWorkflowContinue: qualifying != nil,
             showVerifiedBadge: true
         )
+    }
+
+    // MARK: - Conditional Skip Mapping
+    // Maps question IDs to the conditions that must be met for them to show.
+    // Add new conditions here as workflows evolve.
+
+    private static func conditionForQuestion(questionId: String) -> CardCondition? {
+        switch questionId {
+        // Book Movers: storage details only shows if they said yes to storage
+        case "storage_details":
+            return CardCondition(answerKey: "storage_needed", requiredValues: ["yes"])
+
+        // Book Cleaners: move-out timing only shows if they picked move_out or both
+        case "move_out_timing":
+            return CardCondition(answerKey: "which_place", requiredValues: ["move_out", "both"])
+
+        // Book Cleaners: move-in timing only shows if they picked move_in or both
+        case "move_in_timing":
+            return CardCondition(answerKey: "which_place", requiredValues: ["move_in", "both"])
+
+        default:
+            return nil
+        }
     }
 
     // MARK: - Card Factories
@@ -292,27 +307,33 @@ struct TaskCardSequenceBuilder {
         ))
     }
 
-    private static func infoCard(id: String, category: String, icon: String, title: String, body: String) -> TaskCardSpec {
+    private static func infoCard(id: String, category: String, icon: String, title: String, body: String, showWhen: CardCondition? = nil) -> TaskCardSpec {
         .info(TaskCardInfoData(
             cardId: id,
             category: category,
             headerIcon: icon,
             title: title,
             body: body,
-            primaryLabel: "Continue"
+            primaryLabel: "Continue",
+            showWhen: showWhen
         ))
     }
 
-    private static func summaryCard(id: String, category: String, icon: String) -> TaskCardSpec {
+    private static func summaryCard(id: String, category: String, icon: String,
+                                     title: String = "You're all set!",
+                                     body: String = "We'll take it from here. You can check on this task anytime in the Tasks tab.",
+                                     primaryLabel: String = "Done") -> TaskCardSpec {
         .summary(TaskCardSummaryData(
             cardId: id,
             category: category,
             headerIcon: icon,
-            title: "You're all set!",
-            body: "We'll take it from here. You can check on this task anytime in the Tasks tab.",
-            primaryLabel: "Done"
+            title: title,
+            body: body,
+            primaryLabel: primaryLabel
         ))
     }
+
+    // MARK: - Helpers
 
     static func formatEstHours(_ hours: Double?) -> String? {
         guard let hours = hours, hours > 0 else { return nil }
