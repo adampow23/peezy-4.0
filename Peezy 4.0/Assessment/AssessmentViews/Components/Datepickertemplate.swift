@@ -20,9 +20,9 @@ struct DatePickerTemplate: View {
 
     // ── CONTROL BOARD ──
     var speed: Double = 0.04
-    var heroFontSize: CGFloat = 32
+    var heroFontSize: CGFloat = 34        // UX Fix: Standardized to 34pt Large Title
     var heroSubtextSize: CGFloat = 16
-    var morphedFontSize: CGFloat = 22
+    var morphedFontSize: CGFloat = 24     // UX Fix: Bumped to 24pt for better hierarchy
     var morphedSubtextSize: CGFloat = 14
     var morphTopPad: CGFloat = 24
     var morphBottomPad: CGFloat = 24
@@ -61,7 +61,8 @@ struct DatePickerTemplate: View {
                             )
                         }
                     }
-                    .font(.system(size: isHero ? heroFontSize : morphedFontSize, weight: .semibold, design: .rounded))
+                    // UX Fix: Swapped .semibold to .heavy, removed rogue .rounded design
+                    .font(.system(size: isHero ? heroFontSize : morphedFontSize, weight: .heavy))
                     .foregroundStyle(PeezyTheme.Colors.deepInk)
                     .multilineTextAlignment(isHero ? .center : .leading)
                     .frame(maxWidth: .infinity, alignment: isHero ? .center : .leading)
@@ -83,7 +84,8 @@ struct DatePickerTemplate: View {
                                     )
                                 }
                             }
-                            .font(.system(size: isHero ? heroSubtextSize : morphedSubtextSize, design: .rounded))
+                            // UX Fix: Added .medium weight, removed rogue .rounded design
+                            .font(.system(size: isHero ? heroSubtextSize : morphedSubtextSize, weight: .medium))
                             .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.5))
                             .multilineTextAlignment(isHero ? .center : .leading)
                             .frame(maxWidth: .infinity, alignment: isHero ? .center : .leading)
@@ -141,7 +143,7 @@ struct DatePickerTemplate: View {
                         onContinue()
                     }
                     .padding(.horizontal, 24)
-                    .padding(.bottom, 32)
+                    .padding(.bottom, 24) // UX Fix: Standardized 32 -> 24pt
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
