@@ -80,8 +80,10 @@ struct TaskCardInfoData: Equatable {
     let body: String
     let primaryLabel: String
     let showWhen: CardCondition?
+    let linkURL: String?
+    let linkLabel: String?
 
-    init(cardId: String, category: String, headerIcon: String, title: String, body: String, primaryLabel: String, showWhen: CardCondition? = nil) {
+    init(cardId: String, category: String, headerIcon: String, title: String, body: String, primaryLabel: String, showWhen: CardCondition? = nil, linkURL: String? = nil, linkLabel: String? = nil) {
         self.cardId = cardId
         self.category = category
         self.headerIcon = headerIcon
@@ -89,6 +91,8 @@ struct TaskCardInfoData: Equatable {
         self.body = body
         self.primaryLabel = primaryLabel
         self.showWhen = showWhen
+        self.linkURL = linkURL
+        self.linkLabel = linkLabel
     }
 }
 

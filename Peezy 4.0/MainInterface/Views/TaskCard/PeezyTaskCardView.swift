@@ -169,6 +169,13 @@ struct PeezyTaskCardView: View {
                     .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.6))
                     .lineLimit(nil)
                     .fixedSize(horizontal: false, vertical: true)
+
+                if let urlString = data.linkURL, let url = URL(string: urlString) {
+                    Link(data.linkLabel ?? urlString, destination: url)
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(PeezyTheme.Colors.accentBlue)
+                        .padding(.top, 8)
+                }
             }
             .padding(.horizontal, 24)
             .frame(maxWidth: .infinity, alignment: .leading)
