@@ -12,11 +12,11 @@
         "Condo"
       ]
     },
-    "desc": "Secure a designated parking space at your new building for moving day to ensure the truck can park legally and close to the entrance.",
+    "desc": "Secure a designated parking space at your new building for moving day.",
     "estHours": 1,
-    "tips": "Contact your new building's management 2\u20133 weeks before your move. Confirm whether they require permits, fees, or insurance documents from your moving company. Always get written confirmation of the reservation and relay the parking instructions to your movers to avoid delays or fines.",
+    "tips": "Contact building management 2-3 weeks prior to confirm permit requirements. Obtain written confirmation and share parking instructions with movers.",
     "urgencyPercentage": 72,
-    "whyNeeded": "Many buildings require advance reservations for moving trucks. Securing parking prevents last-minute issues such as citations, long carry distances, or denied access on move day.",
+    "whyNeeded": "Advance reservations prevent citations, long carry distances, and denied access on move day.",
     "workflowId": "arrange_parking_new"
   },
   {
@@ -32,11 +32,11 @@
         "Condo"
       ]
     },
-    "desc": "Book a legal and accessible parking space for the moving truck at your current building so movers can load efficiently.",
+    "desc": "Book a legal and accessible parking space at your current building for efficient loading.",
     "estHours": 1,
-    "tips": "Reach out to your property manager about two weeks before your move. Some buildings may charge $50\u2013100, require truck measurements, or ask for a Certificate of Insurance from your movers.",
+    "tips": "Contact your property manager 2 weeks prior. Fees may range from $50-$100, and you might need truck measurements or a Certificate of Insurance.",
     "urgencyPercentage": 73,
-    "whyNeeded": "Apartment and condo buildings often enforce strict parking rules, and failing to reserve space can lead to fines, towing risks, or long carry distances on moving day.",
+    "whyNeeded": "Strict parking rules in apartments and condos can lead to fines, towing, or long carry distances if space isn't reserved.",
     "workflowId": "arrange_parking_old"
   },
   {
@@ -51,9 +51,9 @@
         "Reserved Elevator"
       ]
     },
-    "desc": "Book an elevator time slot at your new building so movers can load and unload efficiently.",
+    "desc": "Reserve an elevator time slot at your new building for efficient loading and unloading.",
     "estHours": 0.75,
-    "tips": "Contact your new building's management 2\u20133 weeks before move-in. Ask about required time windows, fees, and insurance documents from your movers.",
+    "tips": "Contact building management 2 to 3 weeks before move-in to inquire about time windows, fees, and required insurance documents from movers.",
     "urgencyPercentage": 70,
     "whyNeeded": "High-rise buildings often require elevator reservations for moves.",
     "workflowId": "reserve_elevators_new"
@@ -70,11 +70,11 @@
         "Reserved Elevator"
       ]
     },
-    "desc": "Book a move-out elevator time slot at your current building.",
+    "desc": "Reserve an elevator time slot at your current building for moving out.",
     "estHours": 0.75,
-    "tips": "High-rise buildings usually require reservations 2 to 3 weeks in advance. Time slots fill quickly, especially mornings.",
+    "tips": "High-rise buildings typically require reservations 2-3 weeks in advance. Time slots fill quickly, especially in the mornings.",
     "urgencyPercentage": 71,
-    "whyNeeded": "Without a reserved elevator, movers may be blocked or delayed, which increases labor time and cost.",
+    "whyNeeded": "Without a reserved elevator, movers may face delays, increasing labor time and costs.",
     "workflowId": "reserve_elevators_old"
   },
   {
@@ -90,9 +90,9 @@
         "Yes"
       ]
     },
-    "desc": "Research and reserve a moving company to handle your relocation safely and efficiently.",
+    "desc": "Research and reserve a moving company for safe and efficient relocation.",
     "estHours": 3,
-    "tips": "Get at least three quotes from licensed movers. During peak season (May\u2013September), book 8\u201312 weeks in advance; off-season typically requires 4\u20136 weeks. Verify insurance, USDOT registration, and reviews.",
+    "tips": "Obtain at least three quotes from licensed movers. Book 8-12 weeks in advance during peak season (May-September) and 4-6 weeks off-season. Verify insurance, USDOT registration, and reviews.",
     "urgencyPercentage": 94,
     "whyNeeded": "Booking early secures better availability, competitive pricing, and reliable crews."
   },
