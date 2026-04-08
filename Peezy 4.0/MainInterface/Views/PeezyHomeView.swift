@@ -349,6 +349,7 @@ struct PeezyHomeView: View {
             let sequence = TaskCardSequenceBuilder.build(
                 task: task,
                 isSubscribed: subscriptionManager.isSubscribed,
+                completedTaskCount: viewModel.totalCompletedCount,
                 qualifying: viewModel.workflowManager.loadedQualifying,
                 userState: userState
             )

@@ -93,6 +93,14 @@ final class PeezyHomeViewModel {
     private var kLastGreetingDate: String {
         "peezy.\(userId).lastGreetingDate"
     }
+    private var kTotalCompletedCount: String {
+        "peezy.\(userId).totalCompletedCount"
+    }
+
+    var totalCompletedCount: Int {
+        get { UserDefaults.standard.integer(forKey: kTotalCompletedCount) }
+        set { UserDefaults.standard.set(newValue, forKey: kTotalCompletedCount) }
+    }
 
     // MARK: - Inventory Scanner
 
@@ -541,6 +549,7 @@ final class PeezyHomeViewModel {
 
         completedThisSession += 1
         dailyDoseCompletedCount += 1
+        totalCompletedCount += 1
         allActiveTasks.removeAll { $0.id == task.id }
         currentTask = nil
         isFocusedTask = false
@@ -616,6 +625,7 @@ final class PeezyHomeViewModel {
                 allActiveTasks.removeAll { $0.id == task.id }
                 dailyDoseCompletedCount += 1
                 completedThisSession += 1
+                totalCompletedCount += 1
                 currentTask = nil
                 isFocusedTask = false
                 advanceAfterTask()
@@ -674,6 +684,7 @@ final class PeezyHomeViewModel {
                 await MainActor.run {
                     self.completedThisSession += 1
                     self.dailyDoseCompletedCount += 1
+                    self.totalCompletedCount += 1
                     self.allActiveTasks.removeAll { $0.id == task.id }
                     self.currentTask = nil
                     self.isFocusedTask = false

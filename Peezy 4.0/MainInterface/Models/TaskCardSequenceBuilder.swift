@@ -9,6 +9,7 @@ struct TaskCardSequenceBuilder {
     static func build(
         task: PeezyCard,
         isSubscribed: Bool,
+        completedTaskCount: Int,
         qualifying: WorkflowQualifying?,
         userState: UserState?
     ) -> TaskCardSequence {
@@ -17,8 +18,9 @@ struct TaskCardSequenceBuilder {
         let category = task.taskCategory ?? "Task"
         let icon = task.icon
 
-        // ── Paywall gate ──
-        if !isSubscribed {
+        // Paywall gate — only after user has completed 3+ tasks
+        // completedTaskCount is passed in; first 3 tasks are free
+        if !isSubscribed && completedTaskCount >= 3 {
             return TaskCardSequence(
                 id: taskId,
                 task: task,

@@ -104,9 +104,9 @@ struct PeezyTaskCardStackView: View {
             onComplete()
 
         case .paywall:
-            // Paywall dismissed (user subscribed or cancelled)
-            // If subscribed, advance past paywall to show task content
-            advance()
+            // If user subscribed, rebuild will show full sequence.
+            // If "Not now", skip the task entirely.
+            onSkip()
         }
     }
 

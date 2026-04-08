@@ -45,10 +45,6 @@ struct PeezyTaskStream: View {
     // Active tab
     @State private var selectedTab: TaskTab = .todo
 
-    // TaskFlowView presentation
-    @State private var showTaskFlow = false
-    @State private var taskFlowCard: PeezyCard? = nil
-
     // Preview/test data injection
     private var previewTasks: [PeezyCard]?
 
@@ -175,21 +171,6 @@ struct PeezyTaskStream: View {
             }
         }
         .edgesIgnoringSafeArea(.bottom)
-        .fullScreenCover(isPresented: $showTaskFlow, onDismiss: {
-            taskFlowCard = nil
-        }) {
-            if let card = taskFlowCard {
-                TaskFlowView(
-                    task: card,
-                    userState: userState,
-                    onDismiss: {
-                        showTaskFlow = false
-                    },
-                    onStartWorkflow: nil
-                )
-                .environmentObject(subscriptionManager)
-            }
-        }
         .task {
             if let previewTasks {
                 allTasks = previewTasks
@@ -408,20 +389,9 @@ struct PeezyTaskStream: View {
 
     // MARK: - Helpers
 
-    private static let flowTaskTypes: Set<String> = ["research", "transfer_cancel", "provide_info"]
-
     private func onStartHandler(for task: PeezyCard) -> (() -> Void)? {
-        if task.actionType == "in-app-inventory", onNavigateToTask != nil {
-            return { onNavigateToTask?(task) }
-        } else if Self.flowTaskTypes.contains(task.taskType ?? "") {
-            return {
-                taskFlowCard = task
-                showTaskFlow = true
-            }
-        } else if onNavigateToTask != nil {
-            return { onNavigateToTask?(task) }
-        }
-        return nil
+        guard onNavigateToTask != nil else { return nil }
+        return { onNavigateToTask?(task) }
     }
 
     private func toggleExpand(_ id: String) {
