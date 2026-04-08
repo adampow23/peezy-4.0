@@ -35,7 +35,8 @@ class WorkflowManager {
 
     // Track current question index
     private var currentQuestionIndex = 0
-    private var qualifying: WorkflowQualifying?
+    private(set) var qualifying: WorkflowQualifying?
+    var loadedQualifying: WorkflowQualifying? { qualifying }
 
     // Service
     private let service = WorkflowService()
