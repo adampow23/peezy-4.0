@@ -56,7 +56,6 @@ struct SingleSelectTemplate: View {
     @State private var headerDone = false
     @State private var subtextDone = false
     @State private var showControls = false
-    @State private var isHero = false
     @State private var skipped = false
     @State private var showTiles = false
 
@@ -68,8 +67,6 @@ struct SingleSelectTemplate: View {
             InteractiveBackground()
 
             VStack(spacing: 0) {
-
-                if isHero { Spacer() }
 
                 // ── TEXT AREA ──
                 VStack(spacing: 8) {
@@ -91,11 +88,11 @@ struct SingleSelectTemplate: View {
                         }
                     }
                     // UX Fix: Swapped .semibold to .heavy to match primary app typography
-                    .font(.system(size: isHero ? heroFontSize : morphedFontSize, weight: .heavy))
+                    .font(.system(size: morphedFontSize, weight: .heavy))
                     .foregroundColor(PeezyTheme.Colors.deepInk)
                     .lineSpacing(lineSpacing)
-                    .multilineTextAlignment(isHero ? .center : .leading)
-                    .frame(maxWidth: .infinity, alignment: isHero ? .center : .leading)
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
                     // Subtext
                     if let sub = subtext {
@@ -116,22 +113,20 @@ struct SingleSelectTemplate: View {
                                 }
                             }
                             // UX Fix: Added .medium weight to match 16pt body text standard
-                            .font(.system(size: isHero ? heroSubtextSize : morphedSubtextSize, weight: .medium))
+                            .font(.system(size: morphedSubtextSize, weight: .medium))
                             .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.5))
                             .lineSpacing(subtextLineSpacing)
-                            .multilineTextAlignment(isHero ? .center : .leading)
-                            .frame(maxWidth: .infinity, alignment: isHero ? .center : .leading)
+                            .multilineTextAlignment(.leading)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                         }
                     }
                 }
                 .padding(.horizontal, textSidePad)
-                .padding(.top, isHero ? 0 : morphTopPad)
-                .padding(.bottom, isHero ? 0 : morphBottomPad)
-
-                if isHero { Spacer() }
+                .padding(.top, morphTopPad)
+                .padding(.bottom, morphBottomPad)
 
                 // Push tiles to vertical center of remaining space
-                if !isHero && showControls { Spacer() }
+                if showControls { Spacer() }
 
                 // ── TILES ──
                 if showControls {
@@ -150,7 +145,6 @@ struct SingleSelectTemplate: View {
                                 onTap: { onSelect(option) }
                             )
                             .opacity(showTiles ? 1 : 0)
-                            .offset(y: showTiles ? 0 : 30)
                             .animation(
                                 .easeOut(duration: 0.5).delay(tileStagger + Double(index) * tileStagger),
                                 value: showTiles
@@ -158,10 +152,10 @@ struct SingleSelectTemplate: View {
                         }
                     }
                     .padding(.horizontal, tilePadH)
-                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+                    .transition(.opacity)
                 }
 
-                if !isHero { Spacer(minLength: 0) }
+                Spacer(minLength: 0)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
@@ -172,18 +166,12 @@ struct SingleSelectTemplate: View {
     // ── MORPH LOGIC (don't touch) ───────────────────────────────
 
     private func triggerMorph() {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+        Task {
+            try? await Task.sleep(for: .seconds(0.2))
             withAnimation(.easeOut(duration: 0.35)) {
                 showControls = true
                 showTiles = true
             }
-        }
-    }
-
-    private func performMorph() {
-        withAnimation(.easeOut(duration: 0.35)) {
-            showControls = true
-            showTiles = true
         }
     }
 

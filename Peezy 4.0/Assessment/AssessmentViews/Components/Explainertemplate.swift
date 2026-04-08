@@ -148,10 +148,9 @@ struct ExplainerTemplate: View {
     // ── HELPERS ─────────────────────────────────────────────────
 
     private func revealButton() {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-            withAnimation(.easeOut(duration: 0.35)) {
-                showButton = true
-            }
+        Task {
+            try? await Task.sleep(for: .seconds(0.3))
+            withAnimation(.easeOut(duration: 0.35)) { showButton = true }
         }
     }
 

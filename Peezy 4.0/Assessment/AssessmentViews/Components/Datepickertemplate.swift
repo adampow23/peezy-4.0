@@ -33,7 +33,6 @@ struct DatePickerTemplate: View {
     @State private var headerDone = false
     @State private var subtextDone = false
     @State private var showControls = false
-    @State private var isHero = false
     @State private var skipped = false
     @State private var dateWasSelected = false
 
@@ -42,7 +41,6 @@ struct DatePickerTemplate: View {
             InteractiveBackground()
 
             VStack(spacing: 0) {
-                if isHero { Spacer() }
 
                 // ── TEXT AREA ──
                 VStack(spacing: 8) {
@@ -62,10 +60,10 @@ struct DatePickerTemplate: View {
                         }
                     }
                     // UX Fix: Swapped .semibold to .heavy, removed rogue .rounded design
-                    .font(.system(size: isHero ? heroFontSize : morphedFontSize, weight: .heavy))
+                    .font(.system(size: morphedFontSize, weight: .heavy))
                     .foregroundStyle(PeezyTheme.Colors.deepInk)
-                    .multilineTextAlignment(isHero ? .center : .leading)
-                    .frame(maxWidth: .infinity, alignment: isHero ? .center : .leading)
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
                     if let sub = subtext {
                         if headerDone || skipped {
@@ -85,23 +83,22 @@ struct DatePickerTemplate: View {
                                 }
                             }
                             // UX Fix: Added .medium weight, removed rogue .rounded design
-                            .font(.system(size: isHero ? heroSubtextSize : morphedSubtextSize, weight: .medium))
+                            .font(.system(size: morphedSubtextSize, weight: .medium))
                             .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.5))
-                            .multilineTextAlignment(isHero ? .center : .leading)
-                            .frame(maxWidth: .infinity, alignment: isHero ? .center : .leading)
+                            .multilineTextAlignment(.leading)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                         }
                     }
                 }
                 .padding(.horizontal, textSidePad)
-                .padding(.top, isHero ? 0 : morphTopPad)
-                .padding(.bottom, isHero ? 0 : morphBottomPad)
+                .padding(.top, morphTopPad)
+                .padding(.bottom, morphBottomPad)
                 .contentShape(Rectangle())
                 .onTapGesture {
                     skipToControls()
                 }
 
-                if isHero { Spacer() }
-                if !isHero && showControls { Spacer(minLength: 16) }
+                if showControls { Spacer(minLength: 16) }
 
                 // ── NATIVE DATE PICKER IN GLASS CARD ──
                 if showControls {
@@ -132,10 +129,10 @@ struct DatePickerTemplate: View {
                     }
                     .shadow(color: Color.black.opacity(0.03), radius: 20, y: 10)
                     .padding(.horizontal, 24)
-                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+                    .transition(.opacity)
                 }
 
-                if !isHero && showControls { Spacer(minLength: 32) }
+                if showControls { Spacer(minLength: 32) }
 
                 // ── CONTINUE BUTTON ──
                 if showControls {
@@ -153,16 +150,11 @@ struct DatePickerTemplate: View {
     // ── MORPH LOGIC ──
 
     private func triggerMorph() {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+        Task {
+            try? await Task.sleep(for: .seconds(0.2))
             withAnimation(.easeOut(duration: 0.35)) {
                 showControls = true
             }
-        }
-    }
-
-    private func performMorph() {
-        withAnimation(.easeOut(duration: 0.35)) {
-            showControls = true
         }
     }
 

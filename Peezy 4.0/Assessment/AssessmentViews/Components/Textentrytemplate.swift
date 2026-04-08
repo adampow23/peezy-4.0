@@ -70,7 +70,6 @@ struct TextEntryTemplate: View {
     @State private var headerDone = false
     @State private var subtextDone = false
     @State private var showControls = false
-    @State private var isHero = false
     @State private var skipped = false
     @FocusState private var isFocused: Bool
 
@@ -82,8 +81,6 @@ struct TextEntryTemplate: View {
                 .ignoresSafeArea(.keyboard)
 
             VStack(spacing: 0) {
-
-                if isHero { Spacer() }
 
                 // ── TEXT AREA ──
                 VStack(spacing: 8) {
@@ -103,11 +100,11 @@ struct TextEntryTemplate: View {
                         }
                     }
                     // UX Fix: Swapped .semibold to .heavy to match primary app typography
-                    .font(.system(size: isHero ? heroFontSize : morphedFontSize, weight: .heavy))
+                    .font(.system(size: morphedFontSize, weight: .heavy))
                     .foregroundColor(PeezyTheme.Colors.deepInk)
                     .lineSpacing(lineSpacing)
-                    .multilineTextAlignment(isHero ? .center : .leading)
-                    .frame(maxWidth: .infinity, alignment: isHero ? .center : .leading)
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
                     if let sub = subtext {
                         if headerDone || skipped {
@@ -127,22 +124,20 @@ struct TextEntryTemplate: View {
                                 }
                             }
                             // UX Fix: Added .medium weight to match 16pt body text standard
-                            .font(.system(size: isHero ? heroSubtextSize : morphedSubtextSize, weight: .medium))
+                            .font(.system(size: morphedSubtextSize, weight: .medium))
                             .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.5))
                             .lineSpacing(subtextLineSpacing)
-                            .multilineTextAlignment(isHero ? .center : .leading)
-                            .frame(maxWidth: .infinity, alignment: isHero ? .center : .leading)
+                            .multilineTextAlignment(.leading)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                         }
                     }
                 }
                 .padding(.horizontal, textSidePad)
-                .padding(.top, isHero ? 0 : morphTopPad)
-                .padding(.bottom, isHero ? 0 : morphBottomPad)
-
-                if isHero { Spacer() }
+                .padding(.top, morphTopPad)
+                .padding(.bottom, morphBottomPad)
 
                 // Center text field between header and button
-                if !isHero && showControls { Spacer() }
+                if showControls { Spacer() }
 
                 // ── TEXT FIELD ──
                 if showControls {
@@ -179,10 +174,10 @@ struct TextEntryTemplate: View {
                             radius: 10, y: 5
                         )
                         .padding(.horizontal, fieldPadH)
-                        .transition(.opacity.combined(with: .move(edge: .bottom)))
+                        .transition(.opacity)
                 }
 
-                if !isHero && showControls { Spacer() }
+                if showControls { Spacer() }
 
                 // ── CONTINUE BUTTON ──
                 if showControls {
@@ -196,33 +191,18 @@ struct TextEntryTemplate: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .contentShape(Rectangle())
-        .onTapGesture {
-            if isHero {
-                skipToControls()
-            } else {
-                isFocused = false
-            }
-        }
+        .onTapGesture { isFocused = false }
     }
 
     // ── MORPH LOGIC ─────────────────────────────────────────────
 
     private func triggerMorph() {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+        Task {
+            try? await Task.sleep(for: .seconds(0.2))
             withAnimation(.easeOut(duration: 0.35)) {
                 showControls = true
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                isFocused = true
-            }
-        }
-    }
-
-    private func performMorph() {
-        withAnimation(.easeOut(duration: 0.35)) {
-            showControls = true
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            try? await Task.sleep(for: .seconds(0.2))
             isFocused = true
         }
     }

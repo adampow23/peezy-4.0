@@ -66,7 +66,6 @@ struct MultiSelectTemplate: View {
     @State private var headerDone = false
     @State private var subtextDone = false
     @State private var showControls = false
-    @State private var isHero = false
     @State private var skipped = false
     @State private var showTiles = false
 
@@ -76,8 +75,6 @@ struct MultiSelectTemplate: View {
             InteractiveBackground()
 
             VStack(spacing: 0) {
-
-                if isHero { Spacer() }
 
                 // ── TEXT AREA ──
                 VStack(spacing: 8) {
@@ -97,11 +94,11 @@ struct MultiSelectTemplate: View {
                         }
                     }
                     // UX Fix: Swapped .semibold to .heavy to match primary app typography
-                    .font(.system(size: isHero ? heroFontSize : morphedFontSize, weight: .heavy))
+                    .font(.system(size: morphedFontSize, weight: .heavy))
                     .foregroundColor(PeezyTheme.Colors.deepInk)
                     .lineSpacing(lineSpacing)
-                    .multilineTextAlignment(isHero ? .center : .leading)
-                    .frame(maxWidth: .infinity, alignment: isHero ? .center : .leading)
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
                     if let sub = subtext {
                         if headerDone || skipped {
@@ -121,22 +118,20 @@ struct MultiSelectTemplate: View {
                                 }
                             }
                             // UX Fix: Added .medium weight to match 16pt body text standard
-                            .font(.system(size: isHero ? heroSubtextSize : morphedSubtextSize, weight: .medium))
+                            .font(.system(size: morphedSubtextSize, weight: .medium))
                             .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.5))
                             .lineSpacing(subtextLineSpacing)
-                            .multilineTextAlignment(isHero ? .center : .leading)
-                            .frame(maxWidth: .infinity, alignment: isHero ? .center : .leading)
+                            .multilineTextAlignment(.leading)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                         }
                     }
                 }
                 .padding(.horizontal, textSidePad)
-                .padding(.top, isHero ? 0 : morphTopPad)
-                .padding(.bottom, isHero ? 0 : morphBottomPad)
-
-                if isHero { Spacer() }
+                .padding(.top, morphTopPad)
+                .padding(.bottom, morphBottomPad)
 
                 // Center tiles between header and button
-                if !isHero && showControls { Spacer() }
+                if showControls { Spacer() }
 
                 // ── TILES ──
                 if showControls {
@@ -152,7 +147,6 @@ struct MultiSelectTemplate: View {
                                 onDecrement: { onDecrement?(option.0) }
                             )
                             .opacity(showTiles ? 1 : 0)
-                            .offset(y: showTiles ? 0 : 30)
                             .animation(
                                 .easeOut(duration: 0.5).delay(tileStagger + Double(index) * tileStagger),
                                 value: showTiles
@@ -160,11 +154,11 @@ struct MultiSelectTemplate: View {
                         }
                     }
                     .padding(.horizontal, tilePadH)
-                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+                    .transition(.opacity)
                 }
 
                 // Push button to bottom
-                if !isHero && showControls { Spacer() }
+                if showControls { Spacer() }
 
                 // ── CONTINUE BUTTON ──
                 if showControls {
@@ -184,18 +178,12 @@ struct MultiSelectTemplate: View {
     // ── MORPH LOGIC (don't touch) ───────────────────────────────
 
     private func triggerMorph() {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+        Task {
+            try? await Task.sleep(for: .seconds(0.2))
             withAnimation(.easeOut(duration: 0.35)) {
                 showControls = true
                 showTiles = true
             }
-        }
-    }
-
-    private func performMorph() {
-        withAnimation(.easeOut(duration: 0.35)) {
-            showControls = true
-            showTiles = true
         }
     }
 
