@@ -197,7 +197,7 @@ struct PaywallGateView: View {
     // MARK: - Dynamic Price Helpers
 
     private func priceText(for plan: SubscriptionManager.ProductID) -> String {
-        subscriptionManager.product(for: plan)?.displayPrice ?? (plan == .annual ? "$49.99" : "$6.99")
+        subscriptionManager.product(for: plan)?.displayPrice ?? "—"
     }
 
     private func subtitleText(for plan: SubscriptionManager.ProductID) -> String {

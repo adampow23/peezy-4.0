@@ -402,11 +402,11 @@ struct PeezySettingsView: View {
     private var subscriptionDetailLabel: String {
         switch subscriptionManager.subscriptionStatus {
         case .trial(let productId, let expires):
-            let planName = productId == "peezy.yearly" ? "Yearly" : "Monthly"
+            let planName = productId == SubscriptionManager.ProductID.annual.rawValue ? "Yearly" : "Monthly"
             let daysLeft = Calendar.current.dateComponents([.day], from: Date(), to: expires).day ?? 0
             return "\(planName) plan — trial ends in \(daysLeft) day\(daysLeft == 1 ? "" : "s")"
         case .subscribed(let productId, let expires):
-            let planName = productId == "peezy.yearly" ? "Yearly" : "Monthly"
+            let planName = productId == SubscriptionManager.ProductID.annual.rawValue ? "Yearly" : "Monthly"
             return "\(planName) plan — renews \(formattedDate(expires))"
         case .expired:
             return "Resubscribe to access all features"

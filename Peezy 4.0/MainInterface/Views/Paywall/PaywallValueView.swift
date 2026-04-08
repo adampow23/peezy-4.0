@@ -71,7 +71,7 @@ struct PaywallValueView: View {
 
     private var trialPriceText: String {
         guard let product = subscriptionManager.product(for: .annual) else {
-            return "3-day free trial · Then $49.99/year"
+            return "Free trial available"
         }
         let price = product.displayPrice
         if let intro = product.subscription?.introductoryOffer,

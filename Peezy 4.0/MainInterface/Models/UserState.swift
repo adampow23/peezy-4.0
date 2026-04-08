@@ -174,7 +174,7 @@ struct UserState: Codable {
         if let type = assessment["currentDwellingType"] as? String {
             self.originPropertyType = PropertyType(rawValue: type.lowercased())
         }
-        self.originBedrooms = assessment["originBedrooms"] as? Int
+        self.originBedrooms = (assessment["originBedrooms"] as? NSNumber)?.intValue
 
         // Ownership - AssessmentDataManager saves as "currentRentOrOwn" and "newRentOrOwn"
         if let ownership = assessment["currentRentOrOwn"] as? String {
@@ -186,13 +186,13 @@ struct UserState: Codable {
         if let type = assessment["newDwellingType"] as? String {
             self.destinationPropertyType = PropertyType(rawValue: type.lowercased())
         }
-        self.destinationBedrooms = assessment["destinationBedrooms"] as? Int
+        self.destinationBedrooms = (assessment["destinationBedrooms"] as? NSNumber)?.intValue
 
         if let ownership = assessment["newRentOrOwn"] as? String {
             let normalized = ownership.lowercased().hasPrefix("rent") ? "rent" : "own"
             self.destinationOwnership = Ownership(rawValue: normalized)
         }
-        self.destinationYearBuilt = assessment["destinationYearBuilt"] as? Int
+        self.destinationYearBuilt = (assessment["destinationYearBuilt"] as? NSNumber)?.intValue
 
         // Household - AssessmentDataManager saves as "whosMoving"
         if let whosMoving = assessment["whosMoving"] as? String {
