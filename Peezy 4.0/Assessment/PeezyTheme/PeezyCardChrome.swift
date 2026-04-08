@@ -14,7 +14,7 @@ struct PeezyCardChrome: ViewModifier {
                 RoundedRectangle(cornerRadius: 36, style: .continuous)
                     .foregroundStyle(.ultraThinMaterial)
                 RoundedRectangle(cornerRadius: 36, style: .continuous)
-                    .fill(Color.white.opacity(0.6))
+                    .fill(Color.white.opacity(0.7))
             }
             .overlay(
                 RoundedRectangle(cornerRadius: 36, style: .continuous)
