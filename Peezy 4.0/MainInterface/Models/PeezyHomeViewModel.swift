@@ -350,7 +350,9 @@ final class PeezyHomeViewModel {
                     actionType: data["actionType"] as? String,
                     taskType: data["taskType"] as? String,
                     tips: data["tips"] as? String,
-                    whyNeeded: data["whyNeeded"] as? String
+                    whyNeeded: data["whyNeeded"] as? String,
+                    estPeezy: data["estPeezy"] as? String,
+                    estHours: (data["estHours"] as? NSNumber)?.doubleValue
                 )
 
                 if card.status == .inProgress {

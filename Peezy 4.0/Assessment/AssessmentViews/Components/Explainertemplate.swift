@@ -168,8 +168,8 @@ struct ExplainerTemplate: View {
 #Preview {
     ExplainerTemplate(
         icon: "hammer.fill",
-        header: "Time to talk services.",
-        subtext: "We'll ask about services you might want help with — movers, packers, cleaners, and more.",
+        header: "Let's Start with Common Moving Services",
+        subtext: "When moving, there are countless services you might need, but we'll begin by discussing the most common ones—movers, packers, cleaners, and more.",
         buttonText: "Continue",
         onContinue: { print("Continue") }
     )

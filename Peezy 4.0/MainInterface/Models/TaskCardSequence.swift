@@ -11,9 +11,10 @@ struct TaskCardSequence: Identifiable, Equatable {
     let cards: [TaskCardSpec]
     let isPaywallGated: Bool
     let needsWorkflowContinue: Bool
+    let showVerifiedBadge: Bool
 
     static func == (lhs: TaskCardSequence, rhs: TaskCardSequence) -> Bool {
-        lhs.id == rhs.id && lhs.cards.map(\.id) == rhs.cards.map(\.id)
+        lhs.id == rhs.id && lhs.cards.map(\.id) == rhs.cards.map(\.id) && lhs.showVerifiedBadge == rhs.showVerifiedBadge
     }
 }
 

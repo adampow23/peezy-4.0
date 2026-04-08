@@ -152,7 +152,9 @@ final class PeezyStackViewModel {
                     status: status,
                     dueDate: dueDate,
                     snoozedUntil: snoozedUntil,
-                    lastSnoozedAt: lastSnoozedAt
+                    lastSnoozedAt: lastSnoozedAt,
+                    estPeezy: data["estPeezy"] as? String,
+                    estHours: (data["estHours"] as? NSNumber)?.doubleValue
                 )
 
                 // Only include cards that should be shown

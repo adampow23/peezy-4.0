@@ -28,7 +28,8 @@ struct TaskCardSequenceBuilder {
                     .paywall
                 ],
                 isPaywallGated: true,
-                needsWorkflowContinue: false
+                needsWorkflowContinue: false,
+                showVerifiedBadge: false
             )
         }
 
@@ -45,7 +46,8 @@ struct TaskCardSequenceBuilder {
                     summaryCard(id: "\(taskId)-done", category: category, icon: icon)
                 ],
                 isPaywallGated: false,
-                needsWorkflowContinue: false
+                needsWorkflowContinue: false,
+                showVerifiedBadge: false
             )
         }
 
@@ -64,7 +66,8 @@ struct TaskCardSequenceBuilder {
                     summaryCard(id: "\(taskId)-done", category: category, icon: icon)
                 ],
                 isPaywallGated: false,
-                needsWorkflowContinue: false
+                needsWorkflowContinue: false,
+                showVerifiedBadge: false
             )
         }
 
@@ -97,7 +100,8 @@ struct TaskCardSequenceBuilder {
                     summaryCard(id: "\(taskId)-done", category: category, icon: icon)
                 ],
                 isPaywallGated: false,
-                needsWorkflowContinue: false
+                needsWorkflowContinue: false,
+                showVerifiedBadge: false
             )
         }
     }
@@ -118,7 +122,8 @@ struct TaskCardSequenceBuilder {
                 summaryCard(id: "\(taskId)-done", category: category, icon: icon)
             ],
             isPaywallGated: false,
-            needsWorkflowContinue: false
+            needsWorkflowContinue: false,
+            showVerifiedBadge: false
         )
     }
 
@@ -135,8 +140,10 @@ struct TaskCardSequenceBuilder {
                 title: "How would you like to handle this?",
                 body: nil,
                 tiles: [
-                    TileOption(id: "peezy", label: "Let Peezy handle it", icon: "hands.sparkles.fill"),
-                    TileOption(id: "self", label: "I'll do it myself", icon: "person.fill")
+                    TileOption(id: "peezy", label: "Let Peezy handle it", icon: "hands.sparkles.fill",
+                               subtitle: task.estPeezy),
+                    TileOption(id: "self", label: "I'll do it myself", icon: "person.fill",
+                               subtitle: formatEstHours(task.estHours))
                 ],
                 mode: .single,
                 answerKey: "handleChoice",
@@ -163,7 +170,8 @@ struct TaskCardSequenceBuilder {
             task: task,
             cards: cards,
             isPaywallGated: false,
-            needsWorkflowContinue: false
+            needsWorkflowContinue: false,
+            showVerifiedBadge: false
         )
     }
 
@@ -180,8 +188,10 @@ struct TaskCardSequenceBuilder {
                 title: "What would you like to do?",
                 body: nil,
                 tiles: [
-                    TileOption(id: "update", label: "Update with current provider", icon: "arrow.triangle.2.circlepath"),
-                    TileOption(id: "cancel", label: "Cancel and find a new one", icon: "xmark.circle")
+                    TileOption(id: "update", label: "Update with current provider", icon: "arrow.triangle.2.circlepath",
+                               subtitle: task.estPeezy),
+                    TileOption(id: "cancel", label: "Cancel and find a new one", icon: "xmark.circle",
+                               subtitle: formatEstHours(task.estHours))
                 ],
                 mode: .single,
                 answerKey: "transferChoice",
@@ -207,7 +217,8 @@ struct TaskCardSequenceBuilder {
             task: task,
             cards: cards,
             isPaywallGated: false,
-            needsWorkflowContinue: false
+            needsWorkflowContinue: false,
+            showVerifiedBadge: false
         )
     }
 
@@ -260,7 +271,8 @@ struct TaskCardSequenceBuilder {
             task: task,
             cards: cards,
             isPaywallGated: false,
-            needsWorkflowContinue: qualifying != nil
+            needsWorkflowContinue: qualifying != nil,
+            showVerifiedBadge: true
         )
     }
 
@@ -298,5 +310,19 @@ struct TaskCardSequenceBuilder {
             body: "We'll take it from here. You can check on this task anytime in the Tasks tab.",
             primaryLabel: "Done"
         ))
+    }
+
+    static func formatEstHours(_ hours: Double?) -> String? {
+        guard let hours = hours, hours > 0 else { return nil }
+        if hours < 1 {
+            let minutes = Int(hours * 60)
+            return "Usually \(minutes) min"
+        } else if hours == 1 {
+            return "Usually ~1 hour"
+        } else {
+            let low = Int(hours)
+            let high = low + 1
+            return "Usually \(low)-\(high) hours"
+        }
     }
 }
