@@ -288,6 +288,10 @@ struct TaskCardSequenceBuilder {
         case "move_in_timing":
             return CardCondition(answerKey: "which_place", requiredValues: ["move_in", "both"])
 
+        // Internet/Utilities: current provider card only shows if user chose help_me
+        case "current_provider":
+            return CardCondition(answerKey: "help_preference", requiredValues: ["help_me"])
+
         default:
             return nil
         }
