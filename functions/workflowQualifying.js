@@ -10,232 +10,89 @@ const WORKFLOW_QUALIFYING = {
   "book_movers": {
     workflowId: "book_movers",
     intro: {
-      title: "Let's find the right movers",
-      subtitle: "A few quick questions so we can match you with companies that fit your move."
+      title: "Let's find you the right movers",
+      subtitle: "A few quick questions so we can get you quotes from the top companies."
     },
-    // SET FROM ASSESSMENT (not asked, passed to matching):
-    // - Service area (current + new addresses)
-    // - Interstate flag
-    // - Packing preference (full/kitchen/both/none)
-    // - Home size (bedrooms + sqft)
     questions: [
       {
-        id: "locally_owned",
-        question: "Do you prefer working with a locally owned company?",
-        type: "single_select",
-        options: [
-          { id: "yes", label: "Yes, prefer local", icon: "building.2" },
-          { id: "no_preference", label: "No preference", icon: "hand.thumbsup" }
-        ]
-      },
-      {
         id: "heavy_items",
-        question: "Do you have any really heavy items?",
-        subtitle: "These require special equipment and crew.",
+        question: "Any really heavy items?",
+        subtitle: "These need special equipment.",
         type: "multi_select",
         options: [
           { id: "piano", label: "Piano / Organ", icon: "pianokeys" },
           { id: "safe", label: "Gun Safe / Safe", icon: "lock.shield" },
           { id: "hot_tub", label: "Hot Tub / Spa", icon: "drop.fill" },
-          { id: "none", label: "Nothing heavy", icon: "checkmark.circle.fill", exclusive: true }
+          { id: "pool_table", label: "Pool Table", icon: "circle.grid.3x3" }
         ]
       },
       {
-        id: "fragile_items",
+        id: "specialty_items",
         question: "Any delicate or high-value items?",
         subtitle: "These need extra care during transport.",
         type: "multi_select",
         options: [
-          { id: "pool_table", label: "Pool Table", icon: "circle.grid.3x3" },
           { id: "art", label: "Art / Antiques", icon: "photo.artframe" },
           { id: "glass", label: "Large Mirrors / Glass", icon: "rectangle" },
-          { id: "none", label: "Nothing fragile", icon: "checkmark.circle.fill", exclusive: true }
+          { id: "wine", label: "Wine Collection", icon: "wineglass" },
+          { id: "instruments", label: "Musical Instruments", icon: "guitars" }
+        ]
+      },
+      {
+        id: "packing_help",
+        question: "Need help with packing?",
+        type: "single_select",
+        options: [
+          { id: "full", label: "Full service — pack everything", icon: "shippingbox.fill" },
+          { id: "partial", label: "Just fragile / kitchen items", icon: "wineglass" },
+          { id: "none", label: "No — I'll pack myself", icon: "hand.raised" }
+        ]
+      },
+      {
+        id: "storage_needed",
+        question: "Need storage?",
+        type: "single_select",
+        options: [
+          { id: "yes", label: "Yes", icon: "archivebox" },
+          { id: "no", label: "No", icon: "xmark.circle" }
+        ]
+      },
+      {
+        id: "storage_details",
+        question: "Tell us about your storage needs",
+        type: "single_select",
+        options: [
+          { id: "5x5_partial", label: "Small (5×5) — partially full", icon: "square.grid.2x2" },
+          { id: "5x5_full", label: "Small (5×5) — full", icon: "square.grid.2x2.fill" },
+          { id: "10x10_partial", label: "Medium (10×10) — partially full", icon: "square.grid.3x3" },
+          { id: "10x10_full", label: "Medium (10×10) — full", icon: "square.grid.3x3.fill" },
+          { id: "10x20_partial", label: "Large (10×20) — partially full", icon: "rectangle.grid.2x2" },
+          { id: "10x20_full", label: "Large (10×20) — full", icon: "rectangle.grid.2x2.fill" }
         ]
       },
       {
         id: "insurance_context",
-        question: "A quick note on moving insurance",
-        subtitle: "Industry standard coverage is only $0.60 per pound. That means a 50lb TV worth $800 would only be covered for $30.",
+        question: "You're going to want to read this.",
+        subtitle: "Industry standard moving coverage is only $0.60 per pound. That means a 50lb TV worth $800 would only be covered for $30. Full-value protection covers the actual replacement cost.",
         type: "single_select",
         options: []
       },
       {
         id: "insurance_preference",
-        question: "Want full-value moving insurance?",
-        subtitle: "Standard coverage is only $0.60/lb — a $800 TV would be covered for just $30.",
+        question: "What level of coverage?",
         type: "single_select",
         options: [
-          { id: "full_value", label: "Yes, full coverage", icon: "shield.checkered" },
-          { id: "standard", label: "No, standard is fine", icon: "shield" }
+          { id: "full_value", label: "Full coverage — actual replacement value", icon: "shield.checkered" },
+          { id: "basic", label: "Basic — standard $0.60/lb", icon: "shield" },
+          { id: "none", label: "No insurance", icon: "xmark.shield" }
         ]
       }
     ],
-    questionCount: 5,
+    questionCount: 7,
     recap: {
-      title: "Got it — here's what I'm looking for",
-      closing: "I'll match you with movers who fit your specific needs and get you quotes.",
-      button: "Find my movers"
-    }
-  },
-
-  // ============================================
-  // BOOK LONG-DISTANCE MOVERS
-  // ============================================
-  "book_long_distance_movers": {
-    intro: {
-      title: "Long-distance moves need the right team",
-      subtitle: "Let me match you with movers who specialize in cross-country relocations. This takes about a minute."
-    },
-    questions: [
-      {
-        id: "priority",
-        question: "What's most important?",
-        type: "single_select",
-        options: [
-          { id: "price", label: "Best Price", subtitle: "Budget is tight", icon: "dollarsign.circle.fill" },
-          { id: "speed", label: "Fastest Delivery", subtitle: "Need it ASAP", icon: "clock.fill" },
-          { id: "care", label: "White Glove Care", subtitle: "Handle with care", icon: "hands.sparkles.fill" },
-          { id: "tracking", label: "Real-Time Tracking", subtitle: "Know where it is", icon: "location.fill" }
-        ]
-      },
-      {
-        id: "estimate_type",
-        question: "How should pricing work?",
-        type: "single_select",
-        subtitle: "This affects your final bill",
-        options: [
-          { id: "binding", label: "Binding Estimate", subtitle: "Locked price, no surprises", icon: "lock.fill" },
-          { id: "not_binding", label: "Non-Binding", subtitle: "May change based on actual weight", icon: "scale.3d" },
-          { id: "not_sure", label: "Not Sure", subtitle: "Help me decide", icon: "questionmark.circle.fill" }
-        ]
-      },
-      {
-        id: "heavy_items",
-        question: "Any oversized or heavy items?",
-        type: "multi_select",
-        options: [
-          { id: "piano", label: "Piano", icon: "pianokeys" },
-          { id: "vehicle", label: "Vehicle to Ship", icon: "car.fill" },
-          { id: "none", label: "Standard items", icon: "checkmark.circle.fill", exclusive: true }
-        ]
-      },
-      {
-        id: "fragile_items",
-        question: "Any high-value or fragile items?",
-        type: "multi_select",
-        options: [
-          { id: "art", label: "Fine Art", icon: "photo.artframe" },
-          { id: "antiques", label: "Antiques", icon: "clock.fill" },
-          { id: "none", label: "Standard items", icon: "checkmark.circle.fill", exclusive: true }
-        ]
-      },
-      {
-        id: "packing_service",
-        question: "Packing services?",
-        type: "single_select",
-        options: [
-          { id: "full", label: "Full Pack & Unpack", subtitle: "Complete service", icon: "shippingbox.fill" },
-          { id: "pack_only", label: "Packing Only", subtitle: "I'll unpack myself", icon: "shippingbox" },
-          { id: "fragile", label: "Fragile Items Only", icon: "wineglass" },
-          { id: "none", label: "No Packing Needed", icon: "xmark.circle.fill" }
-        ]
-      },
-      {
-        id: "timeline_flexibility",
-        question: "How flexible is your timeline?",
-        type: "single_select",
-        subtitle: "Flexibility can mean better prices",
-        options: [
-          { id: "exact", label: "Exact Date", subtitle: "Must be this day", icon: "calendar.badge.exclamationmark" },
-          { id: "window_3", label: "3-Day Window", subtitle: "Some flexibility", icon: "calendar" },
-          { id: "window_7", label: "Week Window", subtitle: "Very flexible", icon: "calendar.badge.plus" }
-        ]
-      }
-    ],
-    recap: {
-      title: "Perfect. Here's your move profile:",
-      closing: "I'm contacting licensed long-distance carriers now. Expect detailed quotes within 48 hours.",
-      button: "Get My Quotes"
-    },
-    matching: {
-      priorityWeight: 0.35,
-      estimateTypeWeight: 0.25,
-      specialItemsWeight: 0.2,
-      packingWeight: 0.1,
-      flexibilityWeight: 0.1
-    }
-  },
-
-  // ============================================
-  // CLEANING SERVICE
-  // ============================================
-  "cleaning_service": {
-    intro: {
-      title: "Let's get you a sparkling clean",
-      subtitle: "Quick questions to find cleaners who match your needs."
-    },
-    questions: [
-      {
-        id: "which_place",
-        question: "Which place needs cleaning?",
-        type: "single_select",
-        options: [
-          { id: "old", label: "Old Place", subtitle: "Move-out clean", icon: "door.left.hand.open" },
-          { id: "new", label: "New Place", subtitle: "Before unpacking", icon: "door.right.hand.open" },
-          { id: "both", label: "Both Places", subtitle: "Full service", icon: "arrow.left.arrow.right" }
-        ]
-      },
-      {
-        id: "clean_level",
-        question: "What level of clean?",
-        type: "single_select",
-        options: [
-          { id: "standard", label: "Standard Clean", subtitle: "Surface cleaning, vacuum, mop", icon: "sparkles" },
-          { id: "deep", label: "Deep Clean", subtitle: "Inside cabinets, appliances, baseboards", icon: "bubbles.and.sparkles.fill" },
-          { id: "move_out", label: "Move-Out Special", subtitle: "Get your deposit back", icon: "dollarsign.circle.fill" }
-        ]
-      },
-      {
-        id: "focus_rooms",
-        question: "Any rooms need extra attention?",
-        type: "multi_select",
-        options: [
-          { id: "kitchen", label: "Kitchen", subtitle: "Appliances, grease", icon: "refrigerator.fill" },
-          { id: "bathrooms", label: "Bathrooms", subtitle: "Tile, grout, fixtures", icon: "shower.fill" },
-          { id: "none", label: "Even attention", icon: "checkmark.circle.fill", exclusive: true }
-        ]
-      },
-      {
-        id: "focus_extras",
-        question: "Any add-on services?",
-        type: "multi_select",
-        options: [
-          { id: "windows", label: "Windows", subtitle: "Inside and out", icon: "window.horizontal" },
-          { id: "carpet", label: "Carpet Cleaning", subtitle: "Steam cleaning", icon: "square.fill" },
-          { id: "none", label: "No extras", icon: "checkmark.circle.fill", exclusive: true }
-        ]
-      },
-      {
-        id: "timing",
-        question: "When do you need it?",
-        type: "single_select",
-        options: [
-          { id: "asap", label: "ASAP", subtitle: "Within 48 hours", icon: "bolt.fill" },
-          { id: "this_week", label: "This Week", icon: "calendar" },
-          { id: "scheduled", label: "Specific Date", subtitle: "Tied to move date", icon: "calendar.badge.clock" }
-        ]
-      }
-    ],
-    recap: {
-      title: "Here's your cleaning request:",
-      closing: "I'll have quotes from top-rated cleaners within 24 hours.",
-      button: "Get Quotes"
-    },
-    matching: {
-      placeWeight: 0.2,
-      levelWeight: 0.35,
-      focusWeight: 0.25,
-      timingWeight: 0.2
+      title: "Here's what we've got",
+      closing: "Based on your answers, we'll find the top 3 companies and get you quotes from each. We'll reach out as soon as we have them.",
+      button: "Request Quotes"
     }
   },
 
@@ -308,114 +165,67 @@ const WORKFLOW_QUALIFYING = {
   },
 
   // ============================================
-  // INTERNET SETUP
-  // ============================================
-  "internet_setup": {
-    intro: {
-      title: "Let's get you connected",
-      subtitle: "I'll find the best internet options at your new address."
-    },
-    questions: [
-      {
-        id: "usage",
-        question: "What's your internet mainly for?",
-        type: "single_select",
-        options: [
-          { id: "work", label: "Work From Home", subtitle: "Video calls, uploads", icon: "laptopcomputer" },
-          { id: "streaming", label: "Streaming", subtitle: "Netflix, gaming", icon: "play.tv.fill" },
-          { id: "basic", label: "Basic Use", subtitle: "Email, browsing", icon: "globe" },
-          { id: "heavy", label: "Heavy Everything", subtitle: "Multiple users, all the above", icon: "wifi" }
-        ]
-      },
-      {
-        id: "priority",
-        question: "What matters most?",
-        type: "single_select",
-        options: [
-          { id: "speed", label: "Fastest Speed", subtitle: "Pay more, get more", icon: "bolt.fill" },
-          { id: "price", label: "Best Price", subtitle: "Budget-friendly", icon: "dollarsign.circle.fill" },
-          { id: "reliability", label: "Most Reliable", subtitle: "No dropouts", icon: "checkmark.shield.fill" },
-          { id: "no_contract", label: "No Contract", subtitle: "Flexibility", icon: "xmark.circle.fill" }
-        ]
-      },
-      {
-        id: "current_provider",
-        question: "Current internet provider?",
-        type: "single_select",
-        subtitle: "Sometimes we can transfer or get switch deals",
-        options: [
-          { id: "xfinity", label: "Xfinity/Comcast", icon: "dot.radiowaves.left.and.right" },
-          { id: "att", label: "AT&T", icon: "antenna.radiowaves.left.and.right" },
-          { id: "verizon", label: "Verizon Fios", icon: "fibrechannel" },
-          { id: "spectrum", label: "Spectrum", icon: "wifi" },
-          { id: "other", label: "Other / None", icon: "questionmark.circle.fill" }
-        ]
-      },
-      {
-        id: "extras",
-        question: "Need any extras?",
-        type: "multi_select",
-        options: [
-          { id: "tv", label: "TV Package", icon: "tv.fill" },
-          { id: "phone", label: "Home Phone", icon: "phone.fill" },
-          { id: "mesh", label: "Whole-Home WiFi", subtitle: "Mesh system", icon: "wifi.circle.fill" },
-          { id: "none", label: "Just Internet", icon: "checkmark.circle.fill", exclusive: true }
-        ]
-      }
-    ],
-    recap: {
-      title: "Here's what you need:",
-      closing: "I'll check availability at your new address and set up the best option. Usually ready for move-in day.",
-      button: "Find My Options"
-    },
-    matching: {
-      usageWeight: 0.35,
-      priorityWeight: 0.35,
-      currentProviderWeight: 0.1,
-      extrasWeight: 0.2
-    }
-  },
-
-  // ============================================
   // BOOK CLEANERS
   // ============================================
   "book_cleaners": {
     workflowId: "book_cleaners",
     intro: {
-      title: "Let's find the right cleaners",
-      subtitle: "Just a couple questions to match you with the right service."
+      title: "Let's find you the right cleaners",
+      subtitle: "A couple quick questions to match you with the right service."
     },
-    // SET FROM ASSESSMENT:
-    // - Service area (current address)
-    // - Home size (bedrooms + sqft)
     questions: [
       {
-        id: "locally_owned",
-        question: "Do you prefer working with a locally owned company?",
+        id: "which_place",
+        question: "Which place needs cleaning?",
         type: "single_select",
         options: [
-          { id: "yes", label: "Yes, prefer local", icon: "building.2" },
-          { id: "no_preference", label: "No preference", icon: "hand.thumbsup" }
+          { id: "move_out", label: "Old place — move-out clean", icon: "door.left.hand.open" },
+          { id: "move_in", label: "New place — move-in clean", icon: "door.right.hand.open" },
+          { id: "both", label: "Both places", icon: "arrow.left.arrow.right" }
         ]
       },
       {
-        id: "service_level",
-        question: "What level of cleaning do you need?",
+        id: "services",
+        question: "What services do you need?",
         subtitle: "Select all that apply.",
         type: "multi_select",
         options: [
-          { id: "standard", label: "Standard move-out clean", icon: "sparkles" },
-          { id: "deep", label: "Deep clean (baseboards, inside appliances, windows)", icon: "bubbles.and.sparkles" },
+          { id: "standard", label: "Standard clean", icon: "sparkles" },
+          { id: "deep", label: "Deep clean (baseboards, inside appliances)", icon: "bubbles.and.sparkles" },
           { id: "carpet", label: "Carpet cleaning", icon: "square.grid.3x3.topleft.filled" },
-          { id: "move_in", label: "Move-in clean at new place", icon: "house" }
+          { id: "windows", label: "Window cleaning", icon: "window.horizontal" }
+        ]
+      },
+      {
+        id: "move_out_timing",
+        question: "When do you need the move-out clean?",
+        subtitle: "Rough time preference.",
+        type: "single_select",
+        options: [
+          { id: "morning", label: "Morning", icon: "sunrise" },
+          { id: "afternoon", label: "Afternoon", icon: "sun.max" },
+          { id: "evening", label: "Evening", icon: "sunset" },
+          { id: "flexible", label: "Flexible", icon: "clock" }
+        ]
+      },
+      {
+        id: "move_in_timing",
+        question: "When do you need the move-in clean?",
+        subtitle: "Rough time preference.",
+        type: "single_select",
+        options: [
+          { id: "morning", label: "Morning", icon: "sunrise" },
+          { id: "afternoon", label: "Afternoon", icon: "sun.max" },
+          { id: "evening", label: "Evening", icon: "sunset" },
+          { id: "flexible", label: "Flexible", icon: "clock" }
         ]
       }
     ],
-    questionCount: 2,
+    questionCount: 4,
     recap: {
-      title: "Perfect — I know what you need",
-      closing: "I'll find cleaners who can handle everything you selected.",
-      button: "Find my cleaners"
+      title: "Here's what we've got",
+      closing: "We'll find cleaners who can handle everything you selected and get you quotes.",
+      button: "Request Quotes"
     }
   },
 
@@ -570,26 +380,26 @@ const WORKFLOW_QUALIFYING = {
   "setup_internet": {
     workflowId: "setup_internet",
     intro: {
-      title: "Let's get your internet sorted",
-      subtitle: "A few questions to find the best provider and plan for your new place."
+      title: "Let's get you connected",
+      subtitle: "A few questions to find the best internet options at your new place."
     },
-    // SET FROM ASSESSMENT:
-    // - Service area (new address)
     questions: [
       {
         id: "usage",
-        question: "How would you describe your internet usage?",
-        type: "single_select",
+        question: "Who's using the internet?",
+        subtitle: "Select all that apply.",
+        type: "multi_select",
         options: [
-          { id: "light", label: "Light — email and browsing", icon: "envelope" },
-          { id: "moderate", label: "Moderate — streaming and video calls", icon: "play.tv" },
-          { id: "heavy", label: "Heavy — gaming, large downloads, multiple streamers", icon: "gamecontroller" },
-          { id: "home_office", label: "Home office — need rock-solid reliability", icon: "desktopcomputer" }
+          { id: "work_from_home", label: "Work from home", icon: "laptopcomputer" },
+          { id: "streaming", label: "Streaming (Netflix, YouTube)", icon: "play.tv.fill" },
+          { id: "gaming", label: "Gaming", icon: "gamecontroller.fill" },
+          { id: "smart_home", label: "Smart home devices", icon: "homekit" },
+          { id: "basic", label: "Just browsing and email", icon: "globe" }
         ]
       },
       {
-        id: "people_devices",
-        question: "How many people and devices will be on the network?",
+        id: "people_count",
+        question: "How many people in the household?",
         type: "single_select",
         options: [
           { id: "1_2", label: "1–2", icon: "person" },
@@ -599,21 +409,21 @@ const WORKFLOW_QUALIFYING = {
       },
       {
         id: "contract_preference",
-        question: "How do you feel about contracts?",
+        question: "Contract preference?",
         type: "single_select",
         options: [
-          { id: "month_to_month", label: "Month-to-month only", icon: "calendar" },
-          { id: "1_year", label: "1 year is fine", icon: "calendar.badge.clock" },
-          { id: "2_year", label: "2 years is fine", icon: "calendar.badge.checkmark" },
+          { id: "month_to_month", label: "Month-to-month", icon: "calendar" },
+          { id: "1_year", label: "1 year", icon: "calendar.badge.clock" },
+          { id: "2_year", label: "2 year", icon: "calendar.badge.checkmark" },
           { id: "no_preference", label: "No preference", icon: "hand.thumbsup" }
         ]
       }
     ],
     questionCount: 3,
     recap: {
-      title: "Got it — let me check what's available",
-      closing: "I'll find the best internet options at your new address based on your needs.",
-      button: "Find my internet"
+      title: "Here's what we've got",
+      closing: "We'll match you with providers in your area and get you options. We'll reach out as soon as we have them.",
+      button: "Request Quotes"
     }
   },
 
@@ -623,31 +433,10 @@ const WORKFLOW_QUALIFYING = {
   "rent_truck": {
     workflowId: "rent_truck",
     intro: {
-      title: "Let's find the right truck",
-      subtitle: "A few details to get you the best rental options."
+      title: "Let's get you a truck",
+      subtitle: "We'll use the details from your inventory to find the right size and best price."
     },
-    // SET FROM ASSESSMENT:
-    // - Service area (current + new addresses)
-    // - Home size (sqft → truck size estimate)
-    // - Move distance (determines one-way default for >100mi or round-trip for <50mi)
-    // - Has storage (determines if storage question shows)
     questions: [
-      {
-        id: "storage_same_trip",
-        question: "Are you picking up items from a storage unit on the same trip?",
-        subtitle: "This affects the truck size and route.",
-        type: "single_select",
-        options: [
-          { id: "yes", label: "Yes, same trip", icon: "archivebox" },
-          { id: "no", label: "No", icon: "xmark.circle" }
-        ]
-      },
-      {
-        id: "trip_type_context",
-        question: "One-way vs. round-trip",
-        type: "single_select",
-        options: []
-      },
       {
         id: "trip_type",
         question: "One-way or round-trip?",
@@ -658,33 +447,13 @@ const WORKFLOW_QUALIFYING = {
           { id: "round_trip", label: "Round-trip", icon: "arrow.triangle.2.circlepath" },
           { id: "not_sure", label: "Not sure", icon: "questionmark.circle" }
         ]
-      },
-      {
-        id: "towing_vehicle",
-        question: "Will you need to tow a vehicle behind the truck?",
-        type: "single_select",
-        options: [
-          { id: "yes", label: "Yes", icon: "car" },
-          { id: "no", label: "No", icon: "xmark.circle" }
-        ]
-      },
-      {
-        id: "days_needed",
-        question: "How many days do you need the truck?",
-        type: "single_select",
-        options: [
-          { id: "moving_day", label: "Just moving day", icon: "sun.max" },
-          { id: "2_3_days", label: "2–3 days", icon: "calendar.badge.plus" },
-          { id: "full_week", label: "Full week", icon: "calendar" },
-          { id: "not_sure", label: "Not sure yet", icon: "questionmark.circle" }
-        ]
       }
     ],
-    questionCount: 5,
+    questionCount: 1,
     recap: {
-      title: "Perfect — I'll find your truck",
-      closing: "I'll compare options from the major rental companies and get you the best deal.",
-      button: "Find my truck"
+      title: "Here's what we've got",
+      closing: "We'll compare options from the major rental companies and get you the best deal. We'll reach out as soon as we have quotes.",
+      button: "Request Quotes"
     }
   },
 
@@ -1363,17 +1132,32 @@ const WORKFLOW_QUALIFYING = {
   // ============================================
   "update_credit_card": {
     workflowId: "update_credit_card",
-    workflowType: "guidance",
     intro: {
-      title: "Update your credit card addresses",
-      subtitle: "A billing address mismatch can cause declined payments on autopay."
+      title: "Let's handle your credit cards",
+      subtitle: null
     },
-    questions: [],
-    questionCount: 0,
+    questions: [
+      {
+        id: "action",
+        question: "What would you like to do with your credit card addresses?",
+        type: "single_select",
+        options: [
+          { id: "update_address", label: "Update my addresses", icon: "pencil.line", subtitle: "We'll walk you through each card" },
+          { id: "help_me", label: "Help me update them", icon: "hands.sparkles.fill", subtitle: "We'll handle the research" },
+          { id: "already_handled", label: "Already handled", icon: "checkmark.circle", subtitle: "I've already taken care of this", alreadyHandled: true }
+        ]
+      }
+    ],
+    questionCount: 1,
     recap: {
-      title: "Here's your checklist",
-      closing: "Update on or right after move day. Don't forget store cards, debit cards, and digital wallets. Set a reminder to check for any missed cards 30 days later.",
-      button: "Got it"
+      title: "We're on it",
+      closing: "We'll take it from here.",
+      button: "Submit"
+    },
+    alreadyHandledRecap: {
+      title: "All set",
+      closing: "Got it — we'll mark this as complete.",
+      button: "Done"
     }
   },
 
@@ -1382,17 +1166,32 @@ const WORKFLOW_QUALIFYING = {
   // ============================================
   "update_investment": {
     workflowId: "update_investment",
-    workflowType: "guidance",
     intro: {
-      title: "Update your investment account addresses",
-      subtitle: "This matters for tax document delivery and state tax compliance."
+      title: "Let's handle your investment accounts",
+      subtitle: null
     },
-    questions: [],
-    questionCount: 0,
+    questions: [
+      {
+        id: "action",
+        question: "What would you like to do with your investment accounts?",
+        type: "single_select",
+        options: [
+          { id: "update_address", label: "Update my address", icon: "pencil.line", subtitle: "Keep current accounts, update contact info" },
+          { id: "help_transfer", label: "Help me transfer or consolidate", icon: "arrow.triangle.swap", subtitle: "We'll research options for you" },
+          { id: "already_handled", label: "Already handled", icon: "checkmark.circle", subtitle: "I've already taken care of this", alreadyHandled: true }
+        ]
+      }
+    ],
+    questionCount: 1,
     recap: {
-      title: "Here's what to update",
-      closing: "Update within the first week after your move. Critical deadline: before year-end so 1099s and other tax documents are mailed to the right address.",
-      button: "Got it"
+      title: "We're on it",
+      closing: "We'll take it from here.",
+      button: "Submit"
+    },
+    alreadyHandledRecap: {
+      title: "All set",
+      closing: "Got it — we'll mark this as complete.",
+      button: "Done"
     }
   },
 
@@ -1401,17 +1200,32 @@ const WORKFLOW_QUALIFYING = {
   // ============================================
   "update_student_loans": {
     workflowId: "update_student_loans",
-    workflowType: "guidance",
     intro: {
-      title: "Update your student loan address",
-      subtitle: "Missing correspondence from your servicer can mean missed payments or lost IDR deadlines."
+      title: "Let's handle your student loans",
+      subtitle: null
     },
-    questions: [],
-    questionCount: 0,
+    questions: [
+      {
+        id: "action",
+        question: "What would you like to do with your student loans?",
+        type: "single_select",
+        options: [
+          { id: "update_address", label: "Update my address", icon: "pencil.line", subtitle: "Update with servicer and StudentAid.gov" },
+          { id: "help_me", label: "Help me figure out what to do", icon: "questionmark.circle", subtitle: "We'll walk you through it" },
+          { id: "already_handled", label: "Already handled", icon: "checkmark.circle", subtitle: "I've already taken care of this", alreadyHandled: true }
+        ]
+      }
+    ],
+    questionCount: 1,
     recap: {
-      title: "Here's what to update",
-      closing: "Update StudentAid.gov and each loan servicer separately. If you're on an Income-Driven Repayment plan, make sure recertification paperwork goes to the right address.",
-      button: "Got it"
+      title: "We're on it",
+      closing: "We'll take it from here.",
+      button: "Submit"
+    },
+    alreadyHandledRecap: {
+      title: "All set",
+      closing: "Got it — we'll mark this as complete.",
+      button: "Done"
     }
   },
 
@@ -1420,27 +1234,32 @@ const WORKFLOW_QUALIFYING = {
   // ============================================
   "transfer_pharmacy_records": {
     workflowId: "transfer_pharmacy_records",
-    workflowType: "guidance",
     intro: {
-      title: "Let's make sure your prescriptions follow you",
-      subtitle: "One question to figure out if you need to do anything."
+      title: "Let's handle your pharmacy records",
+      subtitle: null
     },
     questions: [
       {
-        id: "ongoing_prescriptions",
-        question: "Do you have ongoing prescriptions you fill regularly?",
+        id: "action",
+        question: "What would you like to do?",
         type: "single_select",
         options: [
-          { id: "yes", label: "Yes, regular prescriptions", icon: "pills.fill", subtitle: "Need seamless transfer" },
-          { id: "no", label: "No, just occasional", icon: "checkmark.circle.fill", subtitle: "No proactive transfer needed" }
+          { id: "transfer_records", label: "Transfer to a pharmacy near new home", icon: "doc.arrow.forward", subtitle: "We'll help coordinate the transfer" },
+          { id: "update_address", label: "Update address with current pharmacy", icon: "pencil.line", subtitle: "Keep your current pharmacy" },
+          { id: "already_handled", label: "Already handled", icon: "checkmark.circle", subtitle: "I've already taken care of this", alreadyHandled: true }
         ]
       }
     ],
     questionCount: 1,
     recap: {
-      title: "Your pharmacy transfer plan",
-      closing: "If you have prescriptions due within 2 weeks of your move, fill them now at your current pharmacy for a buffer.",
-      button: "Got it"
+      title: "We're on it",
+      closing: "We'll take it from here.",
+      button: "Submit"
+    },
+    alreadyHandledRecap: {
+      title: "All set",
+      closing: "Got it — we'll mark this as complete.",
+      button: "Done"
     }
   },
 
@@ -1449,27 +1268,32 @@ const WORKFLOW_QUALIFYING = {
   // ============================================
   "transfer_specialists_records": {
     workflowId: "transfer_specialists_records",
-    workflowType: "guidance",
     intro: {
-      title: "Transfer your specialist medical records",
-      subtitle: "Let's make sure there's no gap in your care."
+      title: "Let's handle your specialist records",
+      subtitle: null
     },
     questions: [
       {
-        id: "sees_specialists",
-        question: "Do you or your family see any specialists regularly?",
+        id: "action",
+        question: "What would you like to do?",
         type: "single_select",
         options: [
-          { id: "yes", label: "Yes, we see specialists", icon: "stethoscope", subtitle: "Need records transferred" },
-          { id: "no", label: "No specialists", icon: "checkmark.circle.fill", subtitle: "Nothing to transfer" }
+          { id: "transfer_records", label: "Transfer records to new specialist", icon: "doc.arrow.forward", subtitle: "We'll help coordinate the transfer" },
+          { id: "update_address", label: "Update address with current specialist", icon: "pencil.line", subtitle: "Keep your current specialist" },
+          { id: "already_handled", label: "Already handled", icon: "checkmark.circle", subtitle: "I've already taken care of this", alreadyHandled: true }
         ]
       }
     ],
     questionCount: 1,
     recap: {
-      title: "Your medical records plan",
-      closing: "Request records 2-3 weeks before your move. Under HIPAA they must provide them, but it can take up to 30 days. Ask for digital copies when available.",
-      button: "Got it"
+      title: "We're on it",
+      closing: "We'll take it from here.",
+      button: "Submit"
+    },
+    alreadyHandledRecap: {
+      title: "All set",
+      closing: "Got it — we'll mark this as complete.",
+      button: "Done"
     }
   },
 
@@ -1478,17 +1302,39 @@ const WORKFLOW_QUALIFYING = {
   // ============================================
   "update_auto_insurance": {
     workflowId: "update_auto_insurance",
-    workflowType: "guidance",
     intro: {
       title: "Update your auto insurance",
-      subtitle: "Your garaging address affects your rates — this needs to be updated."
+      subtitle: "Your garaging address affects your rates — let's get this updated."
     },
-    questions: [],
-    questionCount: 0,
+    questions: [
+      {
+        id: "help_preference",
+        question: "Would you like help with this?",
+        type: "single_select",
+        options: [
+          { id: "help_me", label: "Yes, help me update it", icon: "hands.sparkles.fill" },
+          { id: "self", label: "I'll handle it myself", icon: "person.fill" }
+        ]
+      },
+      {
+        id: "current_provider",
+        question: "Who is your current provider?",
+        subtitle: "So we know who to contact.",
+        type: "single_select",
+        options: [
+          { id: "state_farm", label: "State Farm", icon: "shield.fill" },
+          { id: "geico", label: "GEICO", icon: "shield.fill" },
+          { id: "progressive", label: "Progressive", icon: "shield.fill" },
+          { id: "allstate", label: "Allstate", icon: "shield.fill" },
+          { id: "other", label: "Other", icon: "ellipsis.circle" }
+        ]
+      }
+    ],
+    questionCount: 2,
     recap: {
-      title: "Here's your plan",
-      closing: "Update within 30 days of your move. If moving to a different state, you'll also need to update your vehicle registration and driver's license within 30-90 days.",
-      button: "Got it"
+      title: "We're on it",
+      closing: "We'll reach out and get this updated for you.",
+      button: "Submit"
     }
   },
 
@@ -1497,17 +1343,39 @@ const WORKFLOW_QUALIFYING = {
   // ============================================
   "cancel_renters_insurance": {
     workflowId: "cancel_renters_insurance",
-    workflowType: "guidance",
     intro: {
       title: "Cancel your renters insurance",
       subtitle: "We'll make sure you're covered through your last day."
     },
-    questions: [],
-    questionCount: 0,
+    questions: [
+      {
+        id: "help_preference",
+        question: "Would you like help canceling?",
+        type: "single_select",
+        options: [
+          { id: "help_me", label: "Yes, help me cancel", icon: "hands.sparkles.fill" },
+          { id: "self", label: "I'll handle it myself", icon: "person.fill" }
+        ]
+      },
+      {
+        id: "current_provider",
+        question: "Who is your current provider?",
+        subtitle: "So we know who to contact.",
+        type: "single_select",
+        options: [
+          { id: "state_farm", label: "State Farm", icon: "shield.fill" },
+          { id: "lemonade", label: "Lemonade", icon: "shield.fill" },
+          { id: "progressive", label: "Progressive", icon: "shield.fill" },
+          { id: "allstate", label: "Allstate", icon: "shield.fill" },
+          { id: "other", label: "Other", icon: "ellipsis.circle" }
+        ]
+      }
+    ],
+    questionCount: 2,
     recap: {
-      title: "Here's what to do",
-      closing: "Cancel effective your move date — not earlier. Your policy covers your belongings until everything is out. If you're setting up a new policy, ask about transferring to keep your loyalty discount.",
-      button: "Got it"
+      title: "We're on it",
+      closing: "We'll reach out and get this canceled effective your move date.",
+      button: "Submit"
     }
   },
 
@@ -1516,17 +1384,26 @@ const WORKFLOW_QUALIFYING = {
   // ============================================
   "setup_renters_insurance": {
     workflowId: "setup_renters_insurance",
-    workflowType: "guidance",
     intro: {
       title: "Set up renters insurance at your new place",
       subtitle: "Most leases require it, and it protects your stuff."
     },
-    questions: [],
-    questionCount: 0,
+    questions: [
+      {
+        id: "help_preference",
+        question: "Would you like help finding a policy?",
+        type: "single_select",
+        options: [
+          { id: "help_me", label: "Yes, find me options", icon: "hands.sparkles.fill" },
+          { id: "self", label: "I'll handle it myself", icon: "person.fill" }
+        ]
+      }
+    ],
+    questionCount: 1,
     recap: {
-      title: "Here's your plan",
-      closing: "Set this up 1-2 days before move day. Get quotes from your auto insurer first (bundle discount). Typical cost is $15-30/month. Check if your lease specifies a minimum coverage amount.",
-      button: "Got it"
+      title: "We're on it",
+      closing: "We'll find you the best options and get you set up before move day.",
+      button: "Submit"
     }
   },
 
@@ -1535,17 +1412,39 @@ const WORKFLOW_QUALIFYING = {
   // ============================================
   "transfer_renters_insurance": {
     workflowId: "transfer_renters_insurance",
-    workflowType: "guidance",
     intro: {
       title: "Transfer your renters insurance",
       subtitle: "Update your existing policy to cover your new address."
     },
-    questions: [],
-    questionCount: 0,
+    questions: [
+      {
+        id: "help_preference",
+        question: "Would you like help with this?",
+        type: "single_select",
+        options: [
+          { id: "help_me", label: "Yes, help me transfer it", icon: "hands.sparkles.fill" },
+          { id: "self", label: "I'll handle it myself", icon: "person.fill" }
+        ]
+      },
+      {
+        id: "current_provider",
+        question: "Who is your current provider?",
+        subtitle: "So we know who to contact.",
+        type: "single_select",
+        options: [
+          { id: "state_farm", label: "State Farm", icon: "shield.fill" },
+          { id: "lemonade", label: "Lemonade", icon: "shield.fill" },
+          { id: "progressive", label: "Progressive", icon: "shield.fill" },
+          { id: "allstate", label: "Allstate", icon: "shield.fill" },
+          { id: "other", label: "Other", icon: "ellipsis.circle" }
+        ]
+      }
+    ],
+    questionCount: 2,
     recap: {
-      title: "Here's what to do",
-      closing: "Update 1-2 days before move day so you're covered at both locations during the transition. Your rate may change based on the new location. Confirm your policy covers belongings in transit.",
-      button: "Got it"
+      title: "We're on it",
+      closing: "We'll reach out and get your policy transferred to the new address.",
+      button: "Submit"
     }
   },
 
@@ -1554,18 +1453,24 @@ const WORKFLOW_QUALIFYING = {
   // ============================================
   "cancel_condo_insurance": {
     workflowId: "cancel_condo_insurance",
-    workflowType: "guidance",
     intro: {
       title: "Cancel your condo insurance",
-      subtitle: "Important: cancel effective your closing date, not your move-out date."
+      subtitle: "Cancel effective your closing date, not your move-out date."
     },
-    questions: [],
-    questionCount: 0,
-    recap: {
-      title: "Here's what to do",
-      closing: "Cancel effective closing date — you're liable until the deed transfers. Ask about prorated refund and notify your lender if mortgage escrow pays the premium. Request a cancellation confirmation letter.",
-      button: "Got it"
-    }
+    questions: [
+      { id: "help_preference", question: "Would you like help canceling?", type: "single_select", options: [
+          { id: "help_me", label: "Yes, help me cancel", icon: "hands.sparkles.fill" },
+          { id: "self", label: "I'll handle it myself", icon: "person.fill" }
+      ]},
+      { id: "current_provider", question: "Who is your current provider?", subtitle: "So we know who to contact.", type: "single_select", options: [
+          { id: "state_farm", label: "State Farm", icon: "shield.fill" },
+          { id: "nationwide", label: "Nationwide", icon: "shield.fill" },
+          { id: "liberty_mutual", label: "Liberty Mutual", icon: "shield.fill" },
+          { id: "other", label: "Other", icon: "ellipsis.circle" }
+      ]}
+    ],
+    questionCount: 2,
+    recap: { title: "We're on it", closing: "We'll reach out and get this canceled effective your closing date.", button: "Submit" }
   },
 
   // ============================================
@@ -1573,18 +1478,18 @@ const WORKFLOW_QUALIFYING = {
   // ============================================
   "setup_condo_insurance": {
     workflowId: "setup_condo_insurance",
-    workflowType: "guidance",
     intro: {
       title: "Set up condo insurance at your new place",
-      subtitle: "Your HOA's master policy doesn't cover your unit's interior or your belongings."
+      subtitle: "Your HOA's master policy doesn't cover your unit's interior."
     },
-    questions: [],
-    questionCount: 0,
-    recap: {
-      title: "Here's your plan",
-      closing: "Get your HOA's master policy declaration page first — it tells you where their coverage ends. Get quotes 2-3 weeks before closing. Your lender will require proof of insurance before closing.",
-      button: "Got it"
-    }
+    questions: [
+      { id: "help_preference", question: "Would you like help finding a policy?", type: "single_select", options: [
+          { id: "help_me", label: "Yes, find me options", icon: "hands.sparkles.fill" },
+          { id: "self", label: "I'll handle it myself", icon: "person.fill" }
+      ]}
+    ],
+    questionCount: 1,
+    recap: { title: "We're on it", closing: "We'll find you the best options before closing.", button: "Submit" }
   },
 
   // ============================================
@@ -1592,18 +1497,24 @@ const WORKFLOW_QUALIFYING = {
   // ============================================
   "transfer_condo_insurance": {
     workflowId: "transfer_condo_insurance",
-    workflowType: "guidance",
     intro: {
       title: "Transfer your condo insurance",
       subtitle: "Move your policy from your old condo to the new one."
     },
-    questions: [],
-    questionCount: 0,
-    recap: {
-      title: "Here's what to do",
-      closing: "Call your insurer with both closing dates. You need coverage at both locations during any overlap. Provide the new HOA's master policy so they can adjust your HO-6 coverage.",
-      button: "Got it"
-    }
+    questions: [
+      { id: "help_preference", question: "Would you like help with this?", type: "single_select", options: [
+          { id: "help_me", label: "Yes, help me transfer it", icon: "hands.sparkles.fill" },
+          { id: "self", label: "I'll handle it myself", icon: "person.fill" }
+      ]},
+      { id: "current_provider", question: "Who is your current provider?", subtitle: "So we know who to contact.", type: "single_select", options: [
+          { id: "state_farm", label: "State Farm", icon: "shield.fill" },
+          { id: "nationwide", label: "Nationwide", icon: "shield.fill" },
+          { id: "liberty_mutual", label: "Liberty Mutual", icon: "shield.fill" },
+          { id: "other", label: "Other", icon: "ellipsis.circle" }
+      ]}
+    ],
+    questionCount: 2,
+    recap: { title: "We're on it", closing: "We'll reach out and get your policy transferred.", button: "Submit" }
   },
 
   // ============================================
@@ -1611,18 +1522,25 @@ const WORKFLOW_QUALIFYING = {
   // ============================================
   "cancel_homeowners_insurance": {
     workflowId: "cancel_homeowners_insurance",
-    workflowType: "guidance",
     intro: {
       title: "Cancel your homeowners insurance",
-      subtitle: "Critical: do not cancel before closing."
+      subtitle: "Do not cancel before closing — you're liable until the deed transfers."
     },
-    questions: [],
-    questionCount: 0,
-    recap: {
-      title: "Here's what to do",
-      closing: "Cancel effective your closing date — not your move-out date. Contact your insurer 1-2 weeks before closing but make cancellation contingent on the sale actually closing. If escrow pays the premium, notify your lender.",
-      button: "Got it"
-    }
+    questions: [
+      { id: "help_preference", question: "Would you like help canceling?", type: "single_select", options: [
+          { id: "help_me", label: "Yes, help me cancel", icon: "hands.sparkles.fill" },
+          { id: "self", label: "I'll handle it myself", icon: "person.fill" }
+      ]},
+      { id: "current_provider", question: "Who is your current provider?", subtitle: "So we know who to contact.", type: "single_select", options: [
+          { id: "state_farm", label: "State Farm", icon: "shield.fill" },
+          { id: "nationwide", label: "Nationwide", icon: "shield.fill" },
+          { id: "liberty_mutual", label: "Liberty Mutual", icon: "shield.fill" },
+          { id: "usaa", label: "USAA", icon: "shield.fill" },
+          { id: "other", label: "Other", icon: "ellipsis.circle" }
+      ]}
+    ],
+    questionCount: 2,
+    recap: { title: "We're on it", closing: "We'll reach out and get this canceled effective your closing date.", button: "Submit" }
   },
 
   // ============================================
@@ -1630,18 +1548,18 @@ const WORKFLOW_QUALIFYING = {
   // ============================================
   "setup_homeowners_insurance": {
     workflowId: "setup_homeowners_insurance",
-    workflowType: "guidance",
     intro: {
       title: "Set up homeowners insurance",
-      subtitle: "Your lender requires this before closing — non-negotiable."
+      subtitle: "Your lender requires this before closing."
     },
-    questions: [],
-    questionCount: 0,
-    recap: {
-      title: "Here's your plan",
-      closing: "Start getting quotes 3-4 weeks before closing. Check with your auto insurer first for a bundle discount. Bind at least 1 week before closing and send the declarations page to your lender.",
-      button: "Got it"
-    }
+    questions: [
+      { id: "help_preference", question: "Would you like help finding a policy?", type: "single_select", options: [
+          { id: "help_me", label: "Yes, find me options", icon: "hands.sparkles.fill" },
+          { id: "self", label: "I'll handle it myself", icon: "person.fill" }
+      ]}
+    ],
+    questionCount: 1,
+    recap: { title: "We're on it", closing: "We'll find you the best options. Need this bound at least 1 week before closing.", button: "Submit" }
   },
 
   // ============================================
@@ -1649,18 +1567,25 @@ const WORKFLOW_QUALIFYING = {
   // ============================================
   "transfer_homeowners_insurance": {
     workflowId: "transfer_homeowners_insurance",
-    workflowType: "guidance",
     intro: {
       title: "Transfer your homeowners insurance",
       subtitle: "Move your coverage from your current home to the new one."
     },
-    questions: [],
-    questionCount: 0,
-    recap: {
-      title: "Here's what to do",
-      closing: "Call your insurer 3-4 weeks before closing. You need coverage at both homes during any overlap. Dwelling coverage will be recalculated for the new property. Send the new declarations page to your lender.",
-      button: "Got it"
-    }
+    questions: [
+      { id: "help_preference", question: "Would you like help with this?", type: "single_select", options: [
+          { id: "help_me", label: "Yes, help me transfer it", icon: "hands.sparkles.fill" },
+          { id: "self", label: "I'll handle it myself", icon: "person.fill" }
+      ]},
+      { id: "current_provider", question: "Who is your current provider?", subtitle: "So we know who to contact.", type: "single_select", options: [
+          { id: "state_farm", label: "State Farm", icon: "shield.fill" },
+          { id: "nationwide", label: "Nationwide", icon: "shield.fill" },
+          { id: "liberty_mutual", label: "Liberty Mutual", icon: "shield.fill" },
+          { id: "usaa", label: "USAA", icon: "shield.fill" },
+          { id: "other", label: "Other", icon: "ellipsis.circle" }
+      ]}
+    ],
+    questionCount: 2,
+    recap: { title: "We're on it", closing: "We'll reach out and get your policy transferred.", button: "Submit" }
   }
 
 };
