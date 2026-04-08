@@ -12,16 +12,16 @@ struct PeezyCardChrome: ViewModifier {
         ZStack {
             ZStack {
                 RoundedRectangle(cornerRadius: 36, style: .continuous)
-                    .foregroundStyle(.regularMaterial)
+                    .foregroundStyle(.ultraThinMaterial)
                 RoundedRectangle(cornerRadius: 36, style: .continuous)
-                    .fill(Color.white.opacity(0.15))
+                    .fill(Color.white.opacity(0.6))
             }
             .overlay(
                 RoundedRectangle(cornerRadius: 36, style: .continuous)
                     .stroke(Color.primary.opacity(0.05), lineWidth: 1)
                     .padding(1)
             )
-            .shadow(color: Color.black.opacity(0.25), radius: 20, x: 0, y: 15)
+            .shadow(color: Color.black.opacity(0.4), radius: 20, x: 0, y: 15)
 
             content
         }

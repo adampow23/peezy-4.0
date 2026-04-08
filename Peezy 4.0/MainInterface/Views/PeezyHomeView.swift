@@ -2,163 +2,18 @@
 //  PeezyHomeView.swift
 //  Peezy
 //
-//  Main home screen with 3-state flow: welcome → task → done
-//  Replaces PeezyStackViewWithWorkflow as the home tab view.
+//  Main home screen with state machine: welcome → task → done
 //
-//  Reuses from PeezyStackView.swift (same module, accessible):
+//  Reuses from HomeBackgroundComponents.swift:
 //  - InteractiveBackground
 //  - LoadingView
 //  - EmptyStateView
 //  - ErrorToast
 //
-//  Reuses from WorkflowCardView.swift (unchanged):
-//  - WorkflowCardView
-//
-//  Reuses from ChatView.swift (unchanged):
-//  - ChatView
-//
-//
 
 import SwiftUI
-
-// MARK: - Interactive Home Task Card
-
-struct InteractiveHomeTaskCard: View {
-    let task: PeezyCard
-    let onStartWorkflow: () -> Void
-    let onSkip: () -> Void
-
-    @State private var dismissOffset: CGFloat = 0
-    @Environment(\.accessibilityReduceMotion) var reduceMotion
-
-    var body: some View {
-        ZStack {
-            // Glass card background
-            ZStack {
-                RoundedRectangle(cornerRadius: 36, style: .continuous)
-                    .foregroundStyle(.regularMaterial)
-                RoundedRectangle(cornerRadius: 36, style: .continuous)
-                    .fill(Color.white.opacity(0.15))
-            }
-            .overlay(
-                RoundedRectangle(cornerRadius: 36, style: .continuous)
-                    .stroke(Color.primary.opacity(0.05), lineWidth: 1) // UX Fix: Standardized to 0.05
-                    .padding(1)
-            )
-            .shadow(color: Color.black.opacity(0.1), radius: 20, x: 0, y: 15)
-
-            // Task content
-            VStack(spacing: 0) {
-                // Header
-                HStack {
-                    Image(systemName: task.icon)
-                        .accessibilityHidden(true)
-                    Text(task.headerLabel)
-                    Spacer()
-                }
-                // UX Fix: Unified with the 12pt uppercase style from other cards
-                .font(.system(size: 12, weight: .bold))
-                .foregroundStyle(.secondary)
-                .tracking(1)
-                .textCase(.uppercase)
-                .padding(.top, 24) // UX Fix: 30 -> 24
-                .padding(.horizontal, 24) // UX Fix: 30 -> 24
-
-                Spacer()
-
-                // Content
-                VStack(alignment: .leading, spacing: 15) {
-                    Text(task.title)
-                        // UX Fix: Standardized to 34pt Large Title
-                        .font(.system(size: 34, weight: .heavy))
-                        .foregroundStyle(PeezyTheme.Colors.deepInk)
-                        .lineLimit(2)
-                        .minimumScaleFactor(0.5)
-                        .fixedSize(horizontal: false, vertical: true)
-
-                    Text(task.subtitle)
-                        // UX Fix: Standardized to 16pt body text
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.6))
-                        .lineLimit(nil)
-                        .minimumScaleFactor(0.8)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .padding(.horizontal, 24) // UX Fix: 30 -> 24
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-                Spacer()
-
-                // Action buttons
-                actionButtons
-            }
-        }
-        .frame(width: 340, height: 500)
-        .offset(x: dismissOffset)
-        .rotationEffect(.degrees(Double(dismissOffset) / 30))
-    }
-
-    // MARK: - Action Buttons
-
-    @ViewBuilder
-    private var actionButtons: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 10) {
-                // Later (skip) — fly off left
-                Button(action: {
-                    PeezyHaptics.light()
-                    withAnimation(reduceMotion ? .easeOut(duration: 0.15) : .easeOut(duration: 0.3)) {
-                        dismissOffset = -500
-                    } completion: {
-                        onSkip()
-                    }
-                }) {
-                    VStack(spacing: 4) {
-                        Image(systemName: "clock.arrow.circlepath")
-                            .font(.system(size: 18))
-                        Text("Later")
-                            .font(.system(size: 12, weight: .medium))
-                    }
-                    .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.5))
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 14)
-                    .background(
-                        RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadius, style: .continuous)
-                            .fill(.regularMaterial)
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadius, style: .continuous)
-                            .stroke(Color.primary.opacity(0.07), lineWidth: 1)
-                    )
-                }
-                .buttonStyle(.peezySecondary)
-
-                // Start task — single primary action for all task types
-                Button(action: {
-                    PeezyHaptics.medium()
-                    onStartWorkflow()
-                }) {
-                    VStack(spacing: 4) {
-                        Image(systemName: "arrow.forward.circle.fill")
-                            .font(.system(size: 18))
-                        Text("Start task")
-                            .font(.system(size: 12, weight: .semibold))
-                    }
-                    .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 14)
-                    .background(
-                        Capsule(style: .continuous)
-                            .fill(PeezyTheme.Colors.deepInk)
-                    )
-                }
-                .buttonStyle(.peezyPrimary)
-            }
-            .padding(.horizontal, 24) // UX Fix: 30 -> 24
-            .padding(.bottom, 24) // UX Fix: 30 -> 24
-        }
-    }
-}
+import FirebaseFirestore
+import FirebaseAuth
 
 // MARK: - PeezyHomeView
 
@@ -180,11 +35,6 @@ struct PeezyHomeView: View {
 
     // Onboarding pagination — tracks current welcome page (0, 1, 2)
     @State private var welcomePage: Int = 0
-
-    // TaskFlow presentation state
-    @State private var showTaskFlow = false
-    @State private var taskFlowCard: PeezyCard? = nil
-    @State private var startWorkflowOnDismiss = false
 
     // Deep ink text color for light theme
     private let deepInk = PeezyTheme.Colors.deepInk
@@ -263,7 +113,7 @@ struct PeezyHomeView: View {
                         ErrorToast(message: errorMessage) {
                             viewModel.error = nil
                         }
-                        .padding(.bottom, 24) // UX Fix: Standardized to 24pt
+                        .padding(.bottom, 24)
                     }
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
@@ -280,8 +130,6 @@ struct PeezyHomeView: View {
             if viewModel.taskQueue.isEmpty && viewModel.state == .loading {
                 Task {
                     await viewModel.loadTasks()
-                    // focusedTask is set before the view appears (onChange won't fire for initial value),
-                    // so we check it here after loading completes and apply it directly.
                     if let task = focusedTask {
                         focusedTask = nil
                         viewModel.focusTask(task)
@@ -295,28 +143,6 @@ struct PeezyHomeView: View {
             }
         }) {
             InventoryFlowView()
-        }
-        .fullScreenCover(isPresented: $showTaskFlow, onDismiss: {
-            taskFlowCard = nil
-            if startWorkflowOnDismiss {
-                startWorkflowOnDismiss = false
-                viewModel.startWorkflowForCurrentTask()
-            }
-        }) {
-            if let card = taskFlowCard {
-                TaskFlowView(
-                    task: card,
-                    userState: userState,
-                    onDismiss: {
-                        showTaskFlow = false
-                    },
-                    onStartWorkflow: {
-                        startWorkflowOnDismiss = true
-                        showTaskFlow = false
-                    }
-                )
-                .environmentObject(subscriptionManager)
-            }
         }
         .onChange(of: focusedTask) { _, task in
             if let task {
@@ -334,7 +160,6 @@ struct PeezyHomeView: View {
                 // Header pinned at top
                 VStack(alignment: .leading, spacing: 15) {
                     Text(welcomePageHeadline)
-                        // UX Fix: Standardized to 34pt
                         .font(.system(size: 34, weight: .heavy))
                         .foregroundStyle(PeezyTheme.Colors.deepInk)
                         .lineLimit(2)
@@ -344,19 +169,18 @@ struct PeezyHomeView: View {
                         .fill(Color.primary.opacity(0.15))
                         .frame(width: 50, height: 2)
                 }
-                .padding(.horizontal, 24) // UX Fix: 30 -> 24
-                .padding(.top, 24) // UX Fix: 30 -> 24
+                .padding(.horizontal, 24)
+                .padding(.top, 24)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
                 // Body text centered in remaining space between divider and dots
                 Spacer()
 
                 Text(welcomePageBody)
-                    // UX Fix: Standardized to 16pt
                     .font(.system(size: 16, weight: .medium))
                     .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.6))
                     .fixedSize(horizontal: false, vertical: true)
-                    .padding(.horizontal, 24) // UX Fix: 30 -> 24
+                    .padding(.horizontal, 24)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .id(welcomePage)
                     .transition(.opacity)
@@ -379,7 +203,7 @@ struct PeezyHomeView: View {
                     Text("Swipe to continue")
                         .font(.caption)
                         .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.3))
-                        .padding(.bottom, 24) // UX Fix: 30 -> 24
+                        .padding(.bottom, 24)
                         .accessibilityAction(named: "Next page") {
                             withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.3)) {
                                 welcomePage += 1
@@ -389,8 +213,8 @@ struct PeezyHomeView: View {
                     PeezyAssessmentButton("Start My First Task") {
                         viewModel.dismissFirstTimeWelcome()
                     }
-                    .padding(.horizontal, 24) // UX Fix: 30 -> 24
-                    .padding(.bottom, 24) // UX Fix: 30 -> 24
+                    .padding(.horizontal, 24)
+                    .padding(.bottom, 24)
                 }
             }
         }
@@ -444,36 +268,30 @@ struct PeezyHomeView: View {
                 Spacer()
 
                 VStack(alignment: .leading, spacing: 15) {
-                    // Greeting
                     Text(viewModel.greetingText)
-                        // UX Fix: Standardized to 34pt
                         .font(.system(size: 34, weight: .heavy))
                         .foregroundStyle(PeezyTheme.Colors.deepInk)
                         .lineLimit(2)
                         .minimumScaleFactor(0.5)
 
-                    // Thin accent divider
                     Rectangle()
                         .fill(Color.primary.opacity(0.15))
                         .frame(width: 50, height: 2)
 
-                    // Today's count only
                     Text(viewModel.dailyGreetingSubtitle)
-                        // UX Fix: Standardized to 16pt
                         .font(.system(size: 16, weight: .medium))
                         .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.6))
                 }
-                .padding(.horizontal, 24) // UX Fix: 30 -> 24
+                .padding(.horizontal, 24)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
                 Spacer()
 
-                // Get Started button
                 PeezyAssessmentButton("Get started") {
                     viewModel.startNextTask()
                 }
-                .padding(.horizontal, 24) // UX Fix: 30 -> 24
-                .padding(.bottom, 24) // UX Fix: 30 -> 24
+                .padding(.horizontal, 24)
+                .padding(.bottom, 24)
             }
         }
     }
@@ -486,36 +304,30 @@ struct PeezyHomeView: View {
                 Spacer()
 
                 VStack(alignment: .leading, spacing: 15) {
-                    // Greeting
                     Text(viewModel.returningGreeting)
-                        // UX Fix: Standardized to 34pt
                         .font(.system(size: 34, weight: .heavy))
                         .foregroundStyle(PeezyTheme.Colors.deepInk)
                         .lineLimit(2)
                         .minimumScaleFactor(0.5)
 
-                    // Thin accent divider
                     Rectangle()
                         .fill(Color.primary.opacity(0.15))
                         .frame(width: 50, height: 2)
 
-                    // Progress
                     Text(viewModel.returningMidDaySubtitle)
-                        // UX Fix: Standardized to 16pt
                         .font(.system(size: 16, weight: .medium))
                         .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.6))
                 }
-                .padding(.horizontal, 24) // UX Fix: 30 -> 24
+                .padding(.horizontal, 24)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
                 Spacer()
 
-                // Pick up where I left off
                 PeezyAssessmentButton("Pick up where I left off") {
                     viewModel.startNextTask()
                 }
-                .padding(.horizontal, 24) // UX Fix: 30 -> 24
-                .padding(.bottom, 24) // UX Fix: 30 -> 24
+                .padding(.horizontal, 24)
+                .padding(.bottom, 24)
             }
         }
     }
@@ -525,7 +337,6 @@ struct PeezyHomeView: View {
     @ViewBuilder
     private var activeTaskContent: some View {
         if viewModel.isStartingWorkflow || viewModel.workflowManager.isLoading {
-            // Loading workflow questions
             VStack(spacing: 20) {
                 ProgressView()
                     .scaleEffect(1.5)
@@ -534,93 +345,69 @@ struct PeezyHomeView: View {
                     .font(.headline)
                     .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.8))
             }
-        } else if viewModel.isInWorkflow {
-            // Workflow card (existing WorkflowCardView, unchanged)
-            workflowContent
         } else if let task = viewModel.currentTask {
-            // Simple task card — no workflow, just complete
-            simpleTaskCard(task: task)
-        }
-    }
-
-    // MARK: - Workflow Content
-
-    private var workflowContent: some View {
-        VStack(spacing: 16) {
-            // Workflow card (centered, constrained to match other cards)
-            ForEach(viewModel.workflowManager.workflowCards) { card in
-                WorkflowCardView(
-                    card: card,
-                    answers: viewModel.workflowManager.answers,
-                    onContinue: {
-                        viewModel.handleWorkflowContinue()
-                    },
-                    onSelect: { questionId, optionId, isExclusive in
-                        viewModel.handleWorkflowSelect(
-                            questionId: questionId,
-                            optionId: optionId,
-                            isExclusive: isExclusive
-                        )
-                    },
-                    onComplete: {
+            let sequence = TaskCardSequenceBuilder.build(
+                task: task,
+                isSubscribed: subscriptionManager.isSubscribed,
+                qualifying: viewModel.workflowManager.loadedQualifying,
+                userState: userState
+            )
+            PeezyTaskCardStackView(
+                sequence: sequence,
+                userState: userState,
+                onComplete: {
+                    if sequence.needsWorkflowContinue {
                         viewModel.completeWorkflowTask()
+                    } else {
+                        viewModel.completeCurrentTask()
                     }
-                )
-                .frame(width: 340, height: 500)
-                .transition(.asymmetric(
-                    insertion: .scale(scale: 0.9).combined(with: .opacity),
-                    removal: .move(edge: .leading).combined(with: .opacity)
-                ))
-            }
-
-            // Skip option
-            Button(action: { viewModel.skipCurrentTask() }) {
-                Text("Skip for now")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .frame(minWidth: 44, minHeight: 44)
-                    .padding(.horizontal, 8)
-            }
-            .padding(.top, 4)
-
-            // Workflow error
-            if let workflowError = viewModel.workflowManager.error {
-                Label(workflowError, systemImage: "exclamationmark.triangle.fill")
-                    .font(.caption)
-                    .foregroundStyle(.orange)
-                    .padding(.horizontal, 30)
-            }
+                },
+                onSkip: { viewModel.skipCurrentTask() },
+                onSubmit: { fields, transferChoice in
+                    submitTaskFromCard(fields: fields, transferChoice: transferChoice)
+                },
+                onWorkflowContinue: { viewModel.handleWorkflowContinue() }
+            )
         }
-        .animation(.spring(response: 0.4), value: viewModel.workflowManager.workflowCards.count)
     }
 
-    // MARK: - Simple Task Card
+    // MARK: - Task Submission (absorbed from TaskFlowView)
 
-    private func simpleTaskCard(task: PeezyCard) -> some View {
-        InteractiveHomeTaskCard(
-            task: task,
-            onStartWorkflow: {
-                let taskType = task.taskType ?? ""
-                let actionType = task.actionType ?? ""
-                if actionType == "in-app-inventory" {
-                    if subscriptionManager.isSubscribed {
-                        viewModel.showInventoryScanner = true
-                    } else {
-                        taskFlowCard = task
-                        showTaskFlow = true
-                    }
-                } else if !subscriptionManager.isSubscribed {
-                    taskFlowCard = task
-                    showTaskFlow = true
-                } else if taskType == "research" || taskType == "transfer_cancel" || taskType == "provide_info" || taskType == "survey" {
-                    taskFlowCard = task
-                    showTaskFlow = true
-                } else {
-                    viewModel.startWorkflowForCurrentTask()
-                }
-            },
-            onSkip: { viewModel.skipCurrentTask() }
+    private func submitTaskFromCard(fields: [String: String], transferChoice: String?) {
+        guard let task = viewModel.currentTask else { return }
+
+        // Fire webhook (fire-and-forget, failure is silent)
+        WebhookService.sendTaskSubmission(
+            userId: userState?.userId ?? "unknown",
+            userName: userState?.name ?? "Unknown",
+            taskId: task.taskId ?? "unknown",
+            taskTitle: task.title,
+            taskType: task.taskType ?? "unknown",
+            confirmedFields: fields,
+            transferChoice: transferChoice
         )
+
+        // Write to Firestore
+        guard let userId = Auth.auth().currentUser?.uid,
+              let taskId = task.taskId else { return }
+
+        let db = Firestore.firestore()
+        let taskRef = db.collection("users").document(userId)
+            .collection("tasks").document(taskId)
+
+        Task {
+            do {
+                try await taskRef.updateData([
+                    "status": "PendingPeezy",
+                    "confirmedFields": fields,
+                    "submittedAt": FieldValue.serverTimestamp()
+                ])
+            } catch {
+                await MainActor.run {
+                    viewModel.error = "Submission failed. Please check your connection and try again."
+                }
+            }
+        }
     }
 
     // MARK: - Daily Complete Card
@@ -633,7 +420,6 @@ struct PeezyHomeView: View {
 
                     VStack(alignment: .leading, spacing: 15) {
                         Text("You're all done\nfor today!")
-                            // UX Fix: Standardized to 34pt
                             .font(.system(size: 34, weight: .heavy))
                             .foregroundStyle(PeezyTheme.Colors.deepInk)
                             .lineLimit(3)
@@ -644,26 +430,24 @@ struct PeezyHomeView: View {
                             .frame(width: 50, height: 2)
 
                         Text(viewModel.celebrationSubtext)
-                            // UX Fix: Standardized to 16pt
                             .font(.system(size: 16, weight: .medium))
                             .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.6))
                             .lineLimit(3)
                             .fixedSize(horizontal: false, vertical: true)
                     }
-                    .padding(.horizontal, 24) // UX Fix: 30 -> 24
+                    .padding(.horizontal, 24)
                     .frame(maxWidth: .infinity, alignment: .leading)
 
                     Spacer()
 
-                    // Subtle "keep going" — not a CTA, just an option
                     if !viewModel.allActiveTasks.isEmpty {
                         PeezyAssessmentButton(viewModel.currentBatchOffset > 0 ? "Keep going?" :
                             "Want to get ahead?") {
                             confettiActive = false
                             viewModel.getAhead()
                         }
-                        .padding(.horizontal, 24) // UX Fix: 30 -> 24
-                        .padding(.bottom, 24) // UX Fix: 30 -> 24
+                        .padding(.horizontal, 24)
+                        .padding(.bottom, 24)
                     }
                 }
             }
@@ -690,7 +474,6 @@ struct PeezyHomeView: View {
 
                     let name = viewModel.userState?.name ?? ""
                     Text(name.isEmpty ? "You're all set!" : "You're all set, \(name)!")
-                        // UX Fix: Standardized to 34pt
                         .font(.system(size: 34, weight: .heavy))
                         .foregroundStyle(PeezyTheme.Colors.deepInk)
                         .lineLimit(2)
@@ -701,12 +484,11 @@ struct PeezyHomeView: View {
                         .frame(width: 50, height: 2)
 
                     Text(viewModel.allCompleteSubtext)
-                        // UX Fix: Standardized to 16pt
                         .font(.system(size: 16, weight: .medium))
                         .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.6))
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                .padding(.horizontal, 24) // UX Fix: 30 -> 24
+                .padding(.horizontal, 24)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
                 Spacer()
