@@ -228,17 +228,14 @@ struct PeezyTaskCardView: View {
 
             Spacer()
 
-            // Multi-select: show Continue when selection exists
-            // Single-select: auto-advances, button hidden
-            if data.mode == .multi && !selectedAnswers.isEmpty {
-                PeezyAssessmentButton("Continue") {
+            if data.mode == .multi {
+                PeezyAssessmentButton(selectedAnswers.isEmpty ? "None" : "Continue") {
                     onPrimary()
                 }
                 .padding(.horizontal, 24)
                 .padding(.bottom, 24)
-                .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
             } else {
-                // Reserve button space to prevent layout shift
+                // Single-select: auto-advances on tap, button hidden
                 PeezyAssessmentButton("Continue") {}
                     .padding(.horizontal, 24)
                     .padding(.bottom, 24)
