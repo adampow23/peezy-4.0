@@ -198,67 +198,47 @@ struct PeezyTaskCardStackView: View {
     }
 }
 
-// MARK: - Preview
 
-#Preview("Full Task Sequence") {
-    let sequence = TaskCardSequence(
-        id: "preview",
-        task: PeezyCard(
-            type: .task,
-            title: "Book Movers",
-            subtitle: "Find the right movers for your move"
-        ),
-        cards: [
-            .tiles(TaskCardTilesData(
-                cardId: "t1", category: "Moving", headerIcon: "shippingbox",
-                title: "Any really heavy items?", body: "These need special equipment.",
-                tiles: [
-                    TileOption(id: "piano", label: "Piano / Organ", icon: "pianokeys"),
-                    TileOption(id: "safe", label: "Gun Safe / Safe", icon: "lock.shield"),
-                    TileOption(id: "hot_tub", label: "Hot Tub / Spa", icon: "drop.fill")
-                ],
-                mode: .multi, answerKey: "heavy_items", workflowQuestionId: "heavy_items"
-            )),
-            .tiles(TaskCardTilesData(
-                cardId: "t2", category: "Moving", headerIcon: "shippingbox",
-                title: "Need storage?", body: nil,
-                tiles: [
-                    TileOption(id: "yes", label: "Yes", icon: "archivebox"),
-                    TileOption(id: "no", label: "No", icon: "xmark.circle")
-                ],
-                mode: .single, answerKey: "storage_needed", workflowQuestionId: "storage_needed"
-            )),
-            .tiles(TaskCardTilesData(
-                cardId: "t3", category: "Moving", headerIcon: "shippingbox",
-                title: "Tell us about your storage", body: nil,
-                tiles: [
-                    TileOption(id: "5x5_full", label: "Small (5×5) — full", icon: "square.grid.2x2.fill"),
-                    TileOption(id: "10x10_partial", label: "Medium (10×10) — partial", icon: "square.grid.3x3")
-                ],
-                mode: .single, answerKey: "storage_details", workflowQuestionId: "storage_details",
-                showWhen: CardCondition(answerKey: "storage_needed", requiredValues: ["yes"])
-            )),
-            .summary(TaskCardSummaryData(
-                cardId: "t4", category: "Moving", headerIcon: "shippingbox",
-                title: "Here's what we've got",
-                body: "We'll find the top 3 companies and get you quotes.",
-                primaryLabel: "Request Quotes"
-            ))
-        ],
-        isPaywallGated: false,
-        needsWorkflowContinue: true,
-        showVerifiedBadge: true
-    )
+// MARK: - Preview Sandbox
 
-    ZStack {
-        InteractiveBackground().ignoresSafeArea()
-        PeezyTaskCardStackView(
-            sequence: sequence,
-            userState: nil,
-            onComplete: { print("Complete") },
-            onSkip: { print("Skip") },
-            onSubmit: { fields, choice in print("Submit: \(fields)") },
-            onWorkflowContinue: { print("Workflow continue") }
-        )
+#if DEBUG
+struct TaskStackSandbox: View {
+    @State private var selectedIndex = 0
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Picker("Test Scenario", selection: $selectedIndex) {
+                ForEach(0..<TaskPreviewData.allSequences.count, id: \.self) { i in
+                    Text(TaskPreviewData.allSequences[i].name).tag(i)
+                }
+            }
+            .pickerStyle(.menu)
+            .padding()
+            .frame(maxWidth: .infinity)
+            .background(Color(uiColor: .systemBackground).shadow(color: .black.opacity(0.1), radius: 5, y: 2))
+            .zIndex(100)
+
+            let selected = TaskPreviewData.allSequences[selectedIndex].sequence
+
+            ZStack {
+                InteractiveBackground().ignoresSafeArea()
+
+                PeezyTaskCardStackView(
+                    sequence: selected,
+                    userState: TaskPreviewData.sampleUserState,
+                    onComplete: { print("✅ Completed: \(selected.id)") },
+                    onSkip: { print("⏭ Skipped: \(selected.id)") },
+                    onSubmit: { fields, choice in print("📋 Submitted: \(fields), choice: \(choice ?? "none")") },
+                    onWorkflowContinue: { print("➡️ Workflow continued") }
+                )
+                .id(selected.id)
+            }
+        }
     }
 }
+
+#Preview("Interactive Sandbox") {
+    TaskStackSandbox()
+}
+#endif
+

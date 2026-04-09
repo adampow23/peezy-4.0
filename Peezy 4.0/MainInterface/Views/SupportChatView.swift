@@ -10,24 +10,23 @@ struct SupportChatView: View {
     private let deepInk = PeezyTheme.Colors.deepInk
 
     var body: some View {
-        ZStack {
+        VStack(spacing: 0) {
+            header
+
+            if service.messages.isEmpty {
+                Spacer()
+                emptyState
+                Spacer()
+            } else {
+                messageList
+            }
+
+            inputBar
+        }
+        .background(
             InteractiveBackground()
                 .ignoresSafeArea()
-
-            VStack(spacing: 0) {
-                header
-
-                if service.messages.isEmpty {
-                    Spacer()
-                    emptyState
-                    Spacer()
-                } else {
-                    messageList
-                }
-
-                inputBar
-            }
-        }
+        )
         .onAppear {
             service.startListening()
             service.markSupportMessagesRead()
