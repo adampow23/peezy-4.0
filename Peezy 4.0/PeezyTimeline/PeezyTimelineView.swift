@@ -2,8 +2,8 @@
 //  PeezyTimelineView.swift
 //  Peezy
 //
-//  Tabbed task list: To-Do | In Progress | Later | Done
-//  Data source: TimelineService (unchanged)
+//  Tabbed task list: To-Do | In Progress | Done
+//  Snoozed tasks appear at bottom of To-Do with "Snoozed" badge.
 //
 
 import SwiftUI
@@ -15,40 +15,28 @@ import FirebaseFirestore
 enum TaskTab: String, CaseIterable {
     case todo = "To-Do"
     case inProgress = "In Progress"
-    case later = "Later"
     case done = "Done"
 }
 
 // MARK: - Main View
 
 struct PeezyTaskStream: View {
-    // External data (kept for container compatibility)
     var viewModel: PeezyStackViewModel?
     var userState: UserState?
 
     @EnvironmentObject private var subscriptionManager: SubscriptionManager
 
-    // Navigation callbacks
     var onNavigateToTask: ((PeezyCard) -> Void)?
     var onNavigateHome: (() -> Void)?
 
-    // Task data from Firestore
     @State private var allTasks: [PeezyCard] = []
     @State private var isLoading = true
-
-    // Expandable row tracking
     @State private var expandedTaskId: String? = nil
-
-    // Confetti celebration
     @State private var showConfetti = false
-
-    // Active tab
     @State private var selectedTab: TaskTab = .todo
 
-    // Preview/test data injection
     private var previewTasks: [PeezyCard]?
 
-    // Init for standalone use (preview/testing)
     init() {
         self.viewModel = nil
         self.userState = nil
@@ -57,7 +45,6 @@ struct PeezyTaskStream: View {
         self.previewTasks = nil
     }
 
-    // Init for integrated use
     init(viewModel: PeezyStackViewModel?, userState: UserState?, onNavigateToTask: ((PeezyCard) -> Void)? = nil, onNavigateHome: (() -> Void)? = nil) {
         self.viewModel = viewModel
         self.userState = userState
@@ -66,7 +53,6 @@ struct PeezyTaskStream: View {
         self.previewTasks = nil
     }
 
-    // Init with sample data for previews
     init(previewTasks: [PeezyCard]) {
         self.viewModel = nil
         self.userState = nil
@@ -75,11 +61,11 @@ struct PeezyTaskStream: View {
         self.previewTasks = previewTasks
     }
 
-    // MARK: - Grouped Tasks (4 sections)
+    // MARK: - Grouped Tasks
 
-    /// Section 1: "To-Do" — status = Upcoming (the full todo list)
-    private var allUpcomingTasks: [PeezyCard] {
-        allTasks.filter { card in
+    /// To-Do: upcoming tasks (sorted by urgency) + snoozed tasks at the bottom
+    private var todoTasks: [PeezyCard] {
+        let upcoming = allTasks.filter { card in
             card.status != .completed && card.status != .skipped
             && card.status != .inProgress && card.status != .userInProgress
             && !isSnoozed(card)
@@ -90,15 +76,20 @@ struct PeezyTaskStream: View {
             if ua != ub { return ua > ub }
             return a.title < b.title
         }
+
+        let snoozed = allTasks.filter { isSnoozed($0) }
+            .sorted { ($0.snoozedUntil ?? .distantFuture) < ($1.snoozedUntil ?? .distantFuture) }
+
+        return upcoming + snoozed
     }
 
-    /// Section 2a: "You're on it" — status = UserInProgress
+    /// "You're on it" — status = UserInProgress
     private var userInProgressTasks: [PeezyCard] {
         allTasks.filter { $0.status == .userInProgress }
             .sorted { ($0.userInProgressReturnDate ?? .distantFuture) < ($1.userInProgressReturnDate ?? .distantFuture) }
     }
 
-    /// Section 2b: "Peezy is on it" — status = InProgress
+    /// "Peezy is on it" — status = InProgress
     private var inProgressTasks: [PeezyCard] {
         allTasks.filter { $0.status == .inProgress }
             .sorted { a, b in
@@ -109,13 +100,7 @@ struct PeezyTaskStream: View {
             }
     }
 
-    /// Section 3: "Later" — status = Snoozed
-    private var snoozedTasks: [PeezyCard] {
-        allTasks.filter { isSnoozed($0) }
-            .sorted { ($0.snoozedUntil ?? .distantFuture) < ($1.snoozedUntil ?? .distantFuture) }
-    }
-
-    /// Section 4: "Done" — status = Completed
+    /// Completed tasks
     private var completedTasks: [PeezyCard] {
         allTasks.filter { $0.status == .completed }
     }
@@ -133,9 +118,8 @@ struct PeezyTaskStream: View {
 
     private func taskCount(for tab: TaskTab) -> Int {
         switch tab {
-        case .todo:       return allUpcomingTasks.count
+        case .todo:       return todoTasks.count
         case .inProgress: return userInProgressTasks.count + inProgressTasks.count
-        case .later:      return snoozedTasks.count
         case .done:       return completedTasks.count
         }
     }
@@ -163,14 +147,14 @@ struct PeezyTaskStream: View {
                     tabContent
                 }
             }
-            // Confetti celebration for task completion
+
             if showConfetti {
                 ConfettiView(isActive: $showConfetti, intensity: .high)
                     .allowsHitTesting(false)
                     .ignoresSafeArea()
             }
         }
-        .edgesIgnoringSafeArea(.bottom)
+        .ignoresSafeArea(.container, edges: .bottom)
         .task {
             if let previewTasks {
                 allTasks = previewTasks
@@ -195,7 +179,7 @@ struct PeezyTaskStream: View {
         HStack {
             Text(headerTitle)
                 .font(PeezyTheme.Typography.title2)
-                .foregroundColor(PeezyTheme.Colors.deepInk)
+                .foregroundStyle(PeezyTheme.Colors.deepInk)
 
             Spacer()
 
@@ -233,13 +217,13 @@ struct PeezyTaskStream: View {
                         HStack(spacing: 5) {
                             Text(tab.rawValue)
                                 .font(selectedTab == tab ? PeezyTheme.Typography.footnoteMedium : PeezyTheme.Typography.footnote)
-                                .foregroundColor(selectedTab == tab ? PeezyTheme.Colors.deepInk : PeezyTheme.Colors.deepInk.opacity(0.4))
+                                .foregroundStyle(selectedTab == tab ? PeezyTheme.Colors.deepInk : PeezyTheme.Colors.deepInk.opacity(0.4))
 
                             let count = taskCount(for: tab)
                             if count > 0 {
                                 Text("\(count)")
                                     .font(PeezyTheme.Typography.captionMedium)
-                                    .foregroundColor(selectedTab == tab ? PeezyTheme.Colors.deepInk : PeezyTheme.Colors.deepInk.opacity(0.4))
+                                    .foregroundStyle(selectedTab == tab ? PeezyTheme.Colors.deepInk : PeezyTheme.Colors.deepInk.opacity(0.4))
                                     .padding(.horizontal, 5)
                                     .padding(.vertical, 2)
                                     .background(
@@ -249,11 +233,10 @@ struct PeezyTaskStream: View {
                             }
                         }
 
-                        // Underline indicator
                         Rectangle()
                             .fill(selectedTab == tab ? PeezyTheme.Colors.deepInk : Color.clear)
                             .frame(height: 2)
-                            .cornerRadius(1)
+                            .clipShape(.rect(cornerRadius: 1))
                     }
                     .frame(maxWidth: .infinity)
                 }
@@ -274,10 +257,10 @@ struct PeezyTaskStream: View {
             LazyVStack(spacing: 0) {
                 switch selectedTab {
                 case .todo:
-                    if allUpcomingTasks.isEmpty {
+                    if todoTasks.isEmpty {
                         tabEmptyState(message: "All caught up!")
                     } else {
-                        ForEach(allUpcomingTasks) { task in
+                        ForEach(todoTasks) { task in
                             TaskListRow(
                                 task: task,
                                 isExpanded: expandedTaskId == task.id,
@@ -320,21 +303,6 @@ struct PeezyTaskStream: View {
                         }
                     }
 
-                case .later:
-                    if snoozedTasks.isEmpty {
-                        tabEmptyState(message: "Nothing snoozed")
-                    } else {
-                        ForEach(snoozedTasks) { task in
-                            TaskListRow(
-                                task: task,
-                                isExpanded: expandedTaskId == task.id,
-                                onExpand: { toggleExpand(task.id) },
-                                onStart: onStartHandler(for: task),
-                                onComplete: nil
-                            )
-                        }
-                    }
-
                 case .done:
                     if completedTasks.isEmpty {
                         tabEmptyState(message: "No completed tasks yet")
@@ -367,9 +335,8 @@ struct PeezyTaskStream: View {
         HStack(spacing: 6) {
             Text(title)
                 .font(PeezyTheme.Typography.captionMedium)
-                .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.4))
+                .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.4))
                 .tracking(0.5)
-
             Spacer()
         }
         .padding(.horizontal, 8)
@@ -382,7 +349,7 @@ struct PeezyTaskStream: View {
     private func tabEmptyState(message: String) -> some View {
         Text(message)
             .font(PeezyTheme.Typography.callout)
-            .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.4))
+            .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.4))
             .frame(maxWidth: .infinity)
             .padding(.top, 60)
     }
@@ -405,9 +372,9 @@ struct PeezyTaskStream: View {
     private func markTaskComplete(_ task: PeezyCard) {
         guard let userId = Auth.auth().currentUser?.uid else { return }
 
-        // Trigger confetti
         showConfetti = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+        Task {
+            try? await Task.sleep(for: .seconds(3.0))
             showConfetti = false
         }
 
@@ -418,9 +385,7 @@ struct PeezyTaskStream: View {
             "status": "Completed",
             "completedAt": FieldValue.serverTimestamp()
         ]) { error in
-            if let error = error {
-                print("Failed to mark task complete: \(error.localizedDescription)")
-            } else {
+            if error == nil {
                 withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                     if let index = allTasks.firstIndex(where: { $0.id == task.id }) {
                         allTasks[index].status = .completed
@@ -441,9 +406,7 @@ struct PeezyTaskStream: View {
             "status": "Upcoming",
             "completedAt": FieldValue.delete()
         ]) { error in
-            if let error = error {
-                print("Failed to undo task completion: \(error.localizedDescription)")
-            } else {
+            if error == nil {
                 withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                     if let index = allTasks.firstIndex(where: { $0.id == task.id }) {
                         allTasks[index].status = .upcoming
@@ -454,7 +417,7 @@ struct PeezyTaskStream: View {
         }
     }
 
-    // MARK: - Empty State (no tasks at all)
+    // MARK: - Empty State
 
     private var emptyState: some View {
         VStack(spacing: 16) {
@@ -537,7 +500,7 @@ struct TaskListRow: View {
                         .frame(width: 48, height: 48)
                     Image(systemName: iconForCategory(task.taskCategory))
                         .font(.system(size: 20, weight: .regular))
-                        .foregroundColor(isCompleted ? PeezyTheme.Colors.deepInk.opacity(0.3) : PeezyTheme.Colors.deepInk.opacity(0.7))
+                        .foregroundStyle(isCompleted ? PeezyTheme.Colors.deepInk.opacity(0.3) : PeezyTheme.Colors.deepInk.opacity(0.7))
                 }
                 .padding(.top, 4)
 
@@ -545,7 +508,7 @@ struct TaskListRow: View {
                     HStack(alignment: .top) {
                         Text(task.title)
                             .font(PeezyTheme.Typography.bodyMedium)
-                            .foregroundColor(isCompleted ? PeezyTheme.Colors.deepInk.opacity(0.4) : PeezyTheme.Colors.deepInk)
+                            .foregroundStyle(isCompleted ? PeezyTheme.Colors.deepInk.opacity(0.4) : PeezyTheme.Colors.deepInk)
                             .strikethrough(isCompleted, color: PeezyTheme.Colors.deepInk.opacity(0.3))
                             .lineLimit(2)
                             .fixedSize(horizontal: false, vertical: true)
@@ -554,7 +517,7 @@ struct TaskListRow: View {
 
                         Image(systemName: "chevron.down")
                             .font(PeezyTheme.Typography.captionMedium)
-                            .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.3))
+                            .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.3))
                             .rotationEffect(.degrees(isExpanded ? -180 : 0))
                             .animation(.spring(response: 0.4, dampingFraction: 0.75, blendDuration: 0), value: isExpanded)
                             .padding(.top, 4)
@@ -563,18 +526,18 @@ struct TaskListRow: View {
                     if !task.subtitle.isEmpty && !isCompleted {
                         Text(task.subtitle)
                             .font(PeezyTheme.Typography.callout)
-                            .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.5))
+                            .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.5))
                             .lineSpacing(4)
                             .lineLimit(isExpanded ? nil : 2)
                     }
 
-                    // Status badge for non-upcoming tasks
+                    // Status badges
                     if isUserInProgress || isInProgress || isSnoozed {
                         HStack {
                             if isUserInProgress {
                                 Text("You're on it")
                                     .font(PeezyTheme.Typography.captionMedium)
-                                    .foregroundColor(PeezyTheme.Colors.infoBlue)
+                                    .foregroundStyle(PeezyTheme.Colors.infoBlue)
                                     .padding(.horizontal, 8)
                                     .padding(.vertical, 4)
                                     .background(PeezyTheme.Colors.infoBlue.opacity(0.1))
@@ -582,7 +545,7 @@ struct TaskListRow: View {
                             } else if isInProgress {
                                 Text("Peezy is on it")
                                     .font(PeezyTheme.Typography.captionMedium)
-                                    .foregroundColor(PeezyTheme.Colors.accentBlue)
+                                    .foregroundStyle(PeezyTheme.Colors.accentBlue)
                                     .padding(.horizontal, 8)
                                     .padding(.vertical, 4)
                                     .background(PeezyTheme.Colors.accentBlue.opacity(0.1))
@@ -590,7 +553,7 @@ struct TaskListRow: View {
                             } else if isSnoozed {
                                 Text("Snoozed")
                                     .font(PeezyTheme.Typography.captionMedium)
-                                    .foregroundColor(PeezyTheme.Colors.warningOrange)
+                                    .foregroundStyle(PeezyTheme.Colors.warningOrange)
                                     .padding(.horizontal, 8)
                                     .padding(.vertical, 4)
                                     .background(PeezyTheme.Colors.warningOrange.opacity(0.1))
@@ -613,7 +576,6 @@ struct TaskListRow: View {
 
             // Expanded buttons
             if isExpanded {
-                // Start button for upcoming/snoozed tasks
                 if !isCompleted && !isInProgress && !isUserInProgress, let onStart {
                     PeezyAssessmentButton("Open Task") {
                         onStart()
@@ -623,7 +585,6 @@ struct TaskListRow: View {
                     .transition(.opacity.combined(with: .move(edge: .top)))
                 }
 
-                // Mark as completed for "You're on it" tasks
                 if isUserInProgress, let onComplete {
                     PeezyAssessmentButton("Mark as completed") {
                         PeezyHaptics.medium()
@@ -634,16 +595,13 @@ struct TaskListRow: View {
                     .transition(.opacity.combined(with: .move(edge: .top)))
                 }
 
-                // Undo — subtle link style for completed tasks
+                // Undo — same button style as other actions
                 if isCompleted, let onUndo {
-                    Button(action: {
+                    PeezyAssessmentButton("Undo") {
                         PeezyHaptics.light()
                         onUndo()
-                    }) {
-                        Text("Undo")
-                            .font(.subheadline)
-                            .foregroundStyle(Color.gray)
                     }
+                    .padding(.horizontal, 20)
                     .padding(.bottom, 24)
                     .transition(.opacity.combined(with: .move(edge: .top)))
                 }
@@ -691,72 +649,40 @@ struct TaskListRow: View {
 #Preview {
     PeezyTaskStream(previewTasks: [
         PeezyCard(
-            id: "1",
-            type: .task,
+            id: "1", type: .task,
             title: "Book Professional Movers",
-            subtitle: "Research and reserve a moving company. Get at least three quotes from licensed, insured movers and compare pricing, availability, and reviews.",
-            priority: .high,
-            status: .upcoming,
+            subtitle: "Research and reserve a moving company.",
+            priority: .high, status: .upcoming,
             dueDate: Calendar.current.date(byAdding: .day, value: 5, to: Date()),
             taskCategory: "moving"
         ),
         PeezyCard(
-            id: "2",
-            type: .task,
+            id: "2", type: .task,
             title: "Set Up Mail Forwarding",
-            subtitle: "Visit USPS.com or your local post office to forward mail from your current address to your new one.",
-            priority: .normal,
-            status: .upcoming,
-            dueDate: Calendar.current.date(byAdding: .day, value: 10, to: Date()),
+            subtitle: "Forward mail from your current address to your new one.",
+            priority: .normal, status: .upcoming,
             taskCategory: "administrative"
         ),
         PeezyCard(
-            id: "3a",
-            type: .task,
-            title: "Pack Kitchen Items",
-            subtitle: "Wrap dishes, glasses, and small appliances. Use plenty of padding.",
-            priority: .normal,
-            status: .userInProgress,
-            taskCategory: "packing",
-            userInProgressDate: Date(),
-            userInProgressReturnDate: Calendar.current.date(byAdding: .day, value: 3, to: Date())
-        ),
-        PeezyCard(
-            id: "3",
-            type: .task,
+            id: "3", type: .task,
             title: "Transfer Utilities",
             subtitle: "Contact your electric, gas, water, and internet providers.",
-            priority: .urgent,
-            status: .inProgress,
-            dueDate: Date(),
+            priority: .urgent, status: .inProgress,
             taskCategory: "utilities"
         ),
         PeezyCard(
-            id: "5",
-            type: .task,
+            id: "4", type: .task,
             title: "Hire a Cleaning Service",
-            subtitle: "Schedule a deep clean of your old place before move-out.",
-            priority: .normal,
-            status: .snoozed,
+            subtitle: "Schedule a deep clean of your old place.",
+            priority: .normal, status: .snoozed,
             snoozedUntil: Calendar.current.date(byAdding: .day, value: 3, to: Date()),
             taskCategory: "services"
         ),
         PeezyCard(
-            id: "6",
-            type: .task,
+            id: "5", type: .task,
             title: "Declutter & Donate",
-            subtitle: "Go room by room and sort items into keep, donate, and discard piles.",
-            priority: .normal,
-            status: .completed,
-            taskCategory: "packing"
-        ),
-        PeezyCard(
-            id: "7",
-            type: .task,
-            title: "Gather Packing Supplies",
-            subtitle: "Stock up on boxes, tape, bubble wrap, and markers.",
-            priority: .low,
-            status: .completed,
+            subtitle: "Sort items into keep, donate, and discard piles.",
+            priority: .normal, status: .completed,
             taskCategory: "packing"
         )
     ])

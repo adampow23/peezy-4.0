@@ -6,6 +6,7 @@ struct ConfirmCardContent: View {
     let data: TaskCardConfirmData
     let userState: UserState?
     let showVerifiedBadge: Bool
+    let showBackButton: Bool
     let onConfirm: ([String: String]) -> Void
     let onBack: () -> Void
 
@@ -15,48 +16,47 @@ struct ConfirmCardContent: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Header
-            if showVerifiedBadge {
-                HStack(spacing: 6) {
+            // Header — shows task name, same pattern as all other cards
+            HStack(spacing: 6) {
+                if showBackButton {
+                    Button(action: {
+                        PeezyHaptics.light()
+                        onBack()
+                    }) {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.5))
+                            .frame(width: 24, height: 24)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.trailing, 4)
+                }
+
+                if showVerifiedBadge {
                     Image(systemName: "checkmark.shield.fill")
                         .font(.system(size: 11))
                         .foregroundStyle(PeezyTheme.Colors.successGreen)
-                    Text("PEEZY VERIFIED")
-                        .font(.system(size: 12, weight: .bold))
-                        .tracking(1.5)
-                        .foregroundStyle(PeezyTheme.Colors.successGreen)
-                    Spacer()
                 }
-                .padding(.top, 24)
-                .padding(.horizontal, 24)
-            } else {
-                HStack(spacing: 6) {
-                    Image(systemName: data.headerIcon)
-                        .font(.system(size: 11))
-                    Text(data.category.uppercased())
-                        .font(.system(size: 12, weight: .bold))
-                        .tracking(1.5)
-                    Spacer()
-                }
-                .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.5))
-                .padding(.top, 24)
-                .padding(.horizontal, 24)
-            }
 
-            // Title
+                Text(data.taskTitle.uppercased())
+                    .font(.system(size: 12, weight: .bold))
+                    .tracking(1.5)
+                    .foregroundStyle(showVerifiedBadge ? PeezyTheme.Colors.successGreen : PeezyTheme.Colors.deepInk.opacity(0.5))
+
+                Spacer()
+            }
+            .padding(.top, 24)
+            .padding(.horizontal, 24)
+
+            // Title — clean, no "For: XYZ"
             VStack(alignment: .leading, spacing: 6) {
-                Text("Just to confirm...")
+                Text("Just to confirm")
                     .font(.system(size: 34, weight: .heavy))
                     .foregroundStyle(PeezyTheme.Colors.deepInk)
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
                     .accessibilityAddTraits(.isHeader)
-
-                Text("For: \(data.taskTitle)")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
 
                 Rectangle()
                     .fill(Color.black.opacity(0.15))
@@ -66,7 +66,7 @@ struct ConfirmCardContent: View {
             .padding(.horizontal, 24)
             .padding(.top, 12)
 
-            // Scrollable fields
+            // Scrollable fields — keyboard avoidance via scrollDismissesKeyboard
             ScrollView {
                 VStack(spacing: 20) {
                     ForEach(data.fields) { field in
@@ -77,6 +77,7 @@ struct ConfirmCardContent: View {
                 .padding(.vertical, 16)
             }
             .scrollIndicators(.hidden)
+            .scrollDismissesKeyboard(.interactively)
 
             // Buttons
             VStack(spacing: 12) {
@@ -140,7 +141,7 @@ struct ConfirmCardContent: View {
                 Spacer()
 
                 if case .userInput = field.fieldType {
-                    // Always editable
+                    // Always editable — no toggle needed
                 } else {
                     Button(isEditing ? "Done" : "Edit") {
                         PeezyHaptics.light()

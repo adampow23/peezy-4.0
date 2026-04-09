@@ -1,8 +1,6 @@
 import Foundation
 
-// MARK: - Card Condition (for conditional skip)
-// When present on a card spec, the card is only shown if the user's
-// previous answers match the condition. Otherwise advance() skips it.
+// MARK: - Card Condition
 
 struct CardCondition: Equatable {
     let answerKey: String
@@ -45,8 +43,6 @@ enum TaskCardSpec: Identifiable, Equatable {
         }
     }
 
-    /// Condition that must be met for this card to show.
-    /// If nil, card always shows. If present, advance() checks answers.
     var showWhen: CardCondition? {
         switch self {
         case .tiles(let d): return d.showWhen
@@ -66,16 +62,29 @@ struct TaskCardTitleData: Equatable {
     let cardId: String
     let category: String
     let headerIcon: String
+    let taskTitle: String
     let title: String
     let body: String
     let primaryLabel: String
     let secondaryLabel: String?
+
+    init(cardId: String, category: String, headerIcon: String, taskTitle: String = "", title: String, body: String, primaryLabel: String, secondaryLabel: String? = nil) {
+        self.cardId = cardId
+        self.category = category
+        self.headerIcon = headerIcon
+        self.taskTitle = taskTitle
+        self.title = title
+        self.body = body
+        self.primaryLabel = primaryLabel
+        self.secondaryLabel = secondaryLabel
+    }
 }
 
 struct TaskCardInfoData: Equatable {
     let cardId: String
     let category: String
     let headerIcon: String
+    let taskTitle: String
     let title: String
     let body: String
     let primaryLabel: String
@@ -83,10 +92,11 @@ struct TaskCardInfoData: Equatable {
     let linkURL: String?
     let linkLabel: String?
 
-    init(cardId: String, category: String, headerIcon: String, title: String, body: String, primaryLabel: String, showWhen: CardCondition? = nil, linkURL: String? = nil, linkLabel: String? = nil) {
+    init(cardId: String, category: String, headerIcon: String, taskTitle: String = "", title: String, body: String, primaryLabel: String, showWhen: CardCondition? = nil, linkURL: String? = nil, linkLabel: String? = nil) {
         self.cardId = cardId
         self.category = category
         self.headerIcon = headerIcon
+        self.taskTitle = taskTitle
         self.title = title
         self.body = body
         self.primaryLabel = primaryLabel
@@ -107,13 +117,14 @@ struct TaskCardTilesData: Equatable {
     let answerKey: String
     let workflowQuestionId: String?
     let showWhen: CardCondition?
+    let taskTitle: String
 
     enum TileMode: Equatable {
         case single
         case multi
     }
 
-    init(cardId: String, category: String, headerIcon: String, title: String, body: String? = nil, tiles: [TileOption], mode: TileMode, answerKey: String, workflowQuestionId: String? = nil, showWhen: CardCondition? = nil) {
+    init(cardId: String, category: String, headerIcon: String, title: String, body: String? = nil, tiles: [TileOption], mode: TileMode, answerKey: String, workflowQuestionId: String? = nil, showWhen: CardCondition? = nil, taskTitle: String = "") {
         self.cardId = cardId
         self.category = category
         self.headerIcon = headerIcon
@@ -124,6 +135,7 @@ struct TaskCardTilesData: Equatable {
         self.answerKey = answerKey
         self.workflowQuestionId = workflowQuestionId
         self.showWhen = showWhen
+        self.taskTitle = taskTitle
     }
 }
 
@@ -150,6 +162,14 @@ struct TaskCardConfirmData: Equatable {
     let taskTitle: String
     let fields: [ConfirmField]
 
+    init(cardId: String, category: String, headerIcon: String, taskTitle: String = "", fields: [ConfirmField]) {
+        self.cardId = cardId
+        self.category = category
+        self.headerIcon = headerIcon
+        self.taskTitle = taskTitle
+        self.fields = fields
+    }
+
     static func == (lhs: TaskCardConfirmData, rhs: TaskCardConfirmData) -> Bool {
         lhs.cardId == rhs.cardId
     }
@@ -159,7 +179,18 @@ struct TaskCardSummaryData: Equatable {
     let cardId: String
     let category: String
     let headerIcon: String
+    let taskTitle: String
     let title: String
     let body: String
     let primaryLabel: String
+
+    init(cardId: String, category: String, headerIcon: String, taskTitle: String = "", title: String, body: String, primaryLabel: String) {
+        self.cardId = cardId
+        self.category = category
+        self.headerIcon = headerIcon
+        self.taskTitle = taskTitle
+        self.title = title
+        self.body = body
+        self.primaryLabel = primaryLabel
+    }
 }
