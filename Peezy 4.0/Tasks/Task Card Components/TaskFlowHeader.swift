@@ -17,7 +17,7 @@ struct TaskFlowHeader: View {
     var onBack: (() -> Void)? = nil
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(alignment: .center, spacing: 6) {
             if showBack, let onBack {
                 Button(action: {
                     PeezyHaptics.light()
@@ -26,10 +26,14 @@ struct TaskFlowHeader: View {
                     Image(systemName: "chevron.left")
                         .font(.system(size: 14, weight: .bold))
                         .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.5))
+                        // Visual frame remains tight to match the design system
                         .frame(width: 24, height: 24)
-                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                // UX Ergonomic Fix: Expands the invisible tap target for better thumb accuracy
+                .padding(.vertical, 10)
+                .padding(.trailing, 10)
+                .contentShape(Rectangle())
             }
 
             Spacer()
@@ -38,6 +42,9 @@ struct TaskFlowHeader: View {
                 .font(.system(size: 12, weight: .bold))
                 .tracking(1.5)
                 .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.5))
+                // UX Typography Fix: Prevents long task names from truncating with "..."
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
         }
         .padding(.top, 24)
         .padding(.horizontal, 24)

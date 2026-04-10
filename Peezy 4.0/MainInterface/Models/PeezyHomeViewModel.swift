@@ -106,6 +106,93 @@ final class PeezyHomeViewModel {
 
     var showInventoryScanner = false
 
+    // MARK: - New Task Flow System
+
+    /// When set, the View presents the standalone task flow via fullScreenCover
+    var showTaskFlow = false
+
+    /// The workflowId (or taskId) of the flow to present
+    var taskFlowWorkflowId: String?
+
+    /// WorkflowIds that have new standalone flow files.
+        /// Tasks not in this set fall back to the old WorkflowManager system.
+        private static let newFlowIds: Set<String> = [
+            // Pattern A — Self-service
+            "return_key_fobs_remotes",
+            "schedule_time_off_work",
+            "update_employer_records",
+            "update_drivers_license",
+            "new_drivers_license",
+            "register_vehicle",
+            "photograph_rental_condition",
+            "buy_packing_supplies",
+            "buy_cleaning_supplies",
+            "defrost_freezer",
+            "diy_deep_cleaning",
+            "diy_final_cleaning",
+            // Pattern B — Simple survey
+            "manage_bank",
+            "manage_doctor",
+            "manage_dentist",
+            "manage_vet",
+            "manage_gym",
+            "manage_yoga",
+            "manage_spin",
+            "manage_massage",
+            "manage_golf",
+            "update_credit_card",
+            "update_investment",
+            "update_student_loans",
+            "transfer_pharmacy_records",
+            "transfer_specialists_records",
+            "update_auto_insurance",
+            "cancel_renters_insurance",
+            "setup_renters_insurance",
+            "transfer_renters_insurance",
+            "cancel_condo_insurance",
+            "setup_condo_insurance",
+            "transfer_condo_insurance",
+            "cancel_homeowners_insurance",
+            "setup_homeowners_insurance",
+            "transfer_homeowners_insurance",
+            "forward_mail_usps",
+            "cancel_utilities",
+            "setup_utilities",
+            "transfer_utilities",
+            "begin_school_transfer",
+            "new_school_enrollment",
+            "coa_schools",
+            "setup_daycare",
+            "transfer_daycare",
+            "arrange_parking_new",
+            "arrange_parking_old",
+            "reserve_elevators_new",
+            "reserve_elevators_old",
+            "rent_truck",
+            // Pattern C — Complex survey
+            "book_movers",
+            "book_cleaners",
+            "setup_internet",
+            "sell_items",
+            "remove_items",
+        ]
+
+    /// Returns the new flow ID for a card, or nil if it should use the old system.
+    private func newFlowId(for card: PeezyCard) -> String? {
+        // Check workflowId first (survey/workflow tasks)
+        if let wid = card.workflowId, Self.newFlowIds.contains(wid) {
+            return wid
+        }
+        // Check taskId — convert uppercase catalog ID to lowercase workflow style
+        if let tid = card.taskId {
+            let lowered = tid.lowercased()
+            if Self.newFlowIds.contains(lowered) {
+                return lowered
+            }
+        }
+        return nil
+    }
+
     // MARK: - Workflow Support
 
     var workflowManager = WorkflowManager()
@@ -460,6 +547,15 @@ final class PeezyHomeViewModel {
             return
         }
 
+        // New task flow system — check before old workflow system
+        if let flowId = newFlowId(for: task) {
+            taskFlowWorkflowId = flowId
+            showTaskFlow = true
+            state = .activeTask
+            return
+        }
+
+        // Old system fallback
         if getWorkflowId(for: task) != nil {
             startWorkflowForCurrentTask()
         } else {
@@ -502,7 +598,16 @@ final class PeezyHomeViewModel {
             return
         }
 
-        print("🔴 Starting workflow: \(workflowId)")
+        // New task flow system — check before old workflow system
+        if let flowId = newFlowId(for: task) {
+            taskFlowWorkflowId = flowId
+            showTaskFlow = true
+            state = .activeTask
+            return
+        }
+
+        // Old system fallback
+        print("🔴 Starting workflow (old system): \(workflowId)")
         isStartingWorkflow = true
         state = .activeTask
 
@@ -648,6 +753,15 @@ final class PeezyHomeViewModel {
             return
         }
 
+        // New task flow system — check before old workflow system
+        if let flowId = newFlowId(for: task) {
+            taskFlowWorkflowId = flowId
+            showTaskFlow = true
+            state = .activeTask
+            return
+        }
+
+        // Old system fallback
         if getWorkflowId(for: task) != nil {
             startWorkflowForCurrentTask()
         } else {
@@ -655,7 +769,50 @@ final class PeezyHomeViewModel {
         }
     }
 
-    // MARK: - Complete Workflow Task
+    // MARK: - Complete Task Flow (New System)
+
+    /// Called when a new-style task flow completes (user tapped Submit/Done).
+    /// Handles both survey tasks (mark InProgress) and self-service tasks (mark Completed).
+    func completeTaskFlow() {
+        guard let task = currentTask else { return }
+
+        // Determine if this was a self-service task or a survey
+        let isSelfService = task.selfServiceOnly || task.actionType == "off-app"
+
+        Task {
+            if isSelfService {
+                await markTaskCompleted(task)
+            } else {
+                await markTaskInProgress(task)
+            }
+        }
+
+        completedThisSession += 1
+        dailyDoseCompletedCount += 1
+        totalCompletedCount += 1
+        allActiveTasks.removeAll { $0.id == task.id }
+        currentTask = nil
+        showTaskFlow = false
+        taskFlowWorkflowId = nil
+        isFocusedTask = false
+
+        advanceAfterTask()
+    }
+
+    /// Called when user dismisses a new-style task flow (Go back / swipe dismiss).
+    func dismissTaskFlow() {
+        // Put task back at front of queue
+        if let task = currentTask {
+            taskQueue.insert(task, at: 0)
+        }
+        currentTask = nil
+        showTaskFlow = false
+        taskFlowWorkflowId = nil
+        isFocusedTask = false
+        determineHomeState()
+    }
+
+    // MARK: - Complete Workflow Task (Old System)
 
     /// Called when user taps submit on workflow recap card
     func completeWorkflowTask() {

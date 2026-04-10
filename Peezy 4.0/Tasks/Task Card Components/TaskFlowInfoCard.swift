@@ -35,33 +35,38 @@ struct TaskFlowInfoCard: View {
 
             Spacer()
 
-            VStack(alignment: .leading, spacing: 15) {
-                if let cautionIcon {
-                    Image(systemName: cautionIcon)
-                        .font(.system(size: 36))
-                        .foregroundStyle(.yellow)
-                }
+            VStack(alignment: .leading, spacing: 16) {
+                
+                // UX Gestalt Fix: Tightly group the warning icon with the title it belongs to
+                VStack(alignment: .leading, spacing: 8) {
+                    if let cautionIcon {
+                        Image(systemName: cautionIcon)
+                            .font(.system(size: 32, weight: .semibold))
+                            .foregroundStyle(.orange) // Accessibility Fix: Contrast ratio
+                    }
 
-                Text(title)
-                    .font(.system(size: 34, weight: .heavy))
-                    .foregroundStyle(PeezyTheme.Colors.deepInk)
-                    .lineLimit(3)
-                    .minimumScaleFactor(0.7)
-                    .fixedSize(horizontal: false, vertical: true)
+                    Text(title)
+                        .font(.system(size: 34, weight: .heavy))
+                        .foregroundStyle(PeezyTheme.Colors.deepInk)
+                        .lineLimit(3)
+                        .minimumScaleFactor(0.7)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
 
                 accentDivider
 
-                if let boldPrefix {
-                    (Text(boldPrefix).fontWeight(.bold) + Text(" ") + Text(bodyText))
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.6))
-                        .fixedSize(horizontal: false, vertical: true)
-                } else {
-                    Text(bodyText)
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.6))
-                        .fixedSize(horizontal: false, vertical: true)
+                // UX Typography Fix: Consolidate modifiers and apply line spacing for readability
+                Group {
+                    if let boldPrefix {
+                        (Text(boldPrefix).fontWeight(.bold) + Text(" ") + Text(bodyText))
+                    } else {
+                        Text(bodyText)
+                    }
                 }
+                .font(.system(size: 16, weight: .medium))
+                .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.6))
+                .lineSpacing(4) // Gives dense warning text necessary breathing room
+                .fixedSize(horizontal: false, vertical: true)
             }
             .padding(.horizontal, 24)
             .frame(maxWidth: .infinity, alignment: .leading)

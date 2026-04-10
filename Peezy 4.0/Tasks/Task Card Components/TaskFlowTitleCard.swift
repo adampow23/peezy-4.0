@@ -33,7 +33,8 @@ struct TaskFlowTitleCard: View {
 
             Spacer()
 
-            VStack(alignment: .leading, spacing: 15) {
+            // UX Gestalt Fix: Standardized to 16pt spacing to match Info and Summary cards
+            VStack(alignment: .leading, spacing: 16) {
                 Text(title)
                     .font(.system(size: 34, weight: .heavy))
                     .foregroundStyle(PeezyTheme.Colors.deepInk)
@@ -48,6 +49,8 @@ struct TaskFlowTitleCard: View {
                         .font(.system(size: 16, weight: .medium))
                         .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.6))
                         .lineLimit(6)
+                        // UX Typography Fix: Breathing room for introductory paragraphs
+                        .lineSpacing(4)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -62,12 +65,18 @@ struct TaskFlowTitleCard: View {
                 }
 
                 if let secondaryLabel, let onSecondary {
-                    Button(secondaryLabel) {
+                    Button(action: {
+                        PeezyHaptics.light() // UX Polish: Haptic feedback for secondary actions
                         onSecondary()
+                    }) {
+                        Text(secondaryLabel)
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                            // UX Hitbox Fix: Expands the invisible tap target to the edges
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                            .contentShape(Rectangle())
                     }
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .frame(minHeight: 44)
+                    .buttonStyle(.plain)
                 }
             }
             .padding(.horizontal, 24)

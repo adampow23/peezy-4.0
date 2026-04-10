@@ -1,5 +1,5 @@
 //
-//  ManageBank.swift
+//  TransferSpecialistsFlow.swift
 //  Peezy 4.0
 //
 //  Created by Adam Powell on 4/10/26.
@@ -7,18 +7,13 @@
 
 import SwiftUI
 
-// MARK: - Manage Bank Flow
-// PATTERN: Simple Survey / Transfer-Cancel
+// MARK: - Transfer Specialists Flow
+// PATTERN: Simple Survey
 // Short flow: Title → Single question → Summary with submission.
-// Use this as the reference for: manage_gym, manage_doctor, manage_dentist,
-// manage_vet, manage_yoga, manage_spin, manage_massage, manage_golf,
-// update_credit_card, update_investment, update_student_loans,
-// transfer_pharmacy_records, transfer_specialists_records,
-// and all other 1-question survey workflows.
 
-struct ManageBankFlow: View {
-    let taskTitle = "Handle your bank account"
-    let workflowId = "manage_bank"
+struct TransferSpecialistsFlow: View {
+    let taskTitle = "Transfer specialist records"
+    let workflowId = "transfer_specialists_records"
 
     let userId: String
     let onComplete: () -> Void
@@ -65,26 +60,26 @@ struct ManageBankFlow: View {
         case titleCard:
             TaskFlowTitleCard(
                 taskTitle: taskTitle,
-                title: "Handle your bank account",
-                bodyText: "Let's figure out what you need for your bank account.",
+                title: "Specialist records",
+                bodyText: "Let's handle your specialist records.",
                 primaryLabel: "Continue",
                 secondaryLabel: "Go back",
                 onPrimary: { advance() },
                 onSecondary: { onDismiss() }
             )
 
-        // ── Card 1: What would you like to do? (single-select) ──
+        // ── Card 1: Action (single-select) ──
         case actionCard:
             TaskFlowTilesCard(
                 taskTitle: taskTitle,
-                question: "What would you like to do with your bank account?",
+                question: "What would you like to do?",
                 options: [
-                    FlowOption(id: "update_address", label: "Update my address", icon: "pencil.line",
-                               subtitle: "Keep your current account, just update the address on file"),
-                    FlowOption(id: "close_open_new", label: "Close & open new account", icon: "arrow.triangle.swap",
-                               subtitle: "Close this account and set up a new one near your new home"),
+                    FlowOption(id: "transfer_records", label: "Transfer records to new specialist", icon: "doc.arrow.forward",
+                               subtitle: "We'll help coordinate the transfer"),
+                    FlowOption(id: "update_address", label: "Update address with current specialist", icon: "pencil.line",
+                               subtitle: "Keep your current specialist"),
                     FlowOption(id: "already_handled", label: "Already handled", icon: "checkmark.circle",
-                               subtitle: "I've already taken care of this"),
+                               subtitle: "I've already taken care of this")
                 ],
                 selectedIds: answers["action"] ?? [],
                 showBack: true,
@@ -167,8 +162,8 @@ struct ManageBankFlow: View {
 // MARK: - Preview
 
 #if DEBUG
-#Preview("Manage Bank Flow") {
-    ManageBankFlow(
+#Preview("Transfer Specialists Flow") {
+    TransferSpecialistsFlow(
         userId: "preview-user",
         onComplete: { print("✅ Complete") },
         onDismiss: { print("⏪ Dismissed") }

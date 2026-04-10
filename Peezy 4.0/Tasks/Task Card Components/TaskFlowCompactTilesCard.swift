@@ -39,7 +39,7 @@ struct TaskFlowCompactTilesCard: View {
             .padding(.horizontal, 24)
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            Spacer()
+            // UX Ergonomic Fix: Single spacer pushes the tiles down into the Thumb Zone
             Spacer()
 
             // Side-by-side tiles
@@ -54,7 +54,7 @@ struct TaskFlowCompactTilesCard: View {
                 }
             }
             .padding(.horizontal, 24)
-            .padding(.bottom, 32)
+            .padding(.bottom, 24) // Standardized to 24pt to match all other bottom-anchored UI
         }
     }
 
@@ -73,9 +73,15 @@ struct TaskFlowCompactTilesCard: View {
                 Text(option.label)
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(isSelected ? .white : PeezyTheme.Colors.deepInk)
+                    // UX Typography Fix: Prevents truncation on smaller screens
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.8)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 24)
+            .padding(.horizontal, 8) // Added slight horizontal padding to keep text off edges
             .background(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .fill(isSelected ? PeezyTheme.Colors.deepInk : Color.clear)
@@ -93,5 +99,6 @@ struct TaskFlowCompactTilesCard: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(option.label)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }

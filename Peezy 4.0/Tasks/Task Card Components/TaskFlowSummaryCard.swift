@@ -34,29 +34,39 @@ struct TaskFlowSummaryCard: View {
 
             Spacer()
 
-            VStack(alignment: .leading, spacing: 15) {
-                Image(systemName: "checkmark.seal.fill")
-                    .font(.system(size: 40))
-                    .foregroundStyle(PeezyTheme.Colors.successGreen)
+            VStack(alignment: .leading, spacing: 16) {
+                
+                // UX Gestalt Fix: Tightly group the Hero Icon with the Victory Title
+                VStack(alignment: .leading, spacing: 12) {
+                    Image(systemName: "checkmark.seal.fill")
+                        .font(.system(size: 56)) // UX Polish: Restored true Hero icon scale
+                        .foregroundStyle(PeezyTheme.Colors.successGreen)
 
-                Text(title)
-                    .font(.system(size: 34, weight: .heavy))
-                    .foregroundStyle(PeezyTheme.Colors.deepInk)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.7)
+                    Text(title)
+                        .font(.system(size: 34, weight: .heavy))
+                        .foregroundStyle(PeezyTheme.Colors.deepInk)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.7)
+                }
 
                 accentDivider
 
-                Text(bodyText)
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.6))
-                    .fixedSize(horizontal: false, vertical: true)
+                // UX Typography Fix: Group reading text and apply line spacing
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(bodyText)
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.6))
+                        .lineSpacing(4) // Breathing room for multi-line summaries
+                        .fixedSize(horizontal: false, vertical: true)
 
-                if let subtext {
-                    Text(subtext)
-                        .font(.system(size: 13, weight: .regular))
-                        .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.35))
-                        .padding(.top, 4)
+                    if let subtext {
+                        Text(subtext)
+                            .font(.system(size: 13, weight: .regular))
+                            .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.4))
+                            .lineSpacing(2)
+                            .fixedSize(horizontal: false, vertical: true) // Prevents vertical truncation
+                            .padding(.top, 4)
+                    }
                 }
             }
             .padding(.horizontal, 24)

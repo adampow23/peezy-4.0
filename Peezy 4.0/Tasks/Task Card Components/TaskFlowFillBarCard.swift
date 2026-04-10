@@ -39,6 +39,9 @@ struct TaskFlowFillBarCard: View {
             .padding(.horizontal, 24)
             .frame(maxWidth: .infinity, alignment: .leading)
 
+            // UX Ergonomic Fix: Pushes tiles into the Thumb Zone
+            Spacer()
+
             // Fill bar tiles
             VStack(spacing: 10) {
                 ForEach(options) { option in
@@ -51,9 +54,9 @@ struct TaskFlowFillBarCard: View {
                 }
             }
             .padding(.horizontal, 24)
-            .padding(.top, 16)
 
-            Spacer()
+            // UX Ergonomic Fix: Glues tiles to the bottom buttons
+            Spacer().frame(height: 24)
 
             // Hidden button for layout consistency
             PeezyAssessmentButton("Continue") {}
@@ -74,6 +77,9 @@ struct TaskFlowFillBarCard: View {
             onTap()
         }) {
             GeometryReader { geo in
+                let fillWidth = geo.size.width * percent
+                let textPadding: CGFloat = 16
+                
                 ZStack(alignment: .leading) {
                     // Background
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
@@ -82,37 +88,28 @@ struct TaskFlowFillBarCard: View {
                     // Fill bar
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
                         .fill(PeezyTheme.Colors.deepInk)
-                        .frame(width: geo.size.width * percent)
+                        .frame(width: fillWidth)
 
-                    // Label
-                    HStack(spacing: 0) {
-                        if textInside {
-                            Spacer()
-                                .frame(width: max(0, geo.size.width * percent - labelWidth(option.label) - 16))
-                            Text(option.label)
-                                .font(.system(size: 16, weight: .semibold))
-                                .foregroundStyle(.white)
-                                .padding(.leading, 4)
-                        } else {
-                            Spacer()
-                                .frame(width: geo.size.width * percent + 12)
-                            Text(option.label)
-                                .font(.system(size: 16, weight: .semibold))
-                                .foregroundStyle(PeezyTheme.Colors.deepInk)
-                        }
-                        Spacer()
-                    }
+                    // Text & Checkmark Cluster (Replaces fragile labelWidth math)
+                    HStack(spacing: 8) {
+                        Text(option.label)
+                            .font(.system(size: 16, weight: .semibold))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
 
-                    // Selected checkmark
-                    if isSelected {
-                        HStack {
-                            Spacer()
+                        if isSelected {
                             Image(systemName: "checkmark")
                                 .font(.system(size: 14, weight: .bold))
-                                .foregroundStyle(textInside ? .white : PeezyTheme.Colors.deepInk)
-                                .padding(.trailing, 16)
                         }
                     }
+                    .foregroundStyle(textInside ? .white : PeezyTheme.Colors.deepInk)
+                    .padding(.trailing, textInside ? textPadding : 0)
+                    // UX Robust Layout: Dynamically bounds the text to prevent overflow
+                    .frame(
+                        width: textInside ? fillWidth : max(0, geo.size.width - fillWidth - textPadding),
+                        alignment: textInside ? .trailing : .leading
+                    )
+                    .offset(x: textInside ? 0 : fillWidth + 12)
                 }
             }
             .frame(height: 52)
@@ -123,9 +120,5 @@ struct TaskFlowFillBarCard: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(option.label)
-    }
-
-    private func labelWidth(_ text: String) -> CGFloat {
-        CGFloat(text.count) * 11
     }
 }

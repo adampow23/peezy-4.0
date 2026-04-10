@@ -55,6 +55,9 @@ struct TaskFlowTilesCard: View {
             .padding(.horizontal, 24)
             .frame(maxWidth: .infinity, alignment: .leading)
 
+            // UX Ergonomic Fix: This spacer pushes the tiles down into the Thumb Zone
+            Spacer()
+
             // Option tiles
             VStack(spacing: 10) {
                 ForEach(options) { option in
@@ -67,9 +70,9 @@ struct TaskFlowTilesCard: View {
                 }
             }
             .padding(.horizontal, 24)
-            .padding(.top, 12)
 
-            Spacer()
+            // UX Ergonomic Fix: Fixed 24pt gap glues the tiles to the top of the button
+            Spacer().frame(height: 24)
 
             // Bottom button
             if mode == .multi {
@@ -109,14 +112,19 @@ struct TaskFlowTilesCard: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(option.label)
                         .font(.system(size: 16, weight: .medium))
+                        // UX Typography Fix: Prevents truncation by allowing vertical expansion
+                        .fixedSize(horizontal: false, vertical: true)
+                    
                     if let subtitle = option.subtitle {
                         Text(subtitle)
                             .font(.system(size: 13, weight: .regular))
                             .foregroundStyle(isSelected ? .white.opacity(0.7) : .secondary)
+                            // UX Typography Fix: Prevents subtitle truncation
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
 
-                Spacer()
+                Spacer(minLength: 12) // Ensures text never physically overlaps the checkmark
 
                 if isSelected {
                     Image(systemName: "checkmark")

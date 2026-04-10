@@ -144,6 +144,17 @@ struct PeezyHomeView: View {
         }) {
             InventoryFlowView()
         }
+        // New task flow system — presents standalone per-task flows
+        .fullScreenCover(isPresented: $viewModel.showTaskFlow) {
+            if let flowId = viewModel.taskFlowWorkflowId {
+                TaskFlowRouter.flow(
+                    for: flowId,
+                    userId: Auth.auth().currentUser?.uid ?? "",
+                    onComplete: { viewModel.completeTaskFlow() },
+                    onDismiss: { viewModel.dismissTaskFlow() }
+                )
+            }
+        }
         .onChange(of: focusedTask) { _, task in
             if let task {
                 focusedTask = nil
@@ -345,6 +356,9 @@ struct PeezyHomeView: View {
                     .font(.headline)
                     .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.8))
             }
+        } else if viewModel.showTaskFlow {
+            // New task flow is being presented via fullScreenCover — show nothing here
+            EmptyView()
         } else if let task = viewModel.currentTask {
             let sequence = TaskCardSequenceBuilder.build(
                 task: task,
