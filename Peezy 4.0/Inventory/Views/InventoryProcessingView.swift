@@ -38,11 +38,7 @@ struct InventoryProcessingView: View {
                         .rotationEffect(.degrees(iconRotation))
                 }
 
-                // Typewriter-style message
-                TypingText(
-                    fullText: displayedMessage,
-                    speed: 0.03
-                )
+                Text(displayedMessage)
                 .font(PeezyTheme.Typography.title2)
                 .foregroundStyle(PeezyTheme.Colors.deepInk)
                 .multilineTextAlignment(.center)

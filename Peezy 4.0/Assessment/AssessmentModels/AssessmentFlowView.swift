@@ -117,55 +117,43 @@ struct AssessmentFlowView: View {
         switch step {
         // --- Section 1: Basics ---
         case .userName:              UserName()
-        case .moveConcerns:          MoveConcerns()
         case .moveDate:              MoveDate()
         case .moveDateType:          MoveDateType()
-            
+
         // --- Section 2: Current Home ---
         case .currentRentOrOwn:      CurrentRentOrOwn()
         case .currentDwellingType:   CurrentDwellingType()
         case .currentAddress:        CurrentAddress()
         case .currentFloorAccess:    CurrentFloorAccess()
-        case .currentBedrooms:       CurrentBedrooms()
-            
+
         // --- Section 3: New Home ---
         case .newRentOrOwn:          NewRentOrOwn()
         case .newDwellingType:       NewDwellingType()
         case .newAddress:            NewAddress()
         case .newFloorAccess:        NewFloorAccess()
-        case .newBedrooms:           NewBedrooms()
-            
+
         // --- Section 4: People ---
         case .anyKids:               AnyKids()
         case .childrenInSchool:      ChildrenInSchool()
         case .childrenInDaycare:     ChildrenInDaycare()
         case .hasVet:                HasVet()
-        case .hasVehicles:           HasVehicles()
-        case .hasStorage:            HasStorage()
-        case .storageSize:           StorageSize()
-        case .storageFullness:       StorageFullness()
 
         // --- Section 5: Services ---
         case .servicesIntro:         ServicesIntro()
         case .hireMovers:            HireMovers()
-        case .hirePackers:     HirePackers()
         case .truckRental:           TruckRental()
         case .hasDeclutter:          HasDeclutter()
-        case .wantToSell:            WantToSell()
         case .hireCleaners:          HireCleaners()
-            
+
         // --- Section 6: Accounts ---
         case .addressChangeIntro:    AddressChangeIntro()
         case .financialInstitutions: FinancialInstitutions()
-        case .financialDetails:      FinancialDetails()
         case .healthcareProviders:   HealthcareProviders()
-        case .healthcareDetails:     HealthcareDetails()
         case .fitnessWellness:       FitnessWellness()
-        case .fitnessDetails:        FitnessDetails()
-            
+
         // --- Wrap-up ---
         case .howHeard:              HowHeard()
-            
+
         default:                     EmptyView()
         }
     }

@@ -25,9 +25,6 @@ struct ExplainerTemplate: View {
     // ║  CONTROL BOARD — change any number, see it in preview     ║
     // ╠═══════════════════════════════════════════════════════════╣
     // ║                                                           ║
-    // ║  TYPEWRITER                                               ║
-    var speed: Double = 0.04            //  seconds per character
-    // ║                                                           ║
     // ║  ICON                                                     ║
     var iconSize: CGFloat = 72          // UX Fix: Standardized to 72pt to match SubmittedView hero icons
     var iconColor: Color = PeezyTheme.Colors.deepInk.opacity(0.3)
@@ -49,10 +46,7 @@ struct ExplainerTemplate: View {
 
     // ── STATE ───────────────────────────────────────────────────
     @State private var showIcon = false
-    @State private var headerDone = false
-    @State private var subtextDone = false
     @State private var showButton = false
-    @State private var skipped = false
 
     // ── BODY ────────────────────────────────────────────────────
     var body: some View {
@@ -74,46 +68,17 @@ struct ExplainerTemplate: View {
                     .padding(.bottom, iconBottomPad)
 
                 // ── HEADER ──
-                Group {
-                    if skipped {
-                        Text(header)
-                    } else {
-                        TypingText(
-                            fullText: header,
-                            speed: speed,
-                            visibleColor: PeezyTheme.Colors.deepInk,
-                            onComplete: {
-                                headerDone = true
-                                if subtext == nil { revealButton() }
-                            }
-                        )
-                    }
-                }
+                Text(header)
                 // UX Fix: Standardized to .heavy weight to match all primary titles
-                .font(.system(size: headerFontSize, weight: .heavy))
-                .foregroundColor(PeezyTheme.Colors.deepInk)
-                .lineSpacing(lineSpacing)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, textSidePad)
+                    .font(.system(size: headerFontSize, weight: .heavy))
+                    .foregroundColor(PeezyTheme.Colors.deepInk)
+                    .lineSpacing(lineSpacing)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, textSidePad)
 
                 // ── SUBTEXT ──
                 if let sub = subtext {
-                    if headerDone || skipped {
-                        Group {
-                            if skipped {
-                                Text(sub)
-                            } else {
-                                TypingText(
-                                    fullText: sub,
-                                    speed: speed,
-                                    visibleColor: PeezyTheme.Colors.deepInk.opacity(0.5),
-                                    onComplete: {
-                                        subtextDone = true
-                                        revealButton()
-                                    }
-                                )
-                            }
-                        }
+                    Text(sub)
                         // UX Fix: Added .medium weight to match 16pt body text standard
                         .font(.system(size: subtextFontSize, weight: .medium))
                         .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.5))
@@ -121,13 +86,12 @@ struct ExplainerTemplate: View {
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, textSidePad)
                         .padding(.top, subtextTopPad)
-                    }
                 }
 
                 Spacer()
 
                 // ── CONTINUE BUTTON ──
-                if showButton || skipped {
+                if showButton {
                     PeezyAssessmentButton(buttonText) {
                         onContinue()
                     }
@@ -139,9 +103,9 @@ struct ExplainerTemplate: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .contentShape(Rectangle())
-        .onTapGesture { skip() }
         .onAppear {
             withAnimation { showIcon = true }
+            revealButton()
         }
     }
 
@@ -154,13 +118,6 @@ struct ExplainerTemplate: View {
         }
     }
 
-    private func skip() {
-        guard !skipped else { return }
-        skipped = true
-        headerDone = true
-        subtextDone = true
-        showButton = true
-    }
 }
 
 // ── PREVIEW ─────────────────────────────────────────────────

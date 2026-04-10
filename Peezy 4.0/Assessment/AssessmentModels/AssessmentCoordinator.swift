@@ -21,67 +21,52 @@ import FirebaseAuth
 enum AssessmentInputStep: String, Hashable {
     // Section 1: Basics
     case userName
-    case moveConcerns
     case moveDate
     case moveDateType
-    
+
     // Section 2: Current Home
     case currentRentOrOwn
     case currentDwellingType
     case currentAddress
     // Apartment/Condo branch
     case currentFloorAccess
-    // Shared (both paths)
-    case currentBedrooms
     // Apartment/Condo
     case currentSquareFootage
     // House/Townhouse
     case currentFinishedSqFt
-    
+
     // Section 3: New Home
     case newRentOrOwn
     case newDwellingType
     case newAddress
     // Apartment/Condo branch
     case newFloorAccess
-    // Shared
-    case newBedrooms
     // Apartment/Condo
     case newSquareFootage
     // House/Townhouse
     case newFinishedSqFt
-    
+
     // Section 4: People
     case anyKids
     case childrenInSchool
     case childrenInDaycare
     case hasVet
-    case hasVehicles
-    case hasStorage
-    case storageSize
-    case storageFullness
 
     // Section 5: Services
     case servicesIntro
     case hireMovers
-    case hirePackers
     case truckRental
     case hasDeclutter
-    case wantToSell
     case hireCleaners
-    
+
     // Section 6: Accounts
     case addressChangeIntro
     case financialInstitutions
-    case financialDetails
     case healthcareProviders
-    case healthcareDetails
     case fitnessWellness
-    case fitnessDetails
-    
+
     // Wrap-up
     case howHeard
-    case promoCode
 }
 
 // MARK: - Assessment Node
@@ -231,44 +216,29 @@ class AssessmentCoordinator: ObservableObject {
 
         // Section 1: Basics
         addStep(.userName)
-        addStep(.moveConcerns)
         addStep(.moveDate)
         addStep(.moveDateType)
-        
+
         // Section 2: Current Home
         addStep(.currentRentOrOwn)
         addStep(.currentDwellingType)
         addStep(.currentAddress)
-        
+
         // Branch based on current dwelling type
         let currentDwelling = dataManager.currentDwellingType.lowercased()
         if currentDwelling == "apartment" || currentDwelling == "condo" {
             addStep(.currentFloorAccess)
-            addStep(.currentBedrooms)
-        } else {
-            // House / Townhouse (also default if not yet answered)
-            addStep(.currentBedrooms)
         }
-        
+
         // Section 3: New Home
         addStep(.newRentOrOwn)
         addStep(.newDwellingType)
         addStep(.newAddress)
-        
+
         // Branch based on new dwelling type
         let newDwelling = dataManager.newDwellingType.lowercased()
         if newDwelling == "apartment" || newDwelling == "condo" {
             addStep(.newFloorAccess)
-            addStep(.newBedrooms)
-        } else {
-            addStep(.newBedrooms)
-        }
-
-        // Storage — belongs with home details
-        addStep(.hasStorage)
-        if dataManager.hasStorage.lowercased() == "yes" {
-            addStep(.storageSize)
-            addStep(.storageFullness)
         }
 
         // Section 4: People
@@ -280,28 +250,21 @@ class AssessmentCoordinator: ObservableObject {
 
         addStep(.hasVet)
 
-        addStep(.hasVehicles)
-
         // Section 5: Services
         addStep(.servicesIntro)
         addStep(.hireMovers)
-        if dataManager.hireMovers.lowercased() == "yes" {
-            addStep(.hirePackers)
-        } else if dataManager.hireMovers.lowercased() == "no" {
+        if dataManager.hireMovers.lowercased() == "no" {
             addStep(.truckRental)
         }
         addStep(.hasDeclutter)
-        if dataManager.hasDeclutter.lowercased() == "yes" {
-            addStep(.wantToSell)
-        }
         addStep(.hireCleaners)
-        
+
         // Section 6: Accounts
         addStep(.addressChangeIntro)
         addStep(.financialInstitutions)
         addStep(.healthcareProviders)
         addStep(.fitnessWellness)
-        
+
         // Wrap-up
         addStep(.howHeard)
 
@@ -317,10 +280,7 @@ class AssessmentCoordinator: ObservableObject {
     /// Steps that affect branching — trigger a sequence rebuild when answered.
     private func isBranchingStep(_ step: AssessmentInputStep) -> Bool {
         switch step {
-        case .currentDwellingType, .newDwellingType,
-             .hasStorage, .hireMovers, .hasDeclutter,
-             .financialInstitutions, .healthcareProviders, .fitnessWellness,
-             .anyKids:
+        case .currentDwellingType, .newDwellingType, .hireMovers, .anyKids:
             return true
         default:
             return false
@@ -342,12 +302,6 @@ class AssessmentCoordinator: ObservableObject {
                 subheader: nil
             )
 
-        case .moveConcerns:
-            return InputContext(
-                header: "What are you most hoping Peezy can help you with?",
-                subheader: nil
-            )
-            
         case .moveDate:
             let responseLine: String
             if dataManager.moveConcerns.isEmpty {
@@ -403,12 +357,6 @@ class AssessmentCoordinator: ObservableObject {
                 subheader: nil
             )
             
-        case .currentBedrooms:
-            return InputContext(
-                header: "How many bedrooms?",
-                subheader: nil
-            )
-            
         case .currentSquareFootage:
             return InputContext(
                 header: "Roughly how big is the place?",
@@ -444,12 +392,6 @@ class AssessmentCoordinator: ObservableObject {
         case .newFloorAccess:
             return InputContext(
                 header: "What's access like?",
-                subheader: nil
-            )
-            
-        case .newBedrooms:
-            return InputContext(
-                header: "How many bedrooms at the new place?",
                 subheader: nil
             )
             
@@ -491,30 +433,6 @@ class AssessmentCoordinator: ObservableObject {
                 subheader: nil
             )
 
-        case .hasVehicles:
-            return InputContext(
-                header: "Will any vehicles be moving with you?",
-                subheader: nil
-            )
-
-        case .hasStorage:
-            return InputContext(
-                header: "Are there any items in storage that will be making the move as well?",
-                subheader: nil
-            )
-
-        case .storageSize:
-            return InputContext(
-                header: "How big is the unit?",
-                subheader: nil
-            )
-
-        case .storageFullness:
-            return InputContext(
-                header: "How full is it?",
-                subheader: nil
-            )
-
         // --- SECTION 5: SERVICES ---
 
         case .servicesIntro:
@@ -529,12 +447,6 @@ class AssessmentCoordinator: ObservableObject {
                 subheader: nil
             )
             
-        case .hirePackers:
-            return InputContext(
-                header: "Most moving companies also offer packing services. Interested in getting packing quotes too?",
-                subheader: nil
-            )
-
         case .truckRental:
             return InputContext(
                 header: "Are you planning to rent a moving truck, or do you have that covered?",
@@ -545,12 +457,6 @@ class AssessmentCoordinator: ObservableObject {
             return InputContext(
                 header: "Any items you're planning to part with before the move?",
                 subheader: "Clothes, furniture, electronics — anything you don't want making the trip."
-            )
-
-        case .wantToSell:
-            return InputContext(
-                header: "Are you planning to sell any of those items?",
-                subheader: "We can assist with that process as well as plan b if they don't sell."
             )
 
         case .hireCleaners:
@@ -573,22 +479,10 @@ class AssessmentCoordinator: ObservableObject {
                 subheader: "Tap once for each that you have an account with - if you have more than one of any, each tap will add a new task for you."
             )
 
-        case .financialDetails:
-            return InputContext(
-                header: "Which ones specifically?",
-                subheader: "Start typing and I'll help you find them."
-            )
-
         case .healthcareProviders:
             return InputContext(
                 header: "Now for any health-related accounts?",
                 subheader: "Tap once for each that you have an account with - if you have more than one of any, each tap will add a new task for you."
-            )
-
-        case .healthcareDetails:
-            return InputContext(
-                header: "Which ones specifically?",
-                subheader: nil
             )
 
         case .fitnessWellness:
@@ -597,23 +491,11 @@ class AssessmentCoordinator: ObservableObject {
                 subheader: "Tap once for each that you have an account with - if you have more than one of any, each tap will add a new task for you."
             )
 
-        case .fitnessDetails:
-            return InputContext(
-                header: "Which ones specifically?",
-                subheader: nil
-            )
-            
         // --- WRAP-UP ---
-            
+
         case .howHeard:
             return InputContext(
                 header: "Before we get to the fun stuff, we'd love to know what put Peezy on your radar?",
-                subheader: nil
-            )
-
-        case .promoCode:
-            return InputContext(
-                header: "Got a promo code? Enter it below.",
                 subheader: nil
             )
         }

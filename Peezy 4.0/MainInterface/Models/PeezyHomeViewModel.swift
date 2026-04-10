@@ -3,13 +3,11 @@
 //  Peezy
 //
 //  State machine view model for the main home screen.
-//  Replaces PeezyStackViewModel for the home tab.
 //
-//  States: loading → welcome → activeTask → done
+//  States: loading → welcome → task → done
 //
 //  Dependencies:
-//  - WorkflowManager (existing, unchanged)
-//  - WorkflowService (existing, unchanged)
+//  - WorkflowService (for Firebase submission via per-task flows)
 //  - PeezyCard (existing, unchanged)
 //  - UserState (existing, unchanged)
 //  - FirebaseFirestore, FirebaseAuth
@@ -49,6 +47,7 @@ final class PeezyHomeViewModel {
 
     /// How many tasks completed in this session (for done screen messaging)
     var completedThisSession: Int = 0
+
     // MARK: - Daily Dose State
 
     /// All active tasks (not InProgress) sorted by urgency — full list, not sliced
@@ -72,6 +71,7 @@ final class PeezyHomeViewModel {
     // MARK: - User Context
 
     var userState: UserState?
+
     // MARK: - UserDefaults Keys (per-user, scoped by UID)
 
     private var userId: String {
@@ -106,7 +106,7 @@ final class PeezyHomeViewModel {
 
     var showInventoryScanner = false
 
-    // MARK: - New Task Flow System
+    // MARK: - Task Flow System
 
     /// When set, the View presents the standalone task flow via fullScreenCover
     var showTaskFlow = false
@@ -114,76 +114,73 @@ final class PeezyHomeViewModel {
     /// The workflowId (or taskId) of the flow to present
     var taskFlowWorkflowId: String?
 
-    /// WorkflowIds that have new standalone flow files.
-        /// Tasks not in this set fall back to the old WorkflowManager system.
-        private static let newFlowIds: Set<String> = [
-            // Pattern A — Self-service
-            "return_key_fobs_remotes",
-            "schedule_time_off_work",
-            "update_employer_records",
-            "update_drivers_license",
-            "new_drivers_license",
-            "register_vehicle",
-            "photograph_rental_condition",
-            "buy_packing_supplies",
-            "buy_cleaning_supplies",
-            "defrost_freezer",
-            "diy_deep_cleaning",
-            "diy_final_cleaning",
-            // Pattern B — Simple survey
-            "manage_bank",
-            "manage_doctor",
-            "manage_dentist",
-            "manage_vet",
-            "manage_gym",
-            "manage_yoga",
-            "manage_spin",
-            "manage_massage",
-            "manage_golf",
-            "update_credit_card",
-            "update_investment",
-            "update_student_loans",
-            "transfer_pharmacy_records",
-            "transfer_specialists_records",
-            "update_auto_insurance",
-            "cancel_renters_insurance",
-            "setup_renters_insurance",
-            "transfer_renters_insurance",
-            "cancel_condo_insurance",
-            "setup_condo_insurance",
-            "transfer_condo_insurance",
-            "cancel_homeowners_insurance",
-            "setup_homeowners_insurance",
-            "transfer_homeowners_insurance",
-            "forward_mail_usps",
-            "cancel_utilities",
-            "setup_utilities",
-            "transfer_utilities",
-            "begin_school_transfer",
-            "new_school_enrollment",
-            "coa_schools",
-            "setup_daycare",
-            "transfer_daycare",
-            "arrange_parking_new",
-            "arrange_parking_old",
-            "reserve_elevators_new",
-            "reserve_elevators_old",
-            "rent_truck",
-            // Pattern C — Complex survey
-            "book_movers",
-            "book_cleaners",
-            "setup_internet",
-            "sell_items",
-            "remove_items",
-        ]
+    /// WorkflowIds that have standalone flow files.
+    private static let newFlowIds: Set<String> = [
+        // Pattern A — Self-service
+        "return_key_fobs_remotes",
+        "schedule_time_off_work",
+        "update_employer_records",
+        "update_drivers_license",
+        "new_drivers_license",
+        "register_vehicle",
+        "photograph_rental_condition",
+        "buy_packing_supplies",
+        "buy_cleaning_supplies",
+        "defrost_freezer",
+        "diy_deep_cleaning",
+        "diy_final_cleaning",
+        // Pattern B — Simple survey
+        "manage_bank",
+        "manage_doctor",
+        "manage_dentist",
+        "manage_vet",
+        "manage_gym",
+        "manage_yoga",
+        "manage_spin",
+        "manage_massage",
+        "manage_golf",
+        "update_credit_card",
+        "update_investment",
+        "update_student_loans",
+        "transfer_pharmacy_records",
+        "transfer_specialists_records",
+        "update_auto_insurance",
+        "cancel_renters_insurance",
+        "setup_renters_insurance",
+        "transfer_renters_insurance",
+        "cancel_condo_insurance",
+        "setup_condo_insurance",
+        "transfer_condo_insurance",
+        "cancel_homeowners_insurance",
+        "setup_homeowners_insurance",
+        "transfer_homeowners_insurance",
+        "forward_mail_usps",
+        "cancel_utilities",
+        "setup_utilities",
+        "transfer_utilities",
+        "begin_school_transfer",
+        "new_school_enrollment",
+        "coa_schools",
+        "setup_daycare",
+        "transfer_daycare",
+        "arrange_parking_new",
+        "arrange_parking_old",
+        "reserve_elevators_new",
+        "reserve_elevators_old",
+        "rent_truck",
+        // Pattern C — Complex survey
+        "book_movers",
+        "book_cleaners",
+        "setup_internet",
+        "sell_items",
+        "remove_items",
+    ]
 
-    /// Returns the new flow ID for a card, or nil if it should use the old system.
+    /// Returns the flow ID for a card, or nil if no flow exists.
     private func newFlowId(for card: PeezyCard) -> String? {
-        // Check workflowId first (survey/workflow tasks)
         if let wid = card.workflowId, Self.newFlowIds.contains(wid) {
             return wid
         }
-        // Check taskId — convert uppercase catalog ID to lowercase workflow style
         if let tid = card.taskId {
             let lowered = tid.lowercased()
             if Self.newFlowIds.contains(lowered) {
@@ -192,26 +189,6 @@ final class PeezyHomeViewModel {
         }
         return nil
     }
-
-    // MARK: - Workflow Support
-
-    var workflowManager = WorkflowManager()
-    var isInWorkflow: Bool { workflowManager.isInWorkflow }
-
-    /// Guards against the gap between calling startWorkflow and WorkflowManager setting isLoading
-    var isStartingWorkflow: Bool = false
-
-    // MARK: - Demo Workflow
-
-    enum DemoPhase: Equatable {
-        case intro
-        case question(index: Int)
-        case recap
-    }
-
-    /// Current demo phase — view observes this directly for tooltip display
-    var demoPhase: DemoPhase? = nil
-    var isDemoWorkflow = false
 
     // MARK: - Computed Properties
 
@@ -306,7 +283,6 @@ final class PeezyHomeViewModel {
         dailyDoseCompletedCount >= dailyTarget && dailyTarget > 0
     }
 
-    /// Calendar day number we're on in the plan (1-indexed)
     var dayNumber: Int {
         let firstLaunchStr = UserDefaults.standard.string(forKey: kDailyDoseFirstLaunchDate) ?? todayISOString()
         let formatter = ISO8601DateFormatter()
@@ -317,12 +293,10 @@ final class PeezyHomeViewModel {
         return days + 1
     }
 
-    /// Approximate total plan days (elapsed + remaining)
     var totalPlanDays: Int {
         dayNumber + daysUntilMoveValue
     }
 
-    /// "Today: X of Y done" — shown on welcome card (daily count only, no total)
     var progressText: String {
         if dailyTarget == 0 {
             return "No tasks scheduled today"
@@ -331,7 +305,6 @@ final class PeezyHomeViewModel {
         return "Today: \(done) of \(dailyTarget) done"
     }
 
-    /// Subtext for the daily complete card
     var celebrationSubtext: String {
         if gettingAhead {
             let extraCompleted = completedThisSession - dailyTarget
@@ -346,7 +319,6 @@ final class PeezyHomeViewModel {
         return "Right on schedule. Enjoy the rest of your day."
     }
 
-    /// Text for the allComplete card
     var allCompleteSubtext: String {
         if let days = userState?.daysUntilMove {
             let unit = days == 1 ? "day" : "days"
@@ -378,7 +350,6 @@ final class PeezyHomeViewModel {
         do {
             let db = Firestore.firestore()
 
-            // Same query as PeezyStackViewModel — identical Firestore source
             let snapshot = try await db.collection("users")
                 .document(userId)
                 .collection("tasks")
@@ -396,10 +367,8 @@ final class PeezyHomeViewModel {
                 let statusString = data["status"] as? String ?? "Upcoming"
                 let status = TaskStatus(rawValue: statusString) ?? .upcoming
 
-                // Skip completed/skipped (shouldn't match query, but guard)
                 if status == .completed || status == .skipped { continue }
 
-                // Parse priority
                 let priorityString = data["priority"] as? String ?? "Medium"
                 let priority: PeezyCard.Priority
                 switch priorityString.lowercased() {
@@ -408,7 +377,6 @@ final class PeezyHomeViewModel {
                 default: priority = .normal
                 }
 
-                // Parse dates
                 let dueDate = (data["dueDate"] as? Timestamp)?.dateValue()
                 let snoozedUntil = (data["snoozedUntil"] as? Timestamp)?.dateValue()
                 let lastSnoozedAt = (data["lastSnoozedAt"] as? Timestamp)?.dateValue()
@@ -416,7 +384,6 @@ final class PeezyHomeViewModel {
                 let userInProgressDate = (data["userInProgressDate"] as? Timestamp)?.dateValue()
                 let userInProgressReturnDate = (data["userInProgressReturnDate"] as? Timestamp)?.dateValue()
 
-                // Skip currently snoozed tasks
                 if let snoozedUntil = snoozedUntil, snoozedUntil > now { continue }
 
                 let isVendorTask = (data["category"] as? String)?.lowercased().contains("vendor") ?? false
@@ -453,7 +420,6 @@ final class PeezyHomeViewModel {
                 if card.status == .inProgress {
                     inProgressBuffer.append(card)
                 } else if card.status == .userInProgress {
-                    // UserInProgress: if return date has passed, put back in queue
                     if let returnDate = userInProgressReturnDate, returnDate <= now {
                         card.status = .upcoming
                         card.userInProgressDate = nil
@@ -467,12 +433,10 @@ final class PeezyHomeViewModel {
                 }
             }
 
-            // Separate InProgress and UserInProgress tasks (counted but not queued)
             let inProgressCards = inProgressBuffer
             let userInProgressCards = userInProgressBuffer
             let activeCards = cards
 
-            // Sort active tasks: urgencyPercentage DESC, then title ASC for tiebreak
             let sorted = activeCards.sorted { a, b in
                 let ua = a.urgencyPercentage ?? 0
                 let ub = b.urgencyPercentage ?? 0
@@ -484,37 +448,9 @@ final class PeezyHomeViewModel {
                 self.allActiveTasks = sorted
                 self.inProgressTaskCount = inProgressCards.count
                 self.userInProgressTaskCount = userInProgressCards.count
-                // Slice to today's batch only
                 let batch = Array(sorted.prefix(self.dailyTarget))
                 self.taskQueue = batch
-                // Determine which state to show
                 self.determineHomeState()
-            }
-
-            // Patch any stale task docs missing workflowId — also updates in-memory cards immediately
-            Task {
-                await self.migrateWorkflowIds(tasks: snapshot.documents)
-                // Also patch in-memory cards
-                let workflowMapping: [String: String] = [
-                    "BOOK_MOVERS": "book_movers",
-                    "BOOK_CLEANERS": "book_cleaners",
-                    "SETUP_INTERNET": "setup_internet",
-                    "RENT_TRUCK": "rent_truck"
-                ]
-                await MainActor.run {
-                    for i in self.taskQueue.indices {
-                        if self.taskQueue[i].workflowId == nil,
-                           let mapped = workflowMapping[self.taskQueue[i].taskId ?? ""] {
-                            self.taskQueue[i].workflowId = mapped
-                        }
-                    }
-                    if var current = self.currentTask,
-                       current.workflowId == nil,
-                       let mapped = workflowMapping[current.taskId ?? ""] {
-                        current.workflowId = mapped
-                        self.currentTask = current
-                    }
-                }
             }
 
         } catch {
@@ -527,7 +463,6 @@ final class PeezyHomeViewModel {
 
     // MARK: - Start Next Task
 
-    /// Pulls the next task from the queue and transitions to activeTask state
     func startNextTask() {
         guard !taskQueue.isEmpty else {
             if allActiveTasks.isEmpty {
@@ -547,7 +482,6 @@ final class PeezyHomeViewModel {
             return
         }
 
-        // New task flow system — check before old workflow system
         if let flowId = newFlowId(for: task) {
             taskFlowWorkflowId = flowId
             showTaskFlow = true
@@ -555,96 +489,30 @@ final class PeezyHomeViewModel {
             return
         }
 
-        // Old system fallback
-        if getWorkflowId(for: task) != nil {
-            startWorkflowForCurrentTask()
-        } else {
-            // No workflow — show simple task card
-            state = .activeTask
-        }
+        // No flow found — shouldn't happen for shipped tasks
+        state = .activeTask
     }
 
     // MARK: - Advance After Task
 
-    /// Called after any task action (complete, snooze, I'm on it).
-    /// If the daily quota is met, returns to dailyComplete instead of auto-serving the next task.
     private func advanceAfterTask() {
         if allActiveTasks.isEmpty {
             currentTask = nil
             isFocusedTask = false
             state = .allComplete
         } else if dailyDoseCompletedCount >= dailyTarget {
-            // Quota met — return to celebration/keep-going screen
             currentTask = nil
             isFocusedTask = false
             state = .dailyComplete
         } else if !taskQueue.isEmpty {
-            // Still working through daily dose
             startNextTask()
         } else {
-            // Queue empty but quota not met — recalculate
             determineHomeState()
-        }
-    }
-
-    /// Start or restart the workflow for currentTask — does NOT dequeue from taskQueue.
-    /// Used both by startNextTask() and by the simpleTaskCard retry button.
-    func startWorkflowForCurrentTask() {
-        guard let task = currentTask,
-              let workflowId = getWorkflowId(for: task) else {
-            // Fallback: task has no workflow, just show as active
-            print("🔴 startWorkflowForCurrentTask: no workflowId found, falling back to activeTask")
-            state = .activeTask
-            return
-        }
-
-        // New task flow system — check before old workflow system
-        if let flowId = newFlowId(for: task) {
-            taskFlowWorkflowId = flowId
-            showTaskFlow = true
-            state = .activeTask
-            return
-        }
-
-        // Old system fallback
-        print("🔴 Starting workflow (old system): \(workflowId)")
-        isStartingWorkflow = true
-        state = .activeTask
-
-        Task {
-            await workflowManager.startWorkflow(
-                workflowId: workflowId,
-                workflowTitle: task.title
-            )
-
-            let started = workflowManager.isInWorkflow
-            print("🔴 Workflow started: \(started)")
-            if !started {
-                print("🔴 Workflow FAILED to start. Error: \(workflowManager.error ?? "nil")")
-            }
-
-            // Set up dismissal handler (user cancelled workflow)
-            workflowManager.onWorkflowDismissed = { [weak self] in
-                guard let self = self else { return }
-                // Put task back at front of queue
-                if let task = self.currentTask {
-                    self.taskQueue.insert(task, at: 0)
-                }
-                self.currentTask = nil
-                self.isStartingWorkflow = false
-                self.isFocusedTask = false
-                self.determineHomeState()
-            }
-
-            await MainActor.run {
-                self.isStartingWorkflow = false
-            }
         }
     }
 
     // MARK: - Complete Simple Task
 
-    /// Marks the current non-workflow task as completed
     func completeCurrentTask() {
         guard let task = currentTask else { return }
 
@@ -664,8 +532,6 @@ final class PeezyHomeViewModel {
 
     // MARK: - Mark Task User In Progress ("I'm on it")
 
-    /// Marks the current task as UserInProgress — user is handling it themselves.
-    /// Task returns to the card stack after 3 days.
     func markCurrentTaskUserInProgress() {
         guard let task = currentTask else { return }
 
@@ -677,7 +543,6 @@ final class PeezyHomeViewModel {
 
         dailyDoseCompletedCount += 1
         completedThisSession += 1
-        // UserInProgress tasks stay in allActiveTasks count (they'll come back)
         currentTask = nil
         isFocusedTask = false
 
@@ -686,14 +551,11 @@ final class PeezyHomeViewModel {
 
     // MARK: - Mark Task Peezy Handling ("Peezy, handle this")
 
-    /// Marks the current task as InProgress — Peezy handles it via concierge.
-    /// Reuses existing markTaskInProgress() which writes status: "InProgress" to Firestore.
     func markCurrentTaskPeezyHandling() {
         guard let task = currentTask else { return }
         Task {
             await markTaskInProgress(task)
 
-            // Fire concierge notification (non-blocking, fire-and-forget)
             Task {
                 do {
                     let callable = Functions.functions().httpsCallable("requestConcierge")
@@ -740,9 +602,7 @@ final class PeezyHomeViewModel {
 
     // MARK: - Focus Task (from Task List)
 
-    /// Loads a specific task as the current task, called when user taps Start in task list.
     func focusTask(_ task: PeezyCard) {
-        // Remove from queue if present
         taskQueue.removeAll { $0.id == task.id }
         currentTask = task
         isFocusedTask = true
@@ -753,7 +613,6 @@ final class PeezyHomeViewModel {
             return
         }
 
-        // New task flow system — check before old workflow system
         if let flowId = newFlowId(for: task) {
             taskFlowWorkflowId = flowId
             showTaskFlow = true
@@ -761,22 +620,15 @@ final class PeezyHomeViewModel {
             return
         }
 
-        // Old system fallback
-        if getWorkflowId(for: task) != nil {
-            startWorkflowForCurrentTask()
-        } else {
-            state = .activeTask
-        }
+        state = .activeTask
     }
 
-    // MARK: - Complete Task Flow (New System)
+    // MARK: - Complete Task Flow
 
-    /// Called when a new-style task flow completes (user tapped Submit/Done).
-    /// Handles both survey tasks (mark InProgress) and self-service tasks (mark Completed).
+    /// Called when a task flow completes (user tapped Submit/Done).
     func completeTaskFlow() {
         guard let task = currentTask else { return }
 
-        // Determine if this was a self-service task or a survey
         let isSelfService = task.selfServiceOnly || task.actionType == "off-app"
 
         Task {
@@ -799,9 +651,8 @@ final class PeezyHomeViewModel {
         advanceAfterTask()
     }
 
-    /// Called when user dismisses a new-style task flow (Go back / swipe dismiss).
+    /// Called when user dismisses a task flow (Go back / swipe dismiss).
     func dismissTaskFlow() {
-        // Put task back at front of queue
         if let task = currentTask {
             taskQueue.insert(task, at: 0)
         }
@@ -812,58 +663,11 @@ final class PeezyHomeViewModel {
         determineHomeState()
     }
 
-    // MARK: - Complete Workflow Task (Old System)
-
-    /// Called when user taps submit on workflow recap card
-    func completeWorkflowTask() {
-        // Demo mode — skip Firebase, just reset
-        if isDemoWorkflow {
-            workflowManager.cancelWorkflow()
-            currentTask = nil
-            isDemoWorkflow = false
-            demoPhase = nil
-            isFocusedTask = false
-            determineHomeState()
-            return
-        }
-
-        guard let task = currentTask,
-              let userId = Auth.auth().currentUser?.uid else {
-            error = "User not authenticated"
-            return
-        }
-
-        Task {
-            let success = await workflowManager.completeWorkflow(userId: userId)
-
-            if success {
-                await markTaskInProgress(task)
-                await MainActor.run {
-                    self.completedThisSession += 1
-                    self.dailyDoseCompletedCount += 1
-                    self.totalCompletedCount += 1
-                    self.allActiveTasks.removeAll { $0.id == task.id }
-                    self.currentTask = nil
-                    self.isFocusedTask = false
-                    self.advanceAfterTask()
-                }
-            } else {
-                await MainActor.run {
-                    self.error = self.workflowManager.error ?? "Workflow submission failed"
-                }
-            }
-        }
-    }
-
     // MARK: - Get Ahead
 
-    /// Called when user taps "Want to get ahead?" or "Keep going?"
-    /// Loads the next day's batch of tasks into taskQueue.
-    /// Called when user taps "Get ahead" — loads ONE additional task.
     func getAhead() {
         gettingAhead = true
 
-        // Find the next most urgent task not already in taskQueue
         let queueIds = Set(taskQueue.map { $0.id })
         let nextTask = allActiveTasks
             .sorted { ($0.urgencyPercentage ?? 0) > ($1.urgencyPercentage ?? 0) }
@@ -873,43 +677,24 @@ final class PeezyHomeViewModel {
             taskQueue = [task]
             startNextTask()
         } else {
-            // No more tasks available
             state = .allComplete
         }
     }
 
     // MARK: - Skip Current Task
 
-    /// Puts the current task back at the end of the queue
     func skipCurrentTask() {
-        // Demo mode — end demo and return to greeting
-        if isDemoWorkflow {
-            workflowManager.cancelWorkflow()
-            currentTask = nil
-            isDemoWorkflow = false
-            demoPhase = nil
-            determineHomeState()
-            return
-        }
-
-        if isInWorkflow {
-            workflowManager.cancelWorkflow()
-            // cancelWorkflow triggers onWorkflowDismissed callback which handles state
-        } else {
-            if let task = currentTask {
-                // Snooze the task in Firestore
-                let snoozedUntil = Calendar.current.date(byAdding: .day, value: 1, to: Date()) ?? Date()
-                Task {
-                    await writeSnooze(task, snoozedUntil: snoozedUntil)
-                }
-                // Remove from allActiveTasks (it's snoozed now)
-                allActiveTasks.removeAll { $0.id == task.id }
+        if let task = currentTask {
+            let snoozedUntil = Calendar.current.date(byAdding: .day, value: 1, to: Date()) ?? Date()
+            Task {
+                await writeSnooze(task, snoozedUntil: snoozedUntil)
             }
-            dailyDoseCompletedCount += 1
-            currentTask = nil
-            isFocusedTask = false
-            advanceAfterTask()
+            allActiveTasks.removeAll { $0.id == task.id }
         }
+        dailyDoseCompletedCount += 1
+        currentTask = nil
+        isFocusedTask = false
+        advanceAfterTask()
     }
 
     // MARK: - Firestore Write
@@ -928,7 +713,6 @@ final class PeezyHomeViewModel {
                     "completedAt": FieldValue.serverTimestamp()
                 ])
         } catch {
-            // Log but don't block — task was already removed from queue
             print("⚠️ Failed to mark task completed in Firestore: \(error.localizedDescription)")
         }
     }
@@ -989,131 +773,9 @@ final class PeezyHomeViewModel {
         }
     }
 
-    // MARK: - Workflow ID Migration
-
-    /// Migrate stale user task docs that are missing workflowId.
-    /// Looks up the expected workflowId from a hardcoded catalog mapping and patches
-    /// Firestore in place. No-op if the field is already set.
-    /// Call from loadTasks() — patches Firestore so future loads are correct.
-    private func migrateWorkflowIds(tasks: [QueryDocumentSnapshot]) async {
-        let workflowMapping: [String: String] = [
-            "BOOK_MOVERS": "book_movers",
-            "BOOK_CLEANERS": "book_cleaners",
-            "SETUP_INTERNET": "setup_internet",
-            "RENT_TRUCK": "rent_truck"
-        ]
-
-        for doc in tasks {
-            let data = doc.data()
-            let taskId = data["taskId"] as? String ?? doc.documentID
-
-            // If task should have workflowId but doesn't
-            if let expectedWorkflowId = workflowMapping[taskId],
-               data["workflowId"] == nil || (data["workflowId"] as? String)?.isEmpty == true {
-                try? await doc.reference.updateData(["workflowId": expectedWorkflowId])
-            }
-        }
-    }
-
-    // MARK: - Workflow Detection
-
-    func getWorkflowId(for card: PeezyCard) -> String? {
-        // Read workflowId directly from the card (set from catalog field)
-        guard let workflowId = card.workflowId, !workflowId.isEmpty else {
-            return nil
-        }
-        return workflowId
-    }
-
-    // MARK: - Workflow Action Forwarding
-
-    func handleWorkflowContinue() {
-        workflowManager.progressToNext()
-
-        // Update demo phase based on what progressToNext() produced
-        if isDemoWorkflow, let card = workflowManager.workflowCards.first {
-            switch card.cardType {
-            case .question:
-                demoPhase = .question(index: card.questionIndex ?? 0)
-            case .recap:
-                demoPhase = .recap
-            default:
-                break
-            }
-        }
-    }
-
-    func handleWorkflowSelect(questionId: String, optionId: String, isExclusive: Bool) {
-        workflowManager.selectOption(questionId: questionId, optionId: optionId, isExclusive: isExclusive)
-    }
-
-    // MARK: - Demo Workflow Data & Start
-
-    private static let demoQualifying = WorkflowQualifying(
-        workflowId: "demo_book_movers",
-        intro: WorkflowIntro(
-            title: "Let's find you the right movers",
-            subtitle: "A few quick questions to match you with companies that fit your move."
-        ),
-        questions: [
-            WorkflowQuestion(
-                id: "priority",
-                question: "What matters most to you?",
-                options: [
-                    QuestionOption(id: "price", label: "Lowest Price", icon: "dollarsign.circle.fill"),
-                    QuestionOption(id: "reviews", label: "Best Reviews", icon: "star.fill"),
-                    QuestionOption(id: "speed", label: "Fastest Available", icon: "clock.fill"),
-                    QuestionOption(id: "full_service", label: "Full Service", icon: "hands.sparkles.fill")
-                ],
-                type: .single_select
-            ),
-            WorkflowQuestion(
-                id: "special_items",
-                question: "Any of these items?",
-                subtitle: "These need special handling",
-                options: [
-                    QuestionOption(id: "piano", label: "Piano", icon: "pianokeys"),
-                    QuestionOption(id: "art", label: "Art/Antiques", icon: "photo.artframe"),
-                    QuestionOption(id: "none", label: "None of These", icon: "checkmark.circle.fill", exclusive: true)
-                ],
-                type: .multi_select
-            )
-        ],
-        recap: WorkflowRecap(
-            title: "Got it. Here's what I heard:",
-            closing: "We'll reach out to the top 3 companies based on your answers and get quotes from all of them.",
-            button: "Sounds Good"
-        )
-    )
-
-    func startDemoWorkflow() {
-        isDemoWorkflow = true
-        demoPhase = .intro
-
-        currentTask = PeezyCard(
-            id: "demo_task",
-            type: .task,
-            title: "Book Movers",
-            subtitle: "Find the right movers for your move",
-            colorName: "blue",
-            taskId: "demo_task",
-            workflowId: "demo_book_movers"
-        )
-
-        workflowManager.startDemoWorkflow(
-            workflowId: "demo_book_movers",
-            workflowTitle: "Book Movers",
-            qualifying: Self.demoQualifying
-        )
-
-        state = .activeTask
-    }
-
     // MARK: - State Determination
 
-    /// Determines which home state to show based on user progress and time of day.
     func determineHomeState() {
-        // Don't override state when user navigated here from the task list
         if isFocusedTask { return }
 
         if !UserDefaults.standard.bool(forKey: kHasSeenFirstTimeWelcome) {
@@ -1147,13 +809,11 @@ final class PeezyHomeViewModel {
             return
         }
 
-        state = .dailyGreeting // fallback
+        state = .dailyGreeting
     }
 
-    /// Marks first-time welcome as seen and advances to the next state.
     func dismissFirstTimeWelcome() {
         UserDefaults.standard.set(true, forKey: kHasSeenFirstTimeWelcome)
-        // Start the first daily batch
         if taskQueue.isEmpty {
             let batch = Array(allActiveTasks.prefix(dailyTarget))
             taskQueue = batch
@@ -1181,18 +841,16 @@ final class PeezyHomeViewModel {
             dailyDoseCompletedCount = 0
             UserDefaults.standard.set(today, forKey: kDailyDoseLastDate)
         }
-        // Set first launch date once
         if UserDefaults.standard.string(forKey: kDailyDoseFirstLaunchDate) == nil {
             UserDefaults.standard.set(today, forKey: kDailyDoseFirstLaunchDate)
         }
     }
 
-    /// Called from onAppear to handle the overnight case (app was not restarted between days)
     func resetDailyCountIfNeededPublic() {
         resetDailyCountIfNeeded()
     }
 
-        // MARK: - Helpers
+    // MARK: - Helpers
 
     private func colorNameForPriority(_ priority: PeezyCard.Priority) -> String {
         switch priority {

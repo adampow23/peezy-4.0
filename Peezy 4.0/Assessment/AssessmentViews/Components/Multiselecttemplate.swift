@@ -30,9 +30,6 @@ struct MultiSelectTemplate: View {
     // ║  CONTROL BOARD — change any number, see it in preview     ║
     // ╠═══════════════════════════════════════════════════════════╣
     // ║                                                           ║
-    // ║  TYPEWRITER                                               ║
-    var speed: Double = 0.04            //  seconds per character
-    // ║                                                           ║
     // ║  HERO STATE (centered, large)                             ║
     var heroFontSize: CGFloat = 34      // UX Fix: Standardized to 34pt Large Title
     var heroSubtextSize: CGFloat = 16   //  subtext size
@@ -63,10 +60,7 @@ struct MultiSelectTemplate: View {
     // ╚═══════════════════════════════════════════════════════════╝
 
     // ── ANIMATION STATE (don't touch) ───────────────────────────
-    @State private var headerDone = false
-    @State private var subtextDone = false
     @State private var showControls = false
-    @State private var skipped = false
     @State private var showTiles = false
 
     // ── BODY ────────────────────────────────────────────────────
@@ -78,52 +72,22 @@ struct MultiSelectTemplate: View {
 
                 // ── TEXT AREA ──
                 VStack(spacing: 8) {
-                    Group {
-                        if skipped {
-                            Text(header)
-                        } else {
-                            TypingText(
-                                fullText: header,
-                                speed: speed,
-                                visibleColor: PeezyTheme.Colors.deepInk,
-                                onComplete: {
-                                    headerDone = true
-                                    if subtext == nil { triggerMorph() }
-                                }
-                            )
-                        }
-                    }
+                    Text(header)
                     // UX Fix: Swapped .semibold to .heavy to match primary app typography
-                    .font(.system(size: morphedFontSize, weight: .heavy))
-                    .foregroundColor(PeezyTheme.Colors.deepInk)
-                    .lineSpacing(lineSpacing)
-                    .multilineTextAlignment(.leading)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                        .font(.system(size: morphedFontSize, weight: .heavy))
+                        .foregroundColor(PeezyTheme.Colors.deepInk)
+                        .lineSpacing(lineSpacing)
+                        .multilineTextAlignment(.leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
 
                     if let sub = subtext {
-                        if headerDone || skipped {
-                            Group {
-                                if skipped {
-                                    Text(sub)
-                                } else {
-                                    TypingText(
-                                        fullText: sub,
-                                        speed: speed,
-                                        visibleColor: PeezyTheme.Colors.deepInk.opacity(0.5),
-                                        onComplete: {
-                                            subtextDone = true
-                                            triggerMorph()
-                                        }
-                                    )
-                                }
-                            }
+                        Text(sub)
                             // UX Fix: Added .medium weight to match 16pt body text standard
                             .font(.system(size: morphedSubtextSize, weight: .medium))
                             .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.5))
                             .lineSpacing(subtextLineSpacing)
                             .multilineTextAlignment(.leading)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                        }
                     }
                 }
                 .padding(.horizontal, textSidePad)
@@ -171,8 +135,7 @@ struct MultiSelectTemplate: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .contentShape(Rectangle())
-        .onTapGesture { skipToControls() }
+        .onAppear { triggerMorph() }
     }
 
     // ── MORPH LOGIC (don't touch) ───────────────────────────────
@@ -184,17 +147,6 @@ struct MultiSelectTemplate: View {
                 showControls = true
                 showTiles = true
             }
-        }
-    }
-
-    private func skipToControls() {
-        guard !showControls else { return }
-        skipped = true
-        headerDone = true
-        subtextDone = true
-        withAnimation(.easeOut(duration: 0.2)) {
-            showControls = true
-            showTiles = true
         }
     }
 }

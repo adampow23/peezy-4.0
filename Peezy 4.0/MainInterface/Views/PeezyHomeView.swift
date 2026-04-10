@@ -347,81 +347,15 @@ struct PeezyHomeView: View {
 
     @ViewBuilder
     private var activeTaskContent: some View {
-        if viewModel.isStartingWorkflow || viewModel.workflowManager.isLoading {
-            VStack(spacing: 20) {
-                ProgressView()
-                    .scaleEffect(1.5)
-                    .tint(PeezyTheme.Colors.deepInk)
-                Text("Loading your task...")
-                    .font(.headline)
-                    .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.8))
-            }
-        } else if viewModel.showTaskFlow {
-            // New task flow is being presented via fullScreenCover — show nothing here
-            EmptyView()
-        } else if let task = viewModel.currentTask {
-            let sequence = TaskCardSequenceBuilder.build(
-                task: task,
-                isSubscribed: subscriptionManager.isSubscribed,
-                completedTaskCount: viewModel.totalCompletedCount,
-                qualifying: viewModel.workflowManager.loadedQualifying,
-                userState: userState
-            )
-            PeezyTaskCardStackView(
-                sequence: sequence,
-                userState: userState,
-                onComplete: {
-                    if sequence.needsWorkflowContinue {
-                        viewModel.completeWorkflowTask()
-                    } else {
-                        viewModel.completeCurrentTask()
-                    }
-                },
-                onSkip: { viewModel.skipCurrentTask() },
-                onSubmit: { fields, transferChoice in
-                    submitTaskFromCard(fields: fields, transferChoice: transferChoice)
-                },
-                onWorkflowContinue: { viewModel.handleWorkflowContinue() }
-            )
-        }
-    }
-
-    // MARK: - Task Submission (absorbed from TaskFlowView)
-
-    private func submitTaskFromCard(fields: [String: String], transferChoice: String?) {
-        guard let task = viewModel.currentTask else { return }
-
-        // Fire webhook (fire-and-forget, failure is silent)
-        WebhookService.sendTaskSubmission(
-            userId: userState?.userId ?? "unknown",
-            userName: userState?.name ?? "Unknown",
-            taskId: task.taskId ?? "unknown",
-            taskTitle: task.title,
-            taskType: task.taskType ?? "unknown",
-            confirmedFields: fields,
-            transferChoice: transferChoice
-        )
-
-        // Write to Firestore
-        guard let userId = Auth.auth().currentUser?.uid,
-              let taskId = task.taskId else { return }
-
-        let db = Firestore.firestore()
-        let taskRef = db.collection("users").document(userId)
-            .collection("tasks").document(taskId)
-
-        Task {
-            do {
-                try await taskRef.updateData([
-                    "status": "PendingPeezy",
-                    "confirmedFields": fields,
-                    "submittedAt": FieldValue.serverTimestamp()
-                ])
-            } catch {
-                await MainActor.run {
-                    viewModel.error = "Submission failed. Please check your connection and try again."
-                }
-            }
+        // Tasks are presented via fullScreenCover (showTaskFlow or showInventoryScanner).
+        // This view is briefly visible during the transition.
+        VStack(spacing: 20) {
+            ProgressView()
+                .scaleEffect(1.5)
+                .tint(PeezyTheme.Colors.deepInk)
+            Text("Loading your task...")
+                .font(.headline)
+                .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.8))
         }
     }
 
@@ -539,33 +473,6 @@ struct PeezyHomeView: View {
 #Preview("Returning Mid-Day") {
     PeezyHomeView(
         previewViewModel: .preview(state: .returningMidDay)
-    )
-}
-
-#Preview("Active Task - Workflow") {
-    PeezyHomeView(
-        previewViewModel: .preview(
-            state: .activeTask,
-            task: PreviewData.mockWorkflowTask
-        )
-    )
-}
-
-#Preview("Active Task - Self Service") {
-    PeezyHomeView(
-        previewViewModel: .preview(
-            state: .activeTask,
-            task: PreviewData.mockSelfServiceTask
-        )
-    )
-}
-
-#Preview("Active Task - Concierge") {
-    PeezyHomeView(
-        previewViewModel: .preview(
-            state: .activeTask,
-            task: PreviewData.mockConciergeTask
-        )
     )
 }
 

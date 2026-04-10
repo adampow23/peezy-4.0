@@ -14,7 +14,6 @@ struct CurrentAddress: View {
     // ═══════════════════════════════════════════
     //  CONTROL BOARD
     // ═══════════════════════════════════════════
-    var speed: Double = 0.04
     var heroFontSize: CGFloat = 32
     var heroSubtextSize: CGFloat = 16
     var morphedFontSize: CGFloat = 22
@@ -30,10 +29,7 @@ struct CurrentAddress: View {
     //  STATE
     // ═══════════════════════════════════════════
 
-    @State private var headerDone = false
-    @State private var subtextDone = false
     @State private var isHero = false
-    @State private var skipped = false
     @State private var showControls = false
     @State private var selectedAddress = ""
 
@@ -51,50 +47,20 @@ struct CurrentAddress: View {
 
                 // ── TEXT AREA ──
                 VStack(spacing: 8) {
-                    Group {
-                        if skipped {
-                            Text(header)
-                        } else {
-                            TypingText(
-                                fullText: header,
-                                speed: speed,
-                                visibleColor: PeezyTheme.Colors.deepInk,
-                                onComplete: {
-                                    headerDone = true
-                                    if subtext == nil { triggerMorph() }
-                                }
-                            )
-                        }
-                    }
-                    .font(.system(size: isHero ? heroFontSize : morphedFontSize, weight: .semibold))
-                    .foregroundColor(PeezyTheme.Colors.deepInk)
-                    .lineSpacing(4)
-                    .multilineTextAlignment(isHero ? .center : .leading)
-                    .frame(maxWidth: .infinity, alignment: isHero ? .center : .leading)
+                    Text(header)
+                        .font(.system(size: isHero ? heroFontSize : morphedFontSize, weight: .semibold))
+                        .foregroundColor(PeezyTheme.Colors.deepInk)
+                        .lineSpacing(4)
+                        .multilineTextAlignment(isHero ? .center : .leading)
+                        .frame(maxWidth: .infinity, alignment: isHero ? .center : .leading)
 
                     if let sub = subtext {
-                        if headerDone || skipped {
-                            Group {
-                                if skipped {
-                                    Text(sub)
-                                } else {
-                                    TypingText(
-                                        fullText: sub,
-                                        speed: speed,
-                                        visibleColor: PeezyTheme.Colors.deepInk.opacity(0.5),
-                                        onComplete: {
-                                            subtextDone = true
-                                            triggerMorph()
-                                        }
-                                    )
-                                }
-                            }
+                        Text(sub)
                             .font(.system(size: isHero ? heroSubtextSize : morphedSubtextSize))
                             .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.5))
                             .lineSpacing(3)
                             .multilineTextAlignment(isHero ? .center : .leading)
                             .frame(maxWidth: .infinity, alignment: isHero ? .center : .leading)
-                        }
                     }
                 }
                 .padding(.horizontal, textSidePad)
@@ -132,12 +98,9 @@ struct CurrentAddress: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .contentShape(Rectangle())
-        .onTapGesture {
-            if isHero { skipToControls() }
-        }
         .onAppear {
             selectedAddress = data.currentAddress
+            triggerMorph()
         }
     }
 
@@ -148,22 +111,6 @@ struct CurrentAddress: View {
             withAnimation(.easeOut(duration: 0.35)) {
                 showControls = true
             }
-        }
-    }
-
-    private func performMorph() {
-        withAnimation(.easeOut(duration: 0.35)) {
-            showControls = true
-        }
-    }
-
-    private func skipToControls() {
-        guard !showControls else { return }
-        skipped = true
-        headerDone = true
-        subtextDone = true
-        withAnimation(.easeOut(duration: 0.2)) {
-            showControls = true
         }
     }
 }

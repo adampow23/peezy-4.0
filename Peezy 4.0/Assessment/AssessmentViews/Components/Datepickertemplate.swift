@@ -19,7 +19,6 @@ struct DatePickerTemplate: View {
     let onContinue: () -> Void
 
     // ── CONTROL BOARD ──
-    var speed: Double = 0.04
     var heroFontSize: CGFloat = 34        // UX Fix: Standardized to 34pt Large Title
     var heroSubtextSize: CGFloat = 16
     var morphedFontSize: CGFloat = 24     // UX Fix: Bumped to 24pt for better hierarchy
@@ -30,10 +29,7 @@ struct DatePickerTemplate: View {
     var morphDelay: Double = 0.4
 
     // ── STATE ──
-    @State private var headerDone = false
-    @State private var subtextDone = false
     @State private var showControls = false
-    @State private var skipped = false
     @State private var dateWasSelected = false
 
     var body: some View {
@@ -44,59 +40,25 @@ struct DatePickerTemplate: View {
 
                 // ── TEXT AREA ──
                 VStack(spacing: 8) {
-                    Group {
-                        if skipped {
-                            Text(header)
-                        } else {
-                            TypingText(
-                                fullText: header,
-                                speed: speed,
-                                visibleColor: PeezyTheme.Colors.deepInk,
-                                onComplete: {
-                                    headerDone = true
-                                    if subtext == nil { triggerMorph() }
-                                }
-                            )
-                        }
-                    }
+                    Text(header)
                     // UX Fix: Swapped .semibold to .heavy, removed rogue .rounded design
-                    .font(.system(size: morphedFontSize, weight: .heavy))
-                    .foregroundStyle(PeezyTheme.Colors.deepInk)
-                    .multilineTextAlignment(.leading)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                        .font(.system(size: morphedFontSize, weight: .heavy))
+                        .foregroundStyle(PeezyTheme.Colors.deepInk)
+                        .multilineTextAlignment(.leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
 
                     if let sub = subtext {
-                        if headerDone || skipped {
-                            Group {
-                                if skipped {
-                                    Text(sub)
-                                } else {
-                                    TypingText(
-                                        fullText: sub,
-                                        speed: speed,
-                                        visibleColor: PeezyTheme.Colors.deepInk.opacity(0.5),
-                                        onComplete: {
-                                            subtextDone = true
-                                            triggerMorph()
-                                        }
-                                    )
-                                }
-                            }
+                        Text(sub)
                             // UX Fix: Added .medium weight, removed rogue .rounded design
                             .font(.system(size: morphedSubtextSize, weight: .medium))
                             .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.5))
                             .multilineTextAlignment(.leading)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                        }
                     }
                 }
                 .padding(.horizontal, textSidePad)
                 .padding(.top, morphTopPad)
                 .padding(.bottom, morphBottomPad)
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    skipToControls()
-                }
 
                 if showControls { Spacer(minLength: 16) }
 
@@ -145,6 +107,7 @@ struct DatePickerTemplate: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .onAppear { triggerMorph() }
     }
 
     // ── MORPH LOGIC ──
@@ -155,16 +118,6 @@ struct DatePickerTemplate: View {
             withAnimation(.easeOut(duration: 0.35)) {
                 showControls = true
             }
-        }
-    }
-
-    private func skipToControls() {
-        guard !showControls else { return }
-        skipped = true
-        headerDone = true
-        subtextDone = true
-        withAnimation(.easeOut(duration: 0.2)) {
-            showControls = true
         }
     }
 }
