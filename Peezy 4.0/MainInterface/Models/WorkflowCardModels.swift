@@ -51,18 +51,26 @@ struct WorkflowQuestion: Codable, Equatable, Identifiable {
     let subtitle: String?
     let options: [QuestionOption]
     let type: QuestionType
+    let buttonLabel: String?
+    let skipLabel: String?
+    let cautionIcon: String?
+    let boldPrefix: String?
 
     enum QuestionType: String, Codable {
         case single_select
         case multi_select
     }
 
-    init(id: String, question: String, subtitle: String? = nil, options: [QuestionOption], type: QuestionType = .single_select) {
+    init(id: String, question: String, subtitle: String? = nil, options: [QuestionOption], type: QuestionType = .single_select, buttonLabel: String? = nil, skipLabel: String? = nil, cautionIcon: String? = nil, boldPrefix: String? = nil) {
         self.id = id
         self.question = question
         self.subtitle = subtitle
         self.options = options
         self.type = type
+        self.buttonLabel = buttonLabel
+        self.skipLabel = skipLabel
+        self.cautionIcon = cautionIcon
+        self.boldPrefix = boldPrefix
     }
 }
 
@@ -72,13 +80,15 @@ struct QuestionOption: Codable, Equatable, Identifiable {
     let icon: String
     let subtitle: String?
     let exclusive: Bool?
+    let fillPercent: Double?
 
-    init(id: String, label: String, icon: String, subtitle: String? = nil, exclusive: Bool? = nil) {
+    init(id: String, label: String, icon: String, subtitle: String? = nil, exclusive: Bool? = nil, fillPercent: Double? = nil) {
         self.id = id
         self.label = label
         self.icon = icon
         self.subtitle = subtitle
         self.exclusive = exclusive
+        self.fillPercent = fillPercent
     }
 }
 
@@ -86,6 +96,14 @@ struct WorkflowRecap: Codable, Equatable {
     let title: String
     let closing: String
     let button: String
+    let subtext: String?
+
+    init(title: String, closing: String, button: String, subtext: String? = nil) {
+        self.title = title
+        self.closing = closing
+        self.button = button
+        self.subtext = subtext
+    }
 }
 
 // MARK: - Workflow Card (UI State)

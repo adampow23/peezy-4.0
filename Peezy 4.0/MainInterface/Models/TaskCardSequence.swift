@@ -91,8 +91,10 @@ struct TaskCardInfoData: Equatable {
     let showWhen: CardCondition?
     let linkURL: String?
     let linkLabel: String?
+    let cautionIcon: String?
+    let boldPrefix: String?
 
-    init(cardId: String, category: String, headerIcon: String, taskTitle: String = "", title: String, body: String, primaryLabel: String, showWhen: CardCondition? = nil, linkURL: String? = nil, linkLabel: String? = nil) {
+    init(cardId: String, category: String, headerIcon: String, taskTitle: String = "", title: String, body: String, primaryLabel: String, showWhen: CardCondition? = nil, linkURL: String? = nil, linkLabel: String? = nil, cautionIcon: String? = nil, boldPrefix: String? = nil) {
         self.cardId = cardId
         self.category = category
         self.headerIcon = headerIcon
@@ -103,6 +105,8 @@ struct TaskCardInfoData: Equatable {
         self.showWhen = showWhen
         self.linkURL = linkURL
         self.linkLabel = linkLabel
+        self.cautionIcon = cautionIcon
+        self.boldPrefix = boldPrefix
     }
 }
 
@@ -118,13 +122,15 @@ struct TaskCardTilesData: Equatable {
     let workflowQuestionId: String?
     let showWhen: CardCondition?
     let taskTitle: String
+    let skipLabel: String?
+    let showDivider: Bool
 
     enum TileMode: Equatable {
         case single
         case multi
     }
 
-    init(cardId: String, category: String, headerIcon: String, title: String, body: String? = nil, tiles: [TileOption], mode: TileMode, answerKey: String, workflowQuestionId: String? = nil, showWhen: CardCondition? = nil, taskTitle: String = "") {
+    init(cardId: String, category: String, headerIcon: String, title: String, body: String? = nil, tiles: [TileOption], mode: TileMode, answerKey: String, workflowQuestionId: String? = nil, showWhen: CardCondition? = nil, taskTitle: String = "", skipLabel: String? = nil, showDivider: Bool = true) {
         self.cardId = cardId
         self.category = category
         self.headerIcon = headerIcon
@@ -136,6 +142,8 @@ struct TaskCardTilesData: Equatable {
         self.workflowQuestionId = workflowQuestionId
         self.showWhen = showWhen
         self.taskTitle = taskTitle
+        self.skipLabel = skipLabel
+        self.showDivider = showDivider
     }
 }
 
@@ -145,13 +153,15 @@ struct TileOption: Identifiable, Equatable {
     let icon: String
     let subtitle: String?
     let isExclusive: Bool
+    let fillPercent: Double?
 
-    init(id: String, label: String, icon: String, subtitle: String? = nil, isExclusive: Bool = false) {
+    init(id: String, label: String, icon: String, subtitle: String? = nil, isExclusive: Bool = false, fillPercent: Double? = nil) {
         self.id = id
         self.label = label
         self.icon = icon
         self.subtitle = subtitle
         self.isExclusive = isExclusive
+        self.fillPercent = fillPercent
     }
 }
 
@@ -183,8 +193,9 @@ struct TaskCardSummaryData: Equatable {
     let title: String
     let body: String
     let primaryLabel: String
+    let subtext: String?
 
-    init(cardId: String, category: String, headerIcon: String, taskTitle: String = "", title: String, body: String, primaryLabel: String) {
+    init(cardId: String, category: String, headerIcon: String, taskTitle: String = "", title: String, body: String, primaryLabel: String, subtext: String? = nil) {
         self.cardId = cardId
         self.category = category
         self.headerIcon = headerIcon
@@ -192,5 +203,6 @@ struct TaskCardSummaryData: Equatable {
         self.title = title
         self.body = body
         self.primaryLabel = primaryLabel
+        self.subtext = subtext
     }
 }

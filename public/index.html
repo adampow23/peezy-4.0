@@ -1,89 +1,497 @@
 <!DOCTYPE html>
-<html>
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Welcome to Firebase Hosting</title>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Peezy — Moving just got a hell of a lot easier.</title>
+  <meta name="description" content="Moving just got a hell of a lot easier. And it's about damn time.">
+  <meta property="og:title" content="Peezy — Moving just got a hell of a lot easier.">
+  <meta property="og:description" content="And it's about damn time.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://peezymove.com">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --ink: #0A1A3F;
+      --ink-bright: #1E3A8A;
+      --black: #0B0B0F;
+      --white: #FFFFFF;
+      --gray-50: #F7F7F8;
+      --gray-400: #8A8A94;
+      --gray-600: #4A4A52;
+      --max: 1120px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      color: var(--black);
+      background: var(--white);
+      font-size: 18px;
+      line-height: 1.4;
+      font-weight: 400;
+    }
+    a { color: inherit; text-decoration: none; }
+    .container { max-width: var(--max); margin: 0 auto; padding: 0 32px; }
 
-    <!-- update the version number as needed -->
-    <script defer src="/__/firebase/12.11.0/firebase-app-compat.js"></script>
-    <!-- include only the Firebase features as you need -->
-    <script defer src="/__/firebase/12.11.0/firebase-auth-compat.js"></script>
-    <script defer src="/__/firebase/12.11.0/firebase-database-compat.js"></script>
-    <script defer src="/__/firebase/12.11.0/firebase-firestore-compat.js"></script>
-    <script defer src="/__/firebase/12.11.0/firebase-functions-compat.js"></script>
-    <script defer src="/__/firebase/12.11.0/firebase-messaging-compat.js"></script>
-    <script defer src="/__/firebase/12.11.0/firebase-storage-compat.js"></script>
-    <script defer src="/__/firebase/12.11.0/firebase-analytics-compat.js"></script>
-    <script defer src="/__/firebase/12.11.0/firebase-remote-config-compat.js"></script>
-    <script defer src="/__/firebase/12.11.0/firebase-performance-compat.js"></script>
-    <!-- 
-      initialize the SDK after all desired features are loaded, set useEmulator to false
-      to avoid connecting the SDK to running emulators.
-    -->
-    <script defer src="/__/firebase/init.js?useEmulator=true"></script>
+    /* NAV */
+    nav {
+      padding: 32px 0;
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      z-index: 10;
+    }
+    .nav-inner {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .logo {
+      font-weight: 800;
+      font-size: 22px;
+      letter-spacing: -0.02em;
+      display: inline-flex;
+      align-items: baseline;
+      gap: 6px;
+    }
+    .logo::after {
+      content: "";
+      display: inline-block;
+      width: 28px;
+      height: 3px;
+      background: var(--ink);
+      border-radius: 2px;
+      margin-bottom: 4px;
+    }
+    .btn {
+      display: inline-block;
+      padding: 16px 32px;
+      background: var(--black);
+      color: var(--white);
+      font-weight: 600;
+      font-size: 16px;
+      border-radius: 999px;
+      transition: transform .15s ease, background .2s ease;
+      letter-spacing: -0.01em;
+    }
+    .btn:hover { transform: translateY(-1px); background: var(--ink); }
+    .btn-nav { padding: 12px 24px; font-size: 15px; }
 
-    <style media="screen">
-      body { background: #ECEFF1; color: rgba(0,0,0,0.87); font-family: Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 0; }
-      #message { background: white; max-width: 360px; margin: 100px auto 16px; padding: 32px 24px; border-radius: 3px; }
-      #message h2 { color: #ffa100; font-weight: bold; font-size: 16px; margin: 0 0 8px; }
-      #message h1 { font-size: 22px; font-weight: 300; color: rgba(0,0,0,0.6); margin: 0 0 16px;}
-      #message p { line-height: 140%; margin: 16px 0 24px; font-size: 14px; }
-      #message a { display: block; text-align: center; background: #039be5; text-transform: uppercase; text-decoration: none; color: white; padding: 16px; border-radius: 4px; }
-      #message, #message a { box-shadow: 0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.24); }
-      #load { color: rgba(0,0,0,0.4); text-align: center; font-size: 13px; }
-      @media (max-width: 600px) {
-        body, #message { margin-top: 0; background: white; box-shadow: none; }
-        body { border-top: 16px solid #ffa100; }
-      }
-    </style>
-  </head>
-  <body>
-    <div id="message">
-      <h2>Welcome</h2>
-      <h1>Firebase Hosting Setup Complete</h1>
-      <p>You're seeing this because you've successfully setup Firebase Hosting. Now it's time to go build something extraordinary!</p>
-      <a target="_blank" href="https://firebase.google.com/docs/hosting/">Open Hosting Documentation</a>
+    /* HERO */
+    .hero {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 160px 32px 120px;
+    }
+    .hero h1 {
+      font-size: clamp(44px, 7vw, 96px);
+      font-weight: 800;
+      letter-spacing: -0.04em;
+      line-height: 1.02;
+      max-width: 14ch;
+      margin: 0 auto;
+    }
+    .hero .sub {
+      margin-top: 32px;
+      font-size: clamp(20px, 2.2vw, 28px);
+      color: var(--gray-600);
+      font-weight: 400;
+      letter-spacing: -0.01em;
+    }
+    .hero .cta-wrap { margin-top: 56px; }
+
+    /* PAIN */
+    .pain {
+      padding: 160px 0;
+      background: var(--white);
+    }
+    .pain-line {
+      font-size: clamp(28px, 4.5vw, 56px);
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      line-height: 1.1;
+      max-width: 18ch;
+      margin: 0 auto 140px;
+      text-align: center;
+      color: var(--black);
+    }
+    .pain-line:last-child { margin-bottom: 0; }
+
+    /* SHIFT */
+    .shift {
+      padding: 180px 0;
+      background: var(--black);
+      color: var(--white);
+      text-align: center;
+    }
+    .shift h2 {
+      font-size: clamp(56px, 10vw, 140px);
+      font-weight: 800;
+      letter-spacing: -0.05em;
+      line-height: 1;
+    }
+    .shift h2 .accent {
+      color: var(--white);
+      position: relative;
+      display: inline-block;
+    }
+    .shift h2 .accent::after {
+      content: "";
+      position: absolute;
+      left: 0; right: 0;
+      bottom: -18px;
+      height: 6px;
+      background: var(--ink-bright);
+      border-radius: 4px;
+    }
+
+    /* OUTCOMES */
+    .outcomes { padding: 160px 0; }
+    .outcome {
+      padding: 100px 0;
+      border-bottom: 1px solid var(--gray-50);
+    }
+    .outcome:last-child { border-bottom: none; }
+    .outcome h3 {
+      font-size: clamp(36px, 5.5vw, 72px);
+      font-weight: 800;
+      letter-spacing: -0.035em;
+      line-height: 1.05;
+      max-width: 16ch;
+      margin-bottom: 36px;
+    }
+    .outcome p {
+      font-size: clamp(18px, 1.5vw, 22px);
+      line-height: 1.55;
+      color: var(--gray-600);
+      max-width: 58ch;
+      font-weight: 400;
+    }
+    .outcome p + p { margin-top: 16px; }
+    .outcome .tag {
+      display: inline-block;
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--ink-bright);
+      margin-bottom: 24px;
+    }
+
+    /* BIG NUMBER */
+    .big-number {
+      padding: 200px 0;
+      text-align: center;
+      background: var(--gray-50);
+    }
+    .big-number .num {
+      font-size: clamp(120px, 22vw, 320px);
+      font-weight: 900;
+      letter-spacing: -0.06em;
+      line-height: 0.9;
+      color: var(--black);
+    }
+    .big-number .num .plus {
+      color: var(--ink-bright);
+    }
+    .big-number .label {
+      margin-top: 32px;
+      font-size: clamp(22px, 2.4vw, 32px);
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      color: var(--black);
+    }
+    .big-number .sub {
+      margin-top: 12px;
+      font-size: 18px;
+      color: var(--gray-600);
+      max-width: 44ch;
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    /* PROMISE */
+    .promise {
+      padding: 180px 0;
+      background: var(--white);
+    }
+    .promise .header {
+      text-align: center;
+      max-width: 20ch;
+      margin: 0 auto 80px;
+      font-size: clamp(36px, 5vw, 64px);
+      font-weight: 800;
+      letter-spacing: -0.035em;
+      line-height: 1.05;
+    }
+    .promise .body {
+      max-width: 60ch;
+      margin: 0 auto;
+      text-align: center;
+    }
+    .promise .body p {
+      font-size: clamp(18px, 1.6vw, 22px);
+      color: var(--gray-600);
+      line-height: 1.55;
+      margin-bottom: 20px;
+    }
+    .promise .hero-line {
+      margin: 140px auto;
+      text-align: center;
+      max-width: 22ch;
+      font-size: clamp(32px, 4.8vw, 56px);
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      line-height: 1.15;
+      color: var(--black);
+    }
+    .promise .hero-line::before {
+      content: "";
+      display: block;
+      width: 40px;
+      height: 3px;
+      background: var(--ink-bright);
+      margin: 0 auto 40px;
+      border-radius: 2px;
+    }
+    .promise .coda {
+      text-align: center;
+      max-width: 54ch;
+      margin: 0 auto;
+    }
+    .promise .coda p {
+      font-size: clamp(22px, 2.4vw, 32px);
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      line-height: 1.25;
+      color: var(--black);
+      margin-bottom: 24px;
+    }
+
+    /* CLOSE */
+    .close {
+      padding: 200px 0;
+      text-align: center;
+      background: var(--black);
+      color: var(--white);
+    }
+    .close h2 {
+      font-size: clamp(40px, 6.5vw, 88px);
+      font-weight: 800;
+      letter-spacing: -0.04em;
+      line-height: 1.05;
+      max-width: 18ch;
+      margin: 0 auto 24px;
+    }
+    .close .sub {
+      font-size: clamp(24px, 3vw, 40px);
+      font-weight: 500;
+      letter-spacing: -0.02em;
+      color: #C7CBD6;
+      max-width: 22ch;
+      margin: 0 auto 64px;
+      line-height: 1.2;
+    }
+    .close .btn {
+      background: var(--white);
+      color: var(--black);
+    }
+    .close .btn:hover { background: var(--ink-bright); color: var(--white); }
+
+    /* FOOTER */
+    footer {
+      padding: 64px 0 48px;
+      background: var(--black);
+      color: var(--gray-400);
+      border-top: 1px solid rgba(255,255,255,0.06);
+    }
+    .footer-inner {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 32px;
+      align-items: center;
+      justify-content: space-between;
+    }
+    footer .logo { color: var(--white); }
+    footer .logo::after { background: var(--ink-bright); }
+    .footer-links {
+      display: flex;
+      gap: 28px;
+      flex-wrap: wrap;
+      font-size: 15px;
+    }
+    .footer-links a:hover { color: var(--white); }
+    .app-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 20px;
+      border: 1px solid rgba(255,255,255,0.18);
+      border-radius: 12px;
+      color: var(--white);
+      font-size: 14px;
+      font-weight: 500;
+      transition: border-color .2s;
+    }
+    .app-badge:hover { border-color: var(--white); }
+    .app-badge .apple { font-size: 22px; line-height: 1; }
+    .app-badge .sm { font-size: 11px; color: var(--gray-400); display: block; }
+    .app-badge .lg { font-size: 15px; font-weight: 600; color: var(--white); }
+    .copyright {
+      margin-top: 48px;
+      text-align: center;
+      font-size: 13px;
+      color: var(--gray-400);
+    }
+
+    @media (max-width: 720px) {
+      .container { padding: 0 24px; }
+      .hero { padding: 140px 24px 80px; }
+      .pain { padding: 100px 0; }
+      .pain-line { margin-bottom: 100px; }
+      .shift { padding: 120px 0; }
+      .outcomes { padding: 80px 0; }
+      .outcome { padding: 70px 0; }
+      .big-number { padding: 140px 0; }
+      .promise { padding: 120px 0; }
+      .promise .hero-line { margin: 100px auto; }
+      .close { padding: 140px 0; }
+      .footer-inner { flex-direction: column; text-align: center; }
+    }
+  </style>
+</head>
+<body>
+
+  <nav>
+    <div class="container nav-inner">
+      <a href="/" class="logo">Peezy</a>
+      <a href="https://apps.apple.com/" class="btn btn-nav">Get the app</a>
     </div>
-    <p id="load">Firebase SDK Loading&hellip;</p>
+  </nav>
 
-    <script>
-      document.addEventListener('DOMContentLoaded', function() {
-        const loadEl = document.querySelector('#load');
-        // // 🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥
-        // // The Firebase SDK is initialized and available here!
-        //
-        // firebase.auth().onAuthStateChanged(user => { });
-        // firebase.database().ref('/path/to/ref').on('value', snapshot => { });
-        // firebase.firestore().doc('/foo/bar').get().then(() => { });
-        // firebase.functions().httpsCallable('yourFunction')().then(() => { });
-        // firebase.messaging().requestPermission().then(() => { });
-        // firebase.storage().ref('/path/to/ref').getDownloadURL().then(() => { });
-        // firebase.analytics(); // call to activate
-        // firebase.analytics().logEvent('tutorial_completed');
-        // firebase.performance(); // call to activate
-        //
-        // // 🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥
+  <!-- SECTION 1: HERO -->
+  <header class="hero">
+    <div>
+      <h1>Moving just got a hell of a lot easier.</h1>
+      <p class="sub">And it's about damn time.</p>
+      <div class="cta-wrap">
+        <a href="https://apps.apple.com/" class="btn">Get started</a>
+      </div>
+    </div>
+  </header>
 
-        try {
-          let app = firebase.app();
-          let features = [
-            'auth', 
-            'database', 
-            'firestore',
-            'functions',
-            'messaging', 
-            'storage', 
-            'analytics', 
-            'remoteConfig',
-            'performance',
-          ].filter(feature => typeof app[feature] === 'function');
-          loadEl.textContent = `Firebase SDK loaded with ${features.join(', ')}`;
-        } catch (e) {
-          console.error(e);
-          loadEl.textContent = 'Error loading the Firebase SDK, check the console.';
-        }
-      });
-    </script>
-  </body>
+  <!-- SECTION 2: PAIN -->
+  <section class="pain">
+    <div class="container">
+      <p class="pain-line">Moving means weeks of chaos you didn't sign up for.</p>
+      <p class="pain-line">Dozens of tasks you didn't know existed until it was too late.</p>
+      <p class="pain-line">Phone calls you don't have time for. Decisions you're not qualified to make. Vendors you're gambling on.</p>
+      <p class="pain-line">And somehow, it's all on you to figure out.</p>
+    </div>
+  </section>
+
+  <!-- SECTION 3: SHIFT -->
+  <section class="shift">
+    <div class="container">
+      <h2><span class="accent">Not anymore.</span></h2>
+    </div>
+  </section>
+
+  <!-- SECTION 4: OUTCOMES -->
+  <section class="outcomes">
+    <div class="container">
+
+      <div class="outcome">
+        <span class="tag">01 — Built for you</span>
+        <h3>Built for your move. Not everyone's move.</h3>
+        <p>You answer a few questions about your situation — when you're moving, where, who's coming with you, what you need.</p>
+        <p>We build a plan that fits your life. Not a generic list with stuff you don't need and missing stuff you do.</p>
+      </div>
+
+      <div class="outcome">
+        <span class="tag">02 — Minimum effort, maximum result</span>
+        <h3>The less you use Peezy, the better it's working.</h3>
+        <p>Social media wins when you spend all day scrolling. Peezy wins when you spend under a minute a day in the app.</p>
+        <p>We're not trying to earn your attention. We're trying to give it back.</p>
+        <p>Open the app. A couple quick questions. Tap a button. Close it. Go live your life.</p>
+        <p>The goal isn't more features. It's less mental load. The lack of features is the feature.</p>
+      </div>
+
+      <div class="outcome">
+        <span class="tag">03 — We do the heavy lifting</span>
+        <h3>We do as much as we possibly can. You do as little as possible.</h3>
+        <p>Anything we can handle, we will. Anything we can't, we do the heavy lifting so the piece left for you is small and simple.</p>
+        <p>Sometimes that's finishing the task for you. Sometimes it's lining up the vendor, prefilling the info, and handing you a two-minute step instead of a two-hour headache.</p>
+        <p>Either way, what lands on your plate is the smallest possible version of the work.</p>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- BIG NUMBER MOMENT -->
+  <section class="big-number">
+    <div class="container">
+      <div class="num">40<span class="plus">+</span></div>
+      <div class="label">40+ hours of planning. Done in under one.</div>
+      <p class="sub">Not because we cut corners. Because we already know the way.</p>
+    </div>
+  </section>
+
+  <!-- SECTION 5: PROMISE -->
+  <section class="promise">
+    <div class="container">
+      <h2 class="header">The companies behind your move.</h2>
+      <div class="body">
+        <p>Moving forces you to hire strangers to handle everything you own.</p>
+        <p>You don't have time to research. You can't tell who's legit.</p>
+        <p>One bad call and your move goes from stressful to devastating.</p>
+        <p style="margin-top:32px;">Every company on Peezy earned their spot. Not with a paid listing. With verified performance.</p>
+      </div>
+
+      <div class="hero-line">Our users deserve the best service. And the best service deserves our users.</div>
+
+      <div class="coda">
+        <p>Deliver great service? You get great customers. Slip up? You're off the platform.</p>
+        <p style="color: var(--gray-600); font-weight: 400; font-size: clamp(18px, 1.6vw, 22px);">Not a directory. An ecosystem built on accountability.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- SECTION 6: CLOSE -->
+  <section class="close">
+    <div class="container">
+      <h2>Moving should be the start of something good.</h2>
+      <p class="sub">Not something you have to survive.</p>
+      <a href="https://apps.apple.com/" class="btn">Try Peezy</a>
+    </div>
+  </section>
+
+  <!-- SECTION 7: FOOTER -->
+  <footer>
+    <div class="container">
+      <div class="footer-inner">
+        <a href="/" class="logo">Peezy</a>
+        <a href="https://apps.apple.com/" class="app-badge" aria-label="Download on the App Store">
+          <span class="apple">&#63743;</span>
+          <span>
+            <span class="sm">Download on the</span>
+            <span class="lg">App Store</span>
+          </span>
+        </a>
+        <div class="footer-links">
+          <a href="/privacy.html">Privacy</a>
+          <a href="/terms.html">Terms</a>
+          <a href="mailto:support@peezy.move">support@peezy.move</a>
+        </div>
+      </div>
+      <p class="copyright">&copy; 2026 Peezy. Made for people who have better things to do than move.</p>
+    </div>
+  </footer>
+
+</body>
 </html>

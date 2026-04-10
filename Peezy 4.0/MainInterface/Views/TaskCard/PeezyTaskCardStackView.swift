@@ -99,14 +99,11 @@ struct PeezyTaskCardStackView: View {
             advance()
 
         case .tiles(let data):
-            if data.mode == .multi {
-                // Multi-select Continue button tapped (or "None" if empty)
-                advance()
-                if sequence.needsWorkflowContinue, data.workflowQuestionId != nil {
-                    onWorkflowContinue()
-                }
+            // Multi-select Continue/None button, or single-select skip button
+            advance()
+            if sequence.needsWorkflowContinue, data.workflowQuestionId != nil {
+                onWorkflowContinue()
             }
-            // Single-select handled via handleSelect
 
         case .confirm:
             let transferChoice = answers["transferChoice"]?.first
@@ -241,4 +238,3 @@ struct TaskStackSandbox: View {
     TaskStackSandbox()
 }
 #endif
-
