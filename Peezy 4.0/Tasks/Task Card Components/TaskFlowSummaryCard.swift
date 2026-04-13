@@ -77,6 +77,7 @@ struct TaskFlowSummaryCard: View {
             PeezyAssessmentButton(primaryLabel) {
                 onPrimary()
             }
+            .accessibilityIdentifier("taskflow_summary_primary")
             .padding(.horizontal, 24)
             .padding(.bottom, 24)
         }

@@ -14,6 +14,7 @@
 
 import SwiftUI
 import MapKit
+import StoreKit
 import FirebaseAuth
 import FirebaseFirestore
 
@@ -202,7 +203,7 @@ struct PeezySettingsView: View {
         } message: {
             Text("This will permanently delete your account, all your tasks, and all your data. This cannot be undone.\n\nIf you have an active subscription, please cancel it first in your Apple ID settings.")
         }
-        .alert("Restore Purchases", isPresented: .init(
+        .alert("Restore purchases", isPresented: .init(
             get: { restoreMessage != nil },
             set: { if !$0 { restoreMessage = nil } }
         )) {
@@ -273,8 +274,9 @@ struct PeezySettingsView: View {
         }
         .buttonStyle(.peezyPress)
         .background(glassBackground)
+        .accessibilityIdentifier("settings_profile_card")
     }
-    
+
     // MARK: - Move Details Section
 
     private var moveDetailsSection: some View {
@@ -291,6 +293,7 @@ struct PeezySettingsView: View {
                 ) {
                     showEditMoveDate = true
                 }
+                .accessibilityIdentifier("settings_move_date")
 
                 Divider().background(deepInk.opacity(0.06))
 
@@ -303,6 +306,7 @@ struct PeezySettingsView: View {
                 ) {
                     showEditCurrentAddress = true
                 }
+                .accessibilityIdentifier("settings_current_address")
 
                 Divider().background(deepInk.opacity(0.06))
 
@@ -315,6 +319,7 @@ struct PeezySettingsView: View {
                 ) {
                     showEditNewAddress = true
                 }
+                .accessibilityIdentifier("settings_new_address")
 
                 Divider().background(deepInk.opacity(0.06))
 
@@ -322,6 +327,7 @@ struct PeezySettingsView: View {
                 settingsRow(icon: "arrow.counterclockwise", label: "Retake Assessment", color: PeezyTheme.Colors.warningOrange) {
                     showRetakeAlert = true
                 }
+                .accessibilityIdentifier("settings_retake_assessment")
             }
             .background(glassBackground)
         }
@@ -358,6 +364,7 @@ struct PeezySettingsView: View {
                 }
                 .padding(.horizontal, 20)
                 .padding(.vertical, 14)
+                .accessibilityIdentifier("settings_subscription_status")
 
                 Divider().background(deepInk.opacity(0.06))
 
@@ -366,10 +373,11 @@ struct PeezySettingsView: View {
                         UIApplication.shared.open(url)
                     }
                 }
+                .accessibilityIdentifier("settings_manage_subscription")
 
                 Divider().background(deepInk.opacity(0.06))
 
-                settingsRow(icon: "arrow.triangle.2.circlepath", label: "Restore Purchases", color: deepInk.opacity(0.4)) {
+                settingsRow(icon: "arrow.triangle.2.circlepath", label: "Restore purchases", color: deepInk.opacity(0.4)) {
                     Task {
                         await subscriptionManager.restorePurchases()
                         if subscriptionManager.purchaseError == nil {
@@ -379,6 +387,7 @@ struct PeezySettingsView: View {
                         }
                     }
                 }
+                .accessibilityIdentifier("settings_restore_purchases")
             }
             .background(glassBackground)
         }
@@ -402,16 +411,37 @@ struct PeezySettingsView: View {
     private var subscriptionDetailLabel: String {
         switch subscriptionManager.subscriptionStatus {
         case .trial(let productId, let expires):
-            let planName = productId == SubscriptionManager.ProductID.annual.rawValue ? "Yearly" : "Monthly"
+            let planName = planLabel(for: productId)
             let daysLeft = Calendar.current.dateComponents([.day], from: Date(), to: expires).day ?? 0
             return "\(planName) plan — trial ends in \(daysLeft) day\(daysLeft == 1 ? "" : "s")"
         case .subscribed(let productId, let expires):
-            let planName = productId == SubscriptionManager.ProductID.annual.rawValue ? "Yearly" : "Monthly"
+            let planName = planLabel(for: productId)
             return "\(planName) plan — renews \(formattedDate(expires))"
         case .expired:
             return "Resubscribe to access all features"
         default:
             return ""
+        }
+    }
+
+    private func planLabel(for productId: String) -> String {
+        guard let id = SubscriptionManager.ProductID(rawValue: productId),
+              let product = subscriptionManager.product(for: id),
+              let subscription = product.subscription else {
+            return "Subscription"
+        }
+
+        switch subscription.subscriptionPeriod.unit {
+        case .day:
+            return "Subscription"
+        case .week:
+            return "Weekly"
+        case .month:
+            return "Monthly"
+        case .year:
+            return "Yearly"
+        @unknown default:
+            return "Subscription"
         }
     }
 
@@ -425,6 +455,7 @@ struct PeezySettingsView: View {
                 settingsRow(icon: "camera.viewfinder", label: "Scan Room Inventory", color: PeezyTheme.Colors.infoBlue) {
                     showInventoryScanner = true
                 }
+                .accessibilityIdentifier("settings_inventory_scanner")
             }
             .background(glassBackground)
         }
@@ -446,12 +477,14 @@ struct PeezySettingsView: View {
                 settingsRow(icon: "doc.text", label: "Privacy Policy", color: deepInk.opacity(0.4)) {
                     openURL("https://peezy-1ecrdl.web.app/privacy.html")
                 }
+                .accessibilityIdentifier("settings_privacy_policy")
 
                 Divider().background(deepInk.opacity(0.06))
 
                 settingsRow(icon: "doc.text", label: "Terms of Service", color: deepInk.opacity(0.4)) {
                     openURL("https://peezy-1ecrdl.web.app/terms.html")
                 }
+                .accessibilityIdentifier("settings_terms_of_service")
             }
             .background(glassBackground)
         }
@@ -486,16 +519,18 @@ struct PeezySettingsView: View {
                 ) {
                     showSignOutAlert = true
                 }
+                .accessibilityIdentifier("settings_sign_out")
 
                 Divider().background(deepInk.opacity(0.06))
 
                 settingsRow(
                     icon: "trash",
-                    label: "Delete Account",
+                    label: "Delete account",
                     color: PeezyTheme.Colors.emotionalRed
                 ) {
                     showDeleteAccountConfirmation = true
                 }
+                .accessibilityIdentifier("settings_delete_account")
             }
             .background(glassBackground)
         }
@@ -513,6 +548,7 @@ struct PeezySettingsView: View {
                 .font(PeezyTheme.Typography.caption)
                 .foregroundColor(deepInk.opacity(0.3))
         }
+        .accessibilityIdentifier("settings_version")
     }
     
     // MARK: - Reusable Row

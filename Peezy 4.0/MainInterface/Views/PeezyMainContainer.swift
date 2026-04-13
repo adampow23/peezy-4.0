@@ -41,6 +41,7 @@ struct PeezyMainContainer: View {
                 switch selectedTab {
                 case .home:
                     PeezyHomeView(userState: userState, focusedTask: $focusedTask)
+                        .ignoresSafeArea(.keyboard, edges: .bottom)
 
                 case .tasks:
                     PeezyTaskStream(
@@ -53,12 +54,14 @@ struct PeezyMainContainer: View {
                             }
                         }
                     )
+                    .ignoresSafeArea(.keyboard, edges: .bottom)
 
                 case .chat:
                     SupportChatView(userState: userState)
 
                 case .settings:
                     PeezySettingsView(userState: $userState)
+                        .ignoresSafeArea(.keyboard, edges: .bottom)
                 }
             }
             .safeAreaInset(edge: .bottom) {
@@ -74,7 +77,6 @@ struct PeezyMainContainer: View {
                     tabBarHeight = height
                 }
         }
-        .ignoresSafeArea(.keyboard, edges: .bottom)
         .onAppear {
             chatService.startListening()
         }

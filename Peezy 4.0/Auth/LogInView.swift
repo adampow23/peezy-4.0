@@ -40,7 +40,7 @@ struct LoginView: View {
                 VStack(spacing: 24) {
                     // Header
                     VStack(spacing: 8) {
-                        Text("Welcome Back")
+                        Text("Welcome back")
                             .font(PeezyTheme.Typography.largeTitle)
                             .foregroundColor(PeezyTheme.Colors.deepInk)
 
@@ -75,7 +75,7 @@ struct LoginView: View {
 
                     // Log In Button
                     AuthFormButton(
-                        title: "Log In",
+                        title: "Log in",
                         isLoading: isLoading,
                         isDisabled: !isFormValid,
                         action: handleLogin
@@ -93,7 +93,7 @@ struct LoginView: View {
                         }
                         showResetAlert = true
                     }) {
-                        Text("Forgot Password?")
+                        Text("Forgot password?")
                             .font(PeezyTheme.Typography.callout)
                             .foregroundColor(PeezyTheme.Colors.accentBlue)
                     }
@@ -133,7 +133,7 @@ struct LoginView: View {
         } message: {
             Text(errorMessage)
         }
-        .alert("Reset Password", isPresented: $showResetAlert) {
+        .alert("Reset password", isPresented: $showResetAlert) {
             Button("Send Reset Email") {
                 viewModel.resetPassword(email: email) { error in
                     if let error = error {
@@ -149,7 +149,7 @@ struct LoginView: View {
         } message: {
             Text("Send a password reset email to \(email)?")
         }
-        .alert("Email Sent", isPresented: $showResetConfirmation) {
+        .alert("Email sent", isPresented: $showResetConfirmation) {
             Button("OK") { }
         } message: {
             Text(resetMessage)

@@ -119,7 +119,7 @@ struct InventoryConfirmationView: View {
                         }
                     }
                 } label: {
-                    Text(viewModel.isEditing ? "Cancel" : "No, it's not")
+                    Text(viewModel.isEditing ? "Cancel" : "Not quite")
                         .font(PeezyTheme.Typography.calloutMedium)
                         .foregroundStyle(PeezyTheme.Colors.textPrimary)
                         .frame(height: PeezyTheme.Layout.buttonHeight)
@@ -140,7 +140,7 @@ struct InventoryConfirmationView: View {
                         confirmAsIs()
                     }
                 } label: {
-                    Text(viewModel.isEditing ? "Save" : "Yes, correct")
+                    Text(viewModel.isEditing ? "Save correction" : "That's right")
                         .font(PeezyTheme.Typography.headline)
                         .foregroundStyle(PeezyTheme.Colors.deepInk)
                         .frame(height: PeezyTheme.Layout.buttonHeight)
@@ -373,4 +373,3 @@ final class InventoryConfirmationViewModel {
 //
 //  Created by Adam Powell on 3/19/26.
 //
-

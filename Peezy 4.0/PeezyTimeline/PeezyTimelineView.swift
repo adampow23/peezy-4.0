@@ -259,7 +259,7 @@ struct PeezyTaskStream: View {
                 switch selectedTab {
                 case .todo:
                     if todoTasks.isEmpty {
-                        tabEmptyState(message: "All caught up!")
+                        tabEmptyState(message: "You're on track. New tasks drop in daily.")
                     } else {
                         ForEach(todoTasks) { task in
                             TaskListRow(
@@ -274,7 +274,7 @@ struct PeezyTaskStream: View {
 
                 case .inProgress:
                     if userInProgressTasks.isEmpty && inProgressTasks.isEmpty {
-                        tabEmptyState(message: "No tasks in progress")
+                        tabEmptyState(message: "Nothing in the works yet.")
                     } else {
                         if !userInProgressTasks.isEmpty {
                             subsectionHeader(title: "You're on it")
@@ -306,7 +306,7 @@ struct PeezyTaskStream: View {
 
                 case .done:
                     if completedTasks.isEmpty {
-                        tabEmptyState(message: "No completed tasks yet")
+                        tabEmptyState(message: "Completed tasks will stack up here.")
                     } else {
                         ForEach(completedTasks) { task in
                             TaskListRow(
@@ -578,7 +578,7 @@ struct TaskListRow: View {
             // Expanded buttons
             if isExpanded {
                 if !isCompleted && !isInProgress && !isUserInProgress, let onStart {
-                    PeezyAssessmentButton("Open Task") {
+                    PeezyAssessmentButton("Start task") {
                         onStart()
                     }
                     .padding(.horizontal, 20)
@@ -598,7 +598,7 @@ struct TaskListRow: View {
 
                 // Undo — same button style as other actions
                 if isCompleted, let onUndo {
-                    PeezyAssessmentButton("Undo") {
+                    PeezyAssessmentButton("Undo completion") {
                         PeezyHaptics.light()
                         onUndo()
                     }

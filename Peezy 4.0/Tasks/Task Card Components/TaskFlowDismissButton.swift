@@ -51,6 +51,7 @@ struct TaskFlowDismissButton: View {
         .padding(.leading, 20)
         .padding(.top, 12)
         .accessibilityLabel("Go home")
+        .accessibilityIdentifier("taskflow_dismiss_button")
     }
 }
 

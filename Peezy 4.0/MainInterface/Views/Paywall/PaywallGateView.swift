@@ -39,7 +39,7 @@ struct PaywallGateView: View {
 
                     // UX Fix: Bumped size up to 17, weight to medium, and opacity to 0.7
                     // to give this statement the authority it deserves.
-                    Text("The average move costs people 25+ hours of\nadmin headaches. Peezy costs less than\none hour of therapy.")
+                    Text("Everything you need to make your move stress-free — for less than a pizza.")
                         .font(.system(size: 17, weight: .medium))
                         .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.7))
                         .multilineTextAlignment(.center)
@@ -65,6 +65,7 @@ struct PaywallGateView: View {
                     subscriptionManager.isPurchasing ? "Processing..." : "Let's do this",
                     action: purchaseSelected
                 )
+                .accessibilityIdentifier("paywall_purchase_button")
                 .padding(.horizontal, 24)
 
                 Spacer(minLength: 20)
@@ -80,6 +81,7 @@ struct PaywallGateView: View {
                     }
                     .buttonStyle(.plain)
                     .contentShape(Rectangle())
+                    .accessibilityIdentifier("paywall_dismiss_button")
 
                     // Tertiary Utilities (Side-by-Side)
                     HStack(spacing: 12) {
@@ -92,6 +94,7 @@ struct PaywallGateView: View {
                             Text("Redeem a code").underline()
                         }
                         .buttonStyle(.plain)
+                        .accessibilityIdentifier("paywall_redeem_code")
 
                         Text("·")
 
@@ -103,9 +106,10 @@ struct PaywallGateView: View {
                                 }
                             }
                         } label: {
-                            Text("Restore Purchases").underline()
+                            Text("Restore purchases").underline()
                         }
                         .buttonStyle(.plain)
+                        .accessibilityIdentifier("paywall_restore_purchases")
                     }
                     .font(.system(size: 12, weight: .regular))
                     .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.4))
@@ -123,12 +127,15 @@ struct PaywallGateView: View {
 
                     HStack(spacing: 4) {
                         Link("Privacy Policy", destination: URL(string: "https://peezy-1ecrdl.web.app/privacy.html")!)
+                            .accessibilityIdentifier("paywall_privacy_link")
                         Text("·")
                         Link("Terms of Service", destination: URL(string: "https://peezy-1ecrdl.web.app/terms.html")!)
+                            .accessibilityIdentifier("paywall_terms_link")
                     }
                     .font(.caption)
                     .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.3))
                 }
+                .accessibilityIdentifier("paywall_subscription_terms")
                 .padding(.bottom, 16)
             }
         }
@@ -191,6 +198,7 @@ struct PaywallGateView: View {
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .accessibilityIdentifier(plan == .annual ? "paywall_plan_annual" : "paywall_plan_weekly")
         .animation(.easeInOut(duration: 0.15), value: isSelected)
     }
 

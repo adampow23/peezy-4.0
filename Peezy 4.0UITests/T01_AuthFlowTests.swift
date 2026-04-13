@@ -17,19 +17,20 @@ final class AuthFlowTests: E2ETestBase {
 
     func signOutFirst() {
         let homeTab = app.buttons["tab_home"]
-        guard homeTab.waitForExistence(timeout: 3) else { return }
+        // Firebase can take 40s to init — wait generously before checking auth state
+        guard homeTab.waitForExistence(timeout: 40) else { return }
         // Already in main app — go to settings and sign out
         app.buttons["tab_settings"].tap()
         sleep(1)
         // Find and tap sign out, then confirm
         let signOut = app.buttons["settings_sign_out"]
-        if signOut.waitForExistence(timeout: 3) {
+        if signOut.waitForExistence(timeout: 5) {
             signOut.tap()
             sleep(1)
             // Tap "Sign Out" in the confirmation alert
             let confirm = app.buttons["Sign Out"]
             if confirm.waitForExistence(timeout: 2) { confirm.tap() }
-            sleep(2)
+            sleep(3)
         }
     }
 

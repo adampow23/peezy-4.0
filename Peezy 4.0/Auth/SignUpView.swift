@@ -92,7 +92,7 @@ struct SignUpView: View {
 
                     // Sign Up Button
                     AuthFormButton(
-                        title: "Sign Up",
+                        title: "Sign up",
                         isLoading: isLoading,
                         isDisabled: !isFormValid,
                         action: handleSignUp

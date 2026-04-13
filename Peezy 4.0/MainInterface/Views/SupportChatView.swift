@@ -54,6 +54,7 @@ struct SupportChatView: View {
         .frame(maxWidth: .infinity)
         .padding(.top, 16)
         .padding(.bottom, 12)
+        .accessibilityIdentifier("support_header")
     }
 
     // MARK: - Empty State
@@ -64,7 +65,7 @@ struct SupportChatView: View {
                 .font(.system(size: 48, weight: .light))
                 .foregroundStyle(deepInk.opacity(0.2))
 
-            Text("Questions? Feedback?\nWe're here to help.")
+            Text("Ask about your tasks, your move, or anything we can help with. We usually respond within a few hours.")
                 .font(PeezyTheme.Typography.body)
                 .foregroundStyle(deepInk.opacity(0.4))
                 .multilineTextAlignment(.center)
@@ -86,6 +87,7 @@ struct SupportChatView: View {
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
             }
+            .scrollDismissesKeyboard(.interactively)
             .onChange(of: service.messages.count) { _, _ in
                 if let lastId = service.messages.last?.id {
                     withAnimation(.easeOut(duration: 0.2)) {
@@ -147,7 +149,7 @@ struct SupportChatView: View {
 
     private var inputBar: some View {
         HStack(spacing: 12) {
-            TextField("Message...", text: $inputText, axis: .vertical)
+            TextField("What can we help with?", text: $inputText, axis: .vertical)
                 .textFieldStyle(.plain)
                 .foregroundStyle(deepInk)
                 .tint(deepInk)
@@ -165,6 +167,7 @@ struct SupportChatView: View {
                 .focused($isInputFocused)
                 .submitLabel(.send)
                 .onSubmit { send() }
+                .accessibilityIdentifier("chat_input_field")
 
             Button(action: send) {
                 Image(systemName: "arrow.up.circle.fill")
@@ -172,6 +175,7 @@ struct SupportChatView: View {
                     .foregroundStyle(canSend ? deepInk : deepInk.opacity(0.3))
             }
             .disabled(!canSend)
+            .accessibilityIdentifier("chat_send_button")
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)

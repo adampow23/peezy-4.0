@@ -118,6 +118,7 @@ struct AuthView: View {
                     ) {
                         showSignUp = true
                     }
+                    .accessibilityIdentifier("auth_email_signup")
                     .opacity(showContent ? 1 : 0)
                     .offset(y: showContent ? 0 : 20)
                     .animation(.easeOut(duration: 0.5).delay(0.6), value: showContent)
@@ -136,6 +137,7 @@ struct AuthView: View {
                         }
                         .font(PeezyTheme.Typography.callout)
                     }
+                    .accessibilityIdentifier("auth_login_link")
                     .disabled(isAnyLoading)
                     .padding(.top, 8)
                     .opacity(showContent ? 1 : 0)

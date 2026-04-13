@@ -69,6 +69,7 @@ struct TaskFlowTilesCard: View {
                 PeezyAssessmentButton(selectedIds.isEmpty ? "None" : "Continue") {
                     onContinue?()
                 }
+                .accessibilityIdentifier("taskflow_tiles_continue")
                 .padding(.horizontal, 24)
                 .padding(.bottom, 24)
             } else if let skipLabel {

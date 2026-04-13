@@ -22,13 +22,14 @@ class E2ETestBase: XCTestCase {
 
     func loginIfNeeded() {
         let homeTab = app.buttons["tab_home"]
-        if homeTab.waitForExistence(timeout: 3) { return }
+        // Firebase initialization takes 20-40s in simulator — wait generously
+        if homeTab.waitForExistence(timeout: 40) { return }
 
         let loginLink = app.buttons["auth_login_link"]
-        if !loginLink.waitForExistence(timeout: 5) {
-            // Might be loading — wait longer for tab bar
-            XCTAssertTrue(homeTab.waitForExistence(timeout: 15),
-                "Should see auth screen or main app within 15s")
+        if !loginLink.waitForExistence(timeout: 30) {
+            // Still loading — last chance for tab bar
+            XCTAssertTrue(homeTab.waitForExistence(timeout: 30),
+                "Should see auth screen or main app within 100s")
             return
         }
 
@@ -36,7 +37,7 @@ class E2ETestBase: XCTestCase {
         loginLink.tap()
 
         let emailField = app.textFields["login_email_field"]
-        XCTAssertTrue(emailField.waitForExistence(timeout: 3))
+        XCTAssertTrue(emailField.waitForExistence(timeout: 10))
         emailField.tap()
         emailField.typeText(testEmail)
 
@@ -46,7 +47,7 @@ class E2ETestBase: XCTestCase {
 
         app.buttons["login_submit_button"].tap()
 
-        XCTAssertTrue(homeTab.waitForExistence(timeout: 15),
+        XCTAssertTrue(homeTab.waitForExistence(timeout: 30),
             "Main app should load after login")
     }
 
