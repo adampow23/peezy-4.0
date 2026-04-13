@@ -115,66 +115,7 @@ final class PeezyHomeViewModel {
     var taskFlowWorkflowId: String?
 
     /// WorkflowIds that have standalone flow files.
-    private static let newFlowIds: Set<String> = [
-        // Pattern A — Self-service
-        "return_key_fobs_remotes",
-        "schedule_time_off_work",
-        "update_employer_records",
-        "update_drivers_license",
-        "new_drivers_license",
-        "register_vehicle",
-        "photograph_rental_condition",
-        "buy_packing_supplies",
-        "buy_cleaning_supplies",
-        "defrost_freezer",
-        "diy_deep_cleaning",
-        "diy_final_cleaning",
-        // Pattern B — Simple survey
-        "manage_bank",
-        "manage_doctor",
-        "manage_dentist",
-        "manage_vet",
-        "manage_gym",
-        "manage_yoga",
-        "manage_spin",
-        "manage_massage",
-        "manage_golf",
-        "update_credit_card",
-        "update_investment",
-        "update_student_loans",
-        "transfer_pharmacy_records",
-        "transfer_specialists_records",
-        "update_auto_insurance",
-        "cancel_renters_insurance",
-        "setup_renters_insurance",
-        "transfer_renters_insurance",
-        "cancel_condo_insurance",
-        "setup_condo_insurance",
-        "transfer_condo_insurance",
-        "cancel_homeowners_insurance",
-        "setup_homeowners_insurance",
-        "transfer_homeowners_insurance",
-        "forward_mail_usps",
-        "cancel_utilities",
-        "setup_utilities",
-        "transfer_utilities",
-        "begin_school_transfer",
-        "new_school_enrollment",
-        "coa_schools",
-        "setup_daycare",
-        "transfer_daycare",
-        "arrange_parking_new",
-        "arrange_parking_old",
-        "reserve_elevators_new",
-        "reserve_elevators_old",
-        "rent_truck",
-        // Pattern C — Complex survey
-        "book_movers",
-        "book_cleaners",
-        "setup_internet",
-        "sell_items",
-        "remove_items",
-    ]
+    private static let newFlowIds: Set<String> = []
 
     /// Returns the flow ID for a card, or nil if no flow exists.
     private func newFlowId(for card: PeezyCard) -> String? {

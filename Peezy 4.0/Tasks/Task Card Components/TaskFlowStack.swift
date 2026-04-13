@@ -11,6 +11,8 @@ import SwiftUI
 // Renders the current card with depth cards behind it.
 // Handles slide-out transition when currentIndex changes.
 // Each per-task flow file uses this to wrap its current card.
+// .ignoresSafeArea(.keyboard) locks the card frame in place —
+// individual cards handle keyboard avoidance internally if needed.
 
 struct TaskFlowStack<Content: View>: View {
     let cardsRemaining: Int
@@ -54,5 +56,6 @@ struct TaskFlowStack<Content: View>: View {
             reduceMotion ? .easeOut(duration: 0.2) : .spring(response: 0.4, dampingFraction: 0.85),
             value: currentIndex
         )
+        .ignoresSafeArea(.keyboard)
     }
 }

@@ -41,6 +41,21 @@ struct PeezyHomeView: View {
 
     @Environment(\.accessibilityReduceMotion) var reduceMotion
 
+    // Custom binding that disables the fullScreenCover presentation animation
+    // so touches are not swallowed during the ~400ms system transition.
+    private var showTaskFlowBinding: Binding<Bool> {
+        Binding(
+            get: { viewModel.showTaskFlow },
+            set: { newValue in
+                var transaction = Transaction(animation: nil)
+                transaction.disablesAnimations = true
+                withTransaction(transaction) {
+                    viewModel.showTaskFlow = newValue
+                }
+            }
+        )
+    }
+
     // MARK: - Initializers
 
     init(userState: UserState?, focusedTask: Binding<PeezyCard?>) {
@@ -144,12 +159,13 @@ struct PeezyHomeView: View {
         }) {
             InventoryFlowView()
         }
-        // New task flow system — presents standalone per-task flows
-        .fullScreenCover(isPresented: $viewModel.showTaskFlow) {
+        // New task flow system — animation disabled to prevent first-tap being swallowed
+        .fullScreenCover(isPresented: showTaskFlowBinding) {
             if let flowId = viewModel.taskFlowWorkflowId {
                 TaskFlowRouter.flow(
                     for: flowId,
                     userId: Auth.auth().currentUser?.uid ?? "",
+                    userState: viewModel.userState,
                     onComplete: { viewModel.completeTaskFlow() },
                     onDismiss: { viewModel.dismissTaskFlow() }
                 )

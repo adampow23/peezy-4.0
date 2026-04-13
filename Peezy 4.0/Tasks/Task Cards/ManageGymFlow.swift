@@ -2,20 +2,42 @@
 //  ManageGymFlow.swift
 //  Peezy 4.0
 //
+//  Created by Adam Powell on 4/12/26.
+//
 
 import SwiftUI
 
 // MARK: - Manage Gym Flow
-// PATTERN: Simple Survey / Transfer-Cancel
-// Short flow: Title → Single question → Summary with submission.
+// REFERENCE FILE for Type 2: Manage-Provider
+// Full branching flow: Update address OR Find a new one.
+//
+// UPDATE PATH:
+//   TitleCard → Select2 (action) → DecisionCard (help?) →
+//     YES: BusinessSearch → SummaryCard
+//     NO:  InfoCard (tip) → StatusCard
+//
+// FIND NEW PATH:
+//   TitleCard → Select2 (action) → DecisionCard (help canceling?) →
+//     YES: BusinessSearch (current provider) →
+//     NO:  (skip search) →
+//   DecisionCard (help finding new?) →
+//     Either YES: SummaryCard
+//     Both NO:    InfoCard (tip) → StatusCard
+//
+// Nothing saves until SummaryCard submission. If the user bails mid-flow,
+// the task stays untouched in their queue. They open it again, start fresh.
 
 struct ManageGymFlow: View {
-    let taskTitle = "Handle your gym membership"
+    let taskTitle = "Handle my gym membership"
     let workflowId = "manage_gym"
 
     let userId: String
     let onComplete: () -> Void
     let onDismiss: () -> Void
+    // Status callbacks for self-service ending
+    let onSnooze: () -> Void
+    let onMarkInProgress: () -> Void
+    let onMarkDone: () -> Void
 
     // MARK: - State
 
@@ -27,24 +49,118 @@ struct ManageGymFlow: View {
 
     private let titleCard = 0
     private let actionCard = 1
-    private let summaryCard = 2
 
-    private let totalCards = 3
+    // Update path
+    private let updateDecisionCard = 2
+    private let updateBusinessCard = 3
+    private let updateSummaryCard = 4
+    private let updateTipCard = 5
+    private let updateStatusCard = 6
+
+    // Find new path
+    private let cancelDecisionCard = 7
+    private let cancelBusinessCard = 8
+    private let findDecisionCard = 9
+    private let findSummaryCard = 10
+    private let findTipCard = 11
+    private let findStatusCard = 12
+
+    private let totalCards = 13
+
+    // MARK: - Path Logic
+
+    private var isUpdatePath: Bool {
+        answers["action"]?.contains("update") == true
+    }
+
+    private var isFindNewPath: Bool {
+        answers["action"]?.contains("find_new") == true
+    }
+
+    private var updateWantsPeezy: Bool {
+        answers["handling_update"]?.contains("peezy") == true
+    }
+
+    private var cancelWantsPeezy: Bool {
+        answers["handling_cancel"]?.contains("peezy") == true
+    }
+
+    private var findWantsPeezy: Bool {
+        answers["handling_find"]?.contains("peezy") == true
+    }
+
+    private var eitherPeezy: Bool {
+        cancelWantsPeezy || findWantsPeezy
+    }
+
+    // MARK: - Dynamic Summary Text
+
+    private var findNewSummaryText: String {
+        if cancelWantsPeezy && findWantsPeezy {
+            return "We'll cancel your current membership and help find you a new gym near your new place."
+        } else if cancelWantsPeezy {
+            return "We'll cancel your current membership. You're all set to find a new gym on your own."
+        } else {
+            return "We'll help find you a new gym near your new place."
+        }
+    }
+
+    // MARK: - Skip Logic
+
+    private func shouldSkip(_ index: Int) -> Bool {
+        switch index {
+
+        // Update path — skip all if find_new chosen
+        case updateDecisionCard:
+            return isFindNewPath
+        case updateBusinessCard:
+            return isFindNewPath || !updateWantsPeezy
+        case updateSummaryCard:
+            return isFindNewPath || !updateWantsPeezy
+        case updateTipCard:
+            return isFindNewPath || updateWantsPeezy
+        case updateStatusCard:
+            return isFindNewPath || updateWantsPeezy
+
+        // Find new path — skip all if update chosen
+        case cancelDecisionCard:
+            return isUpdatePath
+        case cancelBusinessCard:
+            return isUpdatePath || !cancelWantsPeezy
+        case findDecisionCard:
+            return isUpdatePath
+        case findSummaryCard:
+            return isUpdatePath || !eitherPeezy
+        case findTipCard:
+            return isUpdatePath || eitherPeezy
+        case findStatusCard:
+            return isUpdatePath || eitherPeezy
+
+        default:
+            return false
+        }
+    }
 
     private var cardsRemaining: Int {
-        totalCards - currentIndex
+        var count = 0
+        for i in currentIndex..<totalCards {
+            if !shouldSkip(i) { count += 1 }
+        }
+        return count
     }
 
     // MARK: - Body
 
     var body: some View {
-        ZStack {
+        ZStack(alignment: .topLeading) {
             InteractiveBackground()
                 .ignoresSafeArea()
 
             TaskFlowStack(cardsRemaining: cardsRemaining, currentIndex: currentIndex) {
                 cardContent
             }
+
+            TaskFlowDismissButton(onDismiss: onDismiss)
         }
     }
 
@@ -54,48 +170,184 @@ struct ManageGymFlow: View {
     private var cardContent: some View {
         switch currentIndex {
 
+        // ═══════════════════════════════════════
+        // SHARED — Title + Action Choice
+        // ═══════════════════════════════════════
+
         // ── Card 0: Title ──
         case titleCard:
             TaskFlowTitleCard(
                 taskTitle: taskTitle,
-                title: "Gym membership",
-                bodyText: "Let's figure out what you need for your gym membership.",
-                primaryLabel: "Continue",
-                secondaryLabel: "Go back",
-                onPrimary: { advance() },
-                onSecondary: { onDismiss() }
+                icon: "dumbbell.fill",
+                onContinue: { advance() }
             )
 
-        // ── Card 1: What would you like to do? (single-select) ──
+        // ── Card 1: Update or Find New (single-select) ──
         case actionCard:
-            TaskFlowTilesCard(
+            TaskFlowSelect2Card(
                 taskTitle: taskTitle,
-                question: "What would you like to do with your membership?",
-                options: [
-                    FlowOption(id: "transfer", label: "Transfer to new location", icon: "arrow.triangle.swap",
-                               subtitle: "Move your membership to a location near your new home"),
-                    FlowOption(id: "cancel", label: "Cancel membership", icon: "xmark.circle",
-                               subtitle: "End your current membership"),
-                    FlowOption(id: "update_address", label: "Update my address", icon: "pencil.line",
-                               subtitle: "Keep your membership as-is, just update your address"),
-                    FlowOption(id: "already_handled", label: "Already handled", icon: "checkmark.circle",
-                               subtitle: "I've already taken care of this")
-                ],
+                question: "What would you like to do?",
+                option1: FlowOption(id: "update", label: "Update my address", icon: "pencil.line"),
+                option2: FlowOption(id: "find_new", label: "Find a new one", icon: "magnifyingglass"),
                 selectedIds: answers["action"] ?? [],
                 showBack: true,
                 onSelect: { id in selectSingle("action", id: id) },
                 onBack: { goBack() }
             )
 
-        // ── Card 2: Summary ──
-        case summaryCard:
+        // ═══════════════════════════════════════
+        // UPDATE PATH
+        // ═══════════════════════════════════════
+
+        // ── Card 2: Want us to handle the update? ──
+        case updateDecisionCard:
+            TaskFlowDecisionCard(
+                taskTitle: taskTitle,
+                showBack: true,
+                onPeezy: {
+                    answers["handling_update"] = ["peezy"]
+                    advance()
+                },
+                onSelf: {
+                    answers["handling_update"] = ["self"]
+                    advance()
+                },
+                onBack: { goBack() }
+            )
+
+        // ── Card 3: Which gym? (Peezy needs to know) ──
+        case updateBusinessCard:
+            TaskFlowBusinessSearchCard(
+                taskTitle: taskTitle,
+                question: "Which gym do you go to?",
+                placeholder: "Search for a gym...",
+                searchHint: "gym",
+                selectedBusiness: answers["business_name"]?.first,
+                showBack: true,
+                onConfirm: { name in
+                    answers["business_name"] = [name]
+                    advance()
+                },
+                onBack: { goBack() }
+            )
+
+        // ── Card 4: Update Summary (Peezy path) ──
+        case updateSummaryCard:
             TaskFlowSummaryCard(
                 taskTitle: taskTitle,
-                title: "We're on it",
-                bodyText: "We'll take it from here.",
-                primaryLabel: "Submit",
+                bodyText: "We'll reach out to your gym and get your address updated.",
                 showBack: true,
                 onPrimary: { submitAndComplete() },
+                onBack: { goBack() }
+            )
+
+        // ── Card 5: Update Tip (Self path) ──
+        case updateTipCard:
+            TaskFlowInfoCard(
+                taskTitle: taskTitle,
+                title: "Good to Know",
+                bodyText: "Most gyms let you update your address online through your account settings or their app. If not, a quick call to the front desk usually takes less than 5 minutes.",
+                primaryLabel: "Got it",
+                showBack: true,
+                onPrimary: { advance() },
+                onBack: { goBack() }
+            )
+
+        // ── Card 6: Update Status (Self path) ──
+        case updateStatusCard:
+            TaskFlowStatusCard(
+                taskTitle: taskTitle,
+                showBack: true,
+                onLater: { onSnooze() },
+                onInProgress: { onMarkInProgress() },
+                onDone: { onMarkDone() },
+                onBack: { goBack() }
+            )
+
+        // ═══════════════════════════════════════
+        // FIND NEW PATH
+        // ═══════════════════════════════════════
+
+        // ── Card 7: Want help canceling your current one? ──
+        case cancelDecisionCard:
+            TaskFlowDecisionCard(
+                taskTitle: taskTitle,
+                question: "First, do you want help canceling your current membership?",
+                showBack: true,
+                onPeezy: {
+                    answers["handling_cancel"] = ["peezy"]
+                    advance()
+                },
+                onSelf: {
+                    answers["handling_cancel"] = ["self"]
+                    advance()
+                },
+                onBack: { goBack() }
+            )
+
+        // ── Card 8: Which gym are you canceling? (Peezy needs to know) ──
+        case cancelBusinessCard:
+            TaskFlowBusinessSearchCard(
+                taskTitle: taskTitle,
+                question: "Which gym are you canceling?",
+                placeholder: "Search for a gym...",
+                searchHint: "gym",
+                selectedBusiness: answers["current_business"]?.first,
+                showBack: true,
+                onConfirm: { name in
+                    answers["current_business"] = [name]
+                    advance()
+                },
+                onBack: { goBack() }
+            )
+
+        // ── Card 9: Want help finding a new one? ──
+        case findDecisionCard:
+            TaskFlowDecisionCard(
+                taskTitle: taskTitle,
+                question: "Would you like help finding a new gym near your new place?",
+                showBack: true,
+                onPeezy: {
+                    answers["handling_find"] = ["peezy"]
+                    advance()
+                },
+                onSelf: {
+                    answers["handling_find"] = ["self"]
+                    advance()
+                },
+                onBack: { goBack() }
+            )
+
+        // ── Card 10: Find New Summary (either Peezy) ──
+        case findSummaryCard:
+            TaskFlowSummaryCard(
+                taskTitle: taskTitle,
+                bodyText: findNewSummaryText,
+                showBack: true,
+                onPrimary: { submitAndComplete() },
+                onBack: { goBack() }
+            )
+
+        // ── Card 11: Find New Tip (both self) ──
+        case findTipCard:
+            TaskFlowInfoCard(
+                taskTitle: taskTitle,
+                title: "Good to Know",
+                bodyText: "Call your gym to cancel — most require a phone call or in-person visit. For the new place, check if your current chain has a location nearby before signing up somewhere new.",
+                primaryLabel: "Got it",
+                showBack: true,
+                onPrimary: { advance() },
+                onBack: { goBack() }
+            )
+
+        // ── Card 12: Find New Status (both self) ──
+        case findStatusCard:
+            TaskFlowStatusCard(
+                taskTitle: taskTitle,
+                showBack: true,
+                onLater: { onSnooze() },
+                onInProgress: { onMarkInProgress() },
+                onDone: { onMarkDone() },
                 onBack: { goBack() }
             )
 
@@ -104,16 +356,20 @@ struct ManageGymFlow: View {
         }
     }
 
-    // MARK: - Navigation
+    // MARK: - Navigation (skip-aware)
 
     private func advance() {
-        guard currentIndex + 1 < totalCards else { return }
-        currentIndex += 1
+        var next = currentIndex + 1
+        while next < totalCards && shouldSkip(next) { next += 1 }
+        guard next < totalCards else { return }
+        currentIndex = next
     }
 
     private func goBack() {
-        guard currentIndex > 0 else { return }
-        currentIndex -= 1
+        var prev = currentIndex - 1
+        while prev >= 0 && shouldSkip(prev) { prev -= 1 }
+        guard prev >= 0 else { return }
+        currentIndex = prev
     }
 
     // MARK: - Answer Handlers
@@ -145,9 +401,7 @@ struct ManageGymFlow: View {
                 )
                 await MainActor.run {
                     isSubmitting = false
-                    if response.success {
-                        onComplete()
-                    }
+                    if response.success { onComplete() }
                 }
             } catch {
                 await MainActor.run {
@@ -159,14 +413,17 @@ struct ManageGymFlow: View {
     }
 }
 
-// MARK: - Preview
+// MARK: - Previews
 
 #if DEBUG
 #Preview("Manage Gym Flow") {
     ManageGymFlow(
         userId: "preview-user",
         onComplete: { print("✅ Complete") },
-        onDismiss: { print("⏪ Dismissed") }
+        onDismiss: { print("⏪ Dismiss") },
+        onSnooze: { print("🕐 Later") },
+        onMarkInProgress: { print("➡️ In Progress") },
+        onMarkDone: { print("✅ Done") }
     )
 }
 #endif
