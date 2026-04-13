@@ -115,7 +115,63 @@ final class PeezyHomeViewModel {
     var taskFlowWorkflowId: String?
 
     /// WorkflowIds that have standalone flow files.
-    private static let newFlowIds: Set<String> = []
+    private static let newFlowIds: Set<String> = [
+        // Type 1: Self-Service
+        "return_key_fobs_remotes",
+        "schedule_time_off_work",
+        "update_employer_records",
+        "update_drivers_license",
+        "new_drivers_license",
+        "register_vehicle",
+        "photograph_rental_condition",
+        "buy_packing_supplies",
+        "buy_cleaning_supplies",
+        "defrost_freezer",
+        "diy_deep_cleaning",
+        "diy_final_cleaning",
+        "forward_mail_usps",
+        "coa_schools",
+        "transfer_daycare",
+        "update_credit_card",
+        "update_student_loans",
+        "begin_school_transfer",
+        "new_school_enrollment",
+        "setup_daycare",
+        // Type 2: Manage-Provider
+        "manage_gym",
+        "manage_doctor",
+        "manage_dentist",
+        "manage_vet",
+        "transfer_pharmacy_records",
+        "transfer_specialists_records",
+        "manage_yoga",
+        "manage_spin",
+        "manage_massage",
+        "manage_bank",
+        "update_investment",
+        // Type 3: Decision Only
+        "arrange_parking_new",
+        "arrange_parking_old",
+        "reserve_elevators_new",
+        "reserve_elevators_old",
+        "setup_utilities",
+        "cancel_utilities",
+        "transfer_utilities",
+        // Type 4: Insurance
+        "handle_auto_insurance", "update_auto_insurance",
+        "handle_home_insurance",
+        "cancel_renters_insurance", "setup_renters_insurance", "transfer_renters_insurance",
+        "cancel_condo_insurance", "setup_condo_insurance", "transfer_condo_insurance",
+        "cancel_homeowners_insurance", "setup_homeowners_insurance", "transfer_homeowners_insurance",
+        // Type 5: Survey + Submit
+        "rent_truck",
+        // Type 6: Complex-Vendor
+        "book_movers",
+        "book_cleaners",
+        "setup_internet",
+        "sell_items",
+        "remove_items"
+    ]
 
     /// Returns the flow ID for a card, or nil if no flow exists.
     private func newFlowId(for card: PeezyCard) -> String? {
@@ -566,7 +622,7 @@ final class PeezyHomeViewModel {
 
     // MARK: - Complete Task Flow
 
-    /// Called when a task flow completes (user tapped Submit/Done).
+    /// Called when a task flow completes (user tapped Submit/Done on SummaryCard).
     func completeTaskFlow() {
         guard let task = currentTask else { return }
 
@@ -592,7 +648,7 @@ final class PeezyHomeViewModel {
         advanceAfterTask()
     }
 
-    /// Called when user dismisses a task flow (Go back / swipe dismiss).
+    /// Called when user dismisses a task flow (DismissButton / swipe dismiss).
     func dismissTaskFlow() {
         if let task = currentTask {
             taskQueue.insert(task, at: 0)
@@ -602,6 +658,68 @@ final class PeezyHomeViewModel {
         taskFlowWorkflowId = nil
         isFocusedTask = false
         determineHomeState()
+    }
+
+    // MARK: - Status Card Actions (from Task Flows)
+
+    /// StatusCard: "Already done" — marks task completed in Firestore, advances.
+    func statusActionDone() {
+        guard let task = currentTask else { return }
+
+        Task {
+            await markTaskCompleted(task)
+        }
+
+        completedThisSession += 1
+        dailyDoseCompletedCount += 1
+        totalCompletedCount += 1
+        allActiveTasks.removeAll { $0.id == task.id }
+        currentTask = nil
+        showTaskFlow = false
+        taskFlowWorkflowId = nil
+        isFocusedTask = false
+
+        advanceAfterTask()
+    }
+
+    /// StatusCard: "Mark as in progress" — marks UserInProgress, returns in 3 days.
+    func statusActionInProgress() {
+        guard let task = currentTask else { return }
+
+        let returnDate = Calendar.current.date(byAdding: .day, value: 3, to: Date()) ?? Date()
+
+        Task {
+            await writeUserInProgress(task, returnDate: returnDate)
+        }
+
+        dailyDoseCompletedCount += 1
+        completedThisSession += 1
+        currentTask = nil
+        showTaskFlow = false
+        taskFlowWorkflowId = nil
+        isFocusedTask = false
+
+        advanceAfterTask()
+    }
+
+    /// StatusCard: "Later" — snoozes task by 3 days, bumps it down the queue.
+    func statusActionLater() {
+        guard let task = currentTask else { return }
+
+        let snoozedUntil = Calendar.current.date(byAdding: .day, value: 3, to: Date()) ?? Date()
+
+        Task {
+            await writeSnooze(task, snoozedUntil: snoozedUntil)
+        }
+
+        allActiveTasks.removeAll { $0.id == task.id }
+        dailyDoseCompletedCount += 1
+        currentTask = nil
+        showTaskFlow = false
+        taskFlowWorkflowId = nil
+        isFocusedTask = false
+
+        advanceAfterTask()
     }
 
     // MARK: - Get Ahead

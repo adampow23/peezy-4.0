@@ -29,7 +29,6 @@ struct RoomListView: View {
                 Spacer()
 
                 bottomButtons
-                    .padding(.bottom, 20)
             }
         }
         .alert("Delete Room", isPresented: $showDeleteConfirmation) {
@@ -175,56 +174,67 @@ struct RoomListView: View {
     // MARK: - Bottom Buttons
 
     private var bottomButtons: some View {
-        VStack(spacing: PeezyTheme.Layout.verticalSpacing) {
-            // Scan Another Room button
+        VStack(spacing: 12) {
+            // Primary: Submit for Review
             Button {
-                scanPressed = true
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                    scanPressed = false
-                    showRoomNameEntry = true
-                }
+                PeezyHaptics.light()
+                submitForReview()
             } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "camera.viewfinder")
-                        .font(.system(size: 18, weight: .medium))
-                    Text(sessionManager.scannedRooms.isEmpty ? "Scan Your First Room" : "Scan Another Room")
-                        .font(PeezyTheme.Typography.headline)
-                }
-                .foregroundStyle(PeezyTheme.Colors.deepInk)
-                .frame(height: PeezyTheme.Layout.buttonHeight)
-                .frame(maxWidth: .infinity)
-                .background(PeezyTheme.Colors.brandYellow)
-                .clipShape(RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadiusPill, style: .continuous))
-                .shadow(color: PeezyTheme.Shadows.buttonShadowColor, radius: PeezyTheme.Shadows.buttonShadowRadius, x: 0, y: PeezyTheme.Shadows.buttonShadowY)
-            }
-            .scaleEffect(scanPressed ? PeezyTheme.Animation.pressScale : 1.0)
-            .animation(PeezyTheme.Animation.spring, value: scanPressed)
-
-            // Done — View Estimate button (only when rooms exist)
-            if !sessionManager.scannedRooms.isEmpty {
-                Button {
-                    savePressed = true
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                        savePressed = false
-                        sessionManager.showEstimate()
-                    }
-                } label: {
-                    Text("Done — View Estimate")
-                        .font(PeezyTheme.Typography.headline)
+                Text("Submit for Review")
+                    .font(PeezyTheme.Typography.headline)
                     .foregroundStyle(PeezyTheme.Colors.deepInk)
                     .frame(height: PeezyTheme.Layout.buttonHeight)
                     .frame(maxWidth: .infinity)
                     .background(PeezyTheme.Gradients.brandYellow)
                     .clipShape(RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadiusPill, style: .continuous))
                     .shadow(color: PeezyTheme.Shadows.buttonShadowColor, radius: PeezyTheme.Shadows.buttonShadowRadius, x: 0, y: PeezyTheme.Shadows.buttonShadowY)
+            }
+            .disabled(sessionManager.scannedRooms.isEmpty)
+            .opacity(sessionManager.scannedRooms.isEmpty ? 0.4 : 1.0)
+
+            // Secondary: Save for Later
+            if !sessionManager.scannedRooms.isEmpty {
+                Button(action: {
+                    PeezyHaptics.light()
+                    saveForLater()
+                }) {
+                    Text("Save for later")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(PeezyTheme.Colors.textSecondary)
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .contentShape(Rectangle())
                 }
-                .scaleEffect(savePressed ? PeezyTheme.Animation.pressScale : 1.0)
-                .animation(PeezyTheme.Animation.spring, value: savePressed)
-                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .buttonStyle(.plain)
             }
         }
         .padding(.horizontal, PeezyTheme.Layout.horizontalPadding)
-        .animation(PeezyTheme.Animation.spring, value: sessionManager.scannedRooms.isEmpty)
+        .padding(.bottom, PeezyTheme.Layout.cardPadding)
+    }
+
+    private func submitForReview() {
+        Task {
+            do {
+                try await sessionManager.saveAllToFirestore()
+                await MainActor.run {
+                    onDismiss()
+                }
+            } catch {
+                sessionManager.error = error.localizedDescription
+            }
+        }
+    }
+
+    private func saveForLater() {
+        Task {
+            do {
+                try await sessionManager.saveAllToFirestore()
+                await MainActor.run {
+                    onDismiss()
+                }
+            } catch {
+                sessionManager.error = error.localizedDescription
+            }
+        }
     }
 
     // MARK: - Room Name Sheet

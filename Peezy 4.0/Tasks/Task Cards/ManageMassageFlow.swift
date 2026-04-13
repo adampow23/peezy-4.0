@@ -1,5 +1,5 @@
 //
-//  ManageGymFlow.swift
+//  ManageMassageFlow.swift
 //  Peezy 4.0
 //
 //  Created by Adam Powell on 4/12/26.
@@ -7,29 +7,11 @@
 
 import SwiftUI
 
-// MARK: - Manage Gym Flow
-// REFERENCE FILE for Type 2: Manage-Provider
-// Full branching flow: Update address OR Find a new one.
-//
-// UPDATE PATH:
-//   TitleCard → Select2 (action) → DecisionCard (help?) →
-//     YES: BusinessSearch → SummaryCard
-//     NO:  InfoCard (tip) → StatusCard
-//
-// FIND NEW PATH:
-//   TitleCard → Select2 (action) → DecisionCard (help canceling?) →
-//     YES: BusinessSearch (current provider) →
-//     NO:  (skip search) →
-//   DecisionCard (help finding new?) →
-//     Either YES: SummaryCard
-//     Both NO:    InfoCard (tip) → StatusCard
-//
-// Nothing saves until SummaryCard submission. If the user bails mid-flow,
-// the task stays untouched in their queue. They open it again, start fresh.
+// MARK: - Manage Massage Flow
 
-struct ManageGymFlow: View {
-    let taskTitle = "Handle my gym membership"
-    let workflowId = "manage_gym"
+struct ManageMassageFlow: View {
+    let taskTitle = "Handle my spa membership"
+    let workflowId = "manage_massage"
 
     let userId: String
     let onComplete: () -> Void
@@ -94,11 +76,11 @@ struct ManageGymFlow: View {
 
     private var findNewSummaryText: String {
         if cancelWantsPeezy && findWantsPeezy {
-            return "We'll cancel your current membership and help find you a new gym near your new place."
+            return "We'll cancel your current membership and help find you a new spa near your new place."
         } else if cancelWantsPeezy {
             return "We'll cancel your current membership. You're all set to find a new one on your own."
         } else {
-            return "We'll help find you a new gym near your new place."
+            return "We'll help find you a new spa near your new place."
         }
     }
 
@@ -175,7 +157,7 @@ struct ManageGymFlow: View {
         case titleCard:
             TaskFlowTitleCard(
                 taskTitle: taskTitle,
-                icon: "dumbbell.fill",
+                icon: "hands.sparkles.fill",
                 onContinue: { advance() }
             )
 
@@ -212,13 +194,13 @@ struct ManageGymFlow: View {
                 onBack: { goBack() }
             )
 
-        // ── Card 3: Which gym? (Peezy needs to know) ──
+        // ── Card 3: Which spa? (Peezy needs to know) ──
         case updateBusinessCard:
             TaskFlowBusinessSearchCard(
                 taskTitle: taskTitle,
-                question: "Which gym do you go to?",
-                placeholder: "Search for a gym...",
-                searchHint: "gym",
+                question: "Which spa do you go to?",
+                placeholder: "Search for a spa...",
+                searchHint: "spa massage",
                 selectedBusiness: answers["business_name"]?.first,
                 showBack: true,
                 onConfirm: { name in
@@ -232,7 +214,7 @@ struct ManageGymFlow: View {
         case updateSummaryCard:
             TaskFlowSummaryCard(
                 taskTitle: taskTitle,
-                bodyText: "We'll reach out to your gym and get your address updated.",
+                bodyText: "We'll reach out to your spa and get your address updated.",
                 showBack: true,
                 onPrimary: { submitAndComplete() },
                 onBack: { goBack() }
@@ -243,7 +225,7 @@ struct ManageGymFlow: View {
             TaskFlowInfoCard(
                 taskTitle: taskTitle,
                 title: "Good to Know",
-                bodyText: "Most gyms let you update your address online through your account settings or their app. If not, a quick call to the front desk usually takes less than 5 minutes.",
+                bodyText: "Most studios let you update your address online through your account settings or their app. If not, a quick call to the front desk usually takes less than 5 minutes.",
                 primaryLabel: "Got it",
                 showBack: true,
                 onPrimary: { advance() },
@@ -265,11 +247,11 @@ struct ManageGymFlow: View {
         // FIND NEW PATH
         // ═══════════════════════════════════════
 
-        // ── Card 7: Want help canceling your current one? ──
+        // ── Card 7: Want help canceling your current membership? ──
         case cancelDecisionCard:
             TaskFlowDecisionCard(
                 taskTitle: taskTitle,
-                question: "First, do you want help canceling your current membership?",
+                question: "Want help canceling your current membership?",
                 showBack: true,
                 onPeezy: {
                     answers["handling_cancel"] = ["peezy"]
@@ -282,13 +264,13 @@ struct ManageGymFlow: View {
                 onBack: { goBack() }
             )
 
-        // ── Card 8: Which gym are you canceling? (Peezy needs to know) ──
+        // ── Card 8: Which spa are you canceling? (Peezy needs to know) ──
         case cancelBusinessCard:
             TaskFlowBusinessSearchCard(
                 taskTitle: taskTitle,
-                question: "Which gym are you canceling?",
-                placeholder: "Search for a gym...",
-                searchHint: "gym",
+                question: "Which spa are you canceling?",
+                placeholder: "Search for a spa...",
+                searchHint: "spa massage",
                 selectedBusiness: answers["current_business"]?.first,
                 showBack: true,
                 onConfirm: { name in
@@ -302,7 +284,7 @@ struct ManageGymFlow: View {
         case findDecisionCard:
             TaskFlowDecisionCard(
                 taskTitle: taskTitle,
-                question: "Would you like help finding a new gym near your new place?",
+                question: "Would you like help finding a new spa near your new place?",
                 showBack: true,
                 onPeezy: {
                     answers["handling_find"] = ["peezy"]
@@ -330,7 +312,7 @@ struct ManageGymFlow: View {
             TaskFlowInfoCard(
                 taskTitle: taskTitle,
                 title: "Good to Know",
-                bodyText: "Call your gym to cancel — most require a phone call or in-person visit. For the new place, check if your current chain has a location nearby before signing up somewhere new.",
+                bodyText: "Check your membership terms for cancellation requirements — some need 30 days written notice. For the new place, check if your current chain has a location nearby before signing up somewhere new.",
                 primaryLabel: "Got it",
                 showBack: true,
                 onPrimary: { advance() },
@@ -413,8 +395,8 @@ struct ManageGymFlow: View {
 // MARK: - Previews
 
 #if DEBUG
-#Preview("Manage Gym Flow") {
-    ManageGymFlow(
+#Preview("Manage Massage Flow") {
+    ManageMassageFlow(
         userId: "preview-user",
         onComplete: { print("✅ Complete") },
         onDismiss: { print("⏪ Dismiss") },

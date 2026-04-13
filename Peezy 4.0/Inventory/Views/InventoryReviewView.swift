@@ -3,6 +3,7 @@ import SwiftUI
 struct InventoryReviewView: View {
     @State private var viewModel: InventoryReviewViewModel
     var onConfirm: ([InventoryItem]) -> Void
+    var onRescan: (() -> Void)? = nil
 
     // Add item sheet fields
     @State private var newItemName = ""
@@ -21,9 +22,10 @@ struct InventoryReviewView: View {
     private let categories = ["furniture", "electronics", "boxes", "appliance", "decor", "other"]
     private let sizes = ["small", "medium", "large", "oversized"]
 
-    init(items: [InventoryItem], roomName: String, onConfirm: @escaping ([InventoryItem]) -> Void) {
+    init(items: [InventoryItem], roomName: String, onConfirm: @escaping ([InventoryItem]) -> Void, onRescan: (() -> Void)? = nil) {
         self._viewModel = State(initialValue: InventoryReviewViewModel(items: items, roomName: roomName))
         self.onConfirm = onConfirm
+        self.onRescan = onRescan
     }
 
     var body: some View {
@@ -255,47 +257,64 @@ struct InventoryReviewView: View {
     // MARK: - Bottom Bar
 
     private var bottomBar: some View {
-        HStack(spacing: PeezyTheme.Layout.itemSpacing) {
-            // Add Item button
-            Button {
-                viewModel.showAddItem = true
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "plus")
-                        .font(.system(size: 14, weight: .semibold))
-                    Text("Add")
-                        .font(PeezyTheme.Typography.calloutMedium)
+        VStack(spacing: 8) {
+            HStack(spacing: PeezyTheme.Layout.itemSpacing) {
+                // Add Item button
+                Button {
+                    viewModel.showAddItem = true
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "plus")
+                            .font(.system(size: 14, weight: .semibold))
+                        Text("Add")
+                            .font(PeezyTheme.Typography.calloutMedium)
+                    }
+                    .foregroundStyle(PeezyTheme.Colors.infoBlue)
+                    .padding(.horizontal, 16)
+                    .frame(height: PeezyTheme.Layout.buttonHeightSmall)
+                    .background(.regularMaterial)
+                    .clipShape(Capsule())
+                    .overlay(
+                        Capsule()
+                            .stroke(PeezyTheme.Colors.infoBlue.opacity(0.3), lineWidth: 1)
+                    )
                 }
-                .foregroundStyle(PeezyTheme.Colors.infoBlue)
-                .padding(.horizontal, 16)
-                .frame(height: PeezyTheme.Layout.buttonHeightSmall)
-                .background(.regularMaterial)
-                .clipShape(Capsule())
-                .overlay(
-                    Capsule()
-                        .stroke(PeezyTheme.Colors.infoBlue.opacity(0.3), lineWidth: 1)
-                )
+
+                // Confirm button
+                Button {
+                    confirmPressed = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                        confirmPressed = false
+                        onConfirm(viewModel.items)
+                    }
+                } label: {
+                    Text(viewModel.confirmButtonText)
+                        .font(PeezyTheme.Typography.headline)
+                        .foregroundStyle(PeezyTheme.Colors.deepInk)
+                        .frame(height: PeezyTheme.Layout.buttonHeight)
+                        .frame(maxWidth: .infinity)
+                        .background(PeezyTheme.Gradients.brandYellow)
+                        .clipShape(RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadiusPill, style: .continuous))
+                        .shadow(color: PeezyTheme.Shadows.buttonShadowColor, radius: PeezyTheme.Shadows.buttonShadowRadius, x: 0, y: PeezyTheme.Shadows.buttonShadowY)
+                }
+                .scaleEffect(confirmPressed ? PeezyTheme.Animation.pressScale : 1.0)
+                .animation(PeezyTheme.Animation.spring, value: confirmPressed)
             }
 
-            // Confirm button
-            Button {
-                confirmPressed = true
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                    confirmPressed = false
-                    onConfirm(viewModel.items)
+            // Re-scan button
+            if let onRescan {
+                Button(action: {
+                    PeezyHaptics.light()
+                    onRescan()
+                }) {
+                    Text("Re-scan this room")
+                        .font(PeezyTheme.Typography.callout)
+                        .foregroundStyle(PeezyTheme.Colors.textSecondary)
+                        .frame(maxWidth: .infinity, minHeight: 36)
+                        .contentShape(Rectangle())
                 }
-            } label: {
-                Text(viewModel.confirmButtonText)
-                    .font(PeezyTheme.Typography.headline)
-                    .foregroundStyle(PeezyTheme.Colors.deepInk)
-                    .frame(height: PeezyTheme.Layout.buttonHeight)
-                    .frame(maxWidth: .infinity)
-                    .background(PeezyTheme.Gradients.brandYellow)
-                    .clipShape(RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadiusPill, style: .continuous))
-                    .shadow(color: PeezyTheme.Shadows.buttonShadowColor, radius: PeezyTheme.Shadows.buttonShadowRadius, x: 0, y: PeezyTheme.Shadows.buttonShadowY)
+                .buttonStyle(.plain)
             }
-            .scaleEffect(confirmPressed ? PeezyTheme.Animation.pressScale : 1.0)
-            .animation(PeezyTheme.Animation.spring, value: confirmPressed)
         }
         .padding(.horizontal, PeezyTheme.Layout.horizontalPadding)
         .padding(.vertical, PeezyTheme.Layout.cardPaddingSmall)

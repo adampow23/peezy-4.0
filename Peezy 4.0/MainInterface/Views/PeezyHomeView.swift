@@ -167,7 +167,14 @@ struct PeezyHomeView: View {
                     userId: Auth.auth().currentUser?.uid ?? "",
                     userState: viewModel.userState,
                     onComplete: { viewModel.completeTaskFlow() },
-                    onDismiss: { viewModel.dismissTaskFlow() }
+                    onDismiss: { viewModel.dismissTaskFlow() },
+                    onStatusAction: { action in
+                        switch action {
+                        case .done: viewModel.statusActionDone()
+                        case .inProgress: viewModel.statusActionInProgress()
+                        case .later: viewModel.statusActionLater()
+                        }
+                    }
                 )
             }
         }
@@ -232,48 +239,47 @@ struct PeezyHomeView: View {
                         .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.3))
                         .padding(.bottom, 24)
                         .accessibilityAction(named: "Next page") {
-                            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.3)) {
-                                welcomePage += 1
+                            withAnimation(reduceMotion ? .easeOut(duration: 0.2) : .spring(response: 0.35, dampingFraction: 0.85)) {
+                                welcomePage = min(welcomePage + 1, 2)
                             }
                         }
                 } else {
-                    PeezyAssessmentButton("Start My First Task") {
+                    PeezyAssessmentButton("Let's do this") {
                         viewModel.dismissFirstTimeWelcome()
                     }
                     .padding(.horizontal, 24)
                     .padding(.bottom, 24)
                 }
             }
-        }
-        .gesture(
-            DragGesture(minimumDistance: 50)
-                .onEnded { gesture in
-                    let horizontal = gesture.translation.width
-                    if horizontal < -50 && welcomePage < 2 {
-                        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.3)) {
-                            welcomePage += 1
-                        }
-                    } else if horizontal > 50 && welcomePage > 0 {
-                        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.3)) {
-                            welcomePage -= 1
+            .gesture(
+                DragGesture(minimumDistance: 50)
+                    .onEnded { value in
+                        if value.translation.width < -50 && welcomePage < 2 {
+                            withAnimation(reduceMotion ? .easeOut(duration: 0.2) : .spring(response: 0.35, dampingFraction: 0.85)) {
+                                welcomePage += 1
+                            }
+                        } else if value.translation.width > 50 && welcomePage > 0 {
+                            withAnimation(reduceMotion ? .easeOut(duration: 0.2) : .spring(response: 0.35, dampingFraction: 0.85)) {
+                                welcomePage -= 1
+                            }
                         }
                     }
-                }
-        )
+            )
+        }
     }
 
     private var welcomePageHeadline: String {
         switch welcomePage {
-        case 0: return "Here's how Peezy works"
-        case 1: return "Everything in one place"
-        default: return "Got questions? Just ask."
+        case 0: return viewModel.firstTimeWelcomeGreeting
+        case 1: return "Stay in control."
+        default: return "We're here to help."
         }
     }
 
     private var welcomePageBody: String {
-        let daily = viewModel.dailyTarget
         switch welcomePage {
         case 0:
+            let daily = viewModel.dailyTarget
             if daily > 0 {
                 let taskWord = daily == 1 ? "task" : "tasks"
                 return "We break your move into bite-sized daily tasks based on your timeline.\n\nWe've got about \(daily) \(taskWord) per day to keep you on track — just work through each day's batch and you're golden."

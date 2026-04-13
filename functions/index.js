@@ -4,6 +4,7 @@
  */
 
 const { onRequest, onCall } = require('firebase-functions/v2/https');
+const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { setGlobalOptions } = require('firebase-functions/v2');
 const admin = require('firebase-admin');
 const { generateResponse, validateContentLoaded } = require('./peezyBrain');
@@ -12,6 +13,7 @@ const { processInventory } = require('./processInventory');
 const { packageInventory } = require('./packageInventory');
 const { validateSubscription } = require('./validateSubscription');
 const { joinWaitlist } = require('./joinWaitlist');
+const { notifyAdmin } = require('./notifyAdmin');
 
 // Set global options
 setGlobalOptions({ maxInstances: 10 });
@@ -425,6 +427,15 @@ exports.requestConcierge = onCall(
       console.warn('NOTIFICATION_WEBHOOK_URL not configured');
     }
 
+    // Notify admin via SMS + backup log
+    notifyAdmin({
+      type: 'concierge_request',
+      userId: userId || '',
+      title: taskTitle || 'New task request',
+      summary: `Action needed: ${taskTitle}\nCategory: ${taskCategory || 'General'}`,
+      details: { taskId, taskTitle, taskCategory, currentAddress, newAddress, moveDate, moveDistance }
+    }).catch(err => console.error('notifyAdmin failed:', err.message));
+
     return { success: true };
   }
 );
@@ -473,6 +484,15 @@ exports.submitTaskFlow = onCall(
       console.warn('NOTIFICATION_WEBHOOK_URL not configured');
     }
 
+    // Notify admin via SMS + backup log
+    notifyAdmin({
+      type: 'task_flow',
+      userId: userId || '',
+      title: taskTitle || 'Task submitted',
+      summary: `Type: ${taskType || 'unknown'}\n${transferChoice ? 'Choice: ' + transferChoice : ''}`,
+      details: { taskId, taskTitle, taskType, confirmedFields, transferChoice }
+    }).catch(err => console.error('notifyAdmin failed:', err.message));
+
     return { success: true };
   }
 );
@@ -503,6 +523,16 @@ exports.submitSupportMessage = onCall(
       console.warn('NOTIFICATION_WEBHOOK_URL not configured');
     }
 
+    // Notify admin via SMS + backup log — URGENT
+    notifyAdmin({
+      type: 'support_message',
+      userId: userId || '',
+      title: 'Support message',
+      summary: text || '(empty message)',
+      details: { messageId, text },
+      urgency: 'high'
+    }).catch(err => console.error('notifyAdmin failed:', err.message));
+
     return { success: true };
   }
 );
@@ -529,3 +559,43 @@ exports.validateSubscription = validateSubscription;
 exports.processInventory = processInventory;
 exports.packageInventory = packageInventory;
 exports.joinWaitlist = joinWaitlist;
+
+/**
+ * Notification health check — runs hourly.
+ * Alerts Adam if any notifications are still pending + undelivered after 24 hours.
+ */
+exports.notificationHealthCheck = onSchedule(
+  { schedule: 'every 1 hours', region: 'us-central1', memory: '256MiB' },
+  async () => {
+    const db = admin.firestore();
+
+    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+    const stale = await db.collection('adminNotifications')
+      .where('status', '==', 'pending')
+      .where('smsDelivered', '==', false)
+      .where('createdAt', '<=', admin.firestore.Timestamp.fromDate(oneDayAgo))
+      .limit(10)
+      .get();
+
+    if (!stale.empty) {
+      const count = stale.size;
+      console.warn(`[HealthCheck] Found ${count} undelivered notifications older than 24h`);
+
+      try {
+        const twilioClient = require('twilio')(
+          process.env.TWILIO_ACCOUNT_SID,
+          process.env.TWILIO_AUTH_TOKEN
+        );
+
+        await twilioClient.messages.create({
+          body: `⚠️ PEEZY ALERT: ${count} notification(s) from the past 24h were never delivered via SMS. Check the dashboard immediately.`,
+          from: process.env.TWILIO_FROM_NUMBER,
+          to: process.env.ADMIN_PHONE_NUMBER
+        });
+      } catch (err) {
+        console.error('[HealthCheck] Failed to send alert SMS:', err.message);
+      }
+    }
+  }
+);

@@ -10,6 +10,7 @@ const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
 const { WORKFLOW_QUALIFYING } = require('./workflowQualifying');
 const { MINI_ASSESSMENT_WORKFLOWS } = require('./miniAssessmentWorkflows');
+const { notifyAdmin } = require('./notifyAdmin');
 
 // Initialize Firebase Admin if not already
 if (!admin.apps.length) {
@@ -277,6 +278,15 @@ const submitWorkflowAnswers = onCall(
           console.warn('NOTIFICATION_WEBHOOK_URL not configured — vendor submission not notified');
         }
 
+        // Notify admin via SMS + backup log
+        notifyAdmin({
+          type: 'vendor_workflow',
+          userId,
+          title: `Vendor: ${workflowId}`,
+          summary: formatWorkflowSummary(workflowId, answers),
+          details: { workflowId, answers }
+        }).catch(err => console.error('notifyAdmin failed:', err.message));
+
         return {
           success: true,
           status: 'matching_in_progress'
@@ -304,6 +314,18 @@ const getMiniAssessmentTypes = onCall(
     }));
   }
 );
+
+function formatWorkflowSummary(workflowId, answers) {
+  const lines = [];
+  if (answers && typeof answers === 'object') {
+    for (const [key, value] of Object.entries(answers)) {
+      const vals = Array.isArray(value) ? value.join(', ') : String(value);
+      const label = key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+      lines.push(`${label}: ${vals}`);
+    }
+  }
+  return lines.join('\n') || 'See dashboard for details';
+}
 
 module.exports = {
   getWorkflowQualifying,

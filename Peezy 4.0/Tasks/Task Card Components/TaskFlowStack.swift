@@ -56,6 +56,7 @@ struct TaskFlowStack<Content: View>: View {
             reduceMotion ? .easeOut(duration: 0.2) : .spring(response: 0.4, dampingFraction: 0.85),
             value: currentIndex
         )
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .ignoresSafeArea(.keyboard)
     }
 }

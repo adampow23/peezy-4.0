@@ -8,6 +8,8 @@ final class InventorySessionManager {
     // MARK: - State
 
     enum FlowState {
+        case intro
+        case info
         case roomList
         case enteringRoomName
         case scanning(roomName: String)
@@ -17,7 +19,7 @@ final class InventorySessionManager {
         case estimate
     }
 
-    var state: FlowState = .roomList
+    var state: FlowState = .intro
     var scannedRooms: [ScannedRoom] = []
     var error: String?
     var isProcessing = false
@@ -43,6 +45,20 @@ final class InventorySessionManager {
 
     var userId: String? {
         Auth.auth().currentUser?.uid
+    }
+
+    var stateDescription: String {
+        switch state {
+        case .intro: return "intro"
+        case .info: return "info"
+        case .roomList: return "roomList"
+        case .enteringRoomName: return "enteringRoomName"
+        case .scanning(let name): return "scanning-\(name)"
+        case .processing(let name, _): return "processing-\(name)"
+        case .confirming(let name, _, _): return "confirming-\(name)"
+        case .reviewing(let name, _): return "reviewing-\(name)"
+        case .estimate: return "estimate"
+        }
     }
 
     // MARK: - Actions
