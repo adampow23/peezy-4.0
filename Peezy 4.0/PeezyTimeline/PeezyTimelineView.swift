@@ -241,6 +241,7 @@ struct PeezyTaskStream: View {
                     .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.plain)
+                .accessibilityIdentifier("timeline_tab_\(tab.rawValue.lowercased().replacingOccurrences(of: " ", with: "_"))")
             }
         }
         .padding(.horizontal, 16)

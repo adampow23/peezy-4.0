@@ -161,12 +161,14 @@ struct PeezyFloatingTabBar: View {
                                     .fill(PeezyTheme.Colors.emotionalRed)
                                     .frame(width: 8, height: 8)
                                     .offset(x: -10, y: 12)
+                                    .accessibilityIdentifier("chat_unread_badge")
                             }
                         }
                 }
                 .accessibilityLabel(tab.label)
                 .accessibilityAddTraits(isSelected ? .isSelected : [])
                 .accessibilityHint(isSelected ? "" : "Switches to \(tab.label) tab")
+                .accessibilityIdentifier("tab_\(tab.rawValue)")
             }
         }
         .background(

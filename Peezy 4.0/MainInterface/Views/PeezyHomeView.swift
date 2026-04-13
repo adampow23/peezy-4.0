@@ -227,6 +227,7 @@ struct PeezyHomeView: View {
                         Circle()
                             .fill(i == welcomePage ? Color.primary.opacity(0.4) : Color.primary.opacity(0.12))
                             .frame(width: 7, height: 7)
+                            .accessibilityIdentifier("welcome_dot_\(i)")
                     }
                 }
                 .frame(maxWidth: .infinity)
@@ -238,6 +239,7 @@ struct PeezyHomeView: View {
                         .font(.caption)
                         .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.3))
                         .padding(.bottom, 24)
+                        .accessibilityIdentifier("welcome_swipe_hint")
                         .accessibilityAction(named: "Next page") {
                             withAnimation(reduceMotion ? .easeOut(duration: 0.2) : .spring(response: 0.35, dampingFraction: 0.85)) {
                                 welcomePage = min(welcomePage + 1, 2)
@@ -249,6 +251,7 @@ struct PeezyHomeView: View {
                     }
                     .padding(.horizontal, 24)
                     .padding(.bottom, 24)
+                    .accessibilityIdentifier("welcome_start_button")
                 }
             }
             .gesture(
@@ -266,6 +269,7 @@ struct PeezyHomeView: View {
                     }
             )
         }
+        .accessibilityIdentifier("welcome_card")
     }
 
     private var welcomePageHeadline: String {
@@ -325,8 +329,10 @@ struct PeezyHomeView: View {
                 }
                 .padding(.horizontal, 24)
                 .padding(.bottom, 24)
+                .accessibilityIdentifier("greeting_start_button")
             }
         }
+        .accessibilityIdentifier("daily_greeting_card")
     }
 
     // MARK: - Returning Mid-Day Card
@@ -361,8 +367,10 @@ struct PeezyHomeView: View {
                 }
                 .padding(.horizontal, 24)
                 .padding(.bottom, 24)
+                .accessibilityIdentifier("returning_continue_button")
             }
         }
+        .accessibilityIdentifier("returning_card")
     }
 
     // MARK: - Active Task Content
@@ -419,6 +427,7 @@ struct PeezyHomeView: View {
                         }
                         .padding(.horizontal, 24)
                         .padding(.bottom, 24)
+                        .accessibilityIdentifier("get_ahead_button")
                     }
                 }
             }
@@ -429,6 +438,7 @@ struct PeezyHomeView: View {
         }
         .onAppear { if !reduceMotion { confettiActive = true } }
         .onDisappear { confettiActive = false }
+        .accessibilityIdentifier("daily_complete_view")
     }
 
     // MARK: - All Complete Card
@@ -465,6 +475,7 @@ struct PeezyHomeView: View {
                 Spacer()
             }
         }
+        .accessibilityIdentifier("all_complete_view")
     }
 
     // MARK: - Glass Card Container
