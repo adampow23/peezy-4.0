@@ -57,7 +57,8 @@ struct SignUpView: View {
                             placeholder: "your@email.com",
                             text: $email,
                             contentType: .emailAddress,
-                            keyboardType: .emailAddress
+                            keyboardType: .emailAddress,
+                            fieldAccessibilityId: "signup_email_field"
                         )
 
                         FormField(
@@ -65,7 +66,8 @@ struct SignUpView: View {
                             placeholder: "Min. 6 characters",
                             text: $password,
                             isSecure: true,
-                            contentType: .newPassword
+                            contentType: .newPassword,
+                            fieldAccessibilityId: "signup_password_field"
                         )
 
                         FormField(
@@ -73,7 +75,8 @@ struct SignUpView: View {
                             placeholder: "Re-enter password",
                             text: $confirmPassword,
                             isSecure: true,
-                            contentType: .newPassword
+                            contentType: .newPassword,
+                            fieldAccessibilityId: "signup_confirm_password_field"
                         )
 
                         // Inline password mismatch error
@@ -96,6 +99,7 @@ struct SignUpView: View {
                     )
                     .padding(.horizontal, 24)
                     .padding(.top, 8)
+                    .accessibilityIdentifier("signup_submit_button")
 
                     Spacer()
 
@@ -111,6 +115,7 @@ struct SignUpView: View {
                         .font(PeezyTheme.Typography.callout)
                     }
                     .padding(.bottom, PeezyTheme.Layout.sectionSpacing)
+                    .accessibilityIdentifier("signup_login_link")
                 }
             }
             .navigationBarTitleDisplayMode(.inline)
@@ -168,6 +173,7 @@ private struct FormField: View {
     var isSecure: Bool = false
     var contentType: UITextContentType?
     var keyboardType: UIKeyboardType = .default
+    var fieldAccessibilityId: String? = nil
 
     var body: some View {
         PeezyFormField2(
@@ -177,7 +183,8 @@ private struct FormField: View {
             isSecure: isSecure,
             contentType: contentType,
             keyboardType: keyboardType,
-            autocapitalization: .never
+            autocapitalization: .never,
+            fieldAccessibilityId: fieldAccessibilityId
         )
     }
 }

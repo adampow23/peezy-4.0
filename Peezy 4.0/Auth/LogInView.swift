@@ -58,7 +58,8 @@ struct LoginView: View {
                             placeholder: "your@email.com",
                             text: $email,
                             contentType: .emailAddress,
-                            keyboardType: .emailAddress
+                            keyboardType: .emailAddress,
+                            fieldAccessibilityId: "login_email_field"
                         )
 
                         LoginFormField(
@@ -66,7 +67,8 @@ struct LoginView: View {
                             placeholder: "Enter your password",
                             text: $password,
                             isSecure: true,
-                            contentType: .password
+                            contentType: .password,
+                            fieldAccessibilityId: "login_password_field"
                         )
                     }
                     .padding(.horizontal, 24)
@@ -80,6 +82,7 @@ struct LoginView: View {
                     )
                     .padding(.horizontal, 24)
                     .padding(.top, 8)
+                    .accessibilityIdentifier("login_submit_button")
 
                     // Forgot Password
                     Button(action: {
@@ -95,6 +98,7 @@ struct LoginView: View {
                             .foregroundColor(PeezyTheme.Colors.accentBlue)
                     }
                     .padding(.top, 8)
+                    .accessibilityIdentifier("login_forgot_password")
 
                     Spacer()
 
@@ -110,6 +114,7 @@ struct LoginView: View {
                         .font(PeezyTheme.Typography.callout)
                     }
                     .padding(.bottom, PeezyTheme.Layout.sectionSpacing)
+                    .accessibilityIdentifier("login_signup_link")
                 }
             }
             .navigationBarTitleDisplayMode(.inline)
@@ -119,6 +124,7 @@ struct LoginView: View {
                         Image(systemName: "xmark")
                             .foregroundColor(PeezyTheme.Colors.deepInk)
                     }
+                    .accessibilityIdentifier("login_close_button")
                 }
             }
         }
@@ -180,6 +186,7 @@ private struct LoginFormField: View {
     var isSecure: Bool = false
     var contentType: UITextContentType?
     var keyboardType: UIKeyboardType = .default
+    var fieldAccessibilityId: String? = nil
 
     var body: some View {
         PeezyFormField2(
@@ -189,7 +196,8 @@ private struct LoginFormField: View {
             isSecure: isSecure,
             contentType: contentType,
             keyboardType: keyboardType,
-            autocapitalization: .never
+            autocapitalization: .never,
+            fieldAccessibilityId: fieldAccessibilityId
         )
     }
 }

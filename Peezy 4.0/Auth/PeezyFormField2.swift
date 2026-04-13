@@ -20,6 +20,7 @@ struct PeezyFormField2: View {
     var autocapitalization: TextInputAutocapitalization = .never
     // Explicit control instead of trying to compare TextInputAutocapitalization
     var disableAutocorrection: Bool = false
+    var fieldAccessibilityId: String? = nil
 
     @FocusState private var isFocused: Bool
 
@@ -64,6 +65,7 @@ struct PeezyFormField2: View {
                             .autocorrectionDisabled(true)
                             .textInputAutocapitalization(.never)
                             .focused($isFocused)
+                            .accessibilityIdentifier(fieldAccessibilityId ?? "")
                     } else {
                         TextField(placeholder, text: $text)
                             .textContentType(contentType)
@@ -71,6 +73,7 @@ struct PeezyFormField2: View {
                             .textInputAutocapitalization(autocapitalization)
                             .autocorrectionDisabled(disableAutocorrection)
                             .focused($isFocused)
+                            .accessibilityIdentifier(fieldAccessibilityId ?? "")
                     }
                 }
                 .font(PeezyTheme.Typography.body)
