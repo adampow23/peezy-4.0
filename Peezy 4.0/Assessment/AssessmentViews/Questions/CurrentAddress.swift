@@ -14,22 +14,18 @@ struct CurrentAddress: View {
     // ═══════════════════════════════════════════
     //  CONTROL BOARD
     // ═══════════════════════════════════════════
-    var heroFontSize: CGFloat = 32
-    var heroSubtextSize: CGFloat = 16
-    var morphedFontSize: CGFloat = 22
+    var morphedFontSize: CGFloat = 24
     var morphedSubtextSize: CGFloat = 14
     var morphTopPad: CGFloat = 24
     var morphBottomPad: CGFloat = 40
     var textSidePad: CGFloat = 24
     var buttonPadH: CGFloat = 24
-    var buttonPadBottom: CGFloat = 32
-    var morphDelay: Double = 0.4
+    var buttonPadBottom: CGFloat = 24
 
     // ═══════════════════════════════════════════
     //  STATE
     // ═══════════════════════════════════════════
 
-    @State private var isHero = false
     @State private var showControls = false
     @State private var selectedAddress = ""
 
@@ -43,33 +39,29 @@ struct CurrentAddress: View {
 
             VStack(spacing: 0) {
 
-                if isHero { Spacer() }
-
                 // ── TEXT AREA ──
                 VStack(spacing: 8) {
                     Text(header)
-                        .font(.system(size: isHero ? heroFontSize : morphedFontSize, weight: .semibold))
+                        .font(.system(size: morphedFontSize, weight: .heavy))
                         .foregroundColor(PeezyTheme.Colors.deepInk)
                         .lineSpacing(4)
-                        .multilineTextAlignment(isHero ? .center : .leading)
-                        .frame(maxWidth: .infinity, alignment: isHero ? .center : .leading)
+                        .multilineTextAlignment(.leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
 
                     if let sub = subtext {
                         Text(sub)
-                            .font(.system(size: isHero ? heroSubtextSize : morphedSubtextSize))
+                            .font(.system(size: morphedSubtextSize, weight: .medium))
                             .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.5))
                             .lineSpacing(3)
-                            .multilineTextAlignment(isHero ? .center : .leading)
-                            .frame(maxWidth: .infinity, alignment: isHero ? .center : .leading)
+                            .multilineTextAlignment(.leading)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
                 .padding(.horizontal, textSidePad)
-                .padding(.top, isHero ? 0 : morphTopPad)
-                .padding(.bottom, isHero ? 0 : morphBottomPad)
+                .padding(.top, morphTopPad)
+                .padding(.bottom, morphBottomPad)
 
-                if isHero { Spacer() }
-
-                if !isHero && showControls { Spacer() }
+                if showControls { Spacer() }
 
                 // ── ADDRESS AUTOCOMPLETE ──
                 if showControls {
@@ -81,10 +73,10 @@ struct CurrentAddress: View {
                         showUnitField: data.currentDwellingType == "Apartment" || data.currentDwellingType == "Condo",
                         unitNumber: $data.currentUnitNumber
                     )
-                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+                    .transition(.opacity)
                 }
 
-                if !isHero && showControls { Spacer() }
+                if showControls { Spacer() }
 
                 // ── CONTINUE BUTTON ──
                 if showControls {
@@ -107,15 +99,17 @@ struct CurrentAddress: View {
     // ── MORPH LOGIC ─────────────────────────────────────────────
 
     private func triggerMorph() {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-            withAnimation(.easeOut(duration: 0.35)) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+            withAnimation(.easeOut(duration: 0.3)) {
                 showControls = true
             }
         }
     }
 }
 
+#if DEBUG
 #Preview {
     let dm = AssessmentDataManager()
     CurrentAddress().environmentObject(dm).environmentObject(AssessmentCoordinator(dataManager: dm))
 }
+#endif

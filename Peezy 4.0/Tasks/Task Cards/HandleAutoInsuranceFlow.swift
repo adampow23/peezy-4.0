@@ -242,6 +242,7 @@ struct HandleAutoInsuranceFlow: View {
             TaskFlowSummaryCard(
                 taskTitle: taskTitle,
                 bodyText: "We'll reach out to \(providerName) and get your address updated.",
+                subtext: "Response times are typically 24–48 hours.",
                 showBack: true,
                 onPrimary: { submitAndComplete() },
                 onBack: { goBack() }
@@ -285,6 +286,7 @@ struct HandleAutoInsuranceFlow: View {
             TaskFlowSummaryCard(
                 taskTitle: taskTitle,
                 bodyText: switchSummaryText,
+                subtext: "Response times are typically 24–48 hours.",
                 showBack: true,
                 onPrimary: { submitAndComplete() },
                 onBack: { goBack() }
@@ -369,10 +371,7 @@ struct HandleAutoInsuranceFlow: View {
 
     private func selectSingle(_ key: String, id: String) {
         answers[key] = [id]
-        Task {
-            try? await Task.sleep(for: .seconds(0.3))
-            advance()
-        }
+        advance()
     }
 
     // MARK: - Submission

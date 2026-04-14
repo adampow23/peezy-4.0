@@ -135,6 +135,7 @@ struct SetupUtilitiesFlow: View {
             TaskFlowSummaryCard(
                 taskTitle: taskTitle,
                 bodyText: "We'll contact the utility providers to set up service at your new address before you arrive.",
+                subtext: "Response times are typically 24–48 hours.",
                 showBack: true,
                 onPrimary: { submitAndComplete() },
                 onBack: { goBack() }

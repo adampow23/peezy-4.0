@@ -49,11 +49,15 @@ struct AppRootView: View {
             checkAppState()
         }
         .onReceive(NotificationCenter.default.publisher(for: .assessmentCompleted)) { _ in
+            #if DEBUG
             print("📢 Received AssessmentCompleted notification - rechecking state")
+            #endif
             checkAssessmentStatus()
         }
         .onReceive(NotificationCenter.default.publisher(for: .retakeAssessment)) { _ in
+            #if DEBUG
             print("📢 Received retakeAssessment notification - routing to assessment")
+            #endif
             userState = nil
             checkAssessmentStatus()
         }
@@ -70,26 +74,38 @@ struct AppRootView: View {
     // MARK: - State Management
     
     private func checkAppState() {
+        #if DEBUG
         print("🔍 checkAppState() called - currentUser: \(Auth.auth().currentUser?.uid ?? "nil")")
+        #endif
         if let user = Auth.auth().currentUser {
+            #if DEBUG
             print("🔍 User found: \(user.uid) - setting isAuthenticated = true")
+            #endif
             authViewModel.currentUser = user
             authViewModel.isAuthenticated = true
             checkAssessmentStatus()
         } else {
+            #if DEBUG
             print("🔍 No user found - setting appState = .notAuthenticated")
+            #endif
             appState = .notAuthenticated
         }
     }
     
     private func checkAssessmentStatus() {
+        #if DEBUG
         print("🔍 checkAssessmentStatus() called - currentUser: \(Auth.auth().currentUser?.uid ?? "nil")")
+        #endif
         guard let userId = Auth.auth().currentUser?.uid else {
+            #if DEBUG
             print("🔍 No userId in checkAssessmentStatus - setting appState = .notAuthenticated")
+            #endif
             appState = .notAuthenticated
             return
         }
+        #if DEBUG
         print("🔍 Checking assessment for userId: \(userId)")
+        #endif
         
         let db = Firestore.firestore()
         db.collection("users")
@@ -104,13 +120,17 @@ struct AppRootView: View {
                     }
                     
                     if let error = error {
+                        #if DEBUG
                         print("❌ Error checking assessment status: \(error)")
+                        #endif
                         appState = .needsAssessment
                         return
                     }
-                    
+
                     if let snapshot = snapshot, let document = snapshot.documents.first {
+                        #if DEBUG
                         print("✅ User has completed assessment")
+                        #endif
                         
                         // Build UserState from assessment data
                         let assessmentData = document.data()
@@ -118,7 +138,9 @@ struct AppRootView: View {
                         
                         appState = .hasAssessment
                     } else {
+                        #if DEBUG
                         print("📝 User needs to complete assessment")
+                        #endif
                         appState = .needsAssessment
                     }
                 }

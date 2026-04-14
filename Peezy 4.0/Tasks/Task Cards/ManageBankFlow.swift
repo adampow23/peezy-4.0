@@ -215,6 +215,7 @@ struct ManageBankFlow: View {
             TaskFlowSummaryCard(
                 taskTitle: taskTitle,
                 bodyText: "We'll reach out to your bank and get your address updated.",
+                subtext: "Response times are typically 24–48 hours.",
                 showBack: true,
                 onPrimary: { submitAndComplete() },
                 onBack: { goBack() }
@@ -302,6 +303,7 @@ struct ManageBankFlow: View {
             TaskFlowSummaryCard(
                 taskTitle: taskTitle,
                 bodyText: findNewSummaryText,
+                subtext: "Response times are typically 24–48 hours.",
                 showBack: true,
                 onPrimary: { submitAndComplete() },
                 onBack: { goBack() }
@@ -355,10 +357,7 @@ struct ManageBankFlow: View {
 
     private func selectSingle(_ key: String, id: String) {
         answers[key] = [id]
-        Task {
-            try? await Task.sleep(for: .seconds(0.3))
-            advance()
-        }
+        advance()
     }
 
     // MARK: - Submission

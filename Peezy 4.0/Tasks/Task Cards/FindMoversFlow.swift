@@ -234,6 +234,7 @@ struct FindMoversFlow: View {
             TaskFlowSummaryCard(
                 taskTitle: taskTitle,
                 bodyText: "We'll get you quotes from top-rated movers in your area.",
+                subtext: "Response times are typically 24–48 hours.",
                 showBack: true,
                 onPrimary: { submitAndComplete() },
                 onBack: { goBack() }
@@ -264,10 +265,7 @@ struct FindMoversFlow: View {
 
     private func selectSingle(_ key: String, id: String) {
         answers[key] = [id]
-        Task {
-            try? await Task.sleep(for: .seconds(0.3))
-            advance()
-        }
+        advance()
     }
 
     private func toggleMulti(_ key: String, id: String) {

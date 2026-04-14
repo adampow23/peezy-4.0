@@ -22,7 +22,6 @@ enum AssessmentInputStep: String, Hashable {
     // Section 1: Basics
     case userName
     case moveDate
-    case moveDateType
 
     // Section 2: Current Home
     case currentRentOrOwn
@@ -217,7 +216,6 @@ class AssessmentCoordinator: ObservableObject {
         // Section 1: Basics
         addStep(.userName)
         addStep(.moveDate)
-        addStep(.moveDateType)
 
         // Section 2: Current Home
         addStep(.currentRentOrOwn)
@@ -314,22 +312,6 @@ class AssessmentCoordinator: ObservableObject {
                 subheader: nil
             )
 
-        case .moveDateType:
-            let days = Calendar.current.dateComponents([.day], from: Date(), to: dataManager.moveDate).day ?? 0
-            let responseLine: String
-            if days < 7 {
-                responseLine = "Less than a week? No sweat. This is exactly why I'm here. Let's put this into high gear."
-            } else if days <= 14 {
-                responseLine = "Two weeks out! That's the perfect amount of time for me to get everything locked in without a scramble."
-            } else if days <= 30 {
-                responseLine = "A month away! I love it. We're going to have this whole thing handled with plenty of time to spare."
-            } else {
-                responseLine = "Awesome, we've got loads of time. Getting this sorted early means zero stress as the big day gets closer."
-            }
-            return InputContext(
-                header: "\(responseLine)\n\nHow set in stone is that date?",
-                subheader: nil
-            )
             
         // --- SECTION 2: CURRENT HOME ---
             

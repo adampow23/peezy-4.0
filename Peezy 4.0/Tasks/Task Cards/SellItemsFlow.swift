@@ -116,6 +116,7 @@ struct SellItemsFlow: View {
             TaskFlowSummaryCard(
                 taskTitle: taskTitle,
                 bodyText: "We'll put together a selling plan based on what you've got and where to list it.",
+                subtext: "Response times are typically 24–48 hours.",
                 showBack: true,
                 onPrimary: { submitAndComplete() },
                 onBack: { goBack() }
@@ -142,10 +143,7 @@ struct SellItemsFlow: View {
 
     private func selectSingle(_ key: String, id: String) {
         answers[key] = [id]
-        Task {
-            try? await Task.sleep(for: .seconds(0.3))
-            advance()
-        }
+        advance()
     }
 
     private func toggleMulti(_ key: String, id: String) {

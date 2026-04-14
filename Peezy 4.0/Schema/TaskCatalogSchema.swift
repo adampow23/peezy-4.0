@@ -241,7 +241,6 @@ struct TaskCatalogSchema {
     static let assessmentFields: [String] = [
         "userName",              // ○ Personalization
         "moveDate",              // ○ Timeline calculation
-        "moveDateType",          // ○ Timeline planning (Same Day / Out Before In / In Before Out)
         "moveConcerns",          // ○ Priority hints
         "currentRentOrOwn",      // ★ Condition key
         "currentDwellingType",   // ★ Condition key

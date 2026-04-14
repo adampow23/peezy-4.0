@@ -1,7 +1,19 @@
+//
+//  InventoryItemConfirmView.swift
+//  Peezy 4.0
+//
+//  One-by-one review of low-confidence furniture items.
+//  Shows cropped photo from the scan frame + "Is this a [name]?" question.
+//  User confirms ("That's right") or corrects ("Not quite" → text field).
+//  Uses HStack buttons matching the edit-mode pattern from ConfirmAddressCard.
+//
+
 import SwiftUI
 
-struct InventoryConfirmationView: View {
-    @State private var viewModel: InventoryConfirmationViewModel
+// MARK: - View
+
+struct InventoryItemConfirmView: View {
+    @State private var viewModel: ItemConfirmViewModel
     var onComplete: ([InventoryItem]) -> Void
 
     init(
@@ -10,7 +22,7 @@ struct InventoryConfirmationView: View {
         userId: String,
         onComplete: @escaping ([InventoryItem]) -> Void
     ) {
-        self._viewModel = State(initialValue: InventoryConfirmationViewModel(
+        self._viewModel = State(initialValue: ItemConfirmViewModel(
             items: items,
             sessionId: sessionId,
             userId: userId
@@ -23,10 +35,10 @@ struct InventoryConfirmationView: View {
             InteractiveBackground()
                 .ignoresSafeArea()
 
-            VStack(spacing: PeezyTheme.Layout.sectionSpacing) {
+            VStack(spacing: 24) {
                 Spacer()
 
-                // Progress indicator
+                // Progress
                 progressHeader
 
                 // Item card
@@ -41,76 +53,82 @@ struct InventoryConfirmationView: View {
 
                 Spacer()
             }
-            .padding(.horizontal, PeezyTheme.Layout.horizontalPadding)
+            .padding(.horizontal, 24)
         }
         .task {
             await viewModel.loadCurrentFrame()
         }
     }
 
-    // MARK: - Progress Header
+    // MARK: - Progress
 
     private var progressHeader: some View {
-        VStack(spacing: PeezyTheme.Layout.verticalSpacingSmall) {
+        VStack(spacing: 8) {
             Text("\(viewModel.currentIndex + 1) of \(viewModel.itemsToConfirm.count)")
-                .font(PeezyTheme.Typography.calloutMedium)
-                .foregroundStyle(PeezyTheme.Colors.textSecondary)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.5))
 
             // Progress bar
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 4, style: .continuous)
-                        .fill(PeezyTheme.Colors.backgroundTertiary)
+                    RoundedRectangle(cornerRadius: 2, style: .continuous)
+                        .fill(Color.primary.opacity(0.08))
                         .frame(height: 4)
 
-                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    RoundedRectangle(cornerRadius: 2, style: .continuous)
                         .fill(PeezyTheme.Colors.brandYellow)
                         .frame(width: geo.size.width * viewModel.progress, height: 4)
-                        .animation(PeezyTheme.Animation.spring, value: viewModel.progress)
+                        .animation(.spring(response: 0.4, dampingFraction: 0.85), value: viewModel.progress)
                 }
             }
             .frame(height: 4)
             .padding(.horizontal, 40)
 
             Text("Help us identify a few items")
-                .font(PeezyTheme.Typography.callout)
-                .foregroundStyle(PeezyTheme.Colors.textTertiary)
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.35))
         }
     }
 
     // MARK: - Confirmation Card
 
     private func confirmationCard(for item: InventoryItem) -> some View {
-        VStack(spacing: PeezyTheme.Layout.verticalSpacing) {
-            // Cropped image or placeholder
+        VStack(spacing: 20) {
+            // Photo
             itemImage
 
-            // Question
-            Text("Is this a **\(item.name)**?")
-                .font(PeezyTheme.Typography.title2)
-                .foregroundStyle(PeezyTheme.Colors.textPrimary)
-                .multilineTextAlignment(.center)
-
-            // Correction text field
+            // Question or edit field
             if viewModel.isEditing {
-                TextField("What is this item?", text: $viewModel.correctedName)
-                    .font(PeezyTheme.Typography.body)
-                    .textFieldStyle(.plain)
-                    .padding(PeezyTheme.Layout.cardPaddingSmall)
-                    .background(PeezyTheme.Colors.backgroundTertiary)
-                    .clipShape(RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadiusSmall, style: .continuous))
-                    .onSubmit {
-                        confirmCorrected()
-                    }
+                VStack(spacing: 12) {
+                    TextField("What is this item?", text: $viewModel.correctedName)
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundStyle(PeezyTheme.Colors.deepInk)
+                        .padding(14)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .fill(Color.primary.opacity(0.04))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .stroke(Color.primary.opacity(0.1), lineWidth: 1)
+                        )
+                        .submitLabel(.done)
+                        .onSubmit { confirmCorrected() }
+                }
+            } else {
+                Text("Is this a **\(item.name)**?")
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(PeezyTheme.Colors.deepInk)
+                    .multilineTextAlignment(.center)
             }
 
-            // Action buttons
-            HStack(spacing: PeezyTheme.Layout.verticalSpacing) {
-                // "No" / Edit button
+            // Action buttons — HStack (edit-mode pattern)
+            HStack(spacing: 12) {
+                // Left: Not quite / Cancel
                 Button {
-                    withAnimation(PeezyTheme.Animation.spring) {
+                    PeezyHaptics.light()
+                    withAnimation(.spring(duration: 0.4, bounce: 0.15)) {
                         if viewModel.isEditing {
-                            // Cancel editing
                             viewModel.isEditing = false
                             viewModel.correctedName = ""
                         } else {
@@ -120,20 +138,19 @@ struct InventoryConfirmationView: View {
                     }
                 } label: {
                     Text(viewModel.isEditing ? "Cancel" : "Not quite")
-                        .font(PeezyTheme.Typography.calloutMedium)
-                        .foregroundStyle(PeezyTheme.Colors.textPrimary)
-                        .frame(height: PeezyTheme.Layout.buttonHeight)
-                        .frame(maxWidth: .infinity)
-                        .background(.regularMaterial)
-                        .clipShape(RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadiusPill, style: .continuous))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadiusPill, style: .continuous)
-                                .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.6))
+                        .frame(maxWidth: .infinity, minHeight: 50)
+                        .background(
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .fill(Color.primary.opacity(0.05))
                         )
                 }
+                .buttonStyle(.plain)
 
-                // "Yes" / Submit correction button
+                // Right: That's right / Save correction
                 Button {
+                    PeezyHaptics.light()
                     if viewModel.isEditing {
                         confirmCorrected()
                     } else {
@@ -141,29 +158,30 @@ struct InventoryConfirmationView: View {
                     }
                 } label: {
                     Text(viewModel.isEditing ? "Save correction" : "That's right")
-                        .font(PeezyTheme.Typography.headline)
-                        .foregroundStyle(PeezyTheme.Colors.deepInk)
-                        .frame(height: PeezyTheme.Layout.buttonHeight)
-                        .frame(maxWidth: .infinity)
-                        .background(PeezyTheme.Gradients.brandYellow)
-                        .clipShape(RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadiusPill, style: .continuous))
-                        .shadow(color: PeezyTheme.Shadows.buttonShadowColor, radius: PeezyTheme.Shadows.buttonShadowRadius, x: 0, y: PeezyTheme.Shadows.buttonShadowY)
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity, minHeight: 50)
+                        .background(
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .fill(PeezyTheme.Colors.deepInk)
+                        )
                 }
+                .buttonStyle(.plain)
                 .disabled(viewModel.isEditing && viewModel.correctedName.trimmingCharacters(in: .whitespaces).isEmpty)
+                .opacity(viewModel.isEditing && viewModel.correctedName.trimmingCharacters(in: .whitespaces).isEmpty ? 0.4 : 1.0)
             }
         }
-        .padding(PeezyTheme.Layout.cardPadding)
+        .padding(24)
         .background(
             ZStack {
-                RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadius, style: .continuous)
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
                     .fill(.regularMaterial)
-                RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadius, style: .continuous)
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
                     .fill(Color.white.opacity(0.15))
-                RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadius, style: .continuous)
-                    .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .stroke(Color.primary.opacity(0.05), lineWidth: 1)
             }
         )
-        .shadow(color: PeezyTheme.Shadows.subtleShadowColor, radius: PeezyTheme.Shadows.subtleShadowRadius, x: 0, y: PeezyTheme.Shadows.subtleShadowY)
     }
 
     // MARK: - Item Image
@@ -171,32 +189,28 @@ struct InventoryConfirmationView: View {
     @ViewBuilder
     private var itemImage: some View {
         if viewModel.isLoadingFrame {
-            RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadiusSmall, style: .continuous)
-                .fill(PeezyTheme.Colors.backgroundTertiary)
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.primary.opacity(0.04))
                 .frame(height: 200)
-                .overlay {
-                    ProgressView()
-                        .tint(PeezyTheme.Colors.textTertiary)
-                }
+                .overlay { ProgressView().tint(PeezyTheme.Colors.deepInk.opacity(0.3)) }
         } else if let image = viewModel.croppedImage {
             Image(uiImage: image)
                 .resizable()
                 .aspectRatio(contentMode: .fit)
                 .frame(maxHeight: 200)
-                .clipShape(RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadiusSmall, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         } else {
-            // Fallback — no image available
-            RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadiusSmall, style: .continuous)
-                .fill(PeezyTheme.Colors.backgroundTertiary)
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.primary.opacity(0.04))
                 .frame(height: 200)
                 .overlay {
                     VStack(spacing: 8) {
                         Image(systemName: "photo")
                             .font(.system(size: 32))
-                            .foregroundStyle(PeezyTheme.Colors.textTertiary)
+                            .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.2))
                         Text("Image unavailable")
-                            .font(PeezyTheme.Typography.caption)
-                            .foregroundStyle(PeezyTheme.Colors.textTertiary)
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.3))
                     }
                 }
         }
@@ -205,7 +219,7 @@ struct InventoryConfirmationView: View {
     // MARK: - Actions
 
     private func confirmAsIs() {
-        withAnimation(PeezyTheme.Animation.spring) {
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
             viewModel.confirmCurrent(correctedName: nil)
         }
         advanceOrComplete()
@@ -214,8 +228,7 @@ struct InventoryConfirmationView: View {
     private func confirmCorrected() {
         let name = viewModel.correctedName.trimmingCharacters(in: .whitespaces)
         guard !name.isEmpty else { return }
-
-        withAnimation(PeezyTheme.Animation.spring) {
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
             viewModel.confirmCurrent(correctedName: name)
         }
         advanceOrComplete()
@@ -225,9 +238,7 @@ struct InventoryConfirmationView: View {
         if viewModel.isComplete {
             onComplete(viewModel.allItems)
         } else {
-            Task {
-                await viewModel.loadCurrentFrame()
-            }
+            Task { await viewModel.loadCurrentFrame() }
         }
     }
 }
@@ -235,7 +246,7 @@ struct InventoryConfirmationView: View {
 // MARK: - View Model
 
 @Observable
-final class InventoryConfirmationViewModel {
+final class ItemConfirmViewModel {
     private(set) var allItems: [InventoryItem]
     let itemsToConfirm: [InventoryItem]
     private(set) var currentIndex: Int = 0
@@ -247,8 +258,6 @@ final class InventoryConfirmationViewModel {
     private let sessionId: String
     private let userId: String
     private let storageService = InventoryStorageService()
-
-    /// Indices into allItems for the items that need confirmation
     private let confirmationIndices: [Int]
 
     init(items: [InventoryItem], sessionId: String, userId: String) {
@@ -256,7 +265,6 @@ final class InventoryConfirmationViewModel {
         self.sessionId = sessionId
         self.userId = userId
 
-        // Find furniture-tier items below confidence threshold
         var indices: [Int] = []
         var toConfirm: [InventoryItem] = []
         for (index, item) in items.enumerated() {
@@ -285,18 +293,14 @@ final class InventoryConfirmationViewModel {
 
     func confirmCurrent(correctedName: String?) {
         guard currentIndex < confirmationIndices.count else { return }
-
         let itemIndex = confirmationIndices[currentIndex]
 
         if let correctedName {
             allItems[itemIndex].name = correctedName
         }
-        // Mark as user-confirmed by setting confidence to 1.0
         allItems[itemIndex].confidence = 1.0
 
-        // Reset state and advance
         isEditing = false
-        correctedName.map { _ in self.correctedName = "" }
         self.correctedName = ""
         croppedImage = nil
         currentIndex += 1
@@ -324,52 +328,45 @@ final class InventoryConfirmationViewModel {
                 return
             }
 
-            // Crop to bounding box if available
             if let bb = item.boundingBox {
                 croppedImage = cropImage(fullImage, to: bb)
             } else {
                 croppedImage = fullImage
             }
         } catch {
-            #if DEBUG
-            print("[InventoryConfirmation] Failed to load frame \(frameIndex): \(error.localizedDescription)")
-            #endif
             croppedImage = nil
         }
     }
 
-    /// Crop a UIImage using normalized bounding box coordinates (0.0-1.0)
     private func cropImage(_ image: UIImage, to box: BoundingBox) -> UIImage {
-        let imageWidth = image.size.width
-        let imageHeight = image.size.height
-
-        // Add 10% padding around the bounding box for context
-        let padding: Double = 0.1
-        let paddedX = max(0, box.x - padding * box.width)
-        let paddedY = max(0, box.y - padding * box.height)
-        let paddedWidth = min(1.0 - paddedX, box.width * (1 + 2 * padding))
-        let paddedHeight = min(1.0 - paddedY, box.height * (1 + 2 * padding))
-
-        let cropRect = CGRect(
-            x: paddedX * imageWidth,
-            y: paddedY * imageHeight,
-            width: paddedWidth * imageWidth,
-            height: paddedHeight * imageHeight
-        )
-
-        // Ensure crop rect is valid
-        guard cropRect.width > 0, cropRect.height > 0 else { return image }
-
-        guard let cgImage = image.cgImage,
-              let croppedCG = cgImage.cropping(to: cropRect) else {
-            return image
-        }
-
-        return UIImage(cgImage: croppedCG, scale: image.scale, orientation: image.imageOrientation)
+        let w = image.size.width
+        let h = image.size.height
+        let pad: Double = 0.1
+        let px = max(0, box.x - pad * box.width)
+        let py = max(0, box.y - pad * box.height)
+        let pw = min(1.0 - px, box.width * (1 + 2 * pad))
+        let ph = min(1.0 - py, box.height * (1 + 2 * pad))
+        let rect = CGRect(x: px * w, y: py * h, width: pw * w, height: ph * h)
+        guard rect.width > 0, rect.height > 0,
+              let cg = image.cgImage,
+              let cropped = cg.cropping(to: rect) else { return image }
+        return UIImage(cgImage: cropped, scale: image.scale, orientation: image.imageOrientation)
     }
-}//
-//  Inventoryconfirmationview.swift
-//  Peezy 4.0
-//
-//  Created by Adam Powell on 3/19/26.
-//
+}
+
+// MARK: - Previews
+
+#if DEBUG
+#Preview("Item Confirm") {
+    InventoryItemConfirmView(
+        items: [
+            InventoryItem(id: "1", name: "Dining Table", category: "furniture", tier: "furniture", quantity: 1, sizeEstimate: "large", cubicFeet: 20, isFragile: false, isHighValue: false, confidence: 0.6, frameIndex: 0, boundingBox: nil, roomName: "Kitchen", shouldMove: true, notes: ""),
+            InventoryItem(id: "2", name: "Bookshelf", category: "furniture", tier: "furniture", quantity: 1, sizeEstimate: "large", cubicFeet: 15, isFragile: false, isHighValue: false, confidence: 0.5, frameIndex: 1, boundingBox: nil, roomName: "Living Room", shouldMove: true, notes: ""),
+            InventoryItem(id: "3", name: "Sofa", category: "furniture", tier: "furniture", quantity: 1, sizeEstimate: "oversized", cubicFeet: 40, isFragile: false, isHighValue: false, confidence: 0.95, frameIndex: 2, boundingBox: nil, roomName: "Living Room", shouldMove: true, notes: ""),
+        ],
+        sessionId: "preview-session",
+        userId: "preview-user",
+        onComplete: { items in print("Confirmed \(items.count) items") }
+    )
+}
+#endif

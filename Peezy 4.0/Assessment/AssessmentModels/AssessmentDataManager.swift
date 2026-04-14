@@ -12,7 +12,6 @@ class AssessmentDataManager: ObservableObject {
     
     // MARK: - Timeline
     @Published var moveDate: Date = Date()
-    @Published var moveDateType: String = ""
     
     // MARK: - Experience
     @Published var moveConcerns: [String] = []
@@ -113,7 +112,6 @@ class AssessmentDataManager: ObservableObject {
         
         // Timeline
         data["moveDate"] = Timestamp(date: moveDate)
-        data["moveDateType"] = moveDateType
         
         // Experience
         data["moveConcerns"] = moveConcerns
@@ -291,7 +289,6 @@ class AssessmentDataManager: ObservableObject {
     func reset() {
         userName = ""
         moveDate = Date()
-        moveDateType = ""
         moveConcerns = []
         currentRentOrOwn = ""
         currentDwellingType = ""

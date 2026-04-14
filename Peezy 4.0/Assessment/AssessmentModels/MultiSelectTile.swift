@@ -75,45 +75,62 @@ struct MultiSelectTile: View {
         .padding(.vertical, 16)
         .background(
             ZStack {
+                // 1. Surface Gradients applied to both states
                 if isSelected {
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(PeezyTheme.Colors.deepInk)
+                        .fill(
+                            LinearGradient(
+                                colors: [PeezyTheme.Colors.deepInk.opacity(0.85), PeezyTheme.Colors.deepInk],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
                 } else {
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(Color.white)
+                        .fill(
+                            LinearGradient(
+                                colors: [.white, Color(white: 0.98)],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
                 }
             }
         )
         .overlay(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
+                // 2. Bevel/Highlight strokes for both selected and unselected states
                 .stroke(
-                    isSelected
-                        ? Color.clear
-                        : Color.black.opacity(0.05),
+                    LinearGradient(
+                        colors: isSelected
+                            ? [.white.opacity(0.3), .clear, .black.opacity(0.3)]
+                            : [.white, .clear, .black.opacity(0.08)],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    ),
                     lineWidth: 1
                 )
         )
+        // 3. Grounded Drop Shadows that physically shrink when pressed
         .shadow(
             color: isSelected
-                ? PeezyTheme.Colors.deepInk.opacity(0.25)
-                : Color.black.opacity(0.1),
-            radius: isPressed ? 3 : (isSelected ? 10 : 12),
+                ? PeezyTheme.Colors.deepInk.opacity(isPressed ? 0.15 : 0.3)
+                : Color.black.opacity(isPressed ? 0.05 : 0.08),
+            radius: isPressed ? 4 : 12,
             x: 0,
-            y: isPressed ? 1 : (isSelected ? 4 : 8)
+            y: isPressed ? 2 : 6
         )
-        .scaleEffect(isPressed ? 0.98 : 1.0)
+        .scaleEffect(isPressed ? 0.97 : 1.0)
         .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isPressed)
         .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isSelected)
         .animation(.spring(response: 0.3, dampingFraction: 0.7), value: count)
         .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .onTapGesture {
             if isSelected {
-                // In binary mode (no counter), allow deselect by tapping
                 if onIncrement == nil {
                     lightHaptic.impactOccurred()
                     onTap()
                 }
-                // In counter mode, do nothing — use +/- buttons
             } else {
                 lightHaptic.impactOccurred()
                 onTap()
@@ -134,19 +151,4 @@ struct MultiSelectTile: View {
                 }
         )
     }
-}
-
-#Preview {
-    VStack(spacing: 12) {
-        MultiSelectTile(title: "Bank / Credit Union", icon: "building.columns.fill",
-                        isSelected: false, onTap: {}, count: 0)
-        MultiSelectTile(title: "Credit Card", icon: "creditcard.fill",
-                        isSelected: true, onTap: {}, count: 1,
-                        onIncrement: {}, onDecrement: {})
-        MultiSelectTile(title: "Investment Account", icon: "chart.line.uptrend.xyaxis",
-                        isSelected: true, onTap: {}, count: 3,
-                        onIncrement: {}, onDecrement: {})
-    }
-    .padding()
-    .background(InteractiveBackground())
 }

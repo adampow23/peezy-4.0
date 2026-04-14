@@ -73,7 +73,6 @@ Creates a complete test user for E2E testing:
 const ASSESSMENT_DATA = {
     userName: "Peezy Tester",
     moveDate: admin.firestore.Timestamp.fromDate(new Date(Date.now() + 30*24*60*60*1000)),
-    moveDateType: "Exact",
     moveConcerns: ["Forgetting something", "Cost"],
     currentRentOrOwn: "Rent",
     currentDwellingType: "Apartment",

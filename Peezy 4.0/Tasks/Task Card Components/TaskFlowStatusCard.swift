@@ -2,20 +2,13 @@
 //  TaskFlowStatusCard.swift
 //  Peezy 4.0
 //
-//  Created by Adam Powell on 4/12/26.
+//  Final card for self-service flows. Asks the user what they're doing about the task.
+//  Three hardcoded options — each triggers a different action.
+//  "Already done" fires confetti — celebration at the moment of accomplishment.
+//  "Later" and "Mark as in progress" dismiss immediately, no confetti.
 //
 
 import SwiftUI
-
-// MARK: - Task Flow Status Card
-// Final card for self-service flows. Asks the user what they're doing about the task.
-// Three hardcoded options — each triggers a different action. Tap dismisses the flow.
-// Wraps TaskFlowTilesCard for pixel-perfect visual consistency with all other tiles.
-//
-// No SummaryCard after this. The StatusCard IS the ending for self-service tasks.
-//
-// Updated Type 1 sequence:
-//   TitleCard → InfoCard ("Good to Know") → StatusCard
 
 struct TaskFlowStatusCard: View {
     let taskTitle: String
@@ -26,32 +19,48 @@ struct TaskFlowStatusCard: View {
     let onDone: () -> Void
     var onBack: (() -> Void)? = nil
 
+    @State private var confettiActive = false
+    @State private var tapped = false
+
     var body: some View {
-        TaskFlowTilesCard(
-            taskTitle: taskTitle,
-            question: question,
-            options: [
-                FlowOption(id: "later", label: "Later", icon: "clock"),
-                FlowOption(id: "in_progress", label: "Mark as in progress", icon: "arrow.forward.circle"),
-                FlowOption(id: "done", label: "Already done", icon: "checkmark.circle")
-            ],
-            mode: .single,
-            selectedIds: [],
-            showBack: showBack,
-            onSelect: { id in
-                switch id {
-                case "later": onLater()
-                case "in_progress": onInProgress()
-                case "done": onDone()
-                default: break
-                }
-            },
-            onBack: onBack
-        )
+        ZStack {
+            TaskFlowTilesCard(
+                taskTitle: taskTitle,
+                question: question,
+                options: [
+                    FlowOption(id: "later", label: "Later", icon: "clock"),
+                    FlowOption(id: "in_progress", label: "Mark as in progress", icon: "arrow.forward.circle"),
+                    FlowOption(id: "done", label: "Already done", icon: "checkmark.circle")
+                ],
+                mode: .single,
+                selectedIds: [],
+                showBack: showBack,
+                onSelect: { id in
+                    guard !tapped else { return }
+                    switch id {
+                    case "later":
+                        onLater()
+                    case "in_progress":
+                        onInProgress()
+                    case "done":
+                        tapped = true
+                        confettiActive = true
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                            onDone()
+                        }
+                    default:
+                        break
+                    }
+                },
+                onBack: onBack
+            )
+
+            ConfettiView(isActive: $confettiActive, intensity: .high)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .allowsHitTesting(false)
+        }
     }
 }
-
-// MARK: - Previews
 
 #if DEBUG
 #Preview("Status — Return Keys") {

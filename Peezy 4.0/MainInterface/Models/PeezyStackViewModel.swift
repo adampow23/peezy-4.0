@@ -242,8 +242,7 @@ final class PeezyStackViewModel {
 
     /// Handle user swiping a card (retained for backward compatibility)
     func handleSwipe(card: PeezyCard, action: SwipeAction) {
-        let generator = UIImpactFeedbackGenerator(style: action == .doIt ? .heavy : .light)
-        generator.impactOccurred()
+        if action == .doIt { PeezyHaptics.heavy() } else { PeezyHaptics.light() }
 
         switch action {
         case .doIt:

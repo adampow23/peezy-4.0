@@ -113,6 +113,7 @@ struct SetupInternetFlow: View {
             TaskFlowSummaryCard(
                 taskTitle: taskTitle,
                 bodyText: "We'll match you with providers in your area and get you options.",
+                subtext: "Response times are typically 24–48 hours.",
                 showBack: true,
                 onPrimary: { submitAndComplete() },
                 onBack: { goBack() }
@@ -139,10 +140,7 @@ struct SetupInternetFlow: View {
 
     private func selectSingle(_ key: String, id: String) {
         answers[key] = [id]
-        Task {
-            try? await Task.sleep(for: .seconds(0.3))
-            advance()
-        }
+        advance()
     }
 
     private func toggleMulti(_ key: String, id: String) {

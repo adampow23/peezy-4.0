@@ -2,15 +2,12 @@
 //  TaskFlowSummaryCard.swift
 //  Peezy 4.0
 //
-//  Created by Adam Powell on 4/10/26.
+//  Final card in a task flow. Shows completion state with branded sign-off.
+//  Title is always "Eezy Peezy!" — universal brand moment across every flow.
+//  Confetti fires when user taps Done — celebration at the moment of accomplishment.
 //
 
 import SwiftUI
-
-// MARK: - Task Flow Summary Card
-// Final card in a task flow. Shows completion state with branded sign-off.
-// Title is always "Eezy Peezy!" — universal brand moment across every flow.
-// Submission happens on the previous card. This is pure closure.
 
 struct TaskFlowSummaryCard: View {
     let taskTitle: String
@@ -21,7 +18,9 @@ struct TaskFlowSummaryCard: View {
     let onPrimary: () -> Void
     var onBack: (() -> Void)? = nil
 
-    // Shared divider
+    @State private var confettiActive = false
+    @State private var tapped = false
+
     private var accentDivider: some View {
         Rectangle()
             .fill(Color.black.opacity(0.15))
@@ -29,62 +28,68 @@ struct TaskFlowSummaryCard: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            TaskFlowHeader(taskTitle: taskTitle, showBack: showBack, onBack: onBack)
+        ZStack {
+            VStack(spacing: 0) {
+                TaskFlowHeader(taskTitle: taskTitle, showBack: showBack && !tapped, onBack: onBack)
 
-            Spacer()
+                Spacer()
 
-            VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: 16) {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Image(systemName: "checkmark.seal.fill")
+                            .font(.system(size: 56))
+                            .foregroundStyle(PeezyTheme.Colors.successGreen)
 
-                // UX Gestalt Fix: Tightly group the Hero Icon with the Victory Title
-                VStack(alignment: .leading, spacing: 12) {
-                    Image(systemName: "checkmark.seal.fill")
-                        .font(.system(size: 56))
-                        .foregroundStyle(PeezyTheme.Colors.successGreen)
+                        Text("Eezy Peezy!")
+                            .font(.system(size: 34, weight: .heavy))
+                            .foregroundStyle(PeezyTheme.Colors.deepInk)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                    }
 
-                    Text("Eezy Peezy!")
-                        .font(.system(size: 34, weight: .heavy))
-                        .foregroundStyle(PeezyTheme.Colors.deepInk)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.7)
-                }
+                    accentDivider
 
-                accentDivider
-
-                // UX Typography Fix: Group reading text and apply line spacing
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(bodyText)
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.6))
-                        .lineSpacing(4)
-                        .fixedSize(horizontal: false, vertical: true)
-
-                    if let subtext {
-                        Text(subtext)
-                            .font(.system(size: 13, weight: .regular))
-                            .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.4))
-                            .lineSpacing(2)
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(bodyText)
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.6))
+                            .lineSpacing(4)
                             .fixedSize(horizontal: false, vertical: true)
-                            .padding(.top, 4)
+
+                        if let subtext {
+                            Text(subtext)
+                                .font(.system(size: 13, weight: .regular))
+                                .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.4))
+                                .lineSpacing(2)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .padding(.top, 4)
+                        }
                     }
                 }
-            }
-            .padding(.horizontal, 24)
-            .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 24)
+                .frame(maxWidth: .infinity, alignment: .leading)
 
-            Spacer()
+                Spacer()
 
-            PeezyAssessmentButton(primaryLabel) {
-                onPrimary()
+                PeezyAssessmentButton(primaryLabel, disabled: tapped) {
+                    guard !tapped else { return }
+                    tapped = true
+                    confettiActive = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                        onPrimary()
+                    }
+                }
+                .accessibilityIdentifier("taskflow_summary_primary")
+                .padding(.horizontal, 24)
+                .padding(.bottom, 24)
             }
-            .accessibilityIdentifier("taskflow_summary_primary")
-            .padding(.horizontal, 24)
-            .padding(.bottom, 24)
+
+            ConfettiView(isActive: $confettiActive, intensity: .high)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .allowsHitTesting(false)
         }
     }
 }
-
-// MARK: - Previews
 
 #if DEBUG
 #Preview("Summary — Movers") {
@@ -100,15 +105,6 @@ struct TaskFlowSummaryCard: View {
     TaskFlowSummaryCard(
         taskTitle: "Return all access devices",
         bodyText: "We'll check in on this closer to your move date.",
-        onPrimary: { print("Complete") }
-    )
-    .peezyCardChrome()
-}
-
-#Preview("Summary — Insurance") {
-    TaskFlowSummaryCard(
-        taskTitle: "Update your auto insurance",
-        bodyText: "We'll reach out and get this updated for you.",
         onPrimary: { print("Complete") }
     )
     .peezyCardChrome()

@@ -135,8 +135,10 @@ struct TaskFlowTilesCard: View {
                 x: 0,
                 y: isSelected ? 4 : 2
             )
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .contentShape(Rectangle())
         .accessibilityLabel(option.label)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }

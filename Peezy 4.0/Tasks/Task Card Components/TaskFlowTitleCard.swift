@@ -1,10 +1,3 @@
-//
-//  TaskFlowTitleCard.swift
-//  Peezy 4.0
-//
-//  Created by Adam Powell on 4/12/26.
-//
-
 import SwiftUI
 
 // MARK: - Task Flow Title Card
@@ -21,8 +14,6 @@ struct TaskFlowTitleCard: View {
     let onContinue: () -> Void
 
     // MARK: - Controlled Rag Logic
-    // Splits the string and injects a newline after the second word.
-    // "Update your auto insurance" -> "Update your\nauto insurance"
     private var formattedTitle: String {
         let words = taskTitle.split(separator: " ")
         
@@ -37,37 +28,49 @@ struct TaskFlowTitleCard: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            // Top spacer pushes content down just enough, but less than the bottom
+            // spacer to hit the "optical center" (slightly above true center).
             Spacer()
 
-            VStack(alignment: .leading, spacing: 24) {
+            // Tightened spacing from 24 to 20 for better Gestalt proximity
+            VStack(alignment: .leading, spacing: 20) {
                 
-                // Solid, high-contrast anchor token
+                // Modern, soft-tinted anchor token
                 ZStack {
                     Circle()
-                        .fill(PeezyTheme.Colors.deepInk)
+                        // Using a tinted background instead of solid heavy color
+                        // makes the UI feel lighter and more elevated.
+                        .fill(PeezyTheme.Colors.deepInk.opacity(0.08))
                     
                     Image(systemName: icon)
-                        .font(.system(size: 32, weight: .semibold))
-                        .foregroundStyle(.white)
+                        // Scaled down slightly and matched to the deep ink color
+                        // for a refined, monochromatic look.
+                        .font(.system(size: 28, weight: .bold))
+                        .foregroundStyle(PeezyTheme.Colors.deepInk)
                 }
-                .frame(width: 72, height: 72)
+                .frame(width: 64, height: 64)
 
                 // The formatted title
                 Text(formattedTitle)
-                    .font(.system(.largeTitle, design: .rounded, weight: .bold))
+                    // Upgraded from .largeTitle to a specific heavy display size
+                    // for maximum typographic impact and editorial feel.
+                    .font(.system(size: 42, weight: .heavy, design: .rounded))
                     .foregroundStyle(PeezyTheme.Colors.deepInk)
                     .lineLimit(3)
                     .minimumScaleFactor(0.8)
-                    // UX Polish: Slightly tightens line spacing for multi-line headers
-                    .lineSpacing(2)
+                    // Tighter line spacing (-2) looks much better on oversized display text
+                    .lineSpacing(-2)
                     .fixedSize(horizontal: false, vertical: true)
             }
             .padding(.horizontal, 32)
             .frame(maxWidth: .infinity, alignment: .leading)
 
+            // Double spacer weight at the bottom pushes the title block up into
+            // the upper-middle third of the screen, creating elegant negative space.
+            Spacer()
             Spacer()
 
-            // Continue button
+            // Continue button (Untouched)
             PeezyAssessmentButton(primaryLabel) {
                 onContinue()
             }

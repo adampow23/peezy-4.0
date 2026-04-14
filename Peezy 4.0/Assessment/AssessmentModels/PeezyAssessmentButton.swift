@@ -1,17 +1,32 @@
 import SwiftUI
 
+// MARK: - Peezy Press Button Style
+
+struct PeezyPressButtonStyle: ButtonStyle {
+    let disabled: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            // Slightly deeper scale effect for a more physical press feel
+            .scaleEffect(configuration.isPressed && !disabled ? 0.96 : 1.0)
+            .shadow(
+                color: disabled ? .clear : PeezyTheme.Colors.deepInk.opacity(configuration.isPressed ? 0.15 : 0.35),
+                // Radius and Y offset shrink when pressed to simulate the button hitting the floor
+                radius: configuration.isPressed ? 4 : 14,
+                x: 0,
+                y: configuration.isPressed ? 2 : 8
+            )
+            .animation(.spring(response: 0.2, dampingFraction: 0.7), value: configuration.isPressed)
+    }
+}
+
+// MARK: - Peezy Assessment Button
+
 struct PeezyAssessmentButton: View {
     let title: String
     let disabled: Bool
     let action: () -> Void
 
-    // Animation states
-    @State private var isPressed = false
-
-    // Haptic feedback
-    private let mediumHaptic = UIImpactFeedbackGenerator(style: .medium)
-
-    // Charcoal glass color (Assuming this exists in your theme)
     private let deepInk = PeezyTheme.Colors.deepInk
 
     init(_ title: String, disabled: Bool = false, action: @escaping () -> Void) {
@@ -23,7 +38,7 @@ struct PeezyAssessmentButton: View {
     var body: some View {
         Button(action: {
             guard !disabled else { return }
-            mediumHaptic.impactOccurred()
+            PeezyHaptics.medium()
             action()
         }) {
             Text(title)
@@ -32,74 +47,38 @@ struct PeezyAssessmentButton: View {
                 .frame(maxWidth: .infinity)
                 .frame(height: 56)
                 .background(
-                    ZStack {
-                        // Main button body - Solid for contrast, matching the selected SelectionTile
-                        Capsule(style: .continuous)
-                            .fill(deepInk.opacity(disabled ? 0.3 : 1.0))
-                    }
+                    Capsule(style: .continuous)
+                        // 1. Surface Gradient: Slightly lighter at the top to simulate a curved, physical surface
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    deepInk.opacity(disabled ? 0.3 : 0.85),
+                                    deepInk.opacity(disabled ? 0.3 : 1.0)
+                                ],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
                 )
                 .overlay(
-                    // Subtle top edge highlight to give a 3D, polished glass feel
                     Capsule(style: .continuous)
+                        // 2. Bevel/Highlight: Crisp white line at the top edge catching the light, dark shadow at the bottom
                         .stroke(
                             LinearGradient(
-                                colors: [.white.opacity(disabled ? 0.0 : 0.25), .clear],
+                                colors: [
+                                    .white.opacity(disabled ? 0.0 : 0.35),
+                                    .clear,
+                                    .black.opacity(disabled ? 0.0 : 0.4)
+                                ],
                                 startPoint: .top,
                                 endPoint: .bottom
                             ),
                             lineWidth: 1
                         )
                 )
-                // The "Glow" - A diffused shadow matching the button's color
-                .shadow(
-                    color: disabled ? .clear : deepInk.opacity(isPressed ? 0.2 : 0.4),
-                    radius: isPressed ? 8 : 16,
-                    x: 0,
-                    y: isPressed ? 4 : 8
-                )
         }
         .disabled(disabled)
-        .scaleEffect(isPressed ? 0.95 : 1.0)
-        // Matched the spring animation from your SelectionTile for consistency
-        .animation(.spring(response: 0.3, dampingFraction: 0.6), value: isPressed)
-        .animation(.easeInOut(duration: 0.2), value: disabled) // Smooth transition if disabled state changes
-        .buttonStyle(PlainButtonStyle())
-        .simultaneousGesture(
-            DragGesture(minimumDistance: 0)
-                .onChanged { _ in
-                    if !disabled && !isPressed {
-                        let lightHaptic = UIImpactFeedbackGenerator(style: .light)
-                        lightHaptic.impactOccurred()
-                        isPressed = true
-                    }
-                }
-                .onEnded { _ in
-                    isPressed = false
-                }
-        )
-    }
-}
-
-// MARK: - Preview
-
-#Preview {
-    ZStack {
-        // Fallback color in case InteractiveBackground isn't in scope for the preview
-        Color(white: 0.95).ignoresSafeArea()
-
-        VStack(spacing: 32) {
-            PeezyAssessmentButton("Continue") {
-                print("Continue tapped")
-            }
-
-            PeezyAssessmentButton("Start Assessment") {
-                print("Start tapped")
-            }
-
-            PeezyAssessmentButton("Continue", disabled: true) {
-                print("This won't fire")
-            }
-        }
-        .padding(.horizontal, 24)
+        .buttonStyle(PeezyPressButtonStyle(disabled: disabled))
+        .animation(.easeInOut(duration: 0.2), value: disabled)
     }
 }

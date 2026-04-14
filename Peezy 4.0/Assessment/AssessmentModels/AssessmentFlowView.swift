@@ -118,7 +118,6 @@ struct AssessmentFlowView: View {
         // --- Section 1: Basics ---
         case .userName:              UserName()
         case .moveDate:              MoveDate()
-        case .moveDateType:          MoveDateType()
 
         // --- Section 2: Current Home ---
         case .currentRentOrOwn:      CurrentRentOrOwn()

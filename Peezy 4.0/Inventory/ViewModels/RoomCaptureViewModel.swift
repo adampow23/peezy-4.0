@@ -24,19 +24,14 @@ final class RoomCaptureViewModel: NSObject {
 
     func requestPermissions() async {
         let cameraStatus = AVCaptureDevice.authorizationStatus(for: .video)
-        let micStatus = AVCaptureDevice.authorizationStatus(for: .audio)
 
         var cameraGranted = cameraStatus == .authorized
-        var micGranted = micStatus == .authorized
 
         if cameraStatus == .notDetermined {
             cameraGranted = await AVCaptureDevice.requestAccess(for: .video)
         }
-        if micStatus == .notDetermined {
-            micGranted = await AVCaptureDevice.requestAccess(for: .audio)
-        }
 
-        if cameraGranted && micGranted {
+        if cameraGranted {
             permissionGranted = true
             permissionDenied = false
         } else {
@@ -58,13 +53,6 @@ final class RoomCaptureViewModel: NSObject {
             throw CaptureError.cannotAddInput
         }
         session.addInput(videoInput)
-
-        if let audioDevice = AVCaptureDevice.default(for: .audio) {
-            if let audioInput = try? AVCaptureDeviceInput(device: audioDevice),
-               session.canAddInput(audioInput) {
-                session.addInput(audioInput)
-            }
-        }
 
         let output = AVCaptureMovieFileOutput()
         guard session.canAddOutput(output) else {

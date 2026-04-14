@@ -1,163 +1,105 @@
+//
+//  InventoryFlowView.swift
+//  Peezy 4.0
+//
+//  Container view for the inventory scanning flow.
+//  Switches on InventorySessionManager.state to present the correct screen.
+//  Handles the intro/info task flow cards and the room-saved popup overlay.
+//
+
 import SwiftUI
 
 struct InventoryFlowView: View {
     @State private var sessionManager = InventorySessionManager()
     @Environment(\.dismiss) private var dismiss
 
+    // Room saved popup
     @State private var showSavedPopup = false
     @State private var savedRoomName = ""
     @State private var savedItemCount = 0
 
     var body: some View {
         ZStack {
-            switch sessionManager.state {
-            case .intro:
-                ZStack(alignment: .topLeading) {
-                    InteractiveBackground()
-                        .ignoresSafeArea()
+            // Main content — switches on state
+            Group {
+                switch sessionManager.state {
 
-                    TaskFlowTitleCard(
-                        taskTitle: "Scan my home",
-                        icon: "camera.viewfinder",
-                        onContinue: {
-                            withAnimation(PeezyTheme.Animation.spring) {
-                                sessionManager.state = .info
-                            }
-                        }
+                // ── Intro Card ──
+                case .intro:
+                    introView
+
+                // ── Info Card ──
+                case .info:
+                    infoView
+
+                // ── Room Hub ──
+                case .roomList, .enteringRoomName:
+                    InventoryRoomHubView(
+                        sessionManager: sessionManager,
+                        onDismiss: { dismiss() }
                     )
-                    .peezyCardChrome()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                    TaskFlowDismissButton(onDismiss: { dismiss() })
-                }
-
-            case .info:
-                ZStack(alignment: .topLeading) {
-                    InteractiveBackground()
-                        .ignoresSafeArea()
-
-                    TaskFlowInfoCard(
-                        taskTitle: "Scan my home",
-                        title: "Here's how it works",
-                        bodyText: "Pan your camera slowly around each room. Peezy identifies furniture and belongings in about 20 seconds per room.\n\nOpen closets and cabinets — Peezy catches what you'd forget to mention. Go one room at a time for the best results.",
-                        primaryLabel: "Let's go",
-                        showBack: true,
-                        onPrimary: {
-                            withAnimation(PeezyTheme.Animation.spring) {
-                                sessionManager.state = .roomList
+                // ── Camera ──
+                case .scanning(let roomName):
+                    InventoryCameraView(
+                        roomName: roomName,
+                        onComplete: { frames in
+                            Task {
+                                await sessionManager.handleFramesExtracted(frames, roomName: roomName)
                             }
                         },
-                        onBack: {
-                            withAnimation(PeezyTheme.Animation.spring) {
-                                sessionManager.state = .intro
+                        onCancel: {
+                            sessionManager.state = .roomList
+                        }
+                    )
+
+                // ── Processing ──
+                case .processing(_, let progress):
+                    InventoryProcessingView(progressMessage: progress)
+
+                // ── Item Confirmation ──
+                case .confirming(let roomName, let items, let sessionId):
+                    if let userId = sessionManager.userId {
+                        InventoryItemConfirmView(
+                            items: items,
+                            sessionId: sessionId,
+                            userId: userId,
+                            onComplete: { updatedItems in
+                                sessionManager.handleConfirmationCompleted(updatedItems, roomName: roomName)
                             }
-                        }
-                    )
-                    .peezyCardChrome()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-                    TaskFlowDismissButton(onDismiss: { dismiss() })
-                }
-
-            case .roomList:
-                RoomListView(
-                    sessionManager: sessionManager,
-                    onDismiss: { dismiss() }
-                )
-
-            case .enteringRoomName:
-                // Handled by RoomListView's sheet — transition back to roomList
-                RoomListView(
-                    sessionManager: sessionManager,
-                    onDismiss: { dismiss() }
-                )
-
-            case .scanning(let roomName):
-                RoomCaptureView(
-                    roomName: roomName,
-                    onComplete: { frames in
-                        Task {
-                            await sessionManager.handleFramesExtracted(frames, roomName: roomName)
-                        }
-                    },
-                    onCancel: {
-                        sessionManager.state = .roomList
+                        )
                     }
-                )
 
-            case .processing(_, let progress):
-                InventoryProcessingView(progressMessage: progress)
-
-            case .confirming(let roomName, let items, let sessionId):
-                if let userId = sessionManager.userId {
-                    InventoryConfirmationView(
+                // ── Room Review ──
+                case .reviewing(let roomName, let items):
+                    InventoryRoomReviewView(
                         items: items,
-                        sessionId: sessionId,
-                        userId: userId,
-                        onComplete: { updatedItems in
-                            sessionManager.handleConfirmationCompleted(updatedItems, roomName: roomName)
+                        roomName: roomName,
+                        onConfirm: { confirmedItems in
+                            sessionManager.handleReviewConfirmed(confirmedItems, roomName: roomName)
+                        },
+                        onRescan: {
+                            sessionManager.state = .scanning(roomName: roomName)
                         }
                     )
+
+                // ── Estimate (future) ──
+                case .estimate:
+                    InventoryRoomHubView(
+                        sessionManager: sessionManager,
+                        onDismiss: { dismiss() }
+                    )
                 }
-
-            case .reviewing(let roomName, let items):
-                InventoryReviewView(
-                    items: items,
-                    roomName: roomName,
-                    onConfirm: { confirmedItems in
-                        sessionManager.handleReviewConfirmed(confirmedItems, roomName: roomName)
-                    },
-                    onRescan: {
-                        sessionManager.state = .scanning(roomName: roomName)
-                    }
-                )
-
-            case .estimate:
-                InventoryEstimateView(
-                    estimate: InventoryEstimator.estimate(from: sessionManager.scannedRooms),
-                    onSave: {
-                        Task {
-                            try? await sessionManager.saveAllToFirestore()
-                            dismiss()
-                        }
-                    },
-                    onScanMore: {
-                        sessionManager.state = .roomList
-                    }
-                )
             }
 
             // Room saved popup overlay
             if showSavedPopup {
-                ZStack {
-                    Color.black.opacity(0.3)
-                        .ignoresSafeArea()
-                        .onTapGesture { }
-
-                    VStack(spacing: 16) {
-                        Image(systemName: "checkmark.circle.fill")
-                            .font(.system(size: 56))
-                            .foregroundStyle(Color(uiColor: .systemGreen))
-
-                        Text("Room saved!")
-                            .font(.system(size: 22, weight: .bold))
-                            .foregroundStyle(PeezyTheme.Colors.deepInk)
-
-                        Text("\(savedItemCount) items in \(savedRoomName)")
-                            .font(.system(size: 15, weight: .medium))
-                            .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.5))
-                    }
-                    .padding(32)
-                    .background(.regularMaterial)
-                    .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-                    .shadow(color: Color.black.opacity(0.1), radius: 20, x: 0, y: 10)
-                }
-                .transition(.opacity)
-                .zIndex(100)
+                savedPopupOverlay
             }
         }
-        .animation(PeezyTheme.Animation.spring, value: stateKey)
+        .animation(.spring(response: 0.4, dampingFraction: 0.85), value: sessionManager.stateDescription)
         .onChange(of: sessionManager.stateDescription) { oldValue, newValue in
+            // Detect room save: reviewing → roomList
             if oldValue.hasPrefix("reviewing") && newValue == "roomList" {
                 if let lastRoom = sessionManager.scannedRooms.last {
                     savedRoomName = lastRoom.name
@@ -175,18 +117,95 @@ struct InventoryFlowView: View {
         }
     }
 
-    /// Stable string key for animating state transitions
-    private var stateKey: String {
-        switch sessionManager.state {
-        case .intro: return "intro"
-        case .info: return "info"
-        case .roomList: return "roomList"
-        case .enteringRoomName: return "enteringRoomName"
-        case .scanning(let name): return "scanning-\(name)"
-        case .processing(let name, _): return "processing-\(name)"
-        case .confirming(let name, _, _): return "confirming-\(name)"
-        case .reviewing(let name, _): return "reviewing-\(name)"
-        case .estimate: return "estimate"
+    // MARK: - Intro Card
+
+    private var introView: some View {
+        ZStack(alignment: .topLeading) {
+            InteractiveBackground()
+                .ignoresSafeArea()
+
+            TaskFlowTitleCard(
+                taskTitle: "Scan my home",
+                icon: "camera.viewfinder",
+                onContinue: {
+                    withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
+                        sessionManager.state = .info
+                    }
+                }
+            )
+            .peezyCardChrome()
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            TaskFlowDismissButton(onDismiss: { dismiss() })
         }
     }
+
+    // MARK: - Info Card
+
+    private var infoView: some View {
+        ZStack(alignment: .topLeading) {
+            InteractiveBackground()
+                .ignoresSafeArea()
+
+            TaskFlowInfoCard(
+                taskTitle: "Scan my home",
+                title: "Here's how it works",
+                bodyText: "Pan your camera slowly around each room — about 20 seconds per room. Peezy identifies furniture and belongings automatically.\n\nOpen closets and cabinets. Go one room at a time for the best results.",
+                primaryLabel: "Let's go",
+                showBack: true,
+                onPrimary: {
+                    withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
+                        sessionManager.state = .roomList
+                    }
+                },
+                onBack: {
+                    withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
+                        sessionManager.state = .intro
+                    }
+                }
+            )
+            .peezyCardChrome()
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            TaskFlowDismissButton(onDismiss: { dismiss() })
+        }
+    }
+
+    // MARK: - Saved Popup
+
+    private var savedPopupOverlay: some View {
+        ZStack {
+            Color.black.opacity(0.3)
+                .ignoresSafeArea()
+                .onTapGesture { }
+
+            VStack(spacing: 16) {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 56))
+                    .foregroundStyle(Color(uiColor: .systemGreen))
+
+                Text("Room saved!")
+                    .font(.system(size: 22, weight: .bold))
+                    .foregroundStyle(PeezyTheme.Colors.deepInk)
+
+                Text("\(savedItemCount) items in \(savedRoomName)")
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.5))
+            }
+            .padding(32)
+            .background(.regularMaterial)
+            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .shadow(color: Color.black.opacity(0.1), radius: 20, x: 0, y: 10)
+        }
+        .transition(.opacity)
+        .zIndex(100)
+    }
 }
+
+// MARK: - Previews
+
+#if DEBUG
+#Preview("Inventory Flow — Intro") {
+    InventoryFlowView()
+}
+#endif

@@ -132,7 +132,9 @@ class SubscriptionManager: ObservableObject {
 
             isLoaded = true
         } catch {
+            #if DEBUG
             print("Failed to load products: \(error)")
+            #endif
             purchaseError = .networkError
         }
     }
@@ -160,7 +162,9 @@ class SubscriptionManager: ObservableObject {
                     return .success
 
                 case .unverified(_, let error):
+                    #if DEBUG
                     print("Transaction verification failed: \(error)")
+                    #endif
                     purchaseError = .verificationFailed
                     isPurchasing = false
                     return .failed(error)
@@ -194,7 +198,9 @@ class SubscriptionManager: ObservableObject {
             try await AppStore.sync()
             await updateSubscriptionStatus()
         } catch {
+            #if DEBUG
             print("Restore failed: \(error)")
+            #endif
             purchaseError = .purchaseFailed(underlying: error)
         }
     }
@@ -294,7 +300,9 @@ class SubscriptionManager: ObservableObject {
         do {
             try await SubscriptionAPIClient.validateReceipt(payload: payload)
         } catch {
+            #if DEBUG
             print("Server sync failed (non-fatal): \(error)")
+            #endif
         }
     }
 }

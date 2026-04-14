@@ -1,0 +1,1185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Peezy — Command Center</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700;800;900&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+  <!-- Firebase compat SDK -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+
+  <!-- React 18 + Babel -->
+  <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body, #root { height: 100%; overflow: hidden; }
+    body {
+      font-family: 'Geist', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: #07090d;
+      color: #e8eaf0;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+    ::-webkit-scrollbar { width: 4px; height: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.07); border-radius: 2px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.14); }
+    input, textarea, button, select { font-family: inherit; }
+    button { cursor: pointer; border: none; background: none; }
+    textarea { resize: vertical; }
+    ::placeholder { color: rgba(232,234,240,0.22); }
+    a { color: inherit; text-decoration: none; }
+
+    @keyframes fadeUp   { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:translateY(0); } }
+    @keyframes fadeIn   { from { opacity:0; } to { opacity:1; } }
+    @keyframes slideR   { from { opacity:0; transform:translateX(10px); } to { opacity:1; transform:translateX(0); } }
+    @keyframes pulse    { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+    .anim-fade-up { animation: fadeUp  .18s ease-out; }
+    .anim-fade-in { animation: fadeIn  .15s ease-out; }
+    .anim-slide-r { animation: slideR  .18s ease-out; }
+    .anim-pulse   { animation: pulse 1.6s ease-in-out infinite; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useMemo, useRef, useCallback } = React;
+
+    // ─────────────────────────────────────────────────────────
+    // FIREBASE CONFIG  ← swap these values before deploying
+    // ─────────────────────────────────────────────────────────
+    const FIREBASE_CONFIG = {
+      apiKey:            "YOUR_API_KEY",
+      authDomain:        "YOUR_AUTH_DOMAIN",
+      projectId:         "YOUR_PROJECT_ID",
+      storageBucket:     "YOUR_STORAGE_BUCKET",
+      messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
+      appId:             "YOUR_APP_ID",
+    };
+
+    let fbAuth = null;
+    let fbDb   = null;
+    const FB_READY = FIREBASE_CONFIG.apiKey && !FIREBASE_CONFIG.apiKey.startsWith("YOUR_");
+    if (FB_READY) {
+      try {
+        firebase.initializeApp(FIREBASE_CONFIG);
+        fbAuth = firebase.auth();
+        fbDb   = firebase.firestore();
+      } catch (_) { /* fall through to demo mode */ }
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // DESIGN TOKENS
+    // ─────────────────────────────────────────────────────────
+    const C = {
+      bg0: "#07090d",
+      bg1: "#0b0d13",
+      bg2: "#0f1118",
+      bg3: "#141720",
+      bg4: "#191d28",
+      border:      "rgba(255,255,255,0.055)",
+      borderHover: "rgba(255,255,255,0.11)",
+      t1: "#e8eaf0",
+      t2: "#6b7080",
+      t3: "#363948",
+      red:    "#f87171", rBg: "rgba(248,113,113,0.09)",  rGlow: "rgba(248,113,113,0.25)",
+      green:  "#34d399", gBg: "rgba(52,211,153,0.09)",   gGlow: "rgba(52,211,153,0.25)",
+      yellow: "#fbbf24", yBg: "rgba(251,191,36,0.09)",   yGlow: "rgba(251,191,36,0.25)",
+      blue:   "#60a5fa", bBg: "rgba(96,165,250,0.09)",   bGlow: "rgba(96,165,250,0.25)",
+      purple: "#a78bfa", pBg: "rgba(167,139,250,0.09)",  pGlow: "rgba(167,139,250,0.25)",
+      brand:  "#fbbf24",
+      mono: "'Geist Mono', 'Courier New', monospace",
+    };
+
+    // ─────────────────────────────────────────────────────────
+    // TYPE SYSTEM
+    // ─────────────────────────────────────────────────────────
+    const TYPE_COLOR = {
+      support_message:    C.red,
+      vendor_workflow:    C.purple,
+      concierge_request:  C.blue,
+      task_flow:          C.blue,
+      inventory_submitted:C.yellow,
+    };
+    const TYPE_LABEL = {
+      support_message:    "Support",
+      vendor_workflow:    "Vendor",
+      concierge_request:  "Task",
+      task_flow:          "Task",
+      inventory_submitted:"Inventory",
+    };
+    const STATUS = {
+      pending:     { l: "Pending",     c: C.red,    bg: C.rBg },
+      in_progress: { l: "In progress", c: C.yellow, bg: C.yBg },
+      done:        { l: "Done",        c: C.green,  bg: C.gBg },
+    };
+
+    function timeAgo(d) {
+      const s = Math.floor((Date.now() - d) / 1000);
+      if (s < 60)  return "now";
+      const m = Math.floor(s / 60);
+      if (m < 60)  return m + "m";
+      const h = Math.floor(m / 60);
+      if (h < 24)  return h + "h";
+      return Math.floor(h / 24) + "d";
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // MOCK DATA  (replaced by Firestore in production)
+    // ─────────────────────────────────────────────────────────
+    const MOCK_USERS = {
+      u001: { id:"u001", name:"Sarah Mitchell", email:"sarah.m@gmail.com", phone:"(816) 555-2847", initials:"SM", cur:"1842 Oak Park Ave, Kansas City, MO 64108", new_:"4201 Main St, Unit 12, Denver, CO 80205", moveDate:"May 15, 2026", moveDateObj:new Date(2026,4,15), days:32, joined:"Apr 2, 2026", sub:{plan:"Annual",status:"Active"}, a:{from:"Apartment",to:"House",br:"3",dist:"Interstate",who:"Family with Kids",pets:"Dog, Cat",garage:"No",storage:"Yes",movers:"Yes",packing:"Yes",renting:"Yes",willRent:"No",hoa:"No",parking:"Yes",elevator:"No",gym:"Yes",dentist:"Yes",doctor:"Yes",vet:"Yes",fromFloor:"3rd Floor",fromAccess:"Stairs only",toFloor:"Ground",toAccess:"Driveway"}, tasks:[{t:"Find my movers",s:"in_progress"},{t:"Handle my dentist",s:"pending"},{t:"Handle my vet",s:"pending"},{t:"Handle my gym",s:"done"},{t:"Scan my home",s:"done"},{t:"Forward my mail",s:"pending"},{t:"Auto insurance",s:"done"},{t:"Unloading parking",s:"done"},{t:"New utilities",s:"pending"},{t:"Employer records",s:"done"}], inv:{rooms:[{n:"Living Room",c:12},{n:"Master Bedroom",c:8},{n:"Kitchen",c:15},{n:"Kids Room",c:6}],total:41,heavy:["Piano","Hot Tub"],fragile:4,items:[{room:"Living Room",items:[{n:"Sectional Sofa",q:1,sz:"oversized",tier:"furniture",fr:false,hv:false},{n:"Piano",q:1,sz:"oversized",tier:"furniture",fr:true,hv:true},{n:'65" TV',q:1,sz:"large",tier:"furniture",fr:true,hv:true},{n:"Floor Lamp",q:2,sz:"medium",tier:"furniture",fr:true,hv:false},{n:"Bookshelf",q:1,sz:"large",tier:"furniture",fr:false,hv:false},{n:"Books",q:50,sz:"small",tier:"boxable",fr:false,hv:false},{n:"Decor",q:12,sz:"small",tier:"boxable",fr:true,hv:false}]},{room:"Master Bedroom",items:[{n:"King Bed",q:1,sz:"oversized",tier:"furniture",fr:false,hv:false},{n:"Mattress",q:1,sz:"oversized",tier:"furniture",fr:false,hv:false},{n:"Dresser",q:1,sz:"large",tier:"furniture",fr:false,hv:false},{n:"Nightstand",q:2,sz:"medium",tier:"furniture",fr:false,hv:false}]},{room:"Kitchen",items:[{n:"Dining Table",q:1,sz:"large",tier:"furniture",fr:false,hv:false},{n:"Chairs",q:6,sz:"medium",tier:"furniture",fr:false,hv:false},{n:"China",q:1,sz:"medium",tier:"boxable",fr:true,hv:true},{n:"Glassware",q:20,sz:"small",tier:"boxable",fr:true,hv:false}]},{room:"Kids Room",items:[{n:"Twin Bed",q:1,sz:"large",tier:"furniture",fr:false,hv:false},{n:"Desk",q:1,sz:"medium",tier:"furniture",fr:false,hv:false},{n:"Toys",q:15,sz:"small",tier:"boxable",fr:false,hv:false}]}]}},
+      u002: { id:"u002", name:"Jake Rivera", email:"jake.r@outlook.com", phone:"(913) 555-1034", initials:"JR", cur:"220 W 47th St, Kansas City, MO 64112", new_:"1500 Blake St, Apt 8C, Denver, CO 80202", moveDate:"Jun 1, 2026", moveDateObj:new Date(2026,5,1), days:49, joined:"Apr 10, 2026", sub:{plan:"Weekly",status:"Active"}, a:{from:"House",to:"Apartment",br:"2",dist:"Interstate",who:"Just Me",pets:null,garage:"Yes",storage:"No",movers:"Yes",packing:"No",renting:"No",willRent:"Yes",hoa:"No",parking:"Yes",elevator:"Yes",gym:"No",dentist:"Yes",doctor:"No",vet:"No",fromFloor:"Ground",fromAccess:"Driveway",toFloor:"4th Floor",toAccess:"Freight elevator"}, tasks:[{t:"Handle dentist",s:"pending"},{t:"Scan home",s:"done"},{t:"Find movers",s:"pending"},{t:"Cancel utilities",s:"pending"},{t:"Loading elevator",s:"pending"}], inv:{rooms:[{n:"Living Room",c:12},{n:"Bedroom",c:8},{n:"Kitchen",c:15},{n:"Garage",c:12}],total:47,heavy:["Pool Table"],fragile:2,items:[]}},
+      u003: { id:"u003", name:"Maria Lopez", email:"maria.lopez@gmail.com", phone:"(816) 555-9182", initials:"ML", cur:"3310 Troost Ave, Kansas City, MO 64109", new_:"890 Vine St, Unit 4B, Denver, CO 80206", moveDate:"May 20, 2026", moveDateObj:new Date(2026,4,20), days:37, joined:"Apr 5, 2026", sub:{plan:"Annual",status:"Active"}, a:{from:"Apartment",to:"Condo",br:"1",dist:"Interstate",who:"With Partner",pets:"Cat",garage:"No",storage:"No",movers:"No",packing:"No",renting:"Yes",willRent:"No",hoa:"Yes",parking:"Yes",elevator:"Yes",gym:"Yes",dentist:"No",doctor:"Yes",vet:"Yes",fromFloor:"2nd Floor",fromAccess:"Stairs only",toFloor:"6th Floor",toAccess:"Freight elevator"}, tasks:[{t:"Rent truck",s:"done"},{t:"Unloading parking",s:"pending"},{t:"Handle vet",s:"pending"},{t:"Home insurance",s:"pending"}], inv:null},
+      u004: { id:"u004", name:"Tom Kim", email:"tom.k@gmail.com", phone:"(816) 555-4421", initials:"TK", cur:"1200 Grand Blvd, Kansas City, MO 64106", new_:"2100 Lawrence St, Denver, CO 80205", moveDate:"May 28, 2026", moveDateObj:new Date(2026,4,28), days:45, joined:"Apr 8, 2026", sub:{plan:"Annual",status:"Active"}, a:{from:"Condo",to:"House",br:"2",dist:"Interstate",who:"With Partner",pets:null,garage:"No",storage:"No",movers:"Yes",packing:"No",renting:"No",willRent:"No",hoa:"Yes",parking:"Yes",elevator:"Yes",gym:"Yes",dentist:"Yes",doctor:"Yes",vet:"No",fromFloor:"8th Floor",fromAccess:"Freight elevator",toFloor:"Ground",toAccess:"Driveway"}, tasks:[{t:"Find movers",s:"pending"},{t:"Auto insurance",s:"done"},{t:"Scan home",s:"pending"}], inv:null},
+    };
+    const MOCK_ITEMS = [
+      {id:"1",type:"support_message",uid:"u001",name:"Sarah Mitchell",title:"Support",sum:"How long until I hear back about movers?",cur:"Kansas City",new_:"Denver",date:"May 15",status:"pending",at:new Date(Date.now()-24e4),msgs:[{from:"user",text:"Hey, I submitted my mover info yesterday. How long until I hear back?",at:new Date(Date.now()-24e4)}]},
+      {id:"2",type:"vendor_workflow",uid:"u001",name:"Sarah Mitchell",title:"Find my movers",sum:"Heavy: Piano, Hot Tub\nPacking: Full service\nStorage: 10×10, ¾ full\nInsurance: Full coverage",cur:"Kansas City",new_:"Denver",date:"May 15",status:"in_progress",at:new Date(Date.now()-648e5)},
+      {id:"3",type:"concierge_request",uid:"u002",name:"Jake Rivera",title:"Handle dentist",sum:"Find new + transfer records\nCurrent: Bright Smile Dental",cur:"Kansas City",new_:"Denver",date:"Jun 1",status:"pending",at:new Date(Date.now()-27e5)},
+      {id:"4",type:"concierge_request",uid:"u003",name:"Maria Lopez",title:"Reserve parking",sum:"890 Vine St, Unit 4B\nDate: May 20",cur:"Kansas City",new_:"Denver",date:"May 20",status:"pending",at:new Date(Date.now()-72e5)},
+      {id:"5",type:"inventory_submitted",uid:"u002",name:"Jake Rivera",title:"Inventory submitted",sum:"4 rooms · 47 items",cur:"Kansas City",new_:"Denver",date:"Jun 1",status:"pending",at:new Date(Date.now()-18e6)},
+      {id:"6",type:"support_message",uid:"u003",name:"Maria Lopez",title:"Support",sum:"Can I change my move date?",cur:"Kansas City",new_:"Denver",date:"May 20",status:"pending",at:new Date(Date.now()-72e4),msgs:[{from:"user",text:"Can I change my move date? Something came up with my lease.",at:new Date(Date.now()-72e4)}]},
+      {id:"7",type:"concierge_request",uid:"u001",name:"Sarah Mitchell",title:"Auto insurance",sum:"Switch · State Farm · Get quotes",cur:"Kansas City",new_:"Denver",date:"May 15",status:"done",at:new Date(Date.now()-1728e5)},
+      {id:"8",type:"concierge_request",uid:"u004",name:"Tom Kim",title:"Find movers",sum:"2BR condo → house\n8th floor freight elevator",cur:"Kansas City",new_:"Denver",date:"May 28",status:"pending",at:new Date(Date.now()-36e5)},
+      {id:"9",type:"vendor_workflow",uid:"u003",name:"Maria Lopez",title:"Rent truck",sum:"One-way rental · Apartment → Condo",cur:"Kansas City",new_:"Denver",date:"May 20",status:"done",at:new Date(Date.now()-2592e5)},
+    ];
+
+    // ─────────────────────────────────────────────────────────
+    // SVG ICONS
+    // ─────────────────────────────────────────────────────────
+    function Icon({ name, size=16, color="currentColor", weight=1.5 }) {
+      const d = {
+        home:      <><path d="M2.5 7L8 2l5.5 5v7h-4v-4H6v4H2.5V7z"/></>,
+        chat:      <><path d="M13.5 10a1 1 0 01-1 1H5.5l-3 3V3a1 1 0 011-1h10a1 1 0 011 1v7z"/></>,
+        task:      <><rect x="2.5" y="2.5" width="11" height="11" rx="1.5"/><path d="M5.5 8l2 2 3-3.5"/></>,
+        vendor:    <><rect x="1.5" y="7" width="13" height="7" rx="1"/><path d="M4.5 7V5a3.5 3.5 0 017 0v2"/><circle cx="8" cy="10.5" r="1" fill={color} stroke="none"/></>,
+        customers: <><circle cx="5.5" cy="5.5" r="2.5"/><path d="M1 14c0-2.8 2-4.5 4.5-4.5"/><circle cx="11.5" cy="7" r="2"/><path d="M9.5 14c0-1.8.9-3 2-3s2 1.2 2 3"/></>,
+        logout:    <><path d="M6 3H3a1 1 0 00-1 1v8a1 1 0 001 1h3"/><path d="M10.5 11l3-3-3-3"/><line x1="13.5" y1="8" x2="6" y2="8"/></>,
+        back:      <><path d="M10 12.5L5.5 8 10 3.5"/></>,
+        search:    <><circle cx="7" cy="7" r="4.5"/><path d="M11.5 11.5L14.5 14.5"/></>,
+        copy:      <><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M3 11V3h8"/></>,
+        send:      <><path d="M14 8L2 3l2.5 5L2 13l12-5z"/></>,
+        chevron:   <><path d="M6.5 4.5L10 8l-3.5 3.5"/></>,
+        check:     <><path d="M2.5 8.5l4 4 7-7"/></>,
+      };
+      return (
+        <svg width={size} height={size} viewBox="0 0 16 16" fill="none"
+          stroke={color} strokeWidth={weight} strokeLinecap="round" strokeLinejoin="round"
+          style={{flexShrink:0}}>
+          {d[name] || null}
+        </svg>
+      );
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // PRIMITIVES
+    // ─────────────────────────────────────────────────────────
+    const Badge = ({ label, color, bg }) => (
+      <span style={{
+        fontSize:10, fontWeight:600, letterSpacing:"0.05em",
+        padding:"2px 7px", borderRadius:4,
+        color, background: bg || color+"18",
+        whiteSpace:"nowrap", textTransform:"uppercase",
+        flexShrink:0,
+      }}>{label}</span>
+    );
+
+    const TypePill = ({ type }) => {
+      const color = TYPE_COLOR[type] || C.blue;
+      return (
+        <span style={{
+          fontSize:10, fontWeight:500, letterSpacing:"0.07em",
+          padding:"1px 7px", borderRadius:100,
+          color, border:`1px solid ${color}28`,
+          background:color+"0e",
+          textTransform:"uppercase", whiteSpace:"nowrap", flexShrink:0,
+        }}>{TYPE_LABEL[type] || type}</span>
+      );
+    };
+
+    const GlowDot = ({ type, size=7 }) => {
+      const c = TYPE_COLOR[type] || C.blue;
+      return (
+        <div style={{
+          width:size, height:size, borderRadius:"50%",
+          background:c, boxShadow:`0 0 6px 1px ${c}99`,
+          flexShrink:0,
+        }}/>
+      );
+    };
+
+    const Avatar = ({ initials, size=32 }) => (
+      <div style={{
+        width:size, height:size, borderRadius:size*.28,
+        background:C.bg4, border:`1px solid ${C.border}`,
+        display:"flex", alignItems:"center", justifyContent:"center",
+        fontSize:size*.34, fontWeight:600, color:C.t2,
+        letterSpacing:"0.02em", flexShrink:0,
+        fontFamily:C.mono,
+      }}>{initials}</div>
+    );
+
+    const SecLabel = ({ children, right }) => (
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+        <span style={{fontSize:10,fontWeight:600,letterSpacing:"0.1em",color:C.t3,textTransform:"uppercase"}}>{children}</span>
+        {right && <span style={{fontSize:10,color:C.t3,fontFamily:C.mono}}>{right}</span>}
+      </div>
+    );
+
+    const Card = ({ children, style: s }) => (
+      <div style={{
+        background:C.bg2, borderRadius:10, border:`1px solid ${C.border}`,
+        padding:"16px 18px", ...s,
+      }}>{children}</div>
+    );
+
+    const Btn = ({ children, primary, danger, onClick, disabled, style: s }) => (
+      <button onClick={onClick} disabled={disabled} style={{
+        padding:"9px 18px", borderRadius:8,
+        border: primary ? "none" : `1px solid ${C.border}`,
+        background: primary
+          ? (disabled ? C.bg3 : C.t1)
+          : danger ? C.rBg : C.bg3,
+        color: primary
+          ? (disabled ? C.t3 : "#07090d")
+          : danger ? C.red : C.t2,
+        fontSize:13, fontWeight:600, letterSpacing:"-0.01em",
+        cursor: disabled ? "default" : "pointer",
+        opacity: disabled ? .45 : 1,
+        transition:"background .12s, color .12s, opacity .12s",
+        ...s,
+      }}>{children}</button>
+    );
+
+    const inputStyle = (extraFocus) => ({
+      width:"100%", padding:"9px 12px",
+      background:C.bg2, border:`1px solid ${C.border}`,
+      borderRadius:8, fontSize:13, color:C.t1,
+      letterSpacing:"-0.01em",
+      transition:"border-color .15s",
+      ...extraFocus,
+    });
+
+    // focus helpers via onFocus/onBlur
+    const focusIn  = e => e.target.style.borderColor = C.borderHover;
+    const focusOut = e => e.target.style.borderColor = C.border;
+
+    // ─────────────────────────────────────────────────────────
+    // LOGIN SCREEN
+    // ─────────────────────────────────────────────────────────
+    function LoginScreen({ onLogin }) {
+      const [email, setEmail]   = useState("");
+      const [pass,  setPass]    = useState("");
+      const [err,   setErr]     = useState("");
+      const [busy,  setBusy]    = useState(false);
+
+      const submit = async e => {
+        e.preventDefault();
+        if (!email || !pass) return;
+        setBusy(true); setErr("");
+        try {
+          if (fbAuth) {
+            await fbAuth.signInWithEmailAndPassword(email, pass);
+            // auth state listener in App handles the rest
+          } else {
+            onLogin({ email, displayName:"Admin", uid:"demo" });
+          }
+        } catch(_) {
+          setErr("Invalid email or password.");
+        }
+        setBusy(false);
+      };
+
+      return (
+        <div className="anim-fade-in" style={{
+          height:"100vh", display:"flex",
+          alignItems:"center", justifyContent:"center",
+          background:C.bg0,
+          backgroundImage:`radial-gradient(ellipse 700px 500px at 50% -5%, ${C.yGlow} 0%, transparent 65%)`,
+        }}>
+          <div style={{
+            width:360, padding:"36px 32px",
+            background:C.bg1, border:`1px solid ${C.border}`,
+            borderRadius:16,
+          }}>
+            <div style={{marginBottom:28}}>
+              <div style={{fontSize:22,fontWeight:800,color:C.brand,letterSpacing:"-0.03em",marginBottom:4}}>peezy</div>
+              <div style={{fontSize:12,color:C.t3,letterSpacing:"0.06em",textTransform:"uppercase"}}>Command Center</div>
+            </div>
+            <form onSubmit={submit} style={{display:"flex",flexDirection:"column",gap:10}}>
+              <input type="email" placeholder="Email address" value={email}
+                onChange={e=>setEmail(e.target.value)} style={inputStyle()}
+                onFocus={focusIn} onBlur={focusOut} autoComplete="email"/>
+              <input type="password" placeholder="Password" value={pass}
+                onChange={e=>setPass(e.target.value)} style={inputStyle()}
+                onFocus={focusIn} onBlur={focusOut} autoComplete="current-password"/>
+              {err && (
+                <div style={{fontSize:12,color:C.red,padding:"8px 12px",background:C.rBg,borderRadius:7}}>
+                  {err}
+                </div>
+              )}
+              <button type="submit" disabled={busy||!email||!pass} style={{
+                marginTop:4, padding:"11px", borderRadius:8, border:"none",
+                background: (busy||!email||!pass) ? C.bg3 : C.t1,
+                color:      (busy||!email||!pass) ? C.t3  : "#07090d",
+                fontSize:14, fontWeight:700, letterSpacing:"-0.01em",
+                cursor: (busy||!email||!pass) ? "default" : "pointer",
+                transition:"background .15s, color .15s",
+              }}>
+                {busy ? "Signing in…" : "Sign in"}
+              </button>
+            </form>
+          </div>
+        </div>
+      );
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // SIDEBAR
+    // ─────────────────────────────────────────────────────────
+    function Sidebar({ nav, setNav, items, adminUser, onSignOut }) {
+      const counts = {
+        chat:     items.filter(i=>i.type==="support_message"   &&i.status==="pending").length,
+        tasks:    items.filter(i=>(i.type==="concierge_request"||i.type==="task_flow")&&i.status==="pending").length,
+        vendor:   items.filter(i=>(i.type==="vendor_workflow"  ||i.type==="inventory_submitted")&&i.status==="pending").length,
+      };
+      const navItems = [
+        {k:"home",      label:"Home",      icon:"home"},
+        {k:"chat",      label:"Chat",      icon:"chat"},
+        {k:"tasks",     label:"Tasks",     icon:"task"},
+        {k:"vendor",    label:"Vendor",    icon:"vendor"},
+        {k:"customers", label:"Customers", icon:"customers"},
+      ];
+      const initials = (adminUser?.email||"AP").slice(0,2).toUpperCase();
+
+      return (
+        <div style={{
+          width:220, height:"100%", flexShrink:0,
+          background:C.bg1, borderRight:`1px solid ${C.border}`,
+          display:"flex", flexDirection:"column",
+        }}>
+          {/* Logo */}
+          <div style={{padding:"22px 18px 18px", borderBottom:`1px solid ${C.border}`}}>
+            <div style={{fontSize:20,fontWeight:900,color:C.brand,letterSpacing:"-0.04em",lineHeight:1}}>peezy</div>
+            <div style={{fontSize:9,color:C.t3,letterSpacing:"0.12em",textTransform:"uppercase",marginTop:4}}>Command Center</div>
+          </div>
+
+          {/* Nav */}
+          <nav style={{padding:"10px 10px 10px",flex:1,overflowY:"auto"}}>
+            {navItems.map(({k,label,icon})=>{
+              const active = nav===k;
+              const count  = counts[k]||0;
+              return (
+                <button key={k} onClick={()=>setNav(k)} style={{
+                  width:"100%", display:"flex", alignItems:"center", gap:10,
+                  padding:"8px 10px", borderRadius:7, marginBottom:2,
+                  background: active ? C.bg3 : "transparent",
+                  border: `1px solid ${active ? C.border : "transparent"}`,
+                  color: active ? C.t1 : C.t2,
+                  fontSize:13, fontWeight: active ? 600 : 400,
+                  letterSpacing:"-0.01em",
+                  transition:"all .12s",
+                  textAlign:"left",
+                }}>
+                  <Icon name={icon} size={15}/>
+                  <span style={{flex:1}}>{label}</span>
+                  {count>0 && (
+                    <span style={{
+                      fontSize:9, fontWeight:700, fontFamily:C.mono,
+                      color:C.red, background:C.rBg,
+                      padding:"1px 6px", borderRadius:4,
+                    }}>{count}</span>
+                  )}
+                </button>
+              );
+            })}
+          </nav>
+
+          {/* User / sign out */}
+          <div style={{padding:"12px 12px 14px",borderTop:`1px solid ${C.border}`}}>
+            <div style={{display:"flex",alignItems:"center",gap:9,marginBottom:8}}>
+              <Avatar initials={initials} size={26}/>
+              <span style={{fontSize:11,color:C.t2,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                {adminUser?.email||"Admin"}
+              </span>
+            </div>
+            <button onClick={onSignOut} style={{
+              width:"100%", display:"flex", alignItems:"center", gap:8,
+              padding:"6px 8px", borderRadius:7, border:"none",
+              background:"transparent", color:C.t3, fontSize:11,
+              transition:"all .12s",
+            }}
+            onMouseEnter={e=>{e.currentTarget.style.color=C.t2; e.currentTarget.style.background=C.bg3;}}
+            onMouseLeave={e=>{e.currentTarget.style.color=C.t3; e.currentTarget.style.background="transparent";}}>
+              <Icon name="logout" size={13}/>
+              Sign out
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // LIST ITEM ROW
+    // ─────────────────────────────────────────────────────────
+    function ItemRow({ item, selected, onClick, onUserClick }) {
+      const [hov, setHov] = useState(false);
+      const pending = item.status === "pending";
+      const tc = TYPE_COLOR[item.type]||C.blue;
+
+      return (
+        <div onClick={onClick}
+          onMouseEnter={()=>setHov(true)} onMouseLeave={()=>setHov(false)}
+          style={{
+            display:"flex", alignItems:"center", gap:11,
+            padding:"11px 16px", cursor:"pointer",
+            background: selected ? C.bg3 : hov ? C.bg2 : "transparent",
+            borderBottom:`1px solid ${C.border}`,
+            borderLeft:`2px solid ${selected ? tc : "transparent"}`,
+            transition:"background .1s, border-color .1s",
+          }}>
+          <GlowDot type={item.type} size={6}/>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:3}}>
+              <span onClick={e=>{e.stopPropagation();onUserClick(item.uid);}} style={{
+                fontSize:13, fontWeight:pending?600:400, color:C.t1,
+                overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap",
+                flex:1, letterSpacing:"-0.01em", cursor:"pointer",
+              }}
+              onMouseEnter={e=>e.target.style.textDecoration="underline"}
+              onMouseLeave={e=>e.target.style.textDecoration="none"}>
+                {item.name}
+              </span>
+              <span style={{fontSize:10,color:C.t3,flexShrink:0,fontFamily:C.mono}}>{timeAgo(item.at)}</span>
+            </div>
+            <div style={{display:"flex",alignItems:"center",gap:6}}>
+              <TypePill type={item.type}/>
+              <span style={{
+                fontSize:12, color:pending?C.t2:C.t3,
+                overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap",
+                flex:1, letterSpacing:"-0.01em",
+              }}>
+                {item.type==="support_message" ? item.sum : item.title}
+              </span>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // CUSTOMER ROW
+    // ─────────────────────────────────────────────────────────
+    function CustomerRow({ user: u, selected, onClick }) {
+      const [hov, setHov] = useState(false);
+      const urgColor = u.days<=14 ? C.red : u.days<=30 ? C.yellow : C.green;
+
+      return (
+        <div onClick={onClick}
+          onMouseEnter={()=>setHov(true)} onMouseLeave={()=>setHov(false)}
+          style={{
+            display:"flex", alignItems:"center", gap:12,
+            padding:"11px 16px", cursor:"pointer",
+            background: selected ? C.bg3 : hov ? C.bg2 : "transparent",
+            borderBottom:`1px solid ${C.border}`,
+            borderLeft:`2px solid ${selected ? C.brand : "transparent"}`,
+            transition:"background .1s, border-color .1s",
+          }}>
+          <Avatar initials={u.initials} size={34}/>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontSize:13,fontWeight:600,color:C.t1,letterSpacing:"-0.01em",marginBottom:2}}>{u.name}</div>
+            <div style={{fontSize:11,color:C.t3,letterSpacing:"-0.01em"}}>{u.a.br}BR {u.a.from} → {u.a.to}</div>
+          </div>
+          <div style={{textAlign:"right",flexShrink:0}}>
+            <div style={{fontSize:12,fontWeight:600,color:C.t1,marginBottom:2,letterSpacing:"-0.01em"}}>{u.moveDate}</div>
+            <div style={{fontSize:10,fontWeight:700,color:urgColor,fontFamily:C.mono,
+              textShadow:`0 0 8px ${urgColor}80`}}>{u.days}d</div>
+          </div>
+        </div>
+      );
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // LIST PANEL
+    // ─────────────────────────────────────────────────────────
+    function ListPanel({ nav, items, users, selId, selUid, onItem, onUser }) {
+      const [q, setQ] = useState("");
+
+      const byNav = useMemo(()=>({
+        chat:     items.filter(i=>i.type==="support_message"),
+        tasks:    items.filter(i=>i.type==="concierge_request"||i.type==="task_flow"),
+        vendor:   items.filter(i=>i.type==="vendor_workflow"||i.type==="inventory_submitted"),
+      }),[items]);
+
+      const feed = useMemo(()=>{
+        const src = byNav[nav] || [];
+        const filtered = src.filter(i=>
+          !q||i.name.toLowerCase().includes(q.toLowerCase())||
+          i.title.toLowerCase().includes(q.toLowerCase())
+        );
+        return filtered.slice().sort((a,b)=>b.at-a.at);
+      },[byNav,nav,q]);
+
+      const sortedUsers = useMemo(()=>
+        Object.values(users).sort((a,b)=>a.moveDateObj-b.moveDateObj)
+          .filter(u=>!q||u.name.toLowerCase().includes(q.toLowerCase())||
+            u.email.toLowerCase().includes(q.toLowerCase()))
+      ,[users,q]);
+
+      const activeItems  = items.filter(i=>i.status==="in_progress").sort((a,b)=>b.at-a.at);
+      const pendingItems = items.filter(i=>i.status==="pending").sort((a,b)=>a.at-b.at);
+
+      const titles = {home:"Overview",chat:"Chat",tasks:"Tasks",vendor:"Vendor",customers:"Customers"};
+      const counts = {chat:feed.length,tasks:feed.length,vendor:feed.length,customers:sortedUsers.length};
+
+      return (
+        <div style={{
+          width:360, flexShrink:0, height:"100%",
+          background:C.bg1, borderRight:`1px solid ${C.border}`,
+          display:"flex", flexDirection:"column",
+        }}>
+          {/* Header */}
+          <div style={{padding:"15px 16px 12px",borderBottom:`1px solid ${C.border}`,flexShrink:0}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:nav!=="home"?10:0}}>
+              <span style={{fontSize:15,fontWeight:700,color:C.t1,letterSpacing:"-0.02em"}}>{titles[nav]}</span>
+              {nav!=="home" && <span style={{fontSize:10,color:C.t3,fontFamily:C.mono}}>{counts[nav]||0}</span>}
+            </div>
+            {nav!=="home" && (
+              <div style={{position:"relative"}}>
+                <div style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",pointerEvents:"none"}}>
+                  <Icon name="search" size={13} color={C.t3}/>
+                </div>
+                <input value={q} onChange={e=>setQ(e.target.value)}
+                  placeholder="Search…" style={{...inputStyle(),paddingLeft:30,fontSize:12}}
+                  onFocus={focusIn} onBlur={focusOut}/>
+              </div>
+            )}
+          </div>
+
+          {/* Items */}
+          <div style={{flex:1,overflowY:"auto"}}>
+            {nav==="home" && (<>
+              {activeItems.length>0 && <>
+                <div style={{padding:"13px 16px 3px"}}>
+                  <SecLabel>Active</SecLabel>
+                </div>
+                {activeItems.map(i=><ItemRow key={i.id} item={i} selected={selId===i.id} onClick={()=>onItem(i.id)} onUserClick={onUser}/>)}
+              </>}
+              {pendingItems.length>0 && <>
+                <div style={{padding:"13px 16px 3px"}}>
+                  <SecLabel>Needs attention</SecLabel>
+                </div>
+                {pendingItems.map(i=><ItemRow key={i.id} item={i} selected={selId===i.id} onClick={()=>onItem(i.id)} onUserClick={onUser}/>)}
+              </>}
+            </>)}
+
+            {(nav==="chat"||nav==="tasks"||nav==="vendor") && (
+              feed.length===0
+                ? <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100%",fontSize:13,color:C.t3}}>All clear</div>
+                : feed.map(i=><ItemRow key={i.id} item={i} selected={selId===i.id} onClick={()=>onItem(i.id)} onUserClick={onUser}/>)
+            )}
+
+            {nav==="customers" && sortedUsers.map(u=>
+              <CustomerRow key={u.id} user={u} selected={selUid===u.id} onClick={()=>onUser(u.id)}/>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // ITEM DETAIL
+    // ─────────────────────────────────────────────────────────
+    function ItemDetail({ item, onStatus, onUserClick }) {
+      const [reply, setReply] = useState("");
+      const [msgs,  setMsgs]  = useState(item.msgs||[]);
+      const [notes, setNotes] = useState("");
+      const isChat = item.type==="support_message";
+      const sc     = STATUS[item.status];
+      const tc     = TYPE_COLOR[item.type]||C.blue;
+      const endRef = useRef(null);
+
+      useEffect(()=>{
+        if(endRef.current) endRef.current.scrollIntoView({behavior:"smooth"});
+      },[msgs]);
+
+      const send = () => {
+        if (!reply.trim()) return;
+        setMsgs(m=>[...m,{from:"admin",text:reply.trim(),at:new Date()}]);
+        setReply("");
+      };
+
+      return (
+        <div className="anim-slide-r" style={{display:"flex",flexDirection:"column",height:"100%"}}>
+          {/* Header */}
+          <div style={{
+            padding:"15px 24px", borderBottom:`1px solid ${C.border}`,
+            display:"flex", alignItems:"flex-start", gap:14, flexShrink:0,
+          }}>
+            <div style={{
+              width:3, height:40, borderRadius:2,
+              background:tc, boxShadow:`0 0 10px 1px ${tc}`,
+              flexShrink:0, marginTop:3,
+            }}/>
+            <div style={{flex:1}}>
+              <button onClick={()=>onUserClick(item.uid)} style={{
+                background:"none",border:"none",padding:0,cursor:"pointer",
+                fontSize:16,fontWeight:700,color:C.t1,letterSpacing:"-0.025em",
+                textAlign:"left",
+              }}
+              onMouseEnter={e=>e.target.style.color=C.t2}
+              onMouseLeave={e=>e.target.style.color=C.t1}>
+                {item.name}
+              </button>
+              <div style={{display:"flex",alignItems:"center",gap:8,marginTop:4}}>
+                <TypePill type={item.type}/>
+                <span style={{fontSize:12,color:C.t3,letterSpacing:"-0.01em"}}>
+                  {isChat?"Chat":item.title}
+                  {item.date && ` · ${item.date}`}
+                </span>
+              </div>
+            </div>
+            <Badge label={sc.l} color={sc.c} bg={sc.bg}/>
+          </div>
+
+          {/* Route */}
+          {item.cur&&item.new_ && (
+            <div style={{
+              padding:"7px 24px", borderBottom:`1px solid ${C.border}`,
+              fontSize:11, color:C.t3, letterSpacing:"-0.005em", flexShrink:0,
+            }}>
+              {item.cur} → {item.new_}
+            </div>
+          )}
+
+          {/* Body */}
+          <div style={{flex:1,overflowY:"auto",padding:"20px 24px"}}>
+            {isChat ? (
+              <div style={{display:"flex",flexDirection:"column",gap:12}}>
+                {msgs.map((m,i)=>(
+                  <div key={i} style={{alignSelf:m.from==="admin"?"flex-end":"flex-start",maxWidth:"76%"}}>
+                    <div style={{
+                      padding:"10px 14px", borderRadius:12, fontSize:13,
+                      lineHeight:1.55, letterSpacing:"-0.01em",
+                      background: m.from==="admin" ? C.t1 : C.bg3,
+                      color:      m.from==="admin" ? "#07090d" : C.t1,
+                      border:`1px solid ${m.from==="admin"?"transparent":C.border}`,
+                      borderBottomRightRadius: m.from==="admin"?3:12,
+                      borderBottomLeftRadius:  m.from==="admin"?12:3,
+                    }}>{m.text}</div>
+                    <div style={{
+                      fontSize:10,color:C.t3,marginTop:3,fontFamily:C.mono,
+                      textAlign:m.from==="admin"?"right":"left",
+                    }}>{timeAgo(m.at)}</div>
+                  </div>
+                ))}
+                <div ref={endRef}/>
+              </div>
+            ) : (
+              <div style={{display:"flex",flexDirection:"column",gap:12}}>
+                <Card>
+                  <div style={{fontSize:13,lineHeight:1.8,color:C.t1,whiteSpace:"pre-wrap",letterSpacing:"-0.01em"}}>
+                    {item.sum}
+                  </div>
+                </Card>
+                <textarea value={notes} onChange={e=>setNotes(e.target.value)}
+                  placeholder="Notes…" rows={4} style={{
+                    ...inputStyle(), padding:"12px 14px", lineHeight:1.6,
+                    borderRadius:10, fontSize:13,
+                  }}
+                  onFocus={focusIn} onBlur={focusOut}/>
+              </div>
+            )}
+          </div>
+
+          {/* Footer */}
+          <div style={{
+            padding:"12px 24px", borderTop:`1px solid ${C.border}`,
+            display:"flex", gap:8, background:C.bg1, flexShrink:0,
+          }}>
+            {isChat ? (<>
+              <input value={reply} onChange={e=>setReply(e.target.value)}
+                onKeyDown={e=>e.key==="Enter"&&!e.shiftKey&&send()}
+                placeholder="Reply…" style={{...inputStyle(),flex:1}}
+                onFocus={focusIn} onBlur={focusOut}/>
+              <Btn primary onClick={send} disabled={!reply.trim()} style={{padding:"9px 18px"}}>
+                Send
+              </Btn>
+            </>) : (<>
+              {item.status==="pending" && <>
+                <Btn onClick={()=>onStatus(item.id,"in_progress")} style={{flex:1}}>Start</Btn>
+                <Btn primary onClick={()=>onStatus(item.id,"done")} style={{flex:1}}>Mark done</Btn>
+              </>}
+              {item.status==="in_progress" && (
+                <Btn primary onClick={()=>onStatus(item.id,"done")}
+                  style={{flex:1,background:C.green,color:"#07090d",boxShadow:`0 0 18px ${C.gGlow}`}}>
+                  Complete
+                </Btn>
+              )}
+              {item.status==="done" && (
+                <Btn onClick={()=>onStatus(item.id,"pending")} style={{flex:1}}>Reopen</Btn>
+              )}
+            </>)}
+          </div>
+        </div>
+      );
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // QUOTE SHEET
+    // ─────────────────────────────────────────────────────────
+    function QuoteSheet({ user: u, onBack }) {
+      const [copied, setCopied] = useState(false);
+      const a=u.a, inv=u.inv;
+
+      const genText = () => {
+        const lines = [
+          "MOVING QUOTE REQUEST",
+          "Generated: "+new Date().toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"}),
+          "","MOVE DETAILS",
+          `From: ${a.from}, ${a.br}BR — ${u.cur}`,
+          `To: ${a.to} — ${u.new_}`,
+          `Distance: ${a.dist}`, `Move date: ${u.moveDate}`,
+          "","ACCESS",
+          `Origin: ${a.fromFloor} — ${a.fromAccess}`,
+          `Dest:   ${a.toFloor} — ${a.toAccess}`,
+          `Elevator: ${a.elevator==="Yes"?"Yes":"No"}`,
+          `Parking:  ${a.parking==="Yes"?"Yes":"No"}`,
+        ];
+        if(a.storage==="Yes") lines.push("Storage pickup: Yes");
+        lines.push("");
+        if(inv?.items?.length){
+          let ti=0; inv.items.forEach(r=>r.items.forEach(i=>ti+=i.q));
+          lines.push(`INVENTORY — ${ti} items, ${inv.rooms.length} rooms`,"");
+          inv.items.forEach(r=>{
+            lines.push(`▸ ${r.room.toUpperCase()}`);
+            r.items.forEach(i=>{
+              const f=[];
+              if(i.fr) f.push("FRAGILE");
+              if(i.hv) f.push("HIGH VALUE");
+              if(i.sz==="oversized") f.push("HEAVY");
+              lines.push(`  ${i.n}${i.q>1?" ×"+i.q:""} — ${i.sz}${f.length?" ["+f.join(", ")+"]":""}`);
+            });
+            lines.push("");
+          });
+        }
+        if(a.packing==="Yes") lines.push("Packing: Full service");
+        lines.push("— End —");
+        return lines.join("\n");
+      };
+
+      const copy = async () => {
+        try { await navigator.clipboard.writeText(genText()); } catch(_){}
+        setCopied(true); setTimeout(()=>setCopied(false),2000);
+      };
+
+      return (
+        <div className="anim-slide-r" style={{display:"flex",flexDirection:"column",height:"100%"}}>
+          <div style={{
+            padding:"15px 24px", borderBottom:`1px solid ${C.border}`,
+            display:"flex", alignItems:"center", gap:12, flexShrink:0,
+          }}>
+            <button onClick={onBack} style={{color:C.t2,display:"flex",alignItems:"center"}}>
+              <Icon name="back" size={16}/>
+            </button>
+            <div style={{flex:1}}>
+              <div style={{fontSize:15,fontWeight:700,color:C.t1,letterSpacing:"-0.02em"}}>Quote sheet</div>
+              <div style={{fontSize:11,color:C.t3,marginTop:1}}>No personal info included</div>
+            </div>
+            <Btn primary onClick={copy} style={{padding:"7px 14px",fontSize:12}}>
+              {copied?"✓ Copied":"Copy all"}
+            </Btn>
+          </div>
+
+          <div style={{flex:1,overflowY:"auto",padding:"20px 24px",display:"flex",flexDirection:"column",gap:12}}>
+            <Card>
+              <SecLabel>Move details</SecLabel>
+              <div style={{fontSize:13,color:C.t2,marginBottom:2}}>From: <span style={{color:C.t1,fontWeight:600}}>{a.from}, {a.br}BR</span></div>
+              <div style={{fontSize:12,color:C.t3,marginBottom:10}}>{u.cur}</div>
+              <div style={{fontSize:13,color:C.t2,marginBottom:2}}>To: <span style={{color:C.t1,fontWeight:600}}>{a.to}</span></div>
+              <div style={{fontSize:12,color:C.t3,marginBottom:14}}>{u.new_}</div>
+              <SecLabel>Access</SecLabel>
+              <div style={{fontSize:12,color:C.t2,marginBottom:3}}>Origin: <span style={{color:C.t1}}>{a.fromFloor} — {a.fromAccess}</span></div>
+              <div style={{fontSize:12,color:C.t2,marginBottom:12}}>Dest: <span style={{color:C.t1}}>{a.toFloor} — {a.toAccess}</span></div>
+              <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
+                <Badge label={a.dist} color={C.blue}/>
+                <Badge label={u.moveDate} color={C.t2} bg={C.bg4}/>
+                {a.elevator==="Yes"&&<Badge label="Elevator" color={C.yellow}/>}
+                {a.parking==="Yes"&&<Badge label="Parking"  color={C.yellow}/>}
+                {a.storage==="Yes"&&<Badge label="Storage"  color={C.purple}/>}
+              </div>
+            </Card>
+
+            <div style={{display:"flex",gap:10}}>
+              {[{n:inv?.total||0,l:"Items"},{n:inv?.rooms?.length||0,l:"Rooms"},{n:inv?.fragile||0,l:"Fragile"}].map(({n,l})=>(
+                <div key={l} style={{
+                  flex:1,textAlign:"center",padding:"14px 10px",
+                  background:C.bg2, border:`1px solid ${C.border}`, borderRadius:10,
+                }}>
+                  <div style={{fontSize:26,fontWeight:800,color:C.t1,letterSpacing:"-0.05em",fontFamily:C.mono,lineHeight:1}}>{n}</div>
+                  <div style={{fontSize:9,color:C.t3,fontWeight:600,letterSpacing:"0.1em",textTransform:"uppercase",marginTop:5}}>{l}</div>
+                </div>
+              ))}
+            </div>
+
+            {inv?.heavy?.length>0&&(
+              <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
+                {inv.heavy.map((h,i)=><Badge key={i} label={`⚠ ${h}`} color={C.red}/>)}
+                {a.packing==="Yes"&&<Badge label="Full packing" color={C.green}/>}
+              </div>
+            )}
+
+            {inv?.items?.map((rm,i)=>(
+              <Card key={i}>
+                <div style={{display:"flex",justifyContent:"space-between",marginBottom:10}}>
+                  <span style={{fontSize:13,fontWeight:700,color:C.t1,letterSpacing:"-0.01em"}}>{rm.room}</span>
+                  <span style={{fontSize:10,color:C.t3,fontFamily:C.mono}}>{rm.items.length} items</span>
+                </div>
+                {rm.items.map((it,j)=>(
+                  <div key={j} style={{
+                    display:"flex",alignItems:"center",gap:8,
+                    padding:"5px 0",
+                    borderTop: j>0?`1px solid ${C.border}`:"none",
+                  }}>
+                    <span style={{fontSize:12,color:it.tier==="furniture"?C.t1:C.t2,flex:1,letterSpacing:"-0.01em"}}>
+                      {it.n}{it.q>1?` ×${it.q}`:""}
+                    </span>
+                    <span style={{fontSize:10,color:C.t3,fontFamily:C.mono}}>{it.sz}</span>
+                    {it.fr&&<Badge label="F" color={C.yellow}/>}
+                    {it.hv&&<Badge label="$" color={C.purple}/>}
+                    {it.sz==="oversized"&&<Badge label="H" color={C.red}/>}
+                  </div>
+                ))}
+              </Card>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // CUSTOMER PROFILE
+    // ─────────────────────────────────────────────────────────
+    function CustomerProfile({ user: u, items, onItemClick }) {
+      const [showQuote, setShowQuote] = useState(false);
+      const a        = u.a;
+      const pending  = u.tasks.filter(t=>t.s!=="done");
+      const done     = u.tasks.filter(t=>t.s==="done");
+      const uItems   = items.filter(n=>n.uid===u.id);
+      const progress = Math.round(done.length/u.tasks.length*100);
+
+      if(showQuote) return <QuoteSheet user={u} onBack={()=>setShowQuote(false)}/>;
+
+      return (
+        <div className="anim-slide-r" style={{display:"flex",flexDirection:"column",height:"100%"}}>
+          {/* Header */}
+          <div style={{
+            padding:"15px 24px", borderBottom:`1px solid ${C.border}`,
+            display:"flex", alignItems:"center", gap:14, flexShrink:0,
+          }}>
+            <Avatar initials={u.initials} size={40}/>
+            <div style={{flex:1}}>
+              <div style={{fontSize:17,fontWeight:700,color:C.t1,letterSpacing:"-0.025em"}}>{u.name}</div>
+              <div style={{fontSize:11,color:C.t3,marginTop:2,letterSpacing:"-0.01em"}}>
+                {u.moveDate} · {u.days}d to move · joined {u.joined}
+              </div>
+            </div>
+            <Badge label={u.sub.plan} color={C.purple}/>
+          </div>
+
+          <div style={{flex:1,overflowY:"auto",padding:"20px 24px",display:"flex",flexDirection:"column",gap:12}}>
+            {/* Contact */}
+            <Card>
+              <SecLabel>Contact</SecLabel>
+              {[u.email,u.phone,u.cur,u.new_].map((v,i)=>(
+                <div key={i} style={{fontSize:12,color:i<2?C.t2:i===2?C.t3:C.t1,letterSpacing:"-0.01em",padding:"2px 0"}}>{v}</div>
+              ))}
+            </Card>
+
+            {/* Assessment */}
+            <Card>
+              <SecLabel>Assessment</SecLabel>
+              <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:10}}>
+                <Badge label={`${a.br}BR ${a.from} → ${a.to}`} color={C.t1} bg={C.bg4}/>
+                <Badge label={a.dist}   color={C.blue}/>
+                <Badge label={a.who}    color={C.t1} bg={C.bg4}/>
+                {a.pets&&<Badge label={a.pets} color={C.yellow}/>}
+                {a.movers==="Yes"&&<Badge label="Movers"  color={C.purple}/>}
+                {a.packing==="Yes"&&<Badge label="Packing" color={C.purple}/>}
+                {a.willRent==="No"&&<Badge label="Buying"  color={C.green}/>}
+                {a.hoa==="Yes"&&<Badge label="HOA"     color={C.yellow}/>}
+                {a.parking==="Yes"&&<Badge label="Parking"  color={C.blue}/>}
+                {a.elevator==="Yes"&&<Badge label="Elevator" color={C.blue}/>}
+                {a.storage==="Yes"&&<Badge label="Storage"  color={C.yellow}/>}
+              </div>
+              <div style={{fontSize:11,color:C.t3,marginBottom:8}}>
+                Access: <span style={{color:C.t2}}>{a.fromFloor} ({a.fromAccess}) → {a.toFloor} ({a.toAccess})</span>
+              </div>
+              <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
+                {a.doctor==="Yes"&&<Badge label="Doctor"  color={C.green}/>}
+                {a.dentist==="Yes"&&<Badge label="Dentist" color={C.green}/>}
+                {a.vet==="Yes"&&<Badge label="Vet"     color={C.green}/>}
+                {a.gym==="Yes"&&<Badge label="Gym"     color={C.green}/>}
+              </div>
+            </Card>
+
+            {/* Tasks */}
+            <Card>
+              <SecLabel right={`${done.length}/${u.tasks.length}`}>Tasks</SecLabel>
+              <div style={{height:2,borderRadius:1,background:C.bg4,marginBottom:12,overflow:"hidden"}}>
+                <div style={{
+                  height:"100%",borderRadius:1,
+                  width:progress+"%",background:C.green,
+                  boxShadow:`0 0 8px ${C.green}80`,
+                  transition:"width .4s ease",
+                }}/>
+              </div>
+              {pending.map((t,i)=>(
+                <div key={i} style={{
+                  display:"flex",alignItems:"center",gap:8,padding:"5px 0",
+                  borderTop:i>0?`1px solid ${C.border}`:"none",
+                }}>
+                  <div style={{
+                    width:5,height:5,borderRadius:"50%",flexShrink:0,
+                    background:t.s==="in_progress"?C.yellow:C.red,
+                    boxShadow:`0 0 5px ${t.s==="in_progress"?C.yGlow:C.rGlow}`,
+                  }}/>
+                  <span style={{fontSize:12,color:C.t1,flex:1,letterSpacing:"-0.01em"}}>{t.t}</span>
+                  <Badge
+                    label={t.s==="in_progress"?"WIP":"Todo"}
+                    color={t.s==="in_progress"?C.yellow:C.red}/>
+                </div>
+              ))}
+              {done.length>0&&<div style={{marginTop:8,fontSize:11,color:C.t3}}>{done.length} completed</div>}
+            </Card>
+
+            {/* Inventory */}
+            {u.inv&&(
+              <Card>
+                <SecLabel right={`${u.inv.total} items`}>Inventory</SecLabel>
+                {u.inv.rooms.map((r,i)=>(
+                  <div key={i} style={{
+                    display:"flex",justifyContent:"space-between",padding:"5px 0",
+                    borderTop:i>0?`1px solid ${C.border}`:"none",
+                  }}>
+                    <span style={{fontSize:12,color:C.t1,letterSpacing:"-0.01em"}}>{r.n}</span>
+                    <span style={{fontSize:11,color:C.t3,fontFamily:C.mono}}>{r.c}</span>
+                  </div>
+                ))}
+                {u.inv.heavy?.length>0&&(
+                  <div style={{display:"flex",flexWrap:"wrap",gap:5,marginTop:10}}>
+                    {u.inv.heavy.map((h,i)=><Badge key={i} label={`⚠ ${h}`} color={C.red}/>)}
+                  </div>
+                )}
+                {u.inv.items?.length>0&&(
+                  <button onClick={()=>setShowQuote(true)} style={{
+                    marginTop:14,width:"100%",padding:"10px",
+                    borderRadius:8,border:"none",cursor:"pointer",
+                    background:C.brand,color:"#07090d",
+                    fontSize:13,fontWeight:700,letterSpacing:"-0.01em",
+                    boxShadow:`0 0 24px ${C.yGlow}`,
+                    transition:"box-shadow .15s",
+                  }}
+                  onMouseEnter={e=>e.currentTarget.style.boxShadow=`0 0 32px ${C.yGlow}`}
+                  onMouseLeave={e=>e.currentTarget.style.boxShadow=`0 0 24px ${C.yGlow}`}>
+                    Generate quote sheet
+                  </button>
+                )}
+              </Card>
+            )}
+
+            {/* Activity */}
+            {uItems.length>0&&(
+              <Card>
+                <SecLabel right={uItems.length}>Activity</SecLabel>
+                {uItems.slice(0,6).map((n,i)=>(
+                  <div key={n.id} onClick={()=>onItemClick(n.id)} style={{
+                    display:"flex",alignItems:"center",gap:10,padding:"6px 0",
+                    borderTop:i>0?`1px solid ${C.border}`:"none",cursor:"pointer",
+                  }}>
+                    <GlowDot type={n.type} size={5}/>
+                    <TypePill type={n.type}/>
+                    <span style={{fontSize:12,color:C.t1,flex:1,letterSpacing:"-0.01em"}}>{n.title}</span>
+                    <span style={{fontSize:10,color:C.t3,fontFamily:C.mono,flexShrink:0}}>{timeAgo(n.at)}</span>
+                  </div>
+                ))}
+              </Card>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // HOME STATS  (right panel when nav=home, nothing selected)
+    // ─────────────────────────────────────────────────────────
+    function HomeStats({ items, users }) {
+      const stats = [
+        {n:items.filter(i=>i.status==="pending").length,   label:"Pending",   color:C.red},
+        {n:items.filter(i=>i.status==="in_progress").length,label:"Active",   color:C.yellow},
+        {n:items.filter(i=>i.status==="done").length,       label:"Done",     color:C.green},
+        {n:Object.keys(users).length,                       label:"Customers",color:C.t1},
+      ];
+      return (
+        <div className="anim-fade-in" style={{
+          height:"100%",display:"flex",flexDirection:"column",
+          alignItems:"center",justifyContent:"center",padding:48,
+        }}>
+          <div style={{
+            fontSize:32,fontWeight:900,color:C.brand,
+            letterSpacing:"-0.05em",lineHeight:1,marginBottom:6,
+          }}>peezy</div>
+          <div style={{
+            fontSize:9,color:C.t3,letterSpacing:"0.14em",
+            textTransform:"uppercase",marginBottom:44,
+          }}>Command Center</div>
+
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,width:"100%",maxWidth:380}}>
+            {stats.map(({n,label,color})=>(
+              <div key={label} style={{
+                padding:"22px 20px",textAlign:"center",
+                background:C.bg2, border:`1px solid ${C.border}`, borderRadius:12,
+              }}>
+                <div style={{
+                  fontSize:40,fontWeight:900,color,lineHeight:1,
+                  letterSpacing:"-0.06em",fontFamily:C.mono,
+                  textShadow:color!==C.t1?`0 0 28px ${color}50`:"none",
+                  marginBottom:8,
+                }}>{n}</div>
+                <div style={{fontSize:9,color:C.t3,fontWeight:600,letterSpacing:"0.12em",textTransform:"uppercase"}}>{label}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // EMPTY STATE
+    // ─────────────────────────────────────────────────────────
+    function EmptyState() {
+      return (
+        <div style={{
+          height:"100%",display:"flex",flexDirection:"column",
+          alignItems:"center",justifyContent:"center",
+          color:C.t3,fontSize:13,letterSpacing:"-0.01em",
+          gap:12,
+        }}>
+          <div style={{
+            width:38,height:38,borderRadius:9,
+            background:C.bg2,border:`1px solid ${C.border}`,
+            display:"flex",alignItems:"center",justifyContent:"center",
+          }}>
+            <Icon name="chevron" size={16} color={C.t3}/>
+          </div>
+          Select an item
+        </div>
+      );
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // DASHBOARD
+    // ─────────────────────────────────────────────────────────
+    function Dashboard({ adminUser, onSignOut }) {
+      const [items,  setItems]  = useState(MOCK_ITEMS);
+      const [users]             = useState(MOCK_USERS);
+      const [nav,    setNav]    = useState("home");
+      const [selId,  setSelId]  = useState(null);
+      const [selUid, setSelUid] = useState(null);
+
+      const selItem = items.find(i=>i.id===selId);
+      const selUser = users[selUid];
+
+      const updateStatus = (id,status) =>
+        setItems(p=>p.map(i=>i.id===id?{...i,status}:i));
+
+      const selectItem = id  => { setSelId(id);  setSelUid(null); };
+      const selectUser = uid => { setSelUid(uid); setSelId(null);  };
+
+      const changeNav = n => {
+        setNav(n);
+        setSelId(null);
+        setSelUid(null);
+      };
+
+      let rightContent;
+      if(selUser) {
+        rightContent = (
+          <CustomerProfile user={selUser} items={items} onItemClick={selectItem}/>
+        );
+      } else if(selItem) {
+        rightContent = (
+          <ItemDetail key={selItem.id} item={selItem}
+            onStatus={updateStatus} onUserClick={selectUser}/>
+        );
+      } else if(nav==="home") {
+        rightContent = <HomeStats items={items} users={users}/>;
+      } else {
+        rightContent = <EmptyState/>;
+      }
+
+      return (
+        <div style={{height:"100vh",display:"flex",background:C.bg0,overflow:"hidden"}}>
+          <Sidebar nav={nav} setNav={changeNav} items={items}
+            adminUser={adminUser} onSignOut={onSignOut}/>
+          <ListPanel nav={nav} items={items} users={users}
+            selId={selId} selUid={selUid}
+            onItem={selectItem} onUser={selectUser}/>
+          <div style={{flex:1,height:"100%",overflow:"hidden",background:C.bg0,minWidth:0}}>
+            {rightContent}
+          </div>
+        </div>
+      );
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // APP ROOT
+    // ─────────────────────────────────────────────────────────
+    function App() {
+      const [adminUser, setAdminUser] = useState(null);
+      const [loading,   setLoading]   = useState(true);
+
+      useEffect(()=>{
+        if(fbAuth){
+          const unsub = fbAuth.onAuthStateChanged(u=>{
+            setAdminUser(u);
+            setLoading(false);
+          });
+          return unsub;
+        } else {
+          setLoading(false); // demo mode
+        }
+      },[]);
+
+      const signOut = async () => {
+        if(fbAuth) await fbAuth.signOut();
+        setAdminUser(null);
+      };
+
+      if(loading) return (
+        <div style={{height:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:C.bg0}}>
+          <div className="anim-pulse" style={{fontSize:24,fontWeight:900,color:C.brand,letterSpacing:"-0.04em"}}>peezy</div>
+        </div>
+      );
+
+      if(!adminUser) return <LoginScreen onLogin={setAdminUser}/>;
+
+      return <Dashboard adminUser={adminUser} onSignOut={signOut}/>;
+    }
+
+    // Mount
+    ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+  </script>
+</body>
+</html>

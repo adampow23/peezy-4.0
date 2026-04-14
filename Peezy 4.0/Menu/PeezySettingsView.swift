@@ -46,10 +46,6 @@ struct PeezySettingsView: View {
     @State private var showSignOutAlert = false
 
     @State private var showInventoryScanner = false
-
-    #if DEBUG
-    @State private var showInventoryTestHarness = false
-    #endif
     
     // Processing state (for destructive actions)
     @State private var isProcessing = false
@@ -92,12 +88,6 @@ struct PeezySettingsView: View {
                     supportSection
                         .padding(.top, 20)
                     
-                    #if DEBUG
-                    // Debug tools
-                    debugSection
-                        .padding(.top, 20)
-                    #endif
-
                     // Danger zone
                     dangerSection
                         .padding(.top, 20)
@@ -214,11 +204,6 @@ struct PeezySettingsView: View {
         .fullScreenCover(isPresented: $showInventoryScanner) {
             InventoryFlowView()
         }
-        #if DEBUG
-        .sheet(isPresented: $showInventoryTestHarness) {
-            InventoryTestHarness()
-        }
-        #endif
     }
     
     // MARK: - Header
@@ -490,23 +475,6 @@ struct PeezySettingsView: View {
         }
     }
     
-    #if DEBUG
-    // MARK: - Debug Section
-
-    private var debugSection: some View {
-        VStack(spacing: 0) {
-            sectionLabel("Debug Tools")
-
-            VStack(spacing: 0) {
-                settingsRow(icon: "camera.viewfinder", label: "Test Inventory Scanner", color: PeezyTheme.Colors.accentBlue) {
-                    showInventoryTestHarness = true
-                }
-            }
-            .background(glassBackground)
-        }
-    }
-    #endif
-
     // MARK: - Danger Section
 
     private var dangerSection: some View {
@@ -723,6 +691,21 @@ struct PeezySettingsView: View {
 
                 let workflowSnapshot = try await userRef.collection("workflowResponses").getDocuments()
                 for doc in workflowSnapshot.documents {
+                    try await doc.reference.delete()
+                }
+
+                let supportChatSnapshot = try await userRef.collection("supportChat").getDocuments()
+                for doc in supportChatSnapshot.documents {
+                    try await doc.reference.delete()
+                }
+
+                let inventorySnapshot = try await userRef.collection("inventory").getDocuments()
+                for doc in inventorySnapshot.documents {
+                    try await doc.reference.delete()
+                }
+
+                let inventorySessionsSnapshot = try await userRef.collection("inventorySessions").getDocuments()
+                for doc in inventorySessionsSnapshot.documents {
                     try await doc.reference.delete()
                 }
 

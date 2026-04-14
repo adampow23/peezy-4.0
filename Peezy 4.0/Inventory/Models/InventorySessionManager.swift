@@ -1,3 +1,8 @@
+//
+//  InventorySessionManager.swift
+//  Peezy 4.0
+//
+
 import SwiftUI
 import FirebaseAuth
 import FirebaseFirestore
@@ -47,6 +52,7 @@ final class InventorySessionManager {
         Auth.auth().currentUser?.uid
     }
 
+    /// String key for animating state transitions
     var stateDescription: String {
         switch state {
         case .intro: return "intro"
@@ -189,7 +195,6 @@ final class InventorySessionManager {
                 #if DEBUG
                 print("[InventorySessionManager] packageInventory failed: \(error.localizedDescription)")
                 #endif
-                // Non-fatal — inventory is saved, email just didn't send
             }
         }
     }
@@ -200,7 +205,7 @@ final class InventorySessionManager {
         scannedRooms = []
         error = nil
         isProcessing = false
-        state = .roomList
+        state = .intro
     }
 
     // MARK: - Private

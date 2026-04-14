@@ -30,7 +30,7 @@ struct PaywallGateView: View {
                         .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.5))
                         .multilineTextAlignment(.center)
 
-                    Text("Your easiest move ever.\nOr your money back.")
+                    Text("Your easiest move ever.\nGuaranteed.")
                         .font(.system(size: 32, weight: .heavy))
                         .foregroundStyle(PeezyTheme.Colors.deepInk)
                         .multilineTextAlignment(.center)

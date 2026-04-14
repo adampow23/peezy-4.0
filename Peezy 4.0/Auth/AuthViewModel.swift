@@ -80,7 +80,9 @@ class AuthViewModel: ObservableObject {
                         return
                     }
 
+                    #if DEBUG
                     print("✅ Successfully signed in with Apple: \(authResult?.user.uid ?? "")")
+                    #endif
                     completion(nil)
                 }
             } else {
@@ -136,7 +138,9 @@ class AuthViewModel: ObservableObject {
                     return
                 }
 
+                #if DEBUG
                 print("✅ Successfully signed in with Google: \(authResult?.user.uid ?? "")")
+                #endif
                 completion(nil)
             }
         }
@@ -151,7 +155,9 @@ class AuthViewModel: ObservableObject {
                 return
             }
             
+            #if DEBUG
             print("✅ Successfully created account: \(authResult?.user.uid ?? "")")
+            #endif
             completion(nil)
         }
     }
@@ -165,7 +171,9 @@ class AuthViewModel: ObservableObject {
                 return
             }
             
+            #if DEBUG
             print("✅ Successfully signed in: \(authResult?.user.uid ?? "")")
+            #endif
             completion(nil)
         }
     }

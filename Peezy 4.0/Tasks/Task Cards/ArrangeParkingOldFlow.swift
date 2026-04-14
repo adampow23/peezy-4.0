@@ -151,6 +151,7 @@ struct ArrangeParkingOldFlow: View {
             TaskFlowSummaryCard(
                 taskTitle: taskTitle,
                 bodyText: "We'll contact your current building and reserve a truck-sized loading spot for move day.",
+                subtext: "Response times are typically 24–48 hours.",
                 showBack: true,
                 onPrimary: { submitAndComplete() },
                 onBack: { goBack() }

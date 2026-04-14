@@ -135,6 +135,7 @@ struct TransferUtilitiesFlow: View {
             TaskFlowSummaryCard(
                 taskTitle: taskTitle,
                 bodyText: "We'll contact each provider to transfer service to your new address with no overlap in billing.",
+                subtext: "Response times are typically 24–48 hours.",
                 showBack: true,
                 onPrimary: { submitAndComplete() },
                 onBack: { goBack() }

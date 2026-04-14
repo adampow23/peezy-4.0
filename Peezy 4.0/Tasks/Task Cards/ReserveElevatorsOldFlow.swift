@@ -151,6 +151,7 @@ struct ReserveElevatorsOldFlow: View {
             TaskFlowSummaryCard(
                 taskTitle: taskTitle,
                 bodyText: "We'll reach out to your current building and lock in a service elevator window for move day.",
+                subtext: "Response times are typically 24–48 hours.",
                 showBack: true,
                 onPrimary: { submitAndComplete() },
                 onBack: { goBack() }

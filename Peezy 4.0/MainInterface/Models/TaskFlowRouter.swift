@@ -2,14 +2,8 @@
 //  TaskFlowRouter.swift
 //  Peezy 4.0
 //
-//  Created by Adam Powell on 4/10/26.
-//
 
 import SwiftUI
-
-// MARK: - Task Flow Status Action
-// Used by StatusCard to communicate what the user chose.
-// Router maps these to ViewModel methods.
 
 enum TaskFlowStatusAction {
     case inProgress
@@ -17,16 +11,13 @@ enum TaskFlowStatusAction {
     case later
 }
 
-// MARK: - Task Flow Router
-// Maps workflowId/taskId to standalone flow views.
-// Used by PeezyHomeView to present flows via fullScreenCover.
-
 struct TaskFlowRouter {
 
     @ViewBuilder
     static func flow(
         for flowId: String,
         userId: String,
+        taskId: String? = nil,
         userState: UserState? = nil,
         onComplete: @escaping () -> Void,
         onDismiss: @escaping () -> Void,
@@ -80,12 +71,7 @@ struct TaskFlowRouter {
         // ── Type 2: Manage-Provider ──
 
         case "manage_gym":
-            ManageGymFlow(
-                userId: userId,
-                onComplete: onComplete,
-                onDismiss: onDismiss,
-                onStatusAction: onStatusAction
-            )
+            ManageGymFlow(userId: userId, onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
         case "manage_doctor":
             ManageDoctorFlow(userId: userId, onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
         case "manage_dentist":
@@ -110,102 +96,29 @@ struct TaskFlowRouter {
         // ── Type 3: Decision Only ──
 
         case "arrange_parking_new":
-            ArrangeParkingNewFlow(
-                userId: userId,
-                currentAddress: [userState?.destinationCity, userState?.destinationState]
-                    .compactMap { $0 }.joined(separator: ", "),
-                moveDate: userState?.moveDate ?? Date(),
-                onComplete: onComplete,
-                onDismiss: onDismiss,
-                onStatusAction: onStatusAction
-            )
-
+            ArrangeParkingNewFlow(userId: userId, currentAddress: [userState?.destinationCity, userState?.destinationState].compactMap { $0 }.joined(separator: ", "), moveDate: userState?.moveDate ?? Date(), onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
         case "arrange_parking_old":
-            ArrangeParkingOldFlow(
-                userId: userId,
-                currentAddress: [userState?.originCity, userState?.originState]
-                    .compactMap { $0 }.joined(separator: ", "),
-                moveDate: userState?.moveDate ?? Date(),
-                onComplete: onComplete,
-                onDismiss: onDismiss,
-                onStatusAction: onStatusAction
-            )
-
+            ArrangeParkingOldFlow(userId: userId, currentAddress: [userState?.originCity, userState?.originState].compactMap { $0 }.joined(separator: ", "), moveDate: userState?.moveDate ?? Date(), onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
         case "reserve_elevators_new":
-            ReserveElevatorsNewFlow(
-                userId: userId,
-                currentAddress: [userState?.destinationCity, userState?.destinationState]
-                    .compactMap { $0 }.joined(separator: ", "),
-                moveDate: userState?.moveDate ?? Date(),
-                onComplete: onComplete,
-                onDismiss: onDismiss,
-                onStatusAction: onStatusAction
-            )
-
+            ReserveElevatorsNewFlow(userId: userId, currentAddress: [userState?.destinationCity, userState?.destinationState].compactMap { $0 }.joined(separator: ", "), moveDate: userState?.moveDate ?? Date(), onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
         case "reserve_elevators_old":
-            ReserveElevatorsOldFlow(
-                userId: userId,
-                currentAddress: [userState?.originCity, userState?.originState]
-                    .compactMap { $0 }.joined(separator: ", "),
-                moveDate: userState?.moveDate ?? Date(),
-                onComplete: onComplete,
-                onDismiss: onDismiss,
-                onStatusAction: onStatusAction
-            )
-
+            ReserveElevatorsOldFlow(userId: userId, currentAddress: [userState?.originCity, userState?.originState].compactMap { $0 }.joined(separator: ", "), moveDate: userState?.moveDate ?? Date(), onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
         case "setup_utilities":
-            SetupUtilitiesFlow(
-                userId: userId,
-                currentAddress: [userState?.destinationCity, userState?.destinationState]
-                    .compactMap { $0 }.joined(separator: ", "),
-                moveDate: userState?.moveDate ?? Date(),
-                onComplete: onComplete,
-                onDismiss: onDismiss,
-                onStatusAction: onStatusAction
-            )
-
+            SetupUtilitiesFlow(userId: userId, currentAddress: [userState?.destinationCity, userState?.destinationState].compactMap { $0 }.joined(separator: ", "), moveDate: userState?.moveDate ?? Date(), onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
         case "cancel_utilities":
-            CancelUtilitiesFlow(
-                userId: userId,
-                currentAddress: [userState?.originCity, userState?.originState]
-                    .compactMap { $0 }.joined(separator: ", "),
-                moveDate: userState?.moveDate ?? Date(),
-                onComplete: onComplete,
-                onDismiss: onDismiss,
-                onStatusAction: onStatusAction
-            )
-
+            CancelUtilitiesFlow(userId: userId, currentAddress: [userState?.originCity, userState?.originState].compactMap { $0 }.joined(separator: ", "), moveDate: userState?.moveDate ?? Date(), onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
         case "transfer_utilities":
-            TransferUtilitiesFlow(
-                userId: userId,
-                currentAddress: [userState?.destinationCity, userState?.destinationState]
-                    .compactMap { $0 }.joined(separator: ", "),
-                moveDate: userState?.moveDate ?? Date(),
-                onComplete: onComplete,
-                onDismiss: onDismiss,
-                onStatusAction: onStatusAction
-            )
+            TransferUtilitiesFlow(userId: userId, currentAddress: [userState?.destinationCity, userState?.destinationState].compactMap { $0 }.joined(separator: ", "), moveDate: userState?.moveDate ?? Date(), onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
 
         // ── Type 4: Insurance ──
 
         case "handle_auto_insurance", "update_auto_insurance":
-            HandleAutoInsuranceFlow(
-                userId: userId,
-                onComplete: onComplete,
-                onDismiss: onDismiss,
-                onStatusAction: onStatusAction
-            )
-
+            HandleAutoInsuranceFlow(userId: userId, onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
         case "handle_home_insurance",
              "cancel_renters_insurance", "setup_renters_insurance", "transfer_renters_insurance",
              "cancel_condo_insurance", "setup_condo_insurance", "transfer_condo_insurance",
              "cancel_homeowners_insurance", "setup_homeowners_insurance", "transfer_homeowners_insurance":
-            HandleHomeInsuranceFlow(
-                userId: userId,
-                onComplete: onComplete,
-                onDismiss: onDismiss,
-                onStatusAction: onStatusAction
-            )
+            HandleHomeInsuranceFlow(userId: userId, onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
 
         // ── Type 5: Survey + Submit ──
 
@@ -225,7 +138,16 @@ struct TaskFlowRouter {
         case "remove_items":
             RemoveItemsFlow(userId: userId, onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
 
-        // All other flows temporarily removed — rebuilding from master schema
+        // ── Type 7: Quote Selection (admin-pushed) ──
+
+        case "quote_selection":
+            QuoteSelectionFlow(taskId: taskId ?? "", userId: userId, onComplete: onComplete, onDismiss: onDismiss)
+
+        // ── Type 8: Admin Memo (admin-pushed) ──
+
+        case "admin_memo":
+            AdminMemoFlow(taskId: taskId ?? "", userId: userId, onComplete: onComplete, onDismiss: onDismiss)
+
         default:
             EmptyView()
         }

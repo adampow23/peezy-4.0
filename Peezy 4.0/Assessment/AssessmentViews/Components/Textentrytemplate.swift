@@ -3,9 +3,7 @@
 //  Peezy
 //
 //  Complete page template for text entry assessment questions.
-//  Keyboard auto-opens when morph completes. SwiftUI handles keyboard avoidance
-//  natively — no manual KeyboardObserver needed. Spacers compress to keep
-//  the text field centered and button above the keyboard.
+//  Keyboard opens simultaneously with field animation — one fluid motion.
 //  ALL layout values are in the CONTROL BOARD below.
 //
 
@@ -26,51 +24,33 @@ struct TextEntryTemplate: View {
     // ╔═══════════════════════════════════════════════════════════╗
     // ║  CONTROL BOARD — change any number, see it in preview     ║
     // ╠═══════════════════════════════════════════════════════════╣
-    // ║                                                           ║
-    // ║  HERO STATE (centered, large)                             ║
-    var heroFontSize: CGFloat = 34      // UX Fix: Standardized to 34pt Large Title
-    var heroSubtextSize: CGFloat = 16   //  subtext size
-    // ║                                                           ║
-    // ║  MORPHED STATE (top-left, small)                          ║
-    var morphedFontSize: CGFloat = 24   // UX Fix: Bumped to 24pt for better hierarchy
-    var morphedSubtextSize: CGFloat = 14 // subtext after morph
-    var morphTopPad: CGFloat = 24       //  space above text
-    var morphBottomPad: CGFloat = 40    //  space between text and field
-    // ║                                                           ║
-    // ║  TEXT FIELD                                               ║
-    var fieldFontSize: CGFloat = 22     //  text field font size
-    var fieldPadH: CGFloat = 24         //  field side padding
-    var fieldHeight: CGFloat = 52       //  minimum field height
-    var fieldCorner: CGFloat = 16       //  field corner radius
-    // ║                                                           ║
-    // ║  BUTTON                                                   ║
-    var buttonPadH: CGFloat = 24        //  button side padding
-    var buttonPadBottom: CGFloat = 24   // UX Fix: Standardized 32 -> 24pt
-    // ║                                                           ║
-    // ║  TIMING                                                   ║
-    var morphDelay: Double = 0.4        //  pause after typing before morph
-    // ║                                                           ║
-    // ║  TEXT                                                     ║
-    var textSidePad: CGFloat = 24       //  text left/right padding
-    var lineSpacing: CGFloat = 4        //  header line spacing
-    var subtextLineSpacing: CGFloat = 3 //  subtext line spacing
-    // ║                                                           ║
-    // ║  KEYBOARD                                                 ║
+    var heroFontSize: CGFloat = 34
+    var heroSubtextSize: CGFloat = 16
+    var morphedFontSize: CGFloat = 24
+    var morphedSubtextSize: CGFloat = 14
+    var morphTopPad: CGFloat = 24
+    var morphBottomPad: CGFloat = 40
+    var fieldFontSize: CGFloat = 22
+    var fieldPadH: CGFloat = 24
+    var fieldHeight: CGFloat = 52
+    var fieldCorner: CGFloat = 16
+    var buttonPadH: CGFloat = 24
+    var buttonPadBottom: CGFloat = 24
+    var morphDelay: Double = 0.4
+    var textSidePad: CGFloat = 24
+    var lineSpacing: CGFloat = 4
+    var subtextLineSpacing: CGFloat = 3
     var keyboardType: UIKeyboardType = .default
     var autocap: TextInputAutocapitalization = .words
     var disableAutocorrect: Bool = false
     var contentType: UITextContentType? = nil
-    // ║                                                           ║
     // ╚═══════════════════════════════════════════════════════════╝
 
-    // ── STATE (don't touch) ─────────────────────────────────────
     @State private var showControls = false
     @FocusState private var isFocused: Bool
 
-    // ── BODY ────────────────────────────────────────────────────
     var body: some View {
         ZStack {
-            // Background ignores keyboard so it doesn't squish
             InteractiveBackground()
                 .ignoresSafeArea(.keyboard)
 
@@ -79,7 +59,6 @@ struct TextEntryTemplate: View {
                 // ── TEXT AREA ──
                 VStack(spacing: 8) {
                     Text(header)
-                    // UX Fix: Swapped .semibold to .heavy to match primary app typography
                         .font(.system(size: morphedFontSize, weight: .heavy))
                         .foregroundColor(PeezyTheme.Colors.deepInk)
                         .lineSpacing(lineSpacing)
@@ -88,7 +67,6 @@ struct TextEntryTemplate: View {
 
                     if let sub = subtext {
                         Text(sub)
-                            // UX Fix: Added .medium weight to match 16pt body text standard
                             .font(.system(size: morphedSubtextSize, weight: .medium))
                             .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.5))
                             .lineSpacing(subtextLineSpacing)
@@ -100,7 +78,6 @@ struct TextEntryTemplate: View {
                 .padding(.top, morphTopPad)
                 .padding(.bottom, morphBottomPad)
 
-                // Center text field between header and button
                 if showControls { Spacer() }
 
                 // ── TEXT FIELD ──
@@ -160,20 +137,21 @@ struct TextEntryTemplate: View {
     }
 
     // ── MORPH LOGIC ─────────────────────────────────────────────
+    // Field + button animate in AND keyboard opens in one motion.
 
     private func triggerMorph() {
-        Task {
-            try? await Task.sleep(for: .seconds(0.2))
-            withAnimation(.easeOut(duration: 0.35)) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+            withAnimation(.easeOut(duration: 0.3)) {
                 showControls = true
             }
-            try? await Task.sleep(for: .seconds(0.2))
+            // Focus immediately — keyboard animates up with the field
             isFocused = true
         }
     }
 }
 
 // ── PREVIEW ─────────────────────────────────────────────────
+#if DEBUG
 #Preview {
     @Previewable @State var name = ""
     TextEntryTemplate(
@@ -185,3 +163,4 @@ struct TextEntryTemplate: View {
         onContinue: { print("Continue with: \(name)") }
     )
 }
+#endif

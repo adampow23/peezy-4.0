@@ -69,31 +69,50 @@ struct SelectionTile: View {
             .frame(height: icon != nil ? 140 : 80)
             .background(
                 ZStack {
+                    // 1. Surface Gradients applied to both states
                     if isSelected {
                         RoundedRectangle(cornerRadius: 20, style: .continuous)
-                            .fill(PeezyTheme.Colors.deepInk)
+                            .fill(
+                                LinearGradient(
+                                    colors: [PeezyTheme.Colors.deepInk.opacity(0.85), PeezyTheme.Colors.deepInk],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
+                            )
                     } else {
                         RoundedRectangle(cornerRadius: 20, style: .continuous)
-                            .fill(Color.white)
+                            .fill(
+                                LinearGradient(
+                                    colors: [.white, Color(white: 0.98)],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
+                            )
                     }
                 }
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    // 2. Bevel/Highlight strokes for both selected and unselected states
                     .stroke(
-                        isSelected
-                            ? Color.clear
-                            : Color.black.opacity(0.05),
+                        LinearGradient(
+                            colors: isSelected
+                                ? [.white.opacity(0.3), .clear, .black.opacity(0.3)]
+                                : [.white, .clear, .black.opacity(0.08)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        ),
                         lineWidth: 1
                     )
             )
+            // 3. Grounded Drop Shadows that physically shrink when pressed
             .shadow(
                 color: isSelected
-                    ? PeezyTheme.Colors.deepInk.opacity(0.25)
-                    : Color.black.opacity(0.1),
+                    ? PeezyTheme.Colors.deepInk.opacity(isPressed ? 0.15 : 0.3)
+                    : Color.black.opacity(isPressed ? 0.05 : 0.08),
                 radius: isPressed ? 4 : (isSelected ? 10 : 12),
                 x: 0,
-                y: isPressed ? 1 : (isSelected ? 4 : 8)
+                y: isPressed ? 2 : (isSelected ? 4 : 8)
             )
             .scaleEffect(isPressed ? 0.95 : 1.0)
             .animation(.spring(response: 0.3, dampingFraction: 0.6), value: isPressed)

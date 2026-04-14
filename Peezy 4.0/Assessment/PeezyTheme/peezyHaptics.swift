@@ -15,6 +15,7 @@
 //
 
 import UIKit
+import CoreHaptics
 
 // MARK: - PeezyHaptics
 
@@ -24,30 +25,35 @@ enum PeezyHaptics {
 
     /// Light impact - for subtle interactions like selections
     static func light() {
+        guard CHHapticEngine.capabilitiesForHardware().supportsHaptics else { return }
         let generator = UIImpactFeedbackGenerator(style: .light)
         generator.impactOccurred()
     }
 
     /// Medium impact - for standard button presses
     static func medium() {
+        guard CHHapticEngine.capabilitiesForHardware().supportsHaptics else { return }
         let generator = UIImpactFeedbackGenerator(style: .medium)
         generator.impactOccurred()
     }
 
     /// Heavy impact - for significant actions
     static func heavy() {
+        guard CHHapticEngine.capabilitiesForHardware().supportsHaptics else { return }
         let generator = UIImpactFeedbackGenerator(style: .heavy)
         generator.impactOccurred()
     }
 
     /// Soft impact - for gentle feedback
     static func soft() {
+        guard CHHapticEngine.capabilitiesForHardware().supportsHaptics else { return }
         let generator = UIImpactFeedbackGenerator(style: .soft)
         generator.impactOccurred()
     }
 
     /// Rigid impact - for firm feedback
     static func rigid() {
+        guard CHHapticEngine.capabilitiesForHardware().supportsHaptics else { return }
         let generator = UIImpactFeedbackGenerator(style: .rigid)
         generator.impactOccurred()
     }
@@ -56,18 +62,21 @@ enum PeezyHaptics {
 
     /// Success notification - for completed actions
     static func success() {
+        guard CHHapticEngine.capabilitiesForHardware().supportsHaptics else { return }
         let generator = UINotificationFeedbackGenerator()
         generator.notificationOccurred(.success)
     }
 
     /// Warning notification - for alerts that need attention
     static func warning() {
+        guard CHHapticEngine.capabilitiesForHardware().supportsHaptics else { return }
         let generator = UINotificationFeedbackGenerator()
         generator.notificationOccurred(.warning)
     }
 
     /// Error notification - for failed actions
     static func error() {
+        guard CHHapticEngine.capabilitiesForHardware().supportsHaptics else { return }
         let generator = UINotificationFeedbackGenerator()
         generator.notificationOccurred(.error)
     }
@@ -76,6 +85,7 @@ enum PeezyHaptics {
 
     /// Selection changed - for picker/selection changes
     static func selection() {
+        guard CHHapticEngine.capabilitiesForHardware().supportsHaptics else { return }
         let generator = UISelectionFeedbackGenerator()
         generator.selectionChanged()
     }

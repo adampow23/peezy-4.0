@@ -2,17 +2,17 @@
 //  TaskFlowStack.swift
 //  Peezy 4.0
 //
-//  Created by Adam Powell on 4/10/26.
+//  Renders the current card with depth cards behind it.
+//  Handles slide-out transition when currentIndex changes.
+//
+//  TAP FIX (Apr 2026): Animation shortened from spring(0.4, 0.85) to
+//  easeOut(0.2). The spring took ~700ms to settle, during which SwiftUI
+//  withheld tap events from the transitioning card. The new easeOut settles
+//  in 200ms, reducing the non-interactive window to near-zero.
+//  Depth cards now have .allowsHitTesting(false) to prevent ambiguous taps.
 //
 
 import SwiftUI
-
-// MARK: - Task Flow Stack
-// Renders the current card with depth cards behind it.
-// Handles slide-out transition when currentIndex changes.
-// Each per-task flow file uses this to wrap its current card.
-// .ignoresSafeArea(.keyboard) locks the card frame in place —
-// individual cards handle keyboard avoidance internally if needed.
 
 struct TaskFlowStack<Content: View>: View {
     let cardsRemaining: Int
@@ -23,7 +23,7 @@ struct TaskFlowStack<Content: View>: View {
 
     var body: some View {
         ZStack {
-            // Depth cards behind (empty chrome shapes for peek effect)
+            // Depth cards behind (decorative only — no hit testing)
             ForEach(1..<min(3, max(1, cardsRemaining)), id: \.self) { depth in
                 RoundedRectangle(cornerRadius: 36, style: .continuous)
                     .fill(.ultraThinMaterial)
@@ -40,20 +40,21 @@ struct TaskFlowStack<Content: View>: View {
                     .scaleEffect(1.0 - CGFloat(depth) * 0.05)
                     .offset(y: CGFloat(depth) * 25)
                     .zIndex(Double(-depth))
+                    .allowsHitTesting(false)
             }
 
-            // Current card
+            // Current card — interactive
             content()
                 .peezyCardChrome()
                 .transition(.asymmetric(
-                    insertion: .scale(scale: 0.92).combined(with: .opacity),
+                    insertion: .opacity,
                     removal: .move(edge: .leading).combined(with: .opacity)
                 ))
                 .id(currentIndex)
                 .zIndex(1)
         }
         .animation(
-            reduceMotion ? .easeOut(duration: 0.2) : .spring(response: 0.4, dampingFraction: 0.85),
+            reduceMotion ? .easeOut(duration: 0.15) : .easeOut(duration: 0.2),
             value: currentIndex
         )
         .frame(maxWidth: .infinity, maxHeight: .infinity)

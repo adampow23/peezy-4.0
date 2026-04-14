@@ -135,6 +135,7 @@ struct CancelUtilitiesFlow: View {
             TaskFlowSummaryCard(
                 taskTitle: taskTitle,
                 bodyText: "We'll contact each provider to schedule shutoffs at your current address after you move out.",
+                subtext: "Response times are typically 24–48 hours.",
                 showBack: true,
                 onPrimary: { submitAndComplete() },
                 onBack: { goBack() }

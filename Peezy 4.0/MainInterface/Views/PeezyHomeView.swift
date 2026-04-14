@@ -4,45 +4,28 @@
 //
 //  Main home screen with state machine: welcome → task → done
 //
-//  Reuses from HomeBackgroundComponents.swift:
-//  - InteractiveBackground
-//  - LoadingView
-//  - EmptyStateView
-//  - ErrorToast
+//  CRASH FIX (Apr 2026): onDismiss + cleanupTaskFlow() for safe flowId clearing.
+//  SPINNER FIX (Apr 2026): pendingAdvance defers next task until dismiss completes.
+//  CONFETTI FIX (Apr 2026): Confetti moved to SummaryCard/StatusCard — celebration
+//  happens at the moment of accomplishment, not on the recap screen.
 //
 
 import SwiftUI
 import FirebaseFirestore
 import FirebaseAuth
 
-// MARK: - PeezyHomeView
-
 struct PeezyHomeView: View {
 
-    // User state passed from PeezyMainContainer
     var userState: UserState?
-
-    // Task list navigation — when set, this task is loaded as currentTask
     @Binding var focusedTask: PeezyCard?
 
     @EnvironmentObject private var subscriptionManager: SubscriptionManager
-
-    // View model — owned by this view
     @State private var viewModel = PeezyHomeViewModel()
-
-    // Confetti state for batch-complete celebration card
-    @State private var confettiActive = false
-
-    // Onboarding pagination — tracks current welcome page (0, 1, 2)
     @State private var welcomePage: Int = 0
 
-    // Deep ink text color for light theme
     private let deepInk = PeezyTheme.Colors.deepInk
-
     @Environment(\.accessibilityReduceMotion) var reduceMotion
 
-    // Custom binding that disables the fullScreenCover presentation animation
-    // so touches are not swallowed during the ~400ms system transition.
     private var showTaskFlowBinding: Binding<Bool> {
         Binding(
             get: { viewModel.showTaskFlow },
@@ -64,8 +47,6 @@ struct PeezyHomeView: View {
     }
 
     #if DEBUG
-    /// Internal init that accepts a pre-configured view model for Xcode Previews.
-    /// Bypasses Firebase loading — the view model state is set directly.
     init(previewViewModel: PeezyHomeViewModel) {
         self.userState = previewViewModel.userState
         self._focusedTask = .constant(nil)
@@ -75,69 +56,57 @@ struct PeezyHomeView: View {
 
     var body: some View {
         ZStack {
-                // Background (same as existing stack view)
-                InteractiveBackground()
-                    .ignoresSafeArea()
+            InteractiveBackground()
+                .ignoresSafeArea()
 
-                // Main Content
+            VStack {
+                Spacer()
+
+                switch viewModel.state {
+                case .loading:
+                    LoadingView()
+                case .firstTimeWelcome:
+                    firstTimeWelcomeCard
+                case .dailyGreeting:
+                    dailyGreetingCard
+                case .returningMidDay:
+                    returningMidDayCard
+                case .activeTask:
+                    activeTaskContent
+                case .dailyComplete:
+                    dailyCompleteCard
+                case .allComplete:
+                    allCompleteCard
+                }
+
+                Spacer()
+            }
+
+            VStack(spacing: 0) {
+                Text("peezy")
+                    .font(.system(size: 18, weight: .light, design: .default))
+                    .tracking(6)
+                    .foregroundStyle(deepInk.opacity(0.8))
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 4)
+                Spacer()
+            }
+
+            if let errorMessage = viewModel.error {
                 VStack {
                     Spacer()
-
-                    switch viewModel.state {
-                    case .loading:
-                        LoadingView()
-
-                    case .firstTimeWelcome:
-                        firstTimeWelcomeCard
-
-                    case .dailyGreeting:
-                        dailyGreetingCard
-
-                    case .returningMidDay:
-                        returningMidDayCard
-
-                    case .activeTask:
-                        activeTaskContent
-
-                    case .dailyComplete:
-                        dailyCompleteCard
-
-                    case .allComplete:
-                        allCompleteCard
+                    ErrorToast(message: errorMessage) {
+                        viewModel.error = nil
                     }
-
-                    Spacer()
+                    .padding(.bottom, 24)
                 }
-
-                // Top Bar — peezy logo
-                VStack(spacing: 0) {
-                    Text("peezy")
-                        .font(.system(size: 18, weight: .light, design: .default))
-                        .tracking(6)
-                        .foregroundStyle(deepInk.opacity(0.8))
-                        .frame(maxWidth: .infinity)
-                        .padding(.top, 4)
-
-                    Spacer()
-                }
-
-                // Error Toast
-                if let errorMessage = viewModel.error {
-                    VStack {
-                        Spacer()
-                        ErrorToast(message: errorMessage) {
-                            viewModel.error = nil
-                        }
-                        .padding(.bottom, 24)
-                    }
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-                }
-
+                .transition(.move(edge: .bottom).combined(with: .opacity))
             }
-            .onAppear {
+        }
+        .onAppear {
             #if DEBUG
             if ProcessInfo.processInfo.environment["XCODE_RUNNING_FOR_PREVIEWS"] == "1" {
-                return // Skip loading in previews — use injected state
+                return
             }
             #endif
             viewModel.userState = userState
@@ -159,12 +128,14 @@ struct PeezyHomeView: View {
         }) {
             InventoryFlowView()
         }
-        // New task flow system — animation disabled to prevent first-tap being swallowed
-        .fullScreenCover(isPresented: showTaskFlowBinding) {
+        .fullScreenCover(isPresented: showTaskFlowBinding, onDismiss: {
+            viewModel.cleanupTaskFlow()
+        }) {
             if let flowId = viewModel.taskFlowWorkflowId {
                 TaskFlowRouter.flow(
                     for: flowId,
                     userId: Auth.auth().currentUser?.uid ?? "",
+                    taskId: viewModel.currentTask?.id,
                     userState: viewModel.userState,
                     onComplete: { viewModel.completeTaskFlow() },
                     onDismiss: { viewModel.dismissTaskFlow() },
@@ -191,37 +162,33 @@ struct PeezyHomeView: View {
     private var firstTimeWelcomeCard: some View {
         glassCard {
             VStack(spacing: 0) {
-                // Header pinned at top
-                VStack(alignment: .leading, spacing: 15) {
-                    Text(welcomePageHeadline)
-                        .font(.system(size: 34, weight: .heavy))
-                        .foregroundStyle(PeezyTheme.Colors.deepInk)
-                        .lineLimit(2)
-                        .minimumScaleFactor(0.5)
+                Spacer()
 
-                    Rectangle()
-                        .fill(Color.primary.opacity(0.15))
-                        .frame(width: 50, height: 2)
+                VStack(alignment: .leading, spacing: 16) {
+                    VStack(alignment: .leading, spacing: 15) {
+                        Text(welcomePageHeadline)
+                            .font(.system(size: 34, weight: .heavy))
+                            .foregroundStyle(PeezyTheme.Colors.deepInk)
+                            .lineLimit(2)
+                            .minimumScaleFactor(0.5)
+
+                        Rectangle()
+                            .fill(Color.primary.opacity(0.15))
+                            .frame(width: 50, height: 2)
+                    }
+
+                    Text(welcomePageBody)
+                        .font(.system(size: 18, weight: .medium))
+                        .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.6))
+                        .fixedSize(horizontal: false, vertical: true)
+                        .id(welcomePage)
+                        .transition(.opacity)
                 }
-                .padding(.horizontal, 24)
-                .padding(.top, 24)
                 .frame(maxWidth: .infinity, alignment: .leading)
-
-                // Body text centered in remaining space between divider and dots
-                Spacer()
-
-                Text(welcomePageBody)
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.6))
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.horizontal, 24)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .id(welcomePage)
-                    .transition(.opacity)
+                .padding(.horizontal, 24)
 
                 Spacer()
 
-                // Dot indicators
                 HStack(spacing: 8) {
                     ForEach(0..<3, id: \.self) { i in
                         Circle()
@@ -233,41 +200,19 @@ struct PeezyHomeView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 12)
 
-                // Swipe hint for pages 0-1, button for page 2
-                if welcomePage < 2 {
-                    Text("Swipe to continue")
-                        .font(.caption)
-                        .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.3))
-                        .padding(.bottom, 24)
-                        .accessibilityIdentifier("welcome_swipe_hint")
-                        .accessibilityAction(named: "Next page") {
-                            withAnimation(reduceMotion ? .easeOut(duration: 0.2) : .spring(response: 0.35, dampingFraction: 0.85)) {
-                                welcomePage = min(welcomePage + 1, 2)
-                            }
+                PeezyAssessmentButton(welcomePage < 2 ? "Continue" : "Let's do this") {
+                    if welcomePage < 2 {
+                        withAnimation(reduceMotion ? .easeOut(duration: 0.2) : .spring(response: 0.35, dampingFraction: 0.85)) {
+                            welcomePage += 1
                         }
-                } else {
-                    PeezyAssessmentButton("Let's do this") {
+                    } else {
                         viewModel.dismissFirstTimeWelcome()
                     }
-                    .padding(.horizontal, 24)
-                    .padding(.bottom, 24)
-                    .accessibilityIdentifier("welcome_start_button")
                 }
+                .padding(.horizontal, 24)
+                .padding(.bottom, 24)
+                .accessibilityIdentifier(welcomePage < 2 ? "welcome_continue_button" : "welcome_start_button")
             }
-            .gesture(
-                DragGesture(minimumDistance: 50)
-                    .onEnded { value in
-                        if value.translation.width < -50 && welcomePage < 2 {
-                            withAnimation(reduceMotion ? .easeOut(duration: 0.2) : .spring(response: 0.35, dampingFraction: 0.85)) {
-                                welcomePage += 1
-                            }
-                        } else if value.translation.width > 50 && welcomePage > 0 {
-                            withAnimation(reduceMotion ? .easeOut(duration: 0.2) : .spring(response: 0.35, dampingFraction: 0.85)) {
-                                welcomePage -= 1
-                            }
-                        }
-                    }
-            )
         }
         .accessibilityIdentifier("welcome_card")
     }
@@ -286,12 +231,12 @@ struct PeezyHomeView: View {
             let daily = viewModel.dailyTarget
             if daily > 0 {
                 let taskWord = daily == 1 ? "task" : "tasks"
-                return "We break your move into bite-sized daily tasks based on your timeline.\n\nWe've got about \(daily) \(taskWord) per day to keep you on track — just work through each day's batch and you're golden."
+                return "Just \(daily) \(taskWord) per day to stay on pace.\n\nCheck in once a day, knock them out, and you're set."
             } else {
-                return "We break your move into bite-sized daily tasks based on your timeline.\n\nWe'll figure out your daily pace once we know more about your move."
+                return "Check in once a day, complete your daily tasks, and you'll be on pace to get everything done."
             }
         case 1:
-            return "The Tasks tab has everything — upcoming, in progress, and done. You can also start tasks ahead of schedule from there.\n\nNeed to update your move details? Head to Settings."
+            return "Your full task list is in the Tasks tab below.\n\nNeed to update move details? Head to Settings. Questions or feedback? Use the Chat tab."
         default:
             return "Need help with a task? Tap it to learn more, or head to Settings to contact support."
         }
@@ -377,8 +322,6 @@ struct PeezyHomeView: View {
 
     @ViewBuilder
     private var activeTaskContent: some View {
-        // Tasks are presented via fullScreenCover (showTaskFlow or showInventoryScanner).
-        // This view is briefly visible during the transition.
         VStack(spacing: 20) {
             ProgressView()
                 .scaleEffect(1.5)
@@ -389,55 +332,50 @@ struct PeezyHomeView: View {
         }
     }
 
-    // MARK: - Daily Complete Card
+    // MARK: - Daily Complete Card (no confetti — moved to task cards)
 
     private var dailyCompleteCard: some View {
-        ZStack {
-            glassCard {
-                VStack(alignment: .leading, spacing: 0) {
-                    Spacer()
+        glassCard {
+            VStack(alignment: .leading, spacing: 0) {
+                Spacer()
 
-                    VStack(alignment: .leading, spacing: 15) {
-                        Text("You're all done\nfor today!")
-                            .font(.system(size: 34, weight: .heavy))
-                            .foregroundStyle(PeezyTheme.Colors.deepInk)
-                            .lineLimit(3)
-                            .minimumScaleFactor(0.5)
+                VStack(alignment: .leading, spacing: 15) {
+                    Image(systemName: "checkmark.seal.fill")
+                        .font(.system(size: 56))
+                        .foregroundStyle(Color(uiColor: .systemGreen))
 
-                        Rectangle()
-                            .fill(Color.primary.opacity(0.15))
-                            .frame(width: 50, height: 2)
+                    Text("You're all done\nfor today!")
+                        .font(.system(size: 34, weight: .heavy))
+                        .foregroundStyle(PeezyTheme.Colors.deepInk)
+                        .lineLimit(3)
+                        .minimumScaleFactor(0.5)
 
-                        Text(viewModel.celebrationSubtext)
-                            .font(.system(size: 16, weight: .medium))
-                            .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.6))
-                            .lineLimit(3)
-                            .fixedSize(horizontal: false, vertical: true)
+                    Rectangle()
+                        .fill(Color.primary.opacity(0.15))
+                        .frame(width: 50, height: 2)
+
+                    Text(viewModel.celebrationSubtext)
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.6))
+                        .lineLimit(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.horizontal, 24)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                Spacer()
+
+                if !viewModel.allActiveTasks.isEmpty {
+                    PeezyAssessmentButton(viewModel.currentBatchOffset > 0 ? "Keep going?" :
+                        "Want to get ahead?") {
+                        viewModel.getAhead()
                     }
                     .padding(.horizontal, 24)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-
-                    Spacer()
-
-                    if !viewModel.allActiveTasks.isEmpty {
-                        PeezyAssessmentButton(viewModel.currentBatchOffset > 0 ? "Keep going?" :
-                            "Want to get ahead?") {
-                            confettiActive = false
-                            viewModel.getAhead()
-                        }
-                        .padding(.horizontal, 24)
-                        .padding(.bottom, 24)
-                        .accessibilityIdentifier("get_ahead_button")
-                    }
+                    .padding(.bottom, 24)
+                    .accessibilityIdentifier("get_ahead_button")
                 }
             }
-
-            ConfettiView(isActive: $confettiActive, intensity: .high)
-                .frame(width: 340, height: 500)
-                .allowsHitTesting(false)
         }
-        .onAppear { if !reduceMotion { confettiActive = true } }
-        .onDisappear { confettiActive = false }
         .accessibilityIdentifier("daily_complete_view")
     }
 
@@ -480,7 +418,6 @@ struct PeezyHomeView: View {
 
     // MARK: - Glass Card Container
 
-    /// Glass card matching assessment theme — uses unified chrome
     private func glassCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
         content()
             .peezyCardChrome()
@@ -492,33 +429,23 @@ struct PeezyHomeView: View {
 #if DEBUG
 
 #Preview("First Time Welcome") {
-    PeezyHomeView(
-        previewViewModel: .preview(state: .firstTimeWelcome)
-    )
+    PeezyHomeView(previewViewModel: .preview(state: .firstTimeWelcome))
 }
 
 #Preview("Daily Greeting") {
-    PeezyHomeView(
-        previewViewModel: .preview(state: .dailyGreeting)
-    )
+    PeezyHomeView(previewViewModel: .preview(state: .dailyGreeting))
 }
 
 #Preview("Returning Mid-Day") {
-    PeezyHomeView(
-        previewViewModel: .preview(state: .returningMidDay)
-    )
+    PeezyHomeView(previewViewModel: .preview(state: .returningMidDay))
 }
 
 #Preview("Daily Complete") {
-    PeezyHomeView(
-        previewViewModel: .preview(state: .dailyComplete)
-    )
+    PeezyHomeView(previewViewModel: .preview(state: .dailyComplete))
 }
 
 #Preview("All Complete") {
-    PeezyHomeView(
-        previewViewModel: .preview(state: .allComplete, tasks: [])
-    )
+    PeezyHomeView(previewViewModel: .preview(state: .allComplete, tasks: []))
 }
 
 #endif

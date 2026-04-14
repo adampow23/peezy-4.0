@@ -140,7 +140,7 @@ cd functions && firebase deploy --only functions --project peezy-1ecrdl && cd ..
 
 getAllAssessmentData() outputs these keys — this is the CONTRACT:
 
-**Raw answers:** userName, moveDate, moveDateType, moveConcerns, currentRentOrOwn, currentDwellingType, currentAddress, currentFloorAccess, currentBedrooms, newRentOrOwn, newDwellingType, newAddress, newFloorAccess, newBedrooms, anyKids, childrenInSchool, childrenInDaycare, hasVet, hasStorage, storageSize, storageFullness, hireMovers, hirePackers, hireCleaners, wantsTruckRental, hasDeclutter, wantToSell, financialInstitutions, healthcareProviders, fitnessWellness, howHeard
+**Raw answers:** userName, moveDate, moveConcerns, currentRentOrOwn, currentDwellingType, currentAddress, currentFloorAccess, currentBedrooms, newRentOrOwn, newDwellingType, newAddress, newFloorAccess, newBedrooms, anyKids, childrenInSchool, childrenInDaycare, hasVet, hasStorage, storageSize, storageFullness, hireMovers, hirePackers, hireCleaners, wantsTruckRental, hasDeclutter, wantToSell, financialInstitutions, healthcareProviders, fitnessWellness, howHeard
 
 **Computed/derived:** moveDistance ("Local"/"Long Distance"), isInterstate ("Yes"/"No"), hasVehicles ("Yes"/"No" mapped from "0"/"1"/"2"/"3+")
 

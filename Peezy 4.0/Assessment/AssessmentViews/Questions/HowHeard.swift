@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct HowHeard: View {
-    let header      = "Before we get to the fun stuff, we'd love to know what put Peezy on your radar?"
+    let header      = "How did you hear about Peezy?"
     let subtext     : String? = nil
     let options     = ["Friend or Family", "Social Media", "Google Search", "Real Estate Agent", "Moving Company", "Other"]
     let icons       = ["person.2.fill", "iphone", "magnifyingglass", "house.fill", "truck.box.fill", "ellipsis"]

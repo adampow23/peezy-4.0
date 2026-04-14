@@ -2,11 +2,6 @@
 //  GeneratingView.swift
 //  Peezy
 //
-//  Stage 1 of the completion flow: Shows while tasks are being generated.
-//  Displays a spinner with cycling loading messages.
-//  Waits for both: (a) minimum 7s timer, (b) Firestore task count query.
-//  Calls onReady when both conditions are met.
-//
 
 import SwiftUI
 import FirebaseAuth
@@ -22,7 +17,7 @@ struct GeneratingView: View {
 
     @State private var activeMessageIndex: Int = 0
     @State private var messageOpacity: Double = 0
-    @State private var spinnerRotation: Double = 0
+    @State private var progress: Double = 0 // Replaced spinner with 0-100% progress
     @State private var messageTimer: Timer? = nil
 
     // MARK: - Completion Tracking
@@ -31,7 +26,7 @@ struct GeneratingView: View {
     @State private var queryComplete: Bool = false
     @State private var generationComplete: Bool = false
 
-    // MARK: - Loading Messages (from original)
+    // MARK: - Loading Messages
 
     private let loadingMessages: [String] = [
         "Analyzing your move timeline...",
@@ -49,28 +44,41 @@ struct GeneratingView: View {
         VStack(spacing: 0) {
             Spacer()
 
-            VStack(spacing: 28) {
-                // Spinner
+            VStack(spacing: 36) { // Increased breathing room
+                
+                // 0-100% Radial Progress
                 ZStack {
+                    // Subtle background track
                     Circle()
-                        .stroke(PeezyTheme.Colors.deepInk.opacity(0.08), lineWidth: 3)
-                        .frame(width: 56, height: 56)
-
+                        .stroke(PeezyTheme.Colors.deepInk.opacity(0.06), style: StrokeStyle(lineWidth: 12, lineCap: .round))
+                    
+                    // Vibrant glowing progress track
                     Circle()
-                        .trim(from: 0, to: 0.3)
+                        .trim(from: 0, to: CGFloat(progress) / 100.0)
                         .stroke(
                             AngularGradient(
-                                colors: [.cyan, .blue, .purple, .cyan],
-                                center: .center
+                                gradient: Gradient(colors: [.cyan, .blue, .purple, .cyan]),
+                                center: .center,
+                                startAngle: .degrees(0),
+                                endAngle: .degrees(360)
                             ),
-                            style: StrokeStyle(lineWidth: 3, lineCap: .round)
+                            style: StrokeStyle(lineWidth: 12, lineCap: .round)
                         )
-                        .frame(width: 56, height: 56)
-                        .rotationEffect(.degrees(spinnerRotation))
+                        .rotationEffect(.degrees(-90))
+                        .shadow(color: .purple.opacity(0.3), radius: 10, x: 0, y: 4)
+                    
+                    // Monospaced, stable percentage
+                    Text("\(Int(progress))%")
+                        .font(.system(size: 48, weight: .bold, design: .rounded))
+                        .monospacedDigit()
+                        .contentTransition(.numericText(value: progress))
+                        .foregroundColor(PeezyTheme.Colors.deepInk)
                 }
+                .frame(width: 160, height: 160) // Scaled up for premium impact
 
+                // Cycling Messages
                 Text(loadingMessages[activeMessageIndex])
-                    .font(.system(size: 16, weight: .medium))
+                    .font(.system(size: 17, weight: .semibold))
                     .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.8))
                     .opacity(messageOpacity)
                     .multilineTextAlignment(.center)
@@ -78,21 +86,21 @@ struct GeneratingView: View {
                     .animation(.easeInOut(duration: 0.4), value: messageOpacity)
             }
             .padding(.horizontal, 36)
-            .padding(.vertical, 40)
+            .padding(.vertical, 48)
             .background(
                 ZStack {
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    RoundedRectangle(cornerRadius: 28, style: .continuous)
                         .fill(.regularMaterial)
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .fill(Color.white.opacity(0.15))
+                    RoundedRectangle(cornerRadius: 28, style: .continuous)
+                        .fill(Color.white.opacity(0.2))
                 }
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .stroke(Color.black.opacity(0.05), lineWidth: 1)
+                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    .stroke(Color.white.opacity(0.4), lineWidth: 1.5) // Adds a frosted glass "lip"
             )
-            .shadow(color: Color.black.opacity(0.1), radius: 12, x: 0, y: 8)
-            .padding(.horizontal, 48)
+            .shadow(color: Color.black.opacity(0.08), radius: 20, x: 0, y: 10)
+            .padding(.horizontal, 40)
 
             Spacer()
         }
@@ -116,9 +124,9 @@ struct GeneratingView: View {
     // MARK: - Sequence Logic
 
     private func startLoadingSequence() {
-        // Start spinner rotation
-        withAnimation(.linear(duration: 1.2).repeatForever(autoreverses: false)) {
-            spinnerRotation = 360
+        // Swiftly ease to 85% over the 7 second minimum timer
+        withAnimation(.easeOut(duration: 7.0)) {
+            progress = 85
         }
 
         // Fade in first message
@@ -126,7 +134,7 @@ struct GeneratingView: View {
             messageOpacity = 1
         }
 
-        // Cycle messages every ~1.8 seconds
+        // Cycle messages
         messageTimer = Timer.scheduledTimer(withTimeInterval: 1.8, repeats: true) { timer in
             withAnimation(.easeOut(duration: 0.2)) {
                 messageOpacity = 0
@@ -145,14 +153,13 @@ struct GeneratingView: View {
             checkReady()
         }
 
-        // Failsafe: force transition after 15 seconds
+        // Failsafe
         DispatchQueue.main.asyncAfter(deadline: .now() + 15) {
             timerComplete = true
             queryComplete = true
             checkReady()
         }
 
-        // If generation is already done by the time we appear, fetch after a short delay
         if !isSaving {
             generationComplete = true
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
@@ -161,8 +168,7 @@ struct GeneratingView: View {
         }
     }
 
-    // MARK: - Firestore Task Count (copied from original AssessmentCompleteView)
-
+    // MARK: - Firestore Task Count (Untouched Logic)
     private func fetchTaskCount() {
         guard let uid = Auth.auth().currentUser?.uid else {
             queryComplete = true
@@ -183,12 +189,9 @@ struct GeneratingView: View {
 
                 for doc in snapshot.documents {
                     let data = doc.data()
-
-                    // Skip parent containers
                     let taskType = data["taskType"] as? String ?? ""
                     if taskType == "miniAssessmentParent" { continue }
 
-                    // Skip already completed/skipped
                     let status = data["status"] as? String ?? "Upcoming"
                     guard status != "Completed" && status != "Skipped" else { continue }
 
@@ -216,6 +219,13 @@ struct GeneratingView: View {
         messageTimer?.invalidate()
         messageTimer = nil
 
-        onReady()
+        // Visually complete the circle before moving to ReadyView
+        withAnimation(.easeOut(duration: 0.4)) {
+            progress = 100
+        }
+        
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+            onReady()
+        }
     }
 }

@@ -1,3 +1,12 @@
+//
+//  InventoryProcessingView.swift
+//  Peezy 4.0
+//
+//  Theatrical loading screen shown during frame upload and AI processing.
+//  Rotating viewfinder icon with pulsing brand glow. Messages cycle with crossfade.
+//  No dismiss — user waits for SessionManager to transition state.
+//
+
 import SwiftUI
 
 struct InventoryProcessingView: View {
@@ -5,8 +14,8 @@ struct InventoryProcessingView: View {
 
     @State private var iconRotation: Double = 0
     @State private var glowScale: CGFloat = 1.0
-    @State private var displayedMessage: String = ""
     @State private var messageIndex = 0
+    @State private var displayedMessage = ""
 
     private let messages = [
         "Uploading frames...",
@@ -24,26 +33,30 @@ struct InventoryProcessingView: View {
             VStack(spacing: 32) {
                 Spacer()
 
+                // Icon with glow
                 ZStack {
-                    // Pulsing glow behind icon
+                    // Pulsing glow
                     Circle()
-                        .fill(PeezyTheme.Colors.brandYellow.opacity(0.2))
+                        .fill(PeezyTheme.Colors.brandYellow.opacity(0.15))
                         .frame(width: 120, height: 120)
                         .scaleEffect(glowScale)
 
-                    // Scanning icon with rotation
+                    // Rotating viewfinder
                     Image(systemName: "viewfinder")
                         .font(.system(size: 48, weight: .light))
                         .foregroundStyle(PeezyTheme.Colors.deepInk)
                         .rotationEffect(.degrees(iconRotation))
                 }
 
+                // Message
                 Text(displayedMessage)
-                .font(PeezyTheme.Typography.title2)
-                .foregroundStyle(PeezyTheme.Colors.deepInk)
-                .multilineTextAlignment(.center)
-                .frame(height: 60)
-                .padding(.horizontal, 40)
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(PeezyTheme.Colors.deepInk)
+                    .multilineTextAlignment(.center)
+                    .frame(height: 60)
+                    .padding(.horizontal, 40)
+                    .id(displayedMessage)
+                    .transition(.opacity)
 
                 Spacer()
             }
@@ -55,36 +68,36 @@ struct InventoryProcessingView: View {
         }
         .onChange(of: progressMessage) { _, newValue in
             if !newValue.isEmpty {
-                displayedMessage = newValue
+                withAnimation(.easeInOut(duration: 0.4)) {
+                    displayedMessage = newValue
+                }
             }
         }
     }
 
     private func startAnimations() {
-        // Continuous icon rotation
-        withAnimation(
-            .linear(duration: 4)
-            .repeatForever(autoreverses: false)
-        ) {
+        withAnimation(.linear(duration: 4).repeatForever(autoreverses: false)) {
             iconRotation = 360
         }
-
-        // Pulsing glow
-        withAnimation(
-            PeezyTheme.Animation.spring
-                .repeatForever(autoreverses: true)
-        ) {
+        withAnimation(.easeInOut(duration: 2).repeatForever(autoreverses: true)) {
             glowScale = 1.2
         }
     }
 
     private func startMessageCycling() {
-        // Cycle through messages every 3 seconds
-        Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { timer in
+        Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { _ in
             messageIndex = (messageIndex + 1) % messages.count
-            withAnimation(PeezyTheme.Animation.spring) {
+            withAnimation(.easeInOut(duration: 0.4)) {
                 displayedMessage = messages[messageIndex]
             }
         }
     }
 }
+
+// MARK: - Previews
+
+#if DEBUG
+#Preview("Processing") {
+    InventoryProcessingView(progressMessage: "Identifying furniture...")
+}
+#endif
