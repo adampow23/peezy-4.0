@@ -33,7 +33,7 @@ struct TaskFlowTitleCard: View {
             Spacer()
 
             // Tightened spacing from 24 to 20 for better Gestalt proximity
-            VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .center, spacing: 20) {
                 
                 // Modern, soft-tinted anchor token
                 ZStack {
@@ -54,16 +54,15 @@ struct TaskFlowTitleCard: View {
                 Text(formattedTitle)
                     // Upgraded from .largeTitle to a specific heavy display size
                     // for maximum typographic impact and editorial feel.
-                    .font(.system(size: 42, weight: .heavy, design: .rounded))
+                    .font(.system(size: 34, weight: .heavy))
                     .foregroundStyle(PeezyTheme.Colors.deepInk)
                     .lineLimit(3)
                     .minimumScaleFactor(0.8)
-                    // Tighter line spacing (-2) looks much better on oversized display text
-                    .lineSpacing(-2)
+                    .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
             }
             .padding(.horizontal, 32)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .center)
 
             // Double spacer weight at the bottom pushes the title block up into
             // the upper-middle third of the screen, creating elegant negative space.
