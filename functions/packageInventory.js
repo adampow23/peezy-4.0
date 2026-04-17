@@ -86,6 +86,10 @@ exports.packageInventory = onCall(
       let totalItemCount = 0;
 
       inventorySnap.forEach(doc => {
+        if (doc.id === '_metadata') {
+          return;
+        }
+
         const roomData = doc.data();
         const items = roomData.items || [];
         const furniture = items.filter(i => i.tier === 'furniture' && i.shouldMove !== false);

@@ -3,7 +3,7 @@
 //  Peezy 4.0
 //
 //  Full item list for a scanned room. User can edit quantities,
-//  toggle shouldMove, delete items, add manual items, re-scan, or save.
+//  delete items, add manual items, re-scan, or save.
 //  Uses existing InventoryReviewViewModel for all data logic.
 //
 
@@ -24,6 +24,10 @@ struct InventoryRoomReviewView: View {
     @State private var itemsAppeared = false
     @State private var confirmPressed = false
     @State private var boxableExpanded = false
+    @State private var itemToDelete: InventoryItem?
+    @State private var showDeleteConfirmation = false
+    @State private var toastMessage: String?
+    @State private var showToast = false
 
     private let categories = ["furniture", "electronics", "boxes", "appliance", "decor", "other"]
     private let sizes = ["small", "medium", "large", "oversized"]
@@ -73,6 +77,32 @@ struct InventoryRoomReviewView: View {
         .onAppear {
             withAnimation(.spring(response: 0.5, dampingFraction: 0.85)) {
                 itemsAppeared = true
+            }
+        }
+        .alert("Are you sure you're not moving this?", isPresented: $showDeleteConfirmation, presenting: itemToDelete) { item in
+            Button("Cancel", role: .cancel) {
+                itemToDelete = nil
+            }
+            Button("Remove", role: .destructive) {
+                deleteItem(item)
+                showToastMessage("\(item.name) removed")
+                itemToDelete = nil
+            }
+        } message: { item in
+            Text("\(item.name) will be removed from your inventory.")
+        }
+        .overlay(alignment: .bottom) {
+            if showToast, let message = toastMessage {
+                Text(message)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .background(
+                        Capsule().fill(PeezyTheme.Colors.deepInk)
+                    )
+                    .padding(.bottom, 40)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
     }
@@ -138,23 +168,18 @@ struct InventoryRoomReviewView: View {
                 Image(systemName: "shippingbox.fill")
                     .font(.system(size: 13))
                     .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.35))
-                Text("Packing Estimate")
+                Text("Boxable Items")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.35))
                 Spacer()
+                Text("\(viewModel.boxableItems.count)")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.25))
             }
             .padding(.horizontal, 4)
 
             // Summary card
             VStack(alignment: .leading, spacing: 12) {
-                Text(viewModel.boxEstimateDescription)
-                    .font(.system(size: 22, weight: .bold))
-                    .foregroundStyle(PeezyTheme.Colors.deepInk)
-
-                Text("Ballpark based on what we found in this room.")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.35))
-
                 // Chips
                 FlowLayout(spacing: 6) {
                     ForEach(viewModel.boxableItems, id: \.id) { item in
@@ -191,12 +216,7 @@ struct InventoryRoomReviewView: View {
                                         .font(.system(size: 13, weight: .medium))
                                         .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.35))
                                 }
-                                Toggle("", isOn: Binding(
-                                    get: { item.shouldMove },
-                                    set: { _ in viewModel.toggleShouldMove(for: item) }
-                                ))
-                                .labelsHidden()
-                                .tint(PeezyTheme.Colors.deepInk.opacity(0.6))
+                                removeItemButton(for: item)
                             }
                         }
                     }
@@ -271,19 +291,13 @@ struct InventoryRoomReviewView: View {
 
                 Spacer()
 
-                // Quantity stepper
-                quantityStepper(for: item)
-            }
+                Text("×\(item.quantity)")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.5))
+                    .frame(minWidth: 28, alignment: .trailing)
+                    .accessibilityLabel("Quantity \(item.quantity)")
 
-            // Moving toggle
-            HStack {
-                Toggle("Moving this", isOn: Binding(
-                    get: { item.shouldMove },
-                    set: { _ in viewModel.toggleShouldMove(for: item) }
-                ))
-                .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.5))
-                .tint(PeezyTheme.Colors.deepInk.opacity(0.6))
+                removeItemButton(for: item)
             }
         }
         .padding(14)
@@ -299,47 +313,25 @@ struct InventoryRoomReviewView: View {
         )
         .contextMenu {
             Button(role: .destructive) {
-                deleteItem(item)
+                confirmDelete(item)
             } label: {
                 Label("Delete", systemImage: "trash")
             }
         }
     }
 
-    // MARK: - Quantity Stepper
-
-    private func quantityStepper(for item: InventoryItem) -> some View {
-        HStack(spacing: 0) {
-            Button {
-                PeezyHaptics.light()
-                viewModel.updateQuantity(for: item, newQuantity: item.quantity - 1)
-            } label: {
-                Image(systemName: "minus")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(item.quantity > 1 ? PeezyTheme.Colors.deepInk : PeezyTheme.Colors.deepInk.opacity(0.2))
-                    .frame(width: 30, height: 30)
-                    .background(Color.primary.opacity(0.05))
-                    .clipShape(Circle())
-            }
-            .disabled(item.quantity <= 1)
-
-            Text("\(item.quantity)")
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(PeezyTheme.Colors.deepInk)
-                .frame(minWidth: 26)
-
-            Button {
-                PeezyHaptics.light()
-                viewModel.updateQuantity(for: item, newQuantity: item.quantity + 1)
-            } label: {
-                Image(systemName: "plus")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(PeezyTheme.Colors.deepInk)
-                    .frame(width: 30, height: 30)
-                    .background(Color.primary.opacity(0.05))
-                    .clipShape(Circle())
-            }
+    private func removeItemButton(for item: InventoryItem) -> some View {
+        Button {
+            confirmDelete(item)
+        } label: {
+            Image(systemName: "minus.circle.fill")
+                .font(.system(size: 22))
+                .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.3))
+                .frame(width: 34, height: 34)
+                .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Remove \(item.name)")
     }
 
     // MARK: - Bottom Bar
@@ -381,10 +373,10 @@ struct InventoryRoomReviewView: View {
                 } label: {
                     Text(viewModel.confirmButtonText)
                         .font(.system(size: 16, weight: .bold))
-                        .foregroundStyle(PeezyTheme.Colors.deepInk)
+                        .foregroundStyle(.white)
                         .frame(height: 48)
                         .frame(maxWidth: .infinity)
-                        .background(PeezyTheme.Colors.brandYellow)
+                        .background(PeezyTheme.Colors.deepInk)
                         .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
                 }
                 .scaleEffect(confirmPressed ? 0.97 : 1.0)
@@ -489,10 +481,28 @@ struct InventoryRoomReviewView: View {
 
     // MARK: - Helpers
 
+    private func confirmDelete(_ item: InventoryItem) {
+        PeezyHaptics.light()
+        itemToDelete = item
+        showDeleteConfirmation = true
+    }
+
     private func deleteItem(_ item: InventoryItem) {
         guard let index = viewModel.items.firstIndex(where: { $0.id == item.id }) else { return }
         withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
             viewModel.deleteItem(at: IndexSet(integer: index))
+        }
+    }
+
+    private func showToastMessage(_ message: String) {
+        toastMessage = message
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+            showToast = true
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+            withAnimation(.easeOut(duration: 0.3)) {
+                showToast = false
+            }
         }
     }
 

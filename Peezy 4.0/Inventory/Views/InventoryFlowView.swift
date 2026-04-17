@@ -10,6 +10,10 @@
 import SwiftUI
 
 struct InventoryFlowView: View {
+    var onUserDismiss: (() -> Void)? = nil
+    var onSubmitted: (() -> Void)? = nil
+    var onLater: (() -> Void)? = nil
+
     @State private var sessionManager = InventorySessionManager()
     @Environment(\.dismiss) private var dismiss
 
@@ -17,78 +21,104 @@ struct InventoryFlowView: View {
     @State private var showSavedPopup = false
     @State private var savedRoomName = ""
     @State private var savedItemCount = 0
+    @State private var showSubmissionComplete = false
+    @State private var pendingLockedView = false
 
     var body: some View {
         ZStack {
             // Main content — switches on state
             Group {
-                switch sessionManager.state {
-
-                // ── Intro Card ──
-                case .intro:
-                    introView
-
-                // ── Info Card ──
-                case .info:
-                    infoView
-
-                // ── Room Hub ──
-                case .roomList, .enteringRoomName:
-                    InventoryRoomHubView(
-                        sessionManager: sessionManager,
-                        onDismiss: { dismiss() }
-                    )
-
-                // ── Camera ──
-                case .scanning(let roomName):
-                    InventoryCameraView(
-                        roomName: roomName,
-                        onComplete: { frames in
-                            Task {
-                                await sessionManager.handleFramesExtracted(frames, roomName: roomName)
-                            }
-                        },
-                        onCancel: {
-                            sessionManager.state = .roomList
+                if sessionManager.submissionStatus == .submitted && !pendingLockedView {
+                    InventoryLockedView(
+                        rooms: sessionManager.scannedRooms,
+                        onDismiss: {
+                            onUserDismiss?()
+                            dismiss()
                         }
                     )
+                } else {
+                    switch sessionManager.state {
 
-                // ── Processing ──
-                case .processing(_, let progress):
-                    InventoryProcessingView(progressMessage: progress)
+                    // ── Intro Card ──
+                    case .intro:
+                        introView
 
-                // ── Item Confirmation ──
-                case .confirming(let roomName, let items, let sessionId):
-                    if let userId = sessionManager.userId {
-                        InventoryItemConfirmView(
+                    // ── Info Card ──
+                    case .info:
+                        infoView
+
+                    // ── Room Hub ──
+                    case .roomList, .enteringRoomName:
+                        InventoryRoomHubView(
+                            sessionManager: sessionManager,
+                            onDismiss: {
+                                onUserDismiss?()
+                                dismiss()
+                            },
+                            onSubmitted: {
+                                pendingLockedView = true
+                                showSubmissionComplete = true
+                            }
+                        )
+
+                    // ── Camera ──
+                    case .scanning(let roomName):
+                        InventoryCameraView(
+                            roomName: roomName,
+                            onComplete: { frames in
+                                Task {
+                                    await sessionManager.handleFramesExtracted(frames, roomName: roomName)
+                                }
+                            },
+                            onCancel: {
+                                sessionManager.state = .roomList
+                            }
+                        )
+
+                    // ── Processing ──
+                    case .processing(_, let progress):
+                        InventoryProcessingView(progressMessage: progress)
+
+                    // ── Item Confirmation ──
+                    case .confirming(let roomName, let items, let sessionId):
+                        if let userId = sessionManager.userId {
+                            InventoryItemConfirmView(
+                                items: items,
+                                sessionId: sessionId,
+                                userId: userId,
+                                onComplete: { updatedItems in
+                                    sessionManager.handleConfirmationCompleted(updatedItems, roomName: roomName)
+                                }
+                            )
+                        }
+
+                    // ── Room Review ──
+                    case .reviewing(let roomName, let items):
+                        InventoryRoomReviewView(
                             items: items,
-                            sessionId: sessionId,
-                            userId: userId,
-                            onComplete: { updatedItems in
-                                sessionManager.handleConfirmationCompleted(updatedItems, roomName: roomName)
+                            roomName: roomName,
+                            onConfirm: { confirmedItems in
+                                sessionManager.handleReviewConfirmed(confirmedItems, roomName: roomName)
+                            },
+                            onRescan: {
+                                sessionManager.state = .scanning(roomName: roomName)
+                            }
+                        )
+
+                    // ── Estimate (future) ──
+                    case .estimate:
+                        InventoryRoomHubView(
+                            sessionManager: sessionManager,
+                            onDismiss: {
+                                onUserDismiss?()
+                                dismiss()
+                            },
+                            onSubmitted: {
+                                pendingLockedView = true
+                                showSubmissionComplete = true
                             }
                         )
                     }
-
-                // ── Room Review ──
-                case .reviewing(let roomName, let items):
-                    InventoryRoomReviewView(
-                        items: items,
-                        roomName: roomName,
-                        onConfirm: { confirmedItems in
-                            sessionManager.handleReviewConfirmed(confirmedItems, roomName: roomName)
-                        },
-                        onRescan: {
-                            sessionManager.state = .scanning(roomName: roomName)
-                        }
-                    )
-
-                // ── Estimate (future) ──
-                case .estimate:
-                    InventoryRoomHubView(
-                        sessionManager: sessionManager,
-                        onDismiss: { dismiss() }
-                    )
                 }
             }
 
@@ -98,6 +128,18 @@ struct InventoryFlowView: View {
             }
         }
         .animation(.spring(response: 0.4, dampingFraction: 0.85), value: sessionManager.stateDescription)
+        .task {
+            await sessionManager.loadExistingInventory()
+        }
+        .alert("Submitted!", isPresented: $showSubmissionComplete) {
+            Button("Done") {
+                pendingLockedView = false
+                // Fire the submitted callback immediately so home view knows to refresh.
+                onSubmitted?()
+            }
+        } message: {
+            Text("Your inventory has been submitted. We'll use it to coordinate your move.")
+        }
         .onChange(of: sessionManager.stateDescription) { oldValue, newValue in
             // Detect room save: reviewing → roomList
             if oldValue.hasPrefix("reviewing") && newValue == "roomList" {
@@ -120,9 +162,13 @@ struct InventoryFlowView: View {
     // MARK: - Intro Card
 
     private var introView: some View {
-        ZStack(alignment: .topLeading) {
+        ZStack(alignment: .topTrailing) {
             InteractiveBackground()
                 .ignoresSafeArea()
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    closeFlow()
+                }
 
             TaskFlowTitleCard(
                 taskTitle: "Scan my home",
@@ -131,21 +177,31 @@ struct InventoryFlowView: View {
                     withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
                         sessionManager.state = .info
                     }
-                }
+                },
+                onLater: onLater
             )
             .peezyCardChrome()
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            TaskFlowDismissButton(onDismiss: { dismiss() })
+            VStack(spacing: 0) {
+                PeezyWordmark()
+                Spacer()
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .allowsHitTesting(false)
         }
     }
 
     // MARK: - Info Card
 
     private var infoView: some View {
-        ZStack(alignment: .topLeading) {
+        ZStack(alignment: .topTrailing) {
             InteractiveBackground()
                 .ignoresSafeArea()
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    closeFlow()
+                }
 
             TaskFlowInfoCard(
                 taskTitle: "Scan my home",
@@ -167,8 +223,18 @@ struct InventoryFlowView: View {
             .peezyCardChrome()
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            TaskFlowDismissButton(onDismiss: { dismiss() })
+            VStack(spacing: 0) {
+                PeezyWordmark()
+                Spacer()
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .allowsHitTesting(false)
         }
+    }
+
+    private func closeFlow() {
+        onUserDismiss?()
+        dismiss()
     }
 
     // MARK: - Saved Popup

@@ -3,7 +3,7 @@
  * Main entry point for the Peezy conversational AI
  */
 
-const { onRequest, onCall } = require('firebase-functions/v2/https');
+const { onRequest, onCall, HttpsError } = require('firebase-functions/v2/https');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { setGlobalOptions } = require('firebase-functions/v2');
 const admin = require('firebase-admin');
@@ -27,6 +27,8 @@ if (!admin.apps.length) {
 const rateLimitMap = new Map();
 const RATE_LIMIT_WINDOW = 60000; // 1 minute
 const RATE_LIMIT_MAX = 10; // 10 requests per minute
+const FIRST_SUPPORT_AUTO_ACK_ID = 'first-message-auto-acknowledgment';
+const FIRST_SUPPORT_AUTO_ACK_TEXT = "Hey! Thanks for reaching out. We'll get back to you within a few hours during business hours (9am-6pm CT). For urgent issues, reply 'URGENT' and we'll prioritize.";
 
 /**
  * Check rate limit for a user
@@ -504,6 +506,37 @@ exports.submitSupportMessage = onCall(
   { region: 'us-central1', timeoutSeconds: 10, memory: '256MiB' },
   async (request) => {
     const { userId, userName, messageId, text } = request.data;
+    const resolvedUserId = request.auth?.uid || userId;
+
+    if (resolvedUserId) {
+      try {
+        const db = admin.firestore();
+        const supportChatRef = db.collection('users').doc(resolvedUserId).collection('supportChat');
+        const userMessagesSnapshot = await supportChatRef
+          .where('sender', '==', 'user')
+          .get();
+
+        if (userMessagesSnapshot.size === 1) {
+          try {
+            await supportChatRef.doc(FIRST_SUPPORT_AUTO_ACK_ID).create({
+              text: FIRST_SUPPORT_AUTO_ACK_TEXT,
+              sender: 'support',
+              isAutoResponse: true,
+              read: false,
+              timestamp: admin.firestore.FieldValue.serverTimestamp()
+            });
+          } catch (error) {
+            if (error.code !== 6 && error.code !== 'already-exists') {
+              throw error;
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Support auto-acknowledgment failed:', error.message);
+      }
+    } else {
+      console.warn('Support auto-acknowledgment skipped: missing userId');
+    }
 
     const webhookUrl = process.env.NOTIFICATION_WEBHOOK_URL;
     if (webhookUrl) {
@@ -534,6 +567,68 @@ exports.submitSupportMessage = onCall(
     }).catch(err => console.error('notifyAdmin failed:', err.message));
 
     return { success: true };
+  }
+);
+
+/**
+ * Delete user account: all Firestore data + Firebase Auth user.
+ * Runs as admin — can delete anything under users/{uid}/.
+ * Called ONLY from the iOS app's "Delete Account" flow in Settings.
+ */
+exports.deleteAccount = onCall(
+  { region: 'us-central1', timeoutSeconds: 60, memory: '512MiB' },
+  async (request) => {
+    const userId = request.auth?.uid;
+
+    if (!userId) {
+      throw new HttpsError('unauthenticated', 'Must be signed in to delete account.');
+    }
+
+    const db = admin.firestore();
+    const auth = admin.auth();
+
+    try {
+      // 1. Recursively delete all user data under users/{uid}.
+      // This uses Firebase's built-in recursive delete helper.
+      const userDocRef = db.collection('users').doc(userId);
+      await db.recursiveDelete(userDocRef);
+
+      // 2. Delete top-level user data documents and collections that reference this user.
+      await db.collection('userKnowledge').doc(userId).delete();
+
+      const collectionsToScan = [
+        'conciergeRequests',
+        'taskFlowSubmissions',
+        'inventorySessions'
+      ];
+
+      for (const collectionName of collectionsToScan) {
+        const snapshot = await db.collection(collectionName)
+          .where('userId', '==', userId)
+          .get();
+
+        const batch = db.batch();
+        snapshot.forEach(doc => batch.delete(doc.ref));
+        if (snapshot.size > 0) {
+          await batch.commit();
+        }
+      }
+
+      // 3. Delete Firebase Storage files for this user.
+      // Inventory scan frames and future user-owned files should live under this prefix.
+      const bucket = admin.storage().bucket();
+      const [files] = await bucket.getFiles({ prefix: `users/${userId}/` });
+      await Promise.all(files.map(file => file.delete().catch(() => {})));
+
+      // 4. LAST: delete Firebase Auth user.
+      // Only runs if everything above succeeded.
+      await auth.deleteUser(userId);
+
+      return { success: true };
+    } catch (error) {
+      console.error('Account deletion failed for user', userId, error);
+      throw new HttpsError('internal', 'Account deletion failed. Please try again or contact support.');
+    }
   }
 );
 

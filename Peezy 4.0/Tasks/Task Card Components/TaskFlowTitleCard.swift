@@ -12,6 +12,7 @@ struct TaskFlowTitleCard: View {
     let icon: String
     var primaryLabel: String = "Continue"
     let onContinue: () -> Void
+    var onLater: (() -> Void)? = nil
 
     // MARK: - Controlled Rag Logic
     private var formattedTitle: String {
@@ -69,9 +70,25 @@ struct TaskFlowTitleCard: View {
             Spacer()
             Spacer()
 
-            // Continue button (Untouched)
-            PeezyAssessmentButton(primaryLabel) {
-                onContinue()
+            VStack(spacing: 12) {
+                PeezyAssessmentButton(primaryLabel) {
+                    onContinue()
+                }
+
+                if let onLater {
+                    Button(action: {
+                        PeezyHaptics.light()
+                        onLater()
+                    }) {
+                        Text("Later")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.5))
+                            .underline()
+                            .frame(maxWidth: .infinity, minHeight: 36)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
             }
             .padding(.horizontal, 24)
             .padding(.bottom, 24)

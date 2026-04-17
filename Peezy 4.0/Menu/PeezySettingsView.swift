@@ -17,6 +17,7 @@ import MapKit
 import StoreKit
 import FirebaseAuth
 import FirebaseFirestore
+import FirebaseFunctions
 
 struct PeezySettingsView: View {
     
@@ -54,6 +55,9 @@ struct PeezySettingsView: View {
     // Toast feedback
     @State private var toastMessage: String? = nil
     @State private var showDeleteAccountConfirmation = false
+    @State private var isDeletingAccount = false
+    @State private var deleteErrorMessage = ""
+    @State private var showDeleteErrorAlert = false
     @State private var restoreMessage: String? = nil
 
     // Theme
@@ -192,6 +196,11 @@ struct PeezySettingsView: View {
             }
         } message: {
             Text("This will permanently delete your account, all your tasks, and all your data. This cannot be undone.\n\nIf you have an active subscription, please cancel it first in your Apple ID settings.")
+        }
+        .alert("Account deletion failed", isPresented: $showDeleteErrorAlert) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(deleteErrorMessage)
         }
         .alert("Restore purchases", isPresented: .init(
             get: { restoreMessage != nil },
@@ -660,67 +669,33 @@ struct PeezySettingsView: View {
     }
 
     private func deleteAccount() {
-        guard let user = Auth.auth().currentUser else { return }
-        let uid = user.uid
+        guard Auth.auth().currentUser != nil else { return }
+        isDeletingAccount = true
         isProcessing = true
+        processingMessage = "Deleting your account..."
 
         Task {
             do {
-                // 1. Delete Firebase Auth account FIRST — if this fails (needs re-auth),
-                //    Firestore data is still intact and the user can try again.
-                try await user.delete()
+                // Cloud Function runs as admin and handles:
+                // 1. Recursive deletion of all user Firestore data
+                // 2. Deletion of cross-collection references (conciergeRequests, taskFlowSubmissions, etc.)
+                // 3. Deletion of Storage files under users/{uid}/
+                // 4. Deletion of the Firebase Auth user (last, only if everything else succeeded)
+                let callable = Functions.functions().httpsCallable("deleteAccount")
+                _ = try await callable.call([:])
 
-                // 2. Auth succeeded — safe to delete Firestore data
-                let db = Firestore.firestore()
-                let userRef = db.collection("users").document(uid)
-
-                let tasksSnapshot = try await userRef.collection("tasks").getDocuments()
-                for doc in tasksSnapshot.documents {
-                    try await doc.reference.delete()
-                }
-
-                let assessmentSnapshot = try await userRef.collection("user_assessments").getDocuments()
-                for doc in assessmentSnapshot.documents {
-                    try await doc.reference.delete()
-                }
-
-                let miniSnapshot = try await userRef.collection("miniAssessments").getDocuments()
-                for doc in miniSnapshot.documents {
-                    try await doc.reference.delete()
-                }
-
-                let workflowSnapshot = try await userRef.collection("workflowResponses").getDocuments()
-                for doc in workflowSnapshot.documents {
-                    try await doc.reference.delete()
-                }
-
-                let supportChatSnapshot = try await userRef.collection("supportChat").getDocuments()
-                for doc in supportChatSnapshot.documents {
-                    try await doc.reference.delete()
-                }
-
-                let inventorySnapshot = try await userRef.collection("inventory").getDocuments()
-                for doc in inventorySnapshot.documents {
-                    try await doc.reference.delete()
-                }
-
-                let inventorySessionsSnapshot = try await userRef.collection("inventorySessions").getDocuments()
-                for doc in inventorySessionsSnapshot.documents {
-                    try await doc.reference.delete()
-                }
-
-                try? await db.collection("userKnowledge").document(uid).delete()
-                try? await userRef.delete()
-
-                // 3. Sign out and return to auth screen
+                // Server-side deletion succeeded — sign out the local session
                 await MainActor.run {
+                    isDeletingAccount = false
                     isProcessing = false
                     try? authViewModel.signOut()
                 }
             } catch {
                 await MainActor.run {
+                    isDeletingAccount = false
                     isProcessing = false
-                    toastMessage = "Please sign out and sign back in, then try again."
+                    deleteErrorMessage = "Account deletion failed. Please try again or contact support."
+                    showDeleteErrorAlert = true
                 }
             }
         }

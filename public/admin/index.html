@@ -340,6 +340,16 @@
                 {busy ? "Signing in…" : "Sign in"}
               </button>
             </form>
+            {!FB_READY && (
+              <div style={{
+                marginTop:16, padding:"10px 12px", borderRadius:8,
+                background:C.bg3, border:`1px solid ${C.border}`,
+                fontSize:11, color:C.t3, lineHeight:1.5,
+              }}>
+                <span style={{color:C.yellow, fontWeight:600}}>Demo mode</span> — Firebase not configured yet.
+                Enter any email + password to continue.
+              </div>
+            )}
           </div>
         </div>
       );

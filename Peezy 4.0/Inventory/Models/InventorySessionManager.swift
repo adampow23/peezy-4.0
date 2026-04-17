@@ -24,8 +24,14 @@ final class InventorySessionManager {
         case estimate
     }
 
+    enum SubmissionStatus: String {
+        case draft
+        case submitted
+    }
+
     var state: FlowState = .intro
     var scannedRooms: [ScannedRoom] = []
+    var submissionStatus: SubmissionStatus = .draft
     var error: String?
     var isProcessing = false
 
@@ -68,6 +74,63 @@ final class InventorySessionManager {
     }
 
     // MARK: - Actions
+
+    func loadExistingInventory() async {
+        guard let userId else { return }
+
+        let db = Firestore.firestore()
+        var loadedStatus: SubmissionStatus = .draft
+
+        do {
+            let metadataDoc = try await db.collection("users").document(userId)
+                .collection("inventory").document("_metadata")
+                .getDocument()
+
+            if let data = metadataDoc.data(),
+               let statusRaw = data["submissionStatus"] as? String,
+               let status = SubmissionStatus(rawValue: statusRaw) {
+                loadedStatus = status
+            }
+        } catch {
+            loadedStatus = .draft
+        }
+
+        do {
+            let snapshot = try await db.collection("users").document(userId)
+                .collection("inventory")
+                .getDocuments()
+
+            var rooms: [ScannedRoom] = []
+            for doc in snapshot.documents where doc.documentID != "_metadata" {
+                let data = doc.data()
+                let roomName = data["name"] as? String ?? data["roomName"] as? String
+                guard let roomName else { continue }
+
+                let itemsData = data["items"] as? [[String: Any]] ?? []
+                let items = itemsData.compactMap { InventoryItem.from(dict: $0) }
+                let scannedAt = (data["scannedAt"] as? Timestamp)?.dateValue() ?? Date()
+
+                rooms.append(ScannedRoom(
+                    id: data["id"] as? String ?? doc.documentID,
+                    name: roomName,
+                    items: items,
+                    scannedAt: scannedAt
+                ))
+            }
+
+            await MainActor.run {
+                self.submissionStatus = loadedStatus
+                self.scannedRooms = rooms
+            }
+        } catch {
+            await MainActor.run {
+                self.submissionStatus = loadedStatus
+            }
+            #if DEBUG
+            print("[InventorySessionManager] Failed to load existing inventory: \(error.localizedDescription)")
+            #endif
+        }
+    }
 
     func startNewRoom(name: String) {
         state = .scanning(roomName: name)
@@ -130,8 +193,14 @@ final class InventorySessionManager {
         scannedRooms.remove(atOffsets: offsets)
     }
 
-    /// Save inventory to Firestore and trigger admin notification email
-    func saveAllToFirestore() async throws {
+    func removeItem(_ item: InventoryItem) {
+        for roomIndex in scannedRooms.indices {
+            scannedRooms[roomIndex].items.removeAll { $0.id == item.id }
+        }
+    }
+
+    /// Finish later — saves progress but keeps the scanner unlocked.
+    func saveDraft() async throws {
         guard let userId else {
             throw InventoryError.notAuthenticated
         }
@@ -139,63 +208,44 @@ final class InventorySessionManager {
         let db = Firestore.firestore()
         let batch = db.batch()
 
-        for room in scannedRooms {
-            let roomRef = db.collection("users").document(userId)
-                .collection("inventory").document(room.id)
+        addRoomWrites(to: batch, db: db, userId: userId)
 
-            let itemsData: [[String: Any]] = room.items.map { item in
-                var dict: [String: Any] = [
-                    "id": item.id,
-                    "name": item.name,
-                    "category": item.category,
-                    "tier": item.tier,
-                    "quantity": item.quantity,
-                    "sizeEstimate": item.sizeEstimate,
-                    "cubicFeet": item.cubicFeet,
-                    "isFragile": item.isFragile,
-                    "isHighValue": item.isHighValue,
-                    "confidence": item.confidence,
-                    "roomName": item.roomName,
-                    "shouldMove": item.shouldMove,
-                    "notes": item.notes
-                ]
-
-                if let frameIndex = item.frameIndex {
-                    dict["frameIndex"] = frameIndex
-                }
-
-                if let bb = item.boundingBox {
-                    dict["boundingBox"] = [
-                        "x": bb.x,
-                        "y": bb.y,
-                        "width": bb.width,
-                        "height": bb.height
-                    ]
-                }
-
-                return dict
-            }
-
-            batch.setData([
-                "id": room.id,
-                "name": room.name,
-                "items": itemsData,
-                "scannedAt": Timestamp(date: room.scannedAt),
-                "savedAt": FieldValue.serverTimestamp()
-            ], forDocument: roomRef)
-        }
+        let metaRef = db.collection("users").document(userId)
+            .collection("inventory").document("_metadata")
+        batch.setData([
+            "submissionStatus": SubmissionStatus.draft.rawValue,
+            "updatedAt": Timestamp(date: Date())
+        ], forDocument: metaRef, merge: true)
 
         try await batch.commit()
 
-        // Send admin notification — fire and forget, don't block the user
-        Task {
-            do {
-                try await apiClient.packageInventory()
-            } catch {
-                #if DEBUG
-                print("[InventorySessionManager] packageInventory failed: \(error.localizedDescription)")
-                #endif
-            }
+        await MainActor.run {
+            self.submissionStatus = .draft
+        }
+    }
+
+    /// Final submit — saves progress and locks the inventory.
+    func submitFinal() async throws {
+        guard let userId else {
+            throw InventoryError.notAuthenticated
+        }
+
+        let db = Firestore.firestore()
+        let batch = db.batch()
+
+        addRoomWrites(to: batch, db: db, userId: userId)
+
+        let metaRef = db.collection("users").document(userId)
+            .collection("inventory").document("_metadata")
+        batch.setData([
+            "submissionStatus": SubmissionStatus.submitted.rawValue,
+            "submittedAt": Timestamp(date: Date())
+        ], forDocument: metaRef, merge: true)
+
+        try await batch.commit()
+
+        await MainActor.run {
+            self.submissionStatus = .submitted
         }
     }
 
@@ -203,12 +253,28 @@ final class InventorySessionManager {
         sessionListener?.remove()
         sessionListener = nil
         scannedRooms = []
+        submissionStatus = .draft
         error = nil
         isProcessing = false
         state = .intro
     }
 
     // MARK: - Private
+
+    private func addRoomWrites(to batch: WriteBatch, db: Firestore, userId: String) {
+        for room in scannedRooms {
+            let roomRef = db.collection("users").document(userId)
+                .collection("inventory").document(room.id)
+
+            batch.setData([
+                "id": room.id,
+                "name": room.name,
+                "items": room.items.map { $0.toDict() },
+                "scannedAt": Timestamp(date: room.scannedAt),
+                "savedAt": FieldValue.serverTimestamp()
+            ], forDocument: roomRef)
+        }
+    }
 
     private func observeSessionCompletion(userId: String, sessionId: String, roomName: String) async {
         // Remove any previous listener

@@ -19,6 +19,7 @@ struct GeneratingView: View {
     @State private var messageOpacity: Double = 0
     @State private var progress: Double = 0 // Replaced spinner with 0-100% progress
     @State private var messageTimer: Timer? = nil
+    @State private var progressTimer: Timer? = nil
 
     // MARK: - Completion Tracking
 
@@ -109,6 +110,7 @@ struct GeneratingView: View {
         }
         .onDisappear {
             messageTimer?.invalidate()
+            progressTimer?.invalidate()
         }
         .onChange(of: isSaving) { _, newValue in
             if !newValue && !generationComplete {
@@ -124,9 +126,29 @@ struct GeneratingView: View {
     // MARK: - Sequence Logic
 
     private func startLoadingSequence() {
-        // Swiftly ease to 85% over the 7 second minimum timer
-        withAnimation(.easeOut(duration: 7.0)) {
-            progress = 85
+        let countUpTickInterval = 0.082
+        let creepTickInterval = 0.8
+
+        progressTimer?.invalidate()
+        progressTimer = Timer.scheduledTimer(withTimeInterval: countUpTickInterval, repeats: true) { timer in
+            guard progress < 85 else {
+                timer.invalidate()
+                progressTimer = Timer.scheduledTimer(withTimeInterval: creepTickInterval, repeats: true) { creepTimer in
+                    guard !queryComplete, progress < 95 else {
+                        creepTimer.invalidate()
+                        return
+                    }
+
+                    withAnimation(.linear(duration: creepTickInterval)) {
+                        progress = min(progress + 1, 95)
+                    }
+                }
+                return
+            }
+
+            withAnimation(.linear(duration: countUpTickInterval)) {
+                progress = min(progress + 1, 85)
+            }
         }
 
         // Fade in first message
@@ -180,35 +202,50 @@ struct GeneratingView: View {
         let db = Firestore.firestore()
 
         Task {
-            do {
-                let snapshot = try await db.collection("users").document(uid)
-                    .collection("tasks")
-                    .getDocuments()
+            var lastCount = -1
+            var finalCount = 0
 
-                var total = 0
-
-                for doc in snapshot.documents {
-                    let data = doc.data()
-                    let taskType = data["taskType"] as? String ?? ""
-                    if taskType == "miniAssessmentParent" { continue }
-
-                    let status = data["status"] as? String ?? "Upcoming"
-                    guard status != "Completed" && status != "Skipped" else { continue }
-
-                    total += 1
+            // Poll up to 3 times, 1.5s apart, to let Firestore batch writes settle
+            for attempt in 0..<3 {
+                // Wait before each attempt (except the first) to let writes complete
+                if attempt > 0 {
+                    try? await Task.sleep(nanoseconds: 1_500_000_000) // 1.5s
                 }
 
-                await MainActor.run {
-                    onTasksCounted(total)
-                    queryComplete = true
-                    checkReady()
+                do {
+                    let snapshot = try await db.collection("users").document(uid)
+                        .collection("tasks")
+                        .getDocuments()
+
+                    var total = 0
+                    for doc in snapshot.documents {
+                        let data = doc.data()
+                        let taskType = data["taskType"] as? String ?? ""
+                        if taskType == "miniAssessmentParent" { continue }
+
+                        let status = data["status"] as? String ?? "Upcoming"
+                        guard status != "Completed" && status != "Skipped" else { continue }
+
+                        total += 1
+                    }
+
+                    finalCount = total
+
+                    // If this count matches the previous one, writes have settled - we're done
+                    if total == lastCount && total > 0 {
+                        break
+                    }
+                    lastCount = total
+                } catch {
+                    // On error, keep the last good count and exit
+                    break
                 }
-            } catch {
-                await MainActor.run {
-                    onTasksCounted(0)
-                    queryComplete = true
-                    checkReady()
-                }
+            }
+
+            await MainActor.run {
+                onTasksCounted(finalCount)
+                queryComplete = true
+                checkReady()
             }
         }
     }
@@ -218,6 +255,8 @@ struct GeneratingView: View {
 
         messageTimer?.invalidate()
         messageTimer = nil
+        progressTimer?.invalidate()
+        progressTimer = nil
 
         // Visually complete the circle before moving to ReadyView
         withAnimation(.easeOut(duration: 0.4)) {

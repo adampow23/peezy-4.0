@@ -67,10 +67,6 @@ final class PeezyHomeViewModel {
         set { UserDefaults.standard.set(newValue, forKey: kTotalCompletedCount) }
     }
 
-    // MARK: - Inventory Scanner
-
-    var showInventoryScanner = false
-
     // MARK: - Task Flow System
 
     var showTaskFlow = false
@@ -93,7 +89,7 @@ final class PeezyHomeViewModel {
         "defrost_freezer", "diy_deep_cleaning", "diy_final_cleaning",
         "forward_mail_usps", "coa_schools", "transfer_daycare",
         "update_credit_card", "update_student_loans", "begin_school_transfer",
-        "new_school_enrollment", "setup_daycare",
+        "new_school_enrollment", "setup_daycare", "scan_inventory",
         // Type 2: Manage-Provider
         "manage_gym", "manage_doctor", "manage_dentist", "manage_vet",
         "transfer_pharmacy_records", "transfer_specialists_records",
@@ -372,12 +368,6 @@ final class PeezyHomeViewModel {
         let task = taskQueue.removeFirst()
         currentTask = task
 
-        if task.actionType == "in-app-inventory" {
-            showInventoryScanner = true
-            state = .activeTask
-            return
-        }
-
         if let flowId = newFlowId(for: task) {
             taskFlowWorkflowId = flowId
             showTaskFlow = true
@@ -485,12 +475,6 @@ final class PeezyHomeViewModel {
         currentTask = task
         isFocusedTask = true
 
-        if task.actionType == "in-app-inventory" {
-            showInventoryScanner = true
-            state = .activeTask
-            return
-        }
-
         if let flowId = newFlowId(for: task) {
             taskFlowWorkflowId = flowId
             showTaskFlow = true
@@ -575,7 +559,7 @@ final class PeezyHomeViewModel {
             return
         }
 
-        let snoozedUntil = Calendar.current.date(byAdding: .day, value: 3, to: Date()) ?? Date()
+        let snoozedUntil = Calendar.current.date(byAdding: .day, value: 2, to: Date()) ?? Date()
         Task { await writeSnooze(task, snoozedUntil: snoozedUntil) }
 
         allActiveTasks.removeAll { $0.id == task.id }
@@ -714,7 +698,7 @@ final class PeezyHomeViewModel {
             let batch = Array(allActiveTasks.prefix(dailyTarget))
             taskQueue = batch
         }
-        startNextTask()
+        determineHomeState()
     }
 
     // MARK: - Daily Dose UserDefaults

@@ -1069,6 +1069,7 @@
     "actionCategory": "document-record",
     "category": "getting-started",
     "actionType": "in-app-inventory",
+    "workflowId": "scan_inventory",
     "taskType": "provide_info",
     "selfServiceOnly": true,
     "conditions": {},

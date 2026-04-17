@@ -12,12 +12,14 @@ import SwiftUI
 struct InventoryRoomHubView: View {
     var sessionManager: InventorySessionManager
     var onDismiss: () -> Void
+    var onSubmitted: () -> Void = {}
 
     @State private var showRoomNameEntry = false
     @State private var newRoomName = ""
     @State private var showDeleteConfirmation = false
     @State private var roomToDelete: ScannedRoom?
-    @State private var isSaving = false
+    @State private var showSubmitConfirmation = false
+    @State private var isSubmitting = false
 
     var body: some View {
         ZStack {
@@ -80,6 +82,14 @@ struct InventoryRoomHubView: View {
             if let room = roomToDelete {
                 Text("Remove \(room.name) and its \(room.items.count) items?")
             }
+        }
+        .alert("Ready to submit?", isPresented: $showSubmitConfirmation) {
+            Button("Cancel", role: .cancel) {}
+            Button("Yes, submit") {
+                submitInventory()
+            }
+        } message: {
+            Text("Are you sure you've scanned all your rooms? Once submitted, you won't be able to add or change rooms. If something changes, message us in the chat.")
         }
         .sheet(isPresented: $showRoomNameEntry) {
             roomNameSheet
@@ -206,35 +216,36 @@ struct InventoryRoomHubView: View {
                     Text(sessionManager.scannedRooms.isEmpty ? "Scan Your First Room" : "Scan Another Room")
                         .font(.system(size: 17, weight: .bold))
                 }
-                .foregroundStyle(PeezyTheme.Colors.deepInk)
+                .foregroundStyle(.white)
                 .frame(height: 54)
                 .frame(maxWidth: .infinity)
-                .background(PeezyTheme.Colors.brandYellow)
+                .background(PeezyTheme.Colors.deepInk)
                 .clipShape(RoundedRectangle(cornerRadius: 27, style: .continuous))
             }
             .buttonStyle(.plain)
 
-            // 2. Submit for Review — only when rooms exist
+            // 2. Submit or save draft — only when rooms exist
             if !sessionManager.scannedRooms.isEmpty {
-                PeezyAssessmentButton("Submit for Review") {
-                    submitForReview()
-                }
-                .disabled(isSaving)
-                .opacity(isSaving ? 0.5 : 1.0)
+                VStack(spacing: 12) {
+                    PeezyAssessmentButton(isSubmitting ? "Submitting..." : "Submit Inventory") {
+                        showSubmitConfirmation = true
+                    }
+                    .disabled(isSubmitting)
+                    .opacity(isSubmitting ? 0.5 : 1.0)
 
-                // 3. Save for later — text button
-                Button(action: {
-                    PeezyHaptics.light()
-                    saveForLater()
-                }) {
-                    Text("Save for later")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.4))
-                        .frame(maxWidth: .infinity, minHeight: 44)
-                        .contentShape(Rectangle())
+                    Button {
+                        PeezyHaptics.light()
+                        finishLater()
+                    } label: {
+                        Text("Finish later")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.6))
+                            .underline()
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isSubmitting)
+                    .padding(.bottom, 8)
                 }
-                .buttonStyle(.plain)
-                .disabled(isSaving)
             }
         }
         .padding(.horizontal, 24)
@@ -296,36 +307,36 @@ struct InventoryRoomHubView: View {
 
     // MARK: - Actions
 
-    private func submitForReview() {
-        isSaving = true
+    private func submitInventory() {
+        isSubmitting = true
         Task {
             do {
-                try await sessionManager.saveAllToFirestore()
+                try await sessionManager.submitFinal()
                 await MainActor.run {
-                    isSaving = false
-                    onDismiss()
+                    isSubmitting = false
+                    onSubmitted()
                 }
             } catch {
                 await MainActor.run {
-                    isSaving = false
+                    isSubmitting = false
                     sessionManager.error = error.localizedDescription
                 }
             }
         }
     }
 
-    private func saveForLater() {
-        isSaving = true
+    private func finishLater() {
+        isSubmitting = true
         Task {
             do {
-                try await sessionManager.saveAllToFirestore()
+                try await sessionManager.saveDraft()
                 await MainActor.run {
-                    isSaving = false
+                    isSubmitting = false
                     onDismiss()
                 }
             } catch {
                 await MainActor.run {
-                    isSaving = false
+                    isSubmitting = false
                     sessionManager.error = error.localizedDescription
                 }
             }

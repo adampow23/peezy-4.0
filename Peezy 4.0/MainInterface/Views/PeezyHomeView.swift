@@ -83,12 +83,7 @@ struct PeezyHomeView: View {
             }
 
             VStack(spacing: 0) {
-                Text("peezy")
-                    .font(.system(size: 18, weight: .light, design: .default))
-                    .tracking(6)
-                    .foregroundStyle(deepInk.opacity(0.8))
-                    .frame(maxWidth: .infinity)
-                    .padding(.top, 4)
+                PeezyWordmark()
                 Spacer()
             }
 
@@ -120,13 +115,6 @@ struct PeezyHomeView: View {
                     }
                 }
             }
-        }
-        .fullScreenCover(isPresented: $viewModel.showInventoryScanner, onDismiss: {
-            if let task = viewModel.currentTask, task.actionType == "in-app-inventory" {
-                viewModel.completeCurrentTask()
-            }
-        }) {
-            InventoryFlowView()
         }
         .fullScreenCover(isPresented: showTaskFlowBinding, onDismiss: {
             viewModel.cleanupTaskFlow()

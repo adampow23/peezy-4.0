@@ -51,6 +51,8 @@ struct TaskFlowRouter {
             DiyDeepCleaningFlow(userId: userId, onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
         case "diy_final_cleaning":
             DiyFinalCleaningFlow(userId: userId, onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
+        case "scan_inventory":
+            ScanInventoryFlow(userId: userId, onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
         case "forward_mail_usps":
             ForwardMailFlow(userId: userId, onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
         case "coa_schools":

@@ -10,6 +10,7 @@
 
 import SwiftUI
 import AVFoundation
+import UIKit
 
 struct InventoryCameraView: View {
     let roomName: String
@@ -17,7 +18,6 @@ struct InventoryCameraView: View {
     let onCancel: () -> Void
 
     @State private var viewModel = RoomCaptureViewModel()
-    @State private var showSettingsAlert = false
 
     // Animation state
     @State private var isRecordButtonPressed = false
@@ -33,6 +33,42 @@ struct InventoryCameraView: View {
     ]
 
     var body: some View {
+        ZStack {
+            switch viewModel.permissionState {
+            case .authorized:
+                authorizedCameraContent
+            case .denied, .restricted:
+                cameraPermissionDeniedView
+            case .notDetermined:
+                permissionLoadingView
+            }
+        }
+        .onAppear {
+            viewModel.checkCameraPermission()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
+            viewModel.checkCameraPermission()
+        }
+        .onChange(of: viewModel.extractedFrames.count) { _, count in
+            if count > 0 && !viewModel.isProcessingFrames {
+                onComplete(viewModel.extractedFrames)
+            }
+        }
+        .onChange(of: viewModel.isRecording) { _, recording in
+            if recording {
+                startRecordingAnimations()
+            } else {
+                stopRecordingAnimations()
+            }
+        }
+        .onDisappear {
+            viewModel.cleanup()
+        }
+    }
+
+    // MARK: - Authorized Camera Content
+
+    private var authorizedCameraContent: some View {
         ZStack {
             // Layer 1: Camera preview
             cameraLayer
@@ -62,44 +98,6 @@ struct InventoryCameraView: View {
                 errorOverlay(error)
             }
         }
-        .task {
-            await viewModel.requestPermissions()
-            if viewModel.permissionGranted {
-                do {
-                    try viewModel.setupCaptureSession()
-                } catch {
-                    viewModel.error = error.localizedDescription
-                }
-            }
-        }
-        .onChange(of: viewModel.permissionDenied) { _, denied in
-            if denied { showSettingsAlert = true }
-        }
-        .onChange(of: viewModel.extractedFrames.count) { _, count in
-            if count > 0 && !viewModel.isProcessingFrames {
-                onComplete(viewModel.extractedFrames)
-            }
-        }
-        .onChange(of: viewModel.isRecording) { _, recording in
-            if recording {
-                startRecordingAnimations()
-            } else {
-                stopRecordingAnimations()
-            }
-        }
-        .alert("Camera Access Required", isPresented: $showSettingsAlert) {
-            Button("Open Settings") {
-                if let url = URL(string: UIApplication.openSettingsURLString) {
-                    UIApplication.shared.open(url)
-                }
-            }
-            Button("Cancel", role: .cancel) { onCancel() }
-        } message: {
-            Text("Peezy needs camera and microphone access to scan your room. Please enable them in Settings.")
-        }
-        .onDisappear {
-            viewModel.cleanup()
-        }
     }
 
     // MARK: - Camera Layer
@@ -111,6 +109,66 @@ struct InventoryCameraView: View {
                 .ignoresSafeArea()
         } else {
             Color.black.ignoresSafeArea()
+        }
+    }
+
+    // MARK: - Permission States
+
+    private var permissionLoadingView: some View {
+        ZStack {
+            InteractiveBackground()
+                .ignoresSafeArea()
+
+            ProgressView()
+                .tint(PeezyTheme.Colors.deepInk)
+        }
+    }
+
+    private var cameraPermissionDeniedView: some View {
+        ZStack {
+            InteractiveBackground()
+                .ignoresSafeArea()
+
+            VStack(spacing: 24) {
+                Spacer()
+
+                Image(systemName: "camera.fill")
+                    .font(.system(size: 56))
+                    .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.4))
+
+                VStack(spacing: 12) {
+                    Text("Camera access needed")
+                        .font(.system(size: 24, weight: .heavy))
+                        .foregroundStyle(PeezyTheme.Colors.deepInk)
+
+                    Text("Peezy uses your camera to scan rooms and identify what you're moving. You can enable access in iOS Settings.")
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.6))
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 32)
+                }
+
+                Spacer()
+
+                VStack(spacing: 12) {
+                    PeezyAssessmentButton("Open Settings") {
+                        openSettings()
+                    }
+
+                    Button {
+                        onCancel()
+                    } label: {
+                        Text("Go back")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.6))
+                            .underline()
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.bottom, 16)
+                }
+                .padding(.horizontal, 24)
+                .padding(.bottom, 32)
+            }
         }
     }
 
@@ -205,7 +263,7 @@ struct InventoryCameraView: View {
                 // Brand name
                 Text("peezy")
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(PeezyTheme.Colors.brandYellow)
+                    .foregroundStyle(PeezyTheme.Colors.infoBlue)
                     .tracking(0.5)
 
                 Text("·")
@@ -256,7 +314,7 @@ struct InventoryCameraView: View {
                 // Pacing ring (recording only)
                 if viewModel.isRecording {
                     Circle()
-                        .stroke(PeezyTheme.Colors.brandYellow.opacity(0.25), lineWidth: 3)
+                        .stroke(PeezyTheme.Colors.infoBlue.opacity(0.25), lineWidth: 3)
                         .frame(width: 90, height: 90)
                         .scaleEffect(reticleScale)
                 }
@@ -325,7 +383,7 @@ struct InventoryCameraView: View {
         HStack(spacing: 8) {
             Image(systemName: "sparkle")
                 .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(PeezyTheme.Colors.brandYellow)
+                .foregroundStyle(PeezyTheme.Colors.infoBlue)
                 .opacity(sparkleOpacity)
 
             Text(scanMessages[scanMessageIndex])
@@ -384,7 +442,7 @@ struct InventoryCameraView: View {
                     onCancel()
                 }
                 .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(PeezyTheme.Colors.brandYellow)
+                .foregroundStyle(PeezyTheme.Colors.infoBlue)
             }
         }
     }
@@ -395,6 +453,13 @@ struct InventoryCameraView: View {
         let minutes = Int(viewModel.recordingDuration) / 60
         let seconds = Int(viewModel.recordingDuration) % 60
         return String(format: "%d:%02d", minutes, seconds)
+    }
+
+    private func openSettings() {
+        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+        if UIApplication.shared.canOpenURL(url) {
+            UIApplication.shared.open(url)
+        }
     }
 
     // MARK: - Animations

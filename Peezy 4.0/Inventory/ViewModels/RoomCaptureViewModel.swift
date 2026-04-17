@@ -2,10 +2,18 @@ import AVFoundation
 import AudioToolbox
 import UIKit
 
+enum CameraPermissionState {
+    case notDetermined
+    case authorized
+    case denied
+    case restricted
+}
+
 @Observable
 final class RoomCaptureViewModel: NSObject {
     var isRecording = false
     var recordingDuration: TimeInterval = 0
+    var permissionState: CameraPermissionState = .notDetermined
     var permissionGranted = false
     var permissionDenied = false
     var isProcessingFrames = false
@@ -21,6 +29,71 @@ final class RoomCaptureViewModel: NSObject {
     private let hapticGenerator = UIImpactFeedbackGenerator(style: .light)
     private let frameService = FrameExtractionService()
     private var recordingContinuation: CheckedContinuation<URL, Error>?
+    private var isRequestingPermission = false
+
+    func checkCameraPermission() {
+        let status = AVCaptureDevice.authorizationStatus(for: .video)
+
+        switch status {
+        case .authorized:
+            permissionState = .authorized
+            permissionGranted = true
+            permissionDenied = false
+            startCaptureSessionIfNeeded()
+        case .notDetermined:
+            permissionState = .notDetermined
+
+            guard !isRequestingPermission else { return }
+            isRequestingPermission = true
+
+            AVCaptureDevice.requestAccess(for: .video) { [weak self] granted in
+                DispatchQueue.main.async {
+                    guard let self else { return }
+
+                    self.isRequestingPermission = false
+                    if granted {
+                        self.permissionState = .authorized
+                        self.permissionGranted = true
+                        self.permissionDenied = false
+                        self.startCaptureSessionIfNeeded()
+                    } else {
+                        self.permissionState = .denied
+                        self.permissionGranted = false
+                        self.permissionDenied = true
+                    }
+                }
+            }
+        case .denied:
+            permissionState = .denied
+            permissionGranted = false
+            permissionDenied = true
+        case .restricted:
+            permissionState = .restricted
+            permissionGranted = false
+            permissionDenied = true
+        @unknown default:
+            permissionState = .denied
+            permissionGranted = false
+            permissionDenied = true
+        }
+    }
+
+    private func startCaptureSessionIfNeeded() {
+        if let captureSession {
+            guard !captureSession.isRunning else { return }
+
+            DispatchQueue.global(qos: .userInitiated).async {
+                captureSession.startRunning()
+            }
+            return
+        }
+
+        do {
+            try setupCaptureSession()
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
 
     func requestPermissions() async {
         let cameraStatus = AVCaptureDevice.authorizationStatus(for: .video)
@@ -32,9 +105,11 @@ final class RoomCaptureViewModel: NSObject {
         }
 
         if cameraGranted {
+            permissionState = .authorized
             permissionGranted = true
             permissionDenied = false
         } else {
+            permissionState = cameraStatus == .restricted ? .restricted : .denied
             permissionGranted = false
             permissionDenied = true
         }

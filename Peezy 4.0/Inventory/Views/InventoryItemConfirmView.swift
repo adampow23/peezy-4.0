@@ -76,7 +76,7 @@ struct InventoryItemConfirmView: View {
                         .frame(height: 4)
 
                     RoundedRectangle(cornerRadius: 2, style: .continuous)
-                        .fill(PeezyTheme.Colors.brandYellow)
+                        .fill(PeezyTheme.Colors.infoBlue)
                         .frame(width: geo.size.width * viewModel.progress, height: 4)
                         .animation(.spring(response: 0.4, dampingFraction: 0.85), value: viewModel.progress)
                 }

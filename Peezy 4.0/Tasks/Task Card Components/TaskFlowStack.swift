@@ -22,41 +22,46 @@ struct TaskFlowStack<Content: View>: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        ZStack {
-            // Depth cards behind (decorative only — no hit testing)
-            ForEach(1..<min(3, max(1, cardsRemaining)), id: \.self) { depth in
-                RoundedRectangle(cornerRadius: 36, style: .continuous)
-                    .fill(.ultraThinMaterial)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 36, style: .continuous)
-                            .fill(Color.white.opacity(0.5))
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 36, style: .continuous)
-                            .stroke(Color.primary.opacity(0.05), lineWidth: 1)
-                    )
-                    .frame(width: 340)
-                    .frame(maxHeight: 500)
-                    .scaleEffect(1.0 - CGFloat(depth) * 0.05)
-                    .offset(y: CGFloat(depth) * 25)
-                    .zIndex(Double(-depth))
-                    .allowsHitTesting(false)
-            }
+        VStack(spacing: 0) {
+            PeezyWordmark()
 
-            // Current card — interactive
-            content()
-                .peezyCardChrome()
-                .transition(.asymmetric(
-                    insertion: .opacity,
-                    removal: .move(edge: .leading).combined(with: .opacity)
-                ))
-                .id(currentIndex)
-                .zIndex(1)
+            ZStack {
+                // Depth cards behind (decorative only — no hit testing)
+                ForEach(1..<min(3, max(1, cardsRemaining)), id: \.self) { depth in
+                    RoundedRectangle(cornerRadius: 36, style: .continuous)
+                        .fill(.ultraThinMaterial)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 36, style: .continuous)
+                                .fill(Color.white.opacity(0.5))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 36, style: .continuous)
+                                .stroke(Color.primary.opacity(0.05), lineWidth: 1)
+                        )
+                        .frame(width: 340)
+                        .frame(maxHeight: 500)
+                        .scaleEffect(1.0 - CGFloat(depth) * 0.05)
+                        .offset(y: CGFloat(depth) * 25)
+                        .zIndex(Double(-depth))
+                        .allowsHitTesting(false)
+                }
+
+                // Current card — interactive
+                content()
+                    .peezyCardChrome()
+                    .transition(.asymmetric(
+                        insertion: .opacity,
+                        removal: .move(edge: .leading).combined(with: .opacity)
+                    ))
+                    .id(currentIndex)
+                    .zIndex(1)
+            }
+            .animation(
+                reduceMotion ? .easeOut(duration: 0.15) : .easeOut(duration: 0.2),
+                value: currentIndex
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .animation(
-            reduceMotion ? .easeOut(duration: 0.15) : .easeOut(duration: 0.2),
-            value: currentIndex
-        )
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .ignoresSafeArea(.keyboard)
     }

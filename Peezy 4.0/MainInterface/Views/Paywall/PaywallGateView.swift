@@ -1,15 +1,16 @@
+//
+//  PaywallGateView.swift
+//  Peezy 4.0
+//
+//  Redesigned for Apple Guideline 3.1.2(c) compliance and max conversion.
+//
+
 import SwiftUI
 import StoreKit
-
-// MARK: - PaywallGateView
-//
-// Shown when trial expires or a non-subscriber taps a gated task type.
-// 3-tier CTA hierarchy: Primary (subscribe) → Secondary (not now) → Tertiary (utilities)
+import UIKit
 
 struct PaywallGateView: View {
-
     @EnvironmentObject private var subscriptionManager: SubscriptionManager
-
     let onDismiss: () -> Void
 
     @State private var selectedPlan: SubscriptionManager.ProductID = .annual
@@ -19,207 +20,254 @@ struct PaywallGateView: View {
             InteractiveBackground()
                 .ignoresSafeArea()
 
-            VStack(spacing: 0) {
-                Spacer()
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(spacing: 0) {
+                    // MARK: - Dismiss button
+                    HStack {
+                        Spacer()
+                        Button(action: {
+                            PeezyHaptics.light()
+                            onDismiss()
+                        }) {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.system(size: 24))
+                                .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.15))
+                                .padding()
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("paywall_dismiss_button")
+                    }
 
-                // MARK: - Header & Value Prop
-                VStack(spacing: 12) {
-                    Text("PEEZY+")
-                        .font(.system(size: 13, weight: .black, design: .rounded))
-                        .tracking(2)
-                        .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.5))
-                        .multilineTextAlignment(.center)
+                    VStack(alignment: .leading, spacing: 24) {
+                        // MARK: - Hero section
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("ASSESSMENT COMPLETE")
+                                .font(.system(size: 12, weight: .black, design: .rounded))
+                                .tracking(1.5)
+                                .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.5))
 
-                    Text("Your easiest move ever.\nGuaranteed.")
-                        .font(.system(size: 32, weight: .heavy))
-                        .foregroundStyle(PeezyTheme.Colors.deepInk)
-                        .multilineTextAlignment(.center)
-                        .lineSpacing(2)
-                        .minimumScaleFactor(0.8)
+                            Text("Let us handle the\nheavy lifting.")
+                                .font(.system(size: 34, weight: .heavy))
+                                .foregroundStyle(PeezyTheme.Colors.deepInk)
+                                .lineSpacing(2)
+                                .fixedSize(horizontal: false, vertical: true)
 
-                    // UX Fix: Bumped size up to 17, weight to medium, and opacity to 0.7
-                    // to give this statement the authority it deserves.
-                    Text("Everything you need to make your move stress-free — for less than a pizza.")
-                        .font(.system(size: 17, weight: .medium))
-                        .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.7))
-                        .multilineTextAlignment(.center)
-                        .lineSpacing(4)
-                        .minimumScaleFactor(0.9)
+                            Text("Moving costs the average person 25+ hours of stress. Upgrade to Peezy+ and get:")
+                                .font(.system(size: 16, weight: .medium))
+                                .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.7))
+                                .lineSpacing(4)
+                                .padding(.top, 4)
+                        }
+
+                        // MARK: - Feature checklist (Apple 3.1.2(c) compliance)
+                        VStack(alignment: .leading, spacing: 16) {
+                            featureRow("Personalized moving plan built from your assessment")
+                            featureRow("Most tasks, done for you. The rest, walked through step-by-step")
+                            featureRow("AI inventory scanner for every room")
+                            featureRow("Daily task stream so nothing slips through the cracks")
+                            featureRow("Priority support via in-app chat")
+                            featureRow("Plan updates as your move evolves")
+                        }
+                        .padding(.vertical, 8)
+
+                        // MARK: - Pricing cards
+                        HStack(spacing: 12) {
+                            pricingCard(plan: .annual)
+                            pricingCard(plan: .weekly)
+                        }
                         .padding(.top, 8)
-                }
-                .padding(.horizontal, 24)
-
-                Spacer(minLength: 24)
-
-                // MARK: - Plan Selector
-                HStack(spacing: 16) {
-                    planCard(for: .annual)
-                    planCard(for: .weekly)
-                }
-                .padding(.horizontal, 24)
-
-                Spacer(minLength: 32)
-
-                // MARK: - Primary Action
-                PeezyAssessmentButton(
-                    subscriptionManager.isPurchasing ? "Processing..." : "Let's do this",
-                    action: purchaseSelected
-                )
-                .accessibilityIdentifier("paywall_purchase_button")
-                .padding(.horizontal, 24)
-
-                Spacer(minLength: 20)
-
-                // MARK: - Dismiss & Utilities (Grouped at the bottom)
-                VStack(spacing: 16) {
-                    
-                    // Secondary Action
-                    Button(action: onDismiss) {
-                        Text("Not now")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.6))
                     }
-                    .buttonStyle(.plain)
-                    .contentShape(Rectangle())
-                    .accessibilityIdentifier("paywall_dismiss_button")
+                    .padding(.horizontal, 24)
 
-                    // Tertiary Utilities (Side-by-Side)
-                    HStack(spacing: 12) {
-                        Button {
-                            Task {
-                                guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene else { return }
-                                try? await AppStore.presentOfferCodeRedeemSheet(in: windowScene)
-                            }
-                        } label: {
-                            Text("Redeem a code").underline()
+                    Spacer(minLength: 32)
+
+                    // MARK: - CTA and footer
+                    VStack(spacing: 16) {
+                        PeezyAssessmentButton(ctaLabel) {
+                            purchaseSelected()
                         }
-                        .buttonStyle(.plain)
-                        .accessibilityIdentifier("paywall_redeem_code")
+                        .animation(.none, value: selectedPlan)
+                        .accessibilityIdentifier("paywall_purchase_button")
 
-                        Text("·")
-
-                        Button {
-                            Task {
-                                await subscriptionManager.restorePurchases()
-                                if subscriptionManager.isSubscribed {
-                                    onDismiss()
+                        // Tertiary actions
+                        HStack(spacing: 12) {
+                            Button {
+                                Task {
+                                    guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene else { return }
+                                    try? await AppStore.presentOfferCodeRedeemSheet(in: windowScene)
                                 }
+                            } label: {
+                                Text("Redeem a code").underline()
                             }
-                        } label: {
-                            Text("Restore purchases").underline()
+                            .buttonStyle(.plain)
+                            .accessibilityIdentifier("paywall_redeem_code")
+
+                            Text("·")
+
+                            Button {
+                                Task {
+                                    await subscriptionManager.restorePurchases()
+                                    if subscriptionManager.isSubscribed {
+                                        onDismiss()
+                                    }
+                                }
+                            } label: {
+                                Text("Restore Purchases").underline()
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityIdentifier("paywall_restore_purchases")
                         }
-                        .buttonStyle(.plain)
-                        .accessibilityIdentifier("paywall_restore_purchases")
+                        .font(.system(size: 12, weight: .regular))
+                        .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.4))
+
+                        // Subscription terms
+                        Text("Payment will be charged to your Apple ID account at confirmation of purchase. Subscription automatically renews unless cancelled at least 24 hours before the end of the current period. Manage subscriptions in Settings > Apple ID > Subscriptions.")
+                            .font(.system(size: 11))
+                            .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.3))
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 16)
+                            .accessibilityIdentifier("paywall_subscription_terms")
+
+                        HStack(spacing: 4) {
+                            Link("Privacy Policy", destination: URL(string: "https://peezy-1ecrdl.web.app/privacy.html")!)
+                                .accessibilityIdentifier("paywall_privacy_link")
+                            Text("·")
+                            Link("Terms of Service", destination: URL(string: "https://peezy-1ecrdl.web.app/terms.html")!)
+                                .accessibilityIdentifier("paywall_terms_link")
+                        }
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.5))
                     }
-                    .font(.system(size: 12, weight: .regular))
-                    .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.4))
+                    .padding(.horizontal, 24)
+                    .padding(.bottom, 32)
                 }
-
-                Spacer(minLength: 16)
-
-                // MARK: - Subscription Terms (Apple 3.1.2)
-                VStack(spacing: 8) {
-                    Text("Payment will be charged to your Apple ID account at confirmation of purchase. Subscription automatically renews unless cancelled at least 24 hours before the end of the current period. Manage subscriptions in Settings > Apple ID > Subscriptions.")
-                        .font(.system(size: 11))
-                        .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.3))
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 32)
-
-                    HStack(spacing: 4) {
-                        Link("Privacy Policy", destination: URL(string: "https://peezy-1ecrdl.web.app/privacy.html")!)
-                            .accessibilityIdentifier("paywall_privacy_link")
-                        Text("·")
-                        Link("Terms of Service", destination: URL(string: "https://peezy-1ecrdl.web.app/terms.html")!)
-                            .accessibilityIdentifier("paywall_terms_link")
-                    }
-                    .font(.caption)
-                    .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.3))
-                }
-                .accessibilityIdentifier("paywall_subscription_terms")
-                .padding(.bottom, 16)
             }
         }
     }
 
-    // MARK: - Plan Card
+    // MARK: - CTA Label (dynamic based on plan and purchase state)
 
-    @ViewBuilder
-    private func planCard(for plan: SubscriptionManager.ProductID) -> some View {
+    private var ctaLabel: String {
+        if subscriptionManager.isPurchasing {
+            return "Processing..."
+        }
+        if selectedPlan == .annual {
+            // Check if annual plan has a free trial
+            if let product = subscriptionManager.product(for: .annual),
+               let intro = product.subscription?.introductoryOffer,
+               intro.paymentMode == .freeTrial {
+                let days = intro.period.value
+                return "Start \(days)-Day Free Trial"
+            }
+            return "Subscribe Yearly"
+        } else {
+            let price = subscriptionManager.product(for: .weekly)?.displayPrice ?? ""
+            return price.isEmpty ? "Subscribe Weekly" : "Subscribe for \(price)/wk"
+        }
+    }
+
+    // MARK: - Feature Row
+
+    private func featureRow(_ text: String) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 18))
+                .foregroundStyle(PeezyTheme.Colors.deepInk)
+                .padding(.top, 2)
+
+            Text(text)
+                .font(.system(size: 15, weight: .medium))
+                .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.85))
+                .lineSpacing(2)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    // MARK: - Pricing Card
+
+    private func pricingCard(plan: SubscriptionManager.ProductID) -> some View {
         let isSelected = selectedPlan == plan
+        let product = subscriptionManager.product(for: plan)
+        let price = product?.displayPrice ?? "—"
 
-        Button(action: { selectedPlan = plan }) {
-            ZStack(alignment: .top) {
-                if plan == .annual {
-                    Text("BEST VALUE")
-                        .font(.system(size: 10, weight: .bold))
-                        .tracking(1)
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 4)
-                        .background(Capsule().fill(PeezyTheme.Colors.deepInk))
-                        .padding(.top, 10)
+        let title: String = plan == .annual ? "Yearly" : "Weekly"
+        let duration: String = plan == .annual ? "/ yr" : "/ wk"
+        let subtext: String = {
+            if plan == .annual {
+                if let intro = product?.subscription?.introductoryOffer,
+                   intro.paymentMode == .freeTrial {
+                    let days = intro.period.value
+                    return "\(days)-day free trial"
                 }
-
-                VStack(spacing: 4) {
-                    Text(plan == .annual ? "YEARLY" : "WEEKLY")
-                        .font(.system(size: 12, weight: .bold))
-                        .tracking(1)
-                        .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.5))
-
-                    Text(priceText(for: plan))
-                        .font(.system(size: 26, weight: .heavy))
-                        .foregroundStyle(PeezyTheme.Colors.deepInk)
-
-                    Text(subtitleText(for: plan))
-                        .font(.system(size: 12))
-                        .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.5))
-                }
-                .padding(.top, 36)
-                .padding(.bottom, 20)
+                return "Billed yearly"
+            } else {
+                return "Billed weekly"
             }
+        }()
+        let badge: String? = plan == .annual ? "BEST VALUE" : nil
+
+        let identifier = plan == .annual ? "paywall_plan_annual" : "paywall_plan_weekly"
+
+        return Button(action: {
+            PeezyHaptics.light()
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                selectedPlan = plan
+            }
+        }) {
+            VStack(spacing: 6) {
+                Text(title)
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(isSelected ? PeezyTheme.Colors.deepInk : PeezyTheme.Colors.deepInk.opacity(0.5))
+
+                HStack(alignment: .firstTextBaseline, spacing: 2) {
+                    Text(price)
+                        .font(.system(size: 22, weight: .heavy))
+                        .foregroundStyle(isSelected ? PeezyTheme.Colors.deepInk : PeezyTheme.Colors.deepInk.opacity(0.5))
+                        .minimumScaleFactor(0.7)
+                    Text(duration)
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(isSelected ? PeezyTheme.Colors.deepInk.opacity(0.6) : PeezyTheme.Colors.deepInk.opacity(0.3))
+                }
+
+                Text(subtext)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(isSelected ? PeezyTheme.Colors.deepInk.opacity(0.6) : PeezyTheme.Colors.deepInk.opacity(0.4))
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.vertical, 20)
+            .padding(.horizontal, 8)
             .frame(maxWidth: .infinity)
-            .background {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .foregroundStyle(.regularMaterial)
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .fill(Color.white.opacity(0.1))
-                }
-            }
-            .overlay {
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .stroke(
-                        isSelected
-                            ? PeezyTheme.Colors.deepInk
-                            : PeezyTheme.Colors.deepInk.opacity(0.1),
-                        lineWidth: isSelected ? 2 : 1
-                    )
-            }
+            .background(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(isSelected ? Color.white : Color.clear)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(isSelected ? PeezyTheme.Colors.deepInk : PeezyTheme.Colors.deepInk.opacity(0.1),
+                            lineWidth: isSelected ? 2 : 1)
+            )
+            .overlay(
+                Group {
+                    if let badge = badge {
+                        Text(badge)
+                            .font(.system(size: 10, weight: .black, design: .rounded))
+                            .tracking(1)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 4)
+                            .background(PeezyTheme.Colors.deepInk)
+                            .foregroundStyle(.white)
+                            .clipShape(Capsule())
+                            .offset(y: -12)
+                    }
+                },
+                alignment: .top
+            )
+            .shadow(color: isSelected ? PeezyTheme.Colors.deepInk.opacity(0.15) : Color.clear, radius: 10, x: 0, y: 4)
+            .scaleEffect(isSelected ? 1.0 : 0.98)
         }
         .buttonStyle(.plain)
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
-        .accessibilityIdentifier(plan == .annual ? "paywall_plan_annual" : "paywall_plan_weekly")
-        .animation(.easeInOut(duration: 0.15), value: isSelected)
-    }
-
-    // MARK: - Dynamic Price Helpers
-
-    private func priceText(for plan: SubscriptionManager.ProductID) -> String {
-        subscriptionManager.product(for: plan)?.displayPrice ?? "—"
-    }
-
-    private func subtitleText(for plan: SubscriptionManager.ProductID) -> String {
-        guard let product = subscriptionManager.product(for: plan) else {
-            return plan == .annual ? "per year" : "per week"
-        }
-        if plan == .annual,
-           let intro = product.subscription?.introductoryOffer,
-           intro.paymentMode == .freeTrial {
-            let days = intro.period.value
-            let unit = intro.period.unit == .day ? (days == 1 ? "day" : "days") : ""
-            return "\(days)-\(unit) free trial"
-        }
-        return plan == .annual ? "per year" : "per week"
+        .accessibilityIdentifier(identifier)
     }
 
     // MARK: - Purchase
@@ -234,9 +282,24 @@ struct PaywallGateView: View {
         }
     }
 }
-// MARK: - Preview
 
-#Preview {
+#Preview("Live (annual selected)") {
+    PaywallGateView(onDismiss: {})
+        .environmentObject(SubscriptionManager.shared)
+}
+
+#Preview("Dark Mode") {
+    PaywallGateView(onDismiss: {})
+        .environmentObject(SubscriptionManager.shared)
+        .preferredColorScheme(.dark)
+}
+
+#Preview("iPad", traits: .fixedLayout(width: 834, height: 1194)) {
+    PaywallGateView(onDismiss: {})
+        .environmentObject(SubscriptionManager.shared)
+}
+
+#Preview("iPhone SE (small screen)", traits: .fixedLayout(width: 375, height: 667)) {
     PaywallGateView(onDismiss: {})
         .environmentObject(SubscriptionManager.shared)
 }

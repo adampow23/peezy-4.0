@@ -37,7 +37,7 @@ struct InventoryProcessingView: View {
                 ZStack {
                     // Pulsing glow
                     Circle()
-                        .fill(PeezyTheme.Colors.brandYellow.opacity(0.15))
+                        .fill(PeezyTheme.Colors.infoBlue.opacity(0.15))
                         .frame(width: 120, height: 120)
                         .scaleEffect(glowScale)
 
