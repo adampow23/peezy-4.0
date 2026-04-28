@@ -12,6 +12,7 @@
 //
 
 import SwiftUI
+import UIKit
 import Combine
 import FirebaseAuth
 
@@ -104,6 +105,7 @@ class AssessmentCoordinator: ObservableObject {
     @Published var isComplete: Bool = false
     @Published var isSaving: Bool = false
     @Published var saveError: Error?
+    @Published var isNavigating: Bool = false
     
     // MARK: - Private State
     
@@ -182,6 +184,30 @@ class AssessmentCoordinator: ObservableObject {
         // Safety: clamp to valid range
         currentIndex = min(currentIndex, sequence.count - 1)
     }
+
+    /// Dismiss the keyboard before navigating so only one transition runs at a time.
+    func goToNextDismissingKeyboard() {
+        guard !isNavigating else { return }
+        isNavigating = true
+
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+
+        UIApplication.shared.sendAction(
+            #selector(UIResponder.resignFirstResponder),
+            to: nil,
+            from: nil,
+            for: nil
+        )
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+            guard let self else { return }
+            self.goToNext()
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+                self?.isNavigating = false
+            }
+        }
+    }
     
     /// Go back to the previous step.
     /// Does nothing if already at the first step.
@@ -197,6 +223,7 @@ class AssessmentCoordinator: ObservableObject {
         isSaving = false
         saveError = nil
         isCompleting = false
+        isNavigating = false
         maxInputStepsSeen = 0
         buildSequence()
     }
@@ -214,7 +241,11 @@ class AssessmentCoordinator: ObservableObject {
         }
 
         // Section 1: Basics
-        addStep(.userName)
+        // Skip userName when Authentication Services already provided it (Sign in with Apple).
+        // Required by App Store Guideline 4.
+        if dataManager.userName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            addStep(.userName)
+        }
         addStep(.moveDate)
 
         // Section 2: Current Home

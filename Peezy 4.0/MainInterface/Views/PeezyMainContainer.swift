@@ -19,6 +19,9 @@ struct PeezyMainContainer: View {
     @State private var timelineViewModel = PeezyStackViewModel()
     @State private var hasLoadedTimeline = false
 
+    // Tasks tab listener-backed store — lifecycle owned here so it spans tab switches
+    private let tasksStore = TasksStore.shared
+
     // Support chat service — owned here so the unread badge updates regardless of which tab is active
     @State private var chatService = SupportChatService()
 
@@ -44,8 +47,7 @@ struct PeezyMainContainer: View {
                         .ignoresSafeArea(.keyboard, edges: .bottom)
 
                 case .tasks:
-                    PeezyTaskStream(
-                        viewModel: timelineViewModel,
+                    TasksTabView(
                         userState: userState,
                         onNavigateToTask: { task in
                             focusedTask = task
@@ -67,6 +69,7 @@ struct PeezyMainContainer: View {
             .safeAreaInset(edge: .bottom) {
                 Color.clear.frame(height: tabBarHeight)
             }
+            .environment(tasksStore)
 
             // Floating tab bar — height is measured and fed back into tabBarHeight
             PeezyFloatingTabBar(selectedTab: $selectedTab, chatUnreadCount: chatService.unreadCount)
@@ -76,9 +79,22 @@ struct PeezyMainContainer: View {
                 } action: { height in
                     tabBarHeight = height
                 }
+
+            // Toast overlay — mounts at the very top, above every tab.
+            ToastOverlay(manager: ToastManager.shared)
         }
         .onAppear {
             chatService.startListening()
+            if let uid = userState?.userId {
+                tasksStore.start(userId: uid)
+            }
+        }
+        .onChange(of: userState?.userId) { _, newId in
+            if let newId {
+                tasksStore.start(userId: newId)
+            } else {
+                tasksStore.stop()
+            }
         }
         .onChange(of: selectedTab) { _, newValue in
             if newValue == .tasks && !hasLoadedTimeline {

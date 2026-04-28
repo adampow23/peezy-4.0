@@ -6,6 +6,7 @@ import FirebaseFirestore
 enum TaskStatus: String, Codable {
     case upcoming = "Upcoming"
     case inProgress = "InProgress"
+    case matchingInProgress = "MatchingInProgress"
     case userInProgress = "UserInProgress"
     case completed = "Completed"
     case snoozed = "Snoozed"
@@ -42,6 +43,9 @@ struct PeezyCard: Identifiable, Equatable, Codable {
     // UserInProgress support (user-initiated "I'm on it")
     var userInProgressDate: Date?
     var userInProgressReturnDate: Date?
+
+    // Completion timestamp — set when task transitions to .completed
+    var completedAt: Date?
 
     // Daily Dose — task urgency from catalog (0–99, higher = more urgent)
     var urgencyPercentage: Int?
@@ -172,6 +176,11 @@ struct PeezyCard: Identifiable, Equatable, Codable {
         return snoozedUntil > DateProvider.shared.now
     }
 
+    /// True if this card represents the scan-inventory task.
+    var isScanInventory: Bool {
+        taskId == "SCAN_INVENTORY"
+    }
+
     /// Whether this card should be shown in the stack
     var shouldShow: Bool {
         // If snoozed, only show if snooze date has passed
@@ -207,6 +216,7 @@ struct PeezyCard: Identifiable, Equatable, Codable {
         urgencyPercentage: Int? = nil,
         userInProgressDate: Date? = nil,
         userInProgressReturnDate: Date? = nil,
+        completedAt: Date? = nil,
         selfServiceOnly: Bool = false,
         actionType: String? = nil,
         taskType: String? = nil,
@@ -235,6 +245,7 @@ struct PeezyCard: Identifiable, Equatable, Codable {
         self.urgencyPercentage = urgencyPercentage
         self.userInProgressDate = userInProgressDate
         self.userInProgressReturnDate = userInProgressReturnDate
+        self.completedAt = completedAt
         self.selfServiceOnly = selfServiceOnly
         self.actionType = actionType
         self.taskType = taskType

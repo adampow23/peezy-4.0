@@ -77,6 +77,27 @@ class AssessmentDataManager: ObservableObject {
     // MARK: - State
     @Published var saveError: Error?
 
+    // MARK: - Init
+
+    /// Bootstraps userName from any pre-populated source.
+    /// Required for Sign in with Apple — Apple only sends the user's first name
+    /// on the FIRST SIWA authorization, so AuthViewModel persists it and we read
+    /// it back here to skip re-prompting in the assessment.
+    init() {
+        // Layer 1: synchronous local cache populated by AuthViewModel after SIWA
+        if let cached = UserDefaults.standard.string(forKey: "peezy.user.firstName"),
+           !cached.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            self.userName = cached
+            return
+        }
+
+        // Layer 2: durable Firebase Auth displayName (survives reinstall, cross-device)
+        if let displayName = Auth.auth().currentUser?.displayName,
+           !displayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            self.userName = displayName
+        }
+    }
+
     // MARK: - Computed Distance Fields
     /// Computed from currentAddress vs newAddress via geocoding.
     /// Set by computeDistanceAndInterstate() before task generation.

@@ -80,6 +80,27 @@ class AuthViewModel: ObservableObject {
                         return
                     }
 
+                    // Capture name from Apple credential. Apple only sends fullName/email
+                    // on the FIRST SIWA for a given Apple ID + app pair — if we don't
+                    // persist it now, it's gone forever (until user revokes via iOS Settings).
+                    // Required by App Store Guideline 4.
+                    let givenName = appleIDCredential.fullName?.givenName?
+                        .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
+                    if !givenName.isEmpty {
+                        // Layer 1: synchronous local cache for AssessmentDataManager.init()
+                        UserDefaults.standard.set(givenName, forKey: "peezy.user.firstName")
+
+                        // Layer 2: durable Firebase Auth displayName (cross-device, survives reinstall)
+                        if let user = authResult?.user {
+                            let changeRequest = user.createProfileChangeRequest()
+                            changeRequest.displayName = givenName
+                            changeRequest.commitChanges { _ in
+                                // Fire-and-forget. Local UserDefaults is the primary path.
+                            }
+                        }
+                    }
+
                     #if DEBUG
                     print("✅ Successfully signed in with Apple: \(authResult?.user.uid ?? "")")
                     #endif

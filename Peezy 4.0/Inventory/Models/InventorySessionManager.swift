@@ -259,6 +259,37 @@ final class InventorySessionManager {
         state = .intro
     }
 
+    /// Wipe the user's inventory state both locally and in Firestore.
+    /// Used when the user taps "Reset inventory" on a completed scan_inventory task.
+    /// Throws if not signed in or if the Firestore deletion fails.
+    func resetInventory() async throws {
+        guard let userId = Auth.auth().currentUser?.uid else {
+            throw NSError(
+                domain: "InventorySessionManager",
+                code: 401,
+                userInfo: [NSLocalizedDescriptionKey: "Not signed in"]
+            )
+        }
+
+        let db = Firestore.firestore()
+        let inventoryRef = db.collection("users").document(userId).collection("inventory")
+
+        // Fetch all room docs and delete them in a single batch.
+        let snapshot = try await inventoryRef.getDocuments()
+        if !snapshot.documents.isEmpty {
+            let batch = db.batch()
+            for doc in snapshot.documents {
+                batch.deleteDocument(doc.reference)
+            }
+            try await batch.commit()
+        }
+
+        // Clear local state so the next scan starts fresh.
+        await MainActor.run {
+            self.reset()
+        }
+    }
+
     // MARK: - Private
 
     private func addRoomWrites(to batch: WriteBatch, db: Firestore, userId: String) {
