@@ -206,7 +206,7 @@ struct InventoryFlowView: View {
             TaskFlowInfoCard(
                 taskTitle: "Scan my home",
                 title: "Here's how it works",
-                bodyText: "Pan your camera slowly around each room — about 20 seconds per room. Peezy identifies furniture and belongings automatically.\n\nOpen closets and cabinets. Go one room at a time for the best results.",
+                bodyText: "Pan your camera slowly around each room — about 20 seconds per room. Peezy uses AI (Anthropic Claude) to identify furniture and belongings automatically.\n\nOpen closets and cabinets. Go one room at a time for the best results.\n\nYour scan video frames are sent securely to Anthropic for processing and are not stored or used for AI training. See our Privacy Policy at peezy-1ecrdl.web.app/privacy.html for details.",
                 primaryLabel: "Let's go",
                 showBack: true,
                 onPrimary: {
