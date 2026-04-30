@@ -2,11 +2,23 @@
 //  InventorySessionManager.swift
 //  Peezy 4.0
 //
+//  Hardened against Swift Concurrency crashes during scanner processing.
+//
+//  Architecture notes:
+//  - @MainActor isolated. All observable state mutations happen on main actor.
+//  - Firestore listener callbacks (which arrive on Firebase's gRPC thread) hop
+//    to MainActor via Task { @MainActor in ... } before touching state.
+//  - The processing task is owned by the manager, not by transient views.
+//    This prevents "Task spawned from view closure outliving the view" crashes.
+//  - State transitions are idempotent. Even if Firestore emits the same status
+//    multiple times in succession, only the first one transitions state.
+//
 
 import SwiftUI
 import FirebaseAuth
 import FirebaseFirestore
 
+@MainActor
 @Observable
 final class InventorySessionManager {
 
@@ -42,7 +54,19 @@ final class InventorySessionManager {
 
     private let storageService = InventoryStorageService()
     private let apiClient = InventoryAPIClient()
+
+    /// Firestore listener for the session document we're currently observing.
+    /// Removed whenever we transition out of .processing or reset.
     private var sessionListener: ListenerRegistration?
+
+    /// The session ID currently being observed. Used to ignore stale listener
+    /// callbacks if the user has moved on (e.g., cancelled mid-processing,
+    /// then started a new scan that produced a new sessionId).
+    private var observedSessionId: String?
+
+    /// The processing pipeline task. Owned by the manager so it survives
+    /// view-tree changes. Cancelled on reset or when user navigates away.
+    private var processingTask: Task<Void, Never>?
 
     // MARK: - Computed
 
@@ -73,7 +97,18 @@ final class InventorySessionManager {
         }
     }
 
-    // MARK: - Actions
+    // MARK: - Lifecycle
+        //
+        // Note: no custom deinit. Swift's strict concurrency forbids touching
+        // @MainActor-isolated properties from deinit (which can run on any
+        // thread). Cleanup is handled explicitly via reset() and
+        // teardownActiveProcessing() during normal flow. When the manager
+        // does deallocate, the Firestore listener becomes unreachable from
+        // its [weak self] callback and is effectively dead, and the
+        // processingTask is cancelled implicitly when its last reference
+        // (this manager) is released.
+
+    // MARK: - Loading
 
     func loadExistingInventory() async {
         guard let userId else { return }
@@ -118,40 +153,74 @@ final class InventorySessionManager {
                 ))
             }
 
-            await MainActor.run {
-                self.submissionStatus = loadedStatus
-                self.scannedRooms = rooms
-            }
+            // The class is @MainActor so direct assignment is already main-isolated.
+            self.submissionStatus = loadedStatus
+            self.scannedRooms = rooms
         } catch {
-            await MainActor.run {
-                self.submissionStatus = loadedStatus
-            }
+            self.submissionStatus = loadedStatus
             #if DEBUG
             print("[InventorySessionManager] Failed to load existing inventory: \(error.localizedDescription)")
             #endif
         }
     }
 
+    // MARK: - Flow control
+
     func startNewRoom(name: String) {
         state = .scanning(roomName: name)
     }
 
-    func handleFramesExtracted(_ frames: [ExtractedFrame], roomName: String) async {
+    /// Hand off frames extracted from a scan. Fire-and-forget from the caller's
+    /// perspective. The manager owns the processing Task internally so it
+    /// survives the camera view being deallocated.
+    func handleFramesExtracted(_ frames: [ExtractedFrame], roomName: String) {
         guard let userId else {
             error = "You must be signed in to scan inventory"
             state = .roomList
             return
         }
 
+        // Cancel any previous in-flight processing and tear down its listener
+        // before starting a new one. (Defensive — shouldn't happen in normal
+        // flow but cheap to handle.)
+        teardownActiveProcessing()
+
         isProcessing = true
         state = .processing(roomName: roomName, progress: "Uploading frames...")
 
-        do {
-            // 1. Upload frames to Firebase Storage + create Firestore session doc
-            let session = try await storageService.uploadFrames(frames, userId: userId, roomName: roomName)
+        // Capture only what we need. `self` is captured weakly so the Task
+        // doesn't keep the manager alive past its natural lifetime.
+        processingTask = Task { @MainActor [weak self] in
+            await self?.runProcessingPipeline(
+                frames: frames,
+                userId: userId,
+                roomName: roomName
+            )
+        }
+    }
 
-            // 2. Trigger Cloud Function for AI processing
+    /// Internal pipeline. Owns the upload + Cloud Function call, then installs
+    /// the Firestore listener and returns. State transitions out of .processing
+    /// are driven by the listener (handleSessionUpdate), not by awaiting here.
+    private func runProcessingPipeline(
+        frames: [ExtractedFrame],
+        userId: String,
+        roomName: String
+    ) async {
+        do {
+            // Phase 1 — upload frames to Storage + create session doc
+            let session = try await storageService.uploadFrames(
+                frames,
+                userId: userId,
+                roomName: roomName
+            )
+
+            // Bail out if the user moved on while we were uploading.
+            guard !Task.isCancelled else { return }
+
             state = .processing(roomName: roomName, progress: "Analyzing room...")
+
+            // Phase 2 — kick off Cloud Function
             try await apiClient.processInventory(
                 userId: userId,
                 sessionId: session.id,
@@ -159,17 +228,114 @@ final class InventorySessionManager {
                 frameCount: session.frameCount
             )
 
-            // 3. Observe Firestore session document for completion
-            await observeSessionCompletion(userId: userId, sessionId: session.id, roomName: roomName)
+            guard !Task.isCancelled else { return }
+
+            // Phase 3 — install Firestore listener and return.
+            // State transitions out of .processing happen in handleSessionUpdate.
+            installSessionListener(
+                userId: userId,
+                sessionId: session.id,
+                roomName: roomName
+            )
 
         } catch {
-            isProcessing = false
+            // Caught here on upload failure or Cloud Function failure.
+            // Listener errors are handled in handleSessionUpdate.
+            self.isProcessing = false
             self.error = error.localizedDescription
-            state = .roomList
+            self.state = .roomList
         }
     }
 
-    /// Called when confirmation flow completes — items have been updated with user corrections
+    /// Install the Firestore listener for a session. The callback may fire
+    /// on a Firebase gRPC thread; we hop to MainActor before mutating state.
+    /// Idempotent — repeated "complete" snapshots only transition once
+    /// because we clear `observedSessionId` on the first transition.
+    private func installSessionListener(
+        userId: String,
+        sessionId: String,
+        roomName: String
+    ) {
+        observedSessionId = sessionId
+
+        sessionListener = storageService.observeSession(
+            userId: userId,
+            sessionId: sessionId
+        ) { [weak self] session in
+            // Hop to MainActor before touching any observable state.
+            // self is captured weakly so a stale callback after manager
+            // deallocation is a no-op.
+            Task { @MainActor [weak self] in
+                self?.handleSessionUpdate(session, roomName: roomName)
+            }
+        }
+    }
+
+    /// Handle a Firestore session snapshot update. Runs on MainActor.
+    /// Idempotent — only the first terminal status (complete or error) for
+    /// a given observedSessionId triggers a state transition; subsequent
+    /// snapshots are ignored.
+    private func handleSessionUpdate(
+        _ session: InventoryScanSession,
+        roomName: String
+    ) {
+        // Ignore stale callbacks for sessions we're no longer observing.
+        guard session.id == observedSessionId else { return }
+
+        switch session.status {
+        case .complete:
+            // Transition once, then stop observing this session.
+            observedSessionId = nil
+            sessionListener?.remove()
+            sessionListener = nil
+            isProcessing = false
+
+            let needsConfirmation = session.items.contains { item in
+                item.tier == "furniture" && item.confidence < Self.confidenceThreshold
+            }
+
+            if needsConfirmation {
+                state = .confirming(
+                    roomName: roomName,
+                    items: session.items,
+                    sessionId: session.id
+                )
+            } else {
+                state = .reviewing(roomName: roomName, items: session.items)
+            }
+
+        case .error:
+            observedSessionId = nil
+            sessionListener?.remove()
+            sessionListener = nil
+            isProcessing = false
+            error = session.errorMessage ?? "Processing failed"
+            state = .roomList
+
+        case .processing:
+            // Cosmetic: keep the user informed while we wait.
+            state = .processing(roomName: roomName, progress: "Analyzing room...")
+
+        case .uploading:
+            // Already shown by runProcessingPipeline. No-op.
+            break
+        }
+    }
+
+    /// Tear down the active processing pipeline. Cancels in-flight Task,
+    /// removes Firestore listener, clears observed session token.
+    private func teardownActiveProcessing() {
+        processingTask?.cancel()
+        processingTask = nil
+
+        sessionListener?.remove()
+        sessionListener = nil
+
+        observedSessionId = nil
+    }
+
+    // MARK: - Confirmation / review handoffs
+
     func handleConfirmationCompleted(_ items: [InventoryItem], roomName: String) {
         state = .reviewing(roomName: roomName, items: items)
     }
@@ -199,6 +365,8 @@ final class InventorySessionManager {
         }
     }
 
+    // MARK: - Persistence
+
     /// Finish later — saves progress but keeps the scanner unlocked.
     func saveDraft() async throws {
         guard let userId else {
@@ -219,9 +387,7 @@ final class InventorySessionManager {
 
         try await batch.commit()
 
-        await MainActor.run {
-            self.submissionStatus = .draft
-        }
+        self.submissionStatus = .draft
     }
 
     /// Final submit — saves progress and locks the inventory.
@@ -244,14 +410,11 @@ final class InventorySessionManager {
 
         try await batch.commit()
 
-        await MainActor.run {
-            self.submissionStatus = .submitted
-        }
+        self.submissionStatus = .submitted
     }
 
     func reset() {
-        sessionListener?.remove()
-        sessionListener = nil
+        teardownActiveProcessing()
         scannedRooms = []
         submissionStatus = .draft
         error = nil
@@ -274,7 +437,6 @@ final class InventorySessionManager {
         let db = Firestore.firestore()
         let inventoryRef = db.collection("users").document(userId).collection("inventory")
 
-        // Fetch all room docs and delete them in a single batch.
         let snapshot = try await inventoryRef.getDocuments()
         if !snapshot.documents.isEmpty {
             let batch = db.batch()
@@ -284,13 +446,11 @@ final class InventorySessionManager {
             try await batch.commit()
         }
 
-        // Clear local state so the next scan starts fresh.
-        await MainActor.run {
-            self.reset()
-        }
+        // Class is @MainActor so reset() runs main-isolated.
+        self.reset()
     }
 
-    // MARK: - Private
+    // MARK: - Private helpers
 
     private func addRoomWrites(to batch: WriteBatch, db: Firestore, userId: String) {
         for room in scannedRooms {
@@ -304,58 +464,6 @@ final class InventorySessionManager {
                 "scannedAt": Timestamp(date: room.scannedAt),
                 "savedAt": FieldValue.serverTimestamp()
             ], forDocument: roomRef)
-        }
-    }
-
-    private func observeSessionCompletion(userId: String, sessionId: String, roomName: String) async {
-        // Remove any previous listener
-        sessionListener?.remove()
-
-        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-            var resumed = false
-
-            sessionListener = storageService.observeSession(userId: userId, sessionId: sessionId) { [weak self] session in
-                guard let self, !resumed else { return }
-
-                switch session.status {
-                case .complete:
-                    resumed = true
-                    self.isProcessing = false
-                    self.sessionListener?.remove()
-                    self.sessionListener = nil
-
-                    // Check if any furniture-tier items need user confirmation
-                    let needsConfirmation = session.items.contains { item in
-                        item.tier == "furniture" && item.confidence < Self.confidenceThreshold
-                    }
-
-                    if needsConfirmation {
-                        self.state = .confirming(
-                            roomName: roomName,
-                            items: session.items,
-                            sessionId: sessionId
-                        )
-                    } else {
-                        self.state = .reviewing(roomName: roomName, items: session.items)
-                    }
-
-                    continuation.resume()
-
-                case .error:
-                    resumed = true
-                    self.isProcessing = false
-                    self.error = session.errorMessage ?? "Processing failed"
-                    self.state = .roomList
-                    self.sessionListener?.remove()
-                    self.sessionListener = nil
-                    continuation.resume()
-
-                case .uploading, .processing:
-                    if session.status == .processing {
-                        self.state = .processing(roomName: roomName, progress: "Analyzing room...")
-                    }
-                }
-            }
         }
     }
 }

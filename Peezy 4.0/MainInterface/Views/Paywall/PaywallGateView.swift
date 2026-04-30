@@ -2,7 +2,10 @@
 //  PaywallGateView.swift
 //  Peezy 4.0
 //
-//  Redesigned for Apple Guideline 3.1.2(c) compliance and max conversion.
+//  Single-screen paywall. Apple Guideline 3.1.2 compliance:
+//  - Free trial copy gated by isEligibleForIntroOffer per Apple's 2026 guidance
+//  - Purchase button disabled during purchase to prevent tap-spam
+//  - Restore Purchases reachable here and in Settings
 //
 
 import SwiftUI
@@ -59,7 +62,7 @@ struct PaywallGateView: View {
                                 .padding(.top, 4)
                         }
 
-                        // MARK: - Feature checklist (Apple 3.1.2(c) compliance)
+                        // MARK: - Feature checklist (Apple 3.1.2 compliance)
                         VStack(alignment: .leading, spacing: 16) {
                             featureRow("Personalized moving plan built from your assessment")
                             featureRow("Most tasks, done for you. The rest, walked through step-by-step")
@@ -87,6 +90,8 @@ struct PaywallGateView: View {
                             purchaseSelected()
                         }
                         .animation(.none, value: selectedPlan)
+                        .disabled(isPurchaseDisabled)
+                        .opacity(isPurchaseDisabled ? 0.5 : 1.0)
                         .accessibilityIdentifier("paywall_purchase_button")
 
                         // Tertiary actions
@@ -143,24 +148,47 @@ struct PaywallGateView: View {
                 }
             }
         }
+        .task {
+            // Refresh trial eligibility on appear in case products loaded
+            // after the manager's initial check, or eligibility changed
+            // since last refresh.
+            await subscriptionManager.refreshTrialEligibility()
+        }
     }
 
-    // MARK: - CTA Label (dynamic based on plan and purchase state)
+    // MARK: - Computed UI State
 
+    /// Disable purchase button during in-flight purchase OR before products load.
+    /// Prevents tap-spam triggering multiple StoreKit purchase calls.
+    private var isPurchaseDisabled: Bool {
+        subscriptionManager.isPurchasing || !subscriptionManager.isLoaded
+    }
+
+    /// CTA label respects:
+    /// - in-flight purchase ("Processing...")
+    /// - selected plan
+    /// - trial eligibility (per Apple 2026 guidance, hide trial copy from
+    ///   users who have already consumed the introductory offer)
     private var ctaLabel: String {
         if subscriptionManager.isPurchasing {
             return "Processing..."
         }
+
         if selectedPlan == .annual {
-            // Check if annual plan has a free trial
-            if let product = subscriptionManager.product(for: .annual),
+            // Show trial copy ONLY if the product offers a free trial AND
+            // the current Apple ID is eligible for it.
+            if subscriptionManager.isEligibleForAnnualTrial,
+               let product = subscriptionManager.product(for: .annual),
                let intro = product.subscription?.introductoryOffer,
                intro.paymentMode == .freeTrial {
                 let days = intro.period.value
                 return "Start \(days)-Day Free Trial"
             }
-            return "Subscribe Yearly"
+            // Ineligible or no trial configured → straight subscribe copy.
+            let price = subscriptionManager.product(for: .annual)?.displayPrice ?? ""
+            return price.isEmpty ? "Subscribe Yearly" : "Subscribe for \(price)/yr"
         } else {
+            // Weekly never has a trial.
             let price = subscriptionManager.product(for: .weekly)?.displayPrice ?? ""
             return price.isEmpty ? "Subscribe Weekly" : "Subscribe for \(price)/wk"
         }
@@ -192,18 +220,7 @@ struct PaywallGateView: View {
 
         let title: String = plan == .annual ? "Yearly" : "Weekly"
         let duration: String = plan == .annual ? "/ yr" : "/ wk"
-        let subtext: String = {
-            if plan == .annual {
-                if let intro = product?.subscription?.introductoryOffer,
-                   intro.paymentMode == .freeTrial {
-                    let days = intro.period.value
-                    return "\(days)-day free trial"
-                }
-                return "Billed yearly"
-            } else {
-                return "Billed weekly"
-            }
-        }()
+        let subtext: String = pricingCardSubtext(for: plan, product: product)
         let badge: String? = plan == .annual ? "BEST VALUE" : nil
 
         let identifier = plan == .annual ? "paywall_plan_annual" : "paywall_plan_weekly"
@@ -268,6 +285,22 @@ struct PaywallGateView: View {
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier(identifier)
+    }
+
+    /// Returns the small text under the price on each pricing card.
+    /// Annual: shows trial copy ONLY when the user is eligible.
+    /// Weekly: never mentions a trial.
+    private func pricingCardSubtext(for plan: SubscriptionManager.ProductID, product: Product?) -> String {
+        if plan == .annual {
+            if subscriptionManager.isEligibleForAnnualTrial,
+               let intro = product?.subscription?.introductoryOffer,
+               intro.paymentMode == .freeTrial {
+                let days = intro.period.value
+                return "\(days)-day free trial"
+            }
+            return "Billed yearly"
+        }
+        return "Billed weekly"
     }
 
     // MARK: - Purchase

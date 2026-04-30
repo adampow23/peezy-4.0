@@ -61,19 +61,17 @@ struct InventoryFlowView: View {
                             }
                         )
 
-                    // ── Camera ──
-                    case .scanning(let roomName):
-                        InventoryCameraView(
-                            roomName: roomName,
-                            onComplete: { frames in
-                                Task {
-                                    await sessionManager.handleFramesExtracted(frames, roomName: roomName)
-                                }
-                            },
-                            onCancel: {
-                                sessionManager.state = .roomList
-                            }
-                        )
+                        // ── Camera ──
+                                            case .scanning(let roomName):
+                                                InventoryCameraView(
+                                                    roomName: roomName,
+                                                    onComplete: { frames in
+                                                        sessionManager.handleFramesExtracted(frames, roomName: roomName)
+                                                    },
+                                                    onCancel: {
+                                                        sessionManager.state = .roomList
+                                                    }
+                                                )
 
                     // ── Processing ──
                     case .processing(_, let progress):

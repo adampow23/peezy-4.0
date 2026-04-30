@@ -6,7 +6,8 @@
 //    Stage 1 — GeneratingView (polls generated task count)
 //    Stage 2 — ReadyView (checkmark + "See Your Custom Plan")
 //    Stage 3 — SummaryView (confetti + task count + "Let's Get Started")
-//              → routes directly to main app
+//    Stage 4 — PaywallGateView (single-screen subscription paywall)
+//              → Skipped entirely for users with an active subscription
 //
 //  Presented via .fullScreenCover from AssessmentFlowView when coordinator.isComplete = true.
 //  Only one stage renders at a time via a switch — no overlapping ZStacks.
@@ -25,8 +26,7 @@ struct CompletionFlowView: View {
         case generating = 0
         case ready = 1
         case summary = 2
-        case paywall = 3
-        case paywallGate = 4
+        case paywallGate = 3
 
         static func < (lhs: Stage, rhs: Stage) -> Bool {
             lhs.rawValue < rhs.rawValue
@@ -43,6 +43,17 @@ struct CompletionFlowView: View {
         guard newStage.rawValue > stage.rawValue else { return }
         withAnimation(reduceMotion ? .easeOut(duration: 0.3) : .easeInOut(duration: 0.5)) {
             stage = newStage
+        }
+    }
+
+    /// Called from SummaryView when the user taps "Let's Get Started".
+    /// Active subscribers bypass the paywall entirely; everyone else
+    /// advances to the paywall gate.
+    private func handleSummaryGetStarted() {
+        if subscriptionManager.isSubscribed {
+            routeToMainApp()
+        } else {
+            advanceStage(to: .paywallGate)
         }
     }
 
@@ -67,28 +78,22 @@ struct CompletionFlowView: View {
                             }
                         )
                         .transition(stageTransition)
-                        
+
                     case .ready:
                         ReadyView(onContinue: {
                             advanceStage(to: .summary)
                         })
                         .transition(stageTransition)
-                        
+
                     case .summary:
                         SummaryView(
                             userName: coordinator.dataManager.userName,
                             taskCount: taskCount,
                             onGetStarted: {
-                                advanceStage(to: .paywall)
+                                handleSummaryGetStarted()
                             }
                         )
                         .transition(stageTransition)
-
-                    case .paywall:
-                        PaywallValueView(onContinue: {
-                            advanceStage(to: .paywallGate)
-                        })
-                        .transition(paywallTransition)
 
                     case .paywallGate:
                         PaywallGateView(onDismiss: {
@@ -106,11 +111,11 @@ struct CompletionFlowView: View {
     }
 
     // MARK: - Transitions
-    
+
     private var stageTransition: AnyTransition {
         .opacity
     }
-    
+
     // Traditional slide for paywall flows
     private var paywallTransition: AnyTransition {
         .asymmetric(

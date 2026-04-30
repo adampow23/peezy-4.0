@@ -51,6 +51,12 @@ class SubscriptionManager: ObservableObject {
     @Published var purchaseError: PurchaseError? = nil
     @Published var isLoaded: Bool = false
 
+    /// Whether the current Apple ID is eligible for the annual product's
+    /// introductory free-trial offer. Refreshed after products load and
+    /// after subscription status changes. Apple requires hiding free-trial
+    /// copy from users who have already consumed the offer.
+    @Published var isEligibleForAnnualTrial: Bool = false
+
     // MARK: - Subscription Status
 
     enum SubscriptionStatus: Equatable {
@@ -111,6 +117,7 @@ class SubscriptionManager: ObservableObject {
         Task {
             await loadProducts()
             await updateSubscriptionStatus()
+            await refreshTrialEligibility()
         }
     }
 
@@ -153,6 +160,7 @@ class SubscriptionManager: ObservableObject {
                 switch verification {
                 case .verified(let transaction):
                     await updateSubscriptionStatus()
+                    await refreshTrialEligibility()
 
                     // Fire-and-forget server sync
                     Task { await syncToServer(transaction: transaction) }
@@ -194,9 +202,15 @@ class SubscriptionManager: ObservableObject {
     // MARK: - Restore Purchases
 
     func restorePurchases() async {
+        // Clear any stale error from a previous purchase attempt so the
+        // settings restore success heuristic (purchaseError == nil) reads
+        // the result of THIS restore call only.
+        purchaseError = nil
+
         do {
             try await AppStore.sync()
             await updateSubscriptionStatus()
+            await refreshTrialEligibility()
         } catch {
             #if DEBUG
             print("Restore failed: \(error)")
@@ -255,6 +269,22 @@ class SubscriptionManager: ObservableObject {
         }
     }
 
+    // MARK: - Trial Eligibility
+
+    /// Refreshes `isEligibleForAnnualTrial` from StoreKit. Apple requires
+    /// hiding free-trial copy from users who are not eligible for the
+    /// introductory offer (e.g., users who have previously subscribed in
+    /// the same subscription group). Called after products load, after
+    /// subscription status changes, and on demand from views.
+    func refreshTrialEligibility() async {
+        guard let annual = product(for: .annual) else {
+            isEligibleForAnnualTrial = false
+            return
+        }
+        let eligible = await annual.subscription?.isEligibleForIntroOffer ?? false
+        isEligibleForAnnualTrial = eligible
+    }
+
     // MARK: - Transaction Listener
 
     private func listenForTransactions() -> Task<Void, Error> {
@@ -263,6 +293,7 @@ class SubscriptionManager: ObservableObject {
                 guard case .verified(let transaction) = result else { continue }
 
                 await self.updateSubscriptionStatus()
+                await self.refreshTrialEligibility()
                 await self.syncToServer(transaction: transaction)
                 await transaction.finish()
             }

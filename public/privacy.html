@@ -18,7 +18,7 @@
 <body>
 <h1>Privacy Policy</h1>
 <p><strong>Peezy — AI Moving Concierge</strong></p>
-<p class="meta">Effective Date: March 28, 2026 | Last Updated: March 28, 2026</p>
+<p class="meta">Effective Date: April 28, 2026 | Last Updated: April 28, 2026</p>
 <p>Peezy ("we," "us," or "our") operates the Peezy mobile application (the "App"). This Privacy Policy explains how we collect, use, share, and protect your personal information when you use the App.</p>
 <p>By using Peezy, you agree to the practices described in this Privacy Policy. If you do not agree, please do not use the App.</p>
 <hr>
@@ -28,31 +28,43 @@
 <p><strong>Moving Assessment Data:</strong> When you complete the Peezy assessment, you provide details about your move, including your current and new addresses, move date, dwelling types, whether you rent or own, household composition, moving distance and preferences, and service preferences.</p>
 <p><strong>Financial and Service Preferences:</strong> Categories of financial institutions, healthcare providers, fitness memberships, and insurance policies you use. We collect category types such as "bank account" or "dentist," not account numbers or login credentials.</p>
 <p><strong>Workflow Responses:</strong> When you complete vendor qualification surveys within the App, we collect your responses to match you with appropriate service providers.</p>
+<p><strong>Support Messages:</strong> When you message us through the in-app support chat, we collect the content of those messages along with your user ID and name to respond to your request.</p>
 <h3>1.2 Information Collected Automatically</h3>
 <p><strong>Device Information:</strong> Device model, operating system version, unique device identifiers, and App version.</p>
 <p><strong>Usage Data:</strong> How you interact with the App, including which tasks you complete, snooze, or skip, features you use, and session duration.</p>
-<p><strong>Location Data:</strong> We use your current and new addresses (which you provide) to calculate moving distance, determine interstate moves, and identify available service providers in your area. We use Apple's MapKit and Core Location services to geocode addresses you enter. We do not track your real-time GPS location in the background.</p>
+<p><strong>Address Data:</strong> We use your current and new addresses (which you type into the App) to calculate moving distance, determine interstate moves, and identify available service providers in your area. We use Apple's address autocomplete (MKLocalSearchCompleter) and Apple's geocoder (CLGeocoder) to convert the addresses you type into coordinates for distance calculation. <strong>We do not request location permissions or access your device's GPS at any time.</strong></p>
 <p><strong>Crash and Performance Data:</strong> If the App crashes, Firebase Crashlytics collects crash logs, device state, and stack traces to help us diagnose and fix issues.</p>
-<h3>1.3 Information We Do Not Collect</h3>
-<p>We do not collect Social Security numbers, bank account numbers, credit card numbers, login credentials for your financial or healthcare accounts, health records or medical data, or biometric data. Peezy uses your device camera for the optional inventory scanning feature. Camera access is requested only when you choose to scan a room. Images are processed using AI services to identify furniture and household items.</p>
+<h3>1.3 Inventory Scanner — Camera and AI Processing</h3>
+<p>Peezy includes an optional inventory scanning feature that uses your device camera to record short video pans of each room. Camera access is requested only when you choose to scan a room.</p>
+<p><strong>How the scanner works:</strong> The App extracts still frames from your scan and uploads them to our backend (Firebase Storage) for processing. From there, the frames are sent to Anthropic, our third-party AI provider, which uses Claude (a vision AI model) to identify furniture and household items in each image. Anthropic returns a structured inventory list, which we save to your account.</p>
+<p><strong>Anthropic data handling:</strong> Per Anthropic's commercial API terms, your scan frames are not retained on Anthropic's servers after processing and are not used to train Anthropic's AI models. Anthropic acts as a data processor on our behalf. For details, see Anthropic's privacy policy at <a href="https://anthropic.com/legal/privacy">anthropic.com/legal/privacy</a> and their commercial terms at <a href="https://anthropic.com/legal/commercial-terms">anthropic.com/legal/commercial-terms</a>.</p>
+<p><strong>Frame storage on our servers:</strong> We retain scan frames in Firebase Storage only as long as needed to complete processing — typically minutes. After your inventory is generated, we delete the frames from our servers. The resulting inventory list (item names, categories, fragility flags) is retained with your account.</p>
+<h3>1.4 Information We Do Not Collect</h3>
+<p>We do not collect Social Security numbers, bank account numbers, credit card numbers, login credentials for your financial or healthcare accounts, health records or medical data, or biometric data.</p>
 <hr>
 <h2>2. How We Use Your Information</h2>
-<p>We use the information we collect to provide and operate the App, including generating your personalized moving task list, connecting you with vetted service providers, sending you task reminders, and managing your account and subscription. We also use your information to improve the App by analyzing usage patterns, monitoring stability through crash reporting, and understanding which features are most helpful. Additionally, we use your information to communicate with you by responding to support requests, sending service-related notifications, and notifying you about important changes.</p>
+<p>We use the information we collect to provide and operate the App, including generating your personalized moving task list, connecting you with vetted service providers, sending you task reminders, processing your inventory scans, and managing your account and subscription.</p>
+<p>We also use your information to improve the App by analyzing usage patterns, monitoring stability through crash reporting, and understanding which features are most helpful.</p>
+<p>We use your information to communicate with you by responding to support requests, sending service-related notifications, and notifying you about important changes.</p>
 <hr>
 <h2>3. How We Share Your Information</h2>
 <h3>3.1 Firebase (Google)</h3>
-<p>We use Google's Firebase platform for authentication, data storage (Firestore), server-side processing (Cloud Functions), and crash reporting (Crashlytics). Google processes this data as a data processor on our behalf. For details, see <a href="https://firebase.google.com/support/privacy">Firebase Privacy and Security</a>.</p>
-<h3>3.2 Service Providers (Vendor Coordination)</h3>
+<p>We use Google's Firebase platform for authentication, data storage (Firestore), file storage (Cloud Storage), server-side processing (Cloud Functions), and crash reporting (Crashlytics). Google processes this data as a data processor on our behalf. For details, see <a href="https://firebase.google.com/support/privacy">Firebase Privacy and Security</a>.</p>
+<h3>3.2 Anthropic (AI Inventory Processing)</h3>
+<p>When you use Peezy's inventory scanner, video frames captured during your room scan are sent to Anthropic, PBC, our AI provider, for processing by their Claude vision model. Anthropic processes the images to identify furniture and household items, then returns the structured results to Peezy. Anthropic acts as a data processor on our behalf and does not retain your data or use it to train AI models, per their commercial API terms. For details, see Anthropic's privacy policy at <a href="https://anthropic.com/legal/privacy">anthropic.com/legal/privacy</a>.</p>
+<h3>3.3 Service Providers (Vendor Coordination)</h3>
 <p>When you complete a vendor workflow, we share relevant preferences with our support team to coordinate services on your behalf. We share only the information necessary to match you with appropriate providers. We do not share your information with vendors until you explicitly request a service through the App.</p>
-<h3>3.3 Payment Processing</h3>
+<h3>3.4 Payment Processing</h3>
 <p>Subscription payments are processed entirely by Apple through the App Store. We do not collect, process, or store your payment card information.</p>
-<h3>3.4 Legal Requirements</h3>
+<h3>3.5 Legal Requirements</h3>
 <p>We may disclose your information if required by law, in response to valid legal process, to protect the rights or safety of Peezy, our users, or others, or to enforce our Terms of Service.</p>
-<h3>3.5 No Sale of Personal Data</h3>
+<h3>3.6 No Sale of Personal Data</h3>
 <p>We do not sell, rent, or trade your personal information to third parties for marketing, advertising, or any other purpose.</p>
 <hr>
 <h2>4. Data Retention</h2>
-<p><strong>Account and assessment data</strong> is retained for as long as your account is active. <strong>Crash reports</strong> are retained by Firebase Crashlytics for 90 days. <strong>Task and workflow data</strong> is retained for the duration of your active account.</p>
+<p>Account and assessment data is retained for as long as your account is active.</p>
+<p>Inventory scan video frames are deleted from our servers after AI processing completes (typically within minutes). Only the resulting inventory list (item names, categories, fragility flags) is retained with your account.</p>
+<p>Crash reports are retained by Firebase Crashlytics for 90 days. Task and workflow data is retained for the duration of your active account. Support chat messages are retained for the duration of your active account so we can reference past conversations when helping you.</p>
 <p>When you request account deletion, we delete your personal data within 30 days, except where retention is required by law.</p>
 <hr>
 <h2>5. Data Security</h2>
@@ -61,18 +73,18 @@
 <hr>
 <h2>6. Your Rights and Choices</h2>
 <h3>6.1 Account Deletion</h3>
-<p>You can delete your account and all associated personal data directly within the App by going to Settings and selecting "Delete Account." This will permanently remove your account information, assessment data, tasks, workflow responses, and preferences. Account deletion is processed within 30 days. If you have an active subscription, you will need to cancel it through Apple's subscription management.</p>
+<p>You can delete your account and all associated personal data directly within the App by going to Settings and selecting "Delete Account." This will permanently remove your account information, assessment data, tasks, workflow responses, inventory data, support chat history, and preferences. Account deletion is processed within 30 days. If you have an active subscription, you will need to cancel it through Apple's subscription management.</p>
 <h3>6.2 Access and Correction</h3>
 <p>You can view and update your assessment data, move details, and preferences within the App at any time.</p>
 <hr>
 <h2>7. State Privacy Rights</h2>
 <h3>7.1 California Residents (CCPA/CPRA)</h3>
-<p>If you are a California resident, you have the right to know what personal information we collect, use, and disclose; to request deletion of your personal information; to opt out of the sale of personal information (we do not sell your data); and to non-discrimination for exercising your rights. Contact us at <a href="mailto:privacy@peezy.move">privacy@peezy.move</a>.</p>
+<p>If you are a California resident, you have the right to know what personal information we collect, use, and disclose; to request deletion of your personal information; to opt out of the sale of personal information (we do not sell your data); and to non-discrimination for exercising your rights. Contact us at <a href="mailto:adampow23@gmail.com">adampow23@gmail.com</a>.</p>
 <h3>7.2 Other U.S. State Privacy Laws</h3>
-<p>Residents of Virginia, Colorado, Connecticut, Utah, Texas, Oregon, Montana, and other states with comprehensive privacy laws have similar rights. Contact us at <a href="mailto:privacy@peezy.move">privacy@peezy.move</a>.</p>
+<p>Residents of Virginia, Colorado, Connecticut, Utah, Texas, Oregon, Montana, and other states with comprehensive privacy laws have similar rights. Contact us at <a href="mailto:adampow23@gmail.com">adampow23@gmail.com</a>.</p>
 <hr>
 <h2>8. Children's Privacy</h2>
-<p>Peezy is not directed to children under the age of 13. We do not knowingly collect personal information from children. If we learn that we have collected personal information from a child, we will take steps to delete it promptly. Contact us at <a href="mailto:privacy@peezy.move">privacy@peezy.move</a>.</p>
+<p>Peezy is not directed to children under the age of 13. We do not knowingly collect personal information from children. If we learn that we have collected personal information from a child, we will take steps to delete it promptly. Contact us at <a href="mailto:adampow23@gmail.com">adampow23@gmail.com</a>.</p>
 <hr>
 <h2>9. International Users</h2>
 <p>Peezy is currently designed for users in the United States. If you access the App from outside the United States, your information may be transferred to and processed in the United States.</p>
@@ -81,6 +93,6 @@
 <p>We may update this Privacy Policy from time to time. We will notify you of material changes by posting the updated Policy within the App and updating the "Last Updated" date.</p>
 <hr>
 <h2>11. Contact Us</h2>
-<p>Email: <a href="mailto:privacy@peezy.move">privacy@peezy.move</a><br>Support: <a href="mailto:support@peezy.move">support@peezy.move</a></p>
+<p>Email: <a href="mailto:adampow23@gmail.com">adampow23@gmail.com</a><br>Support: <a href="mailto:adampow23@gmail.com">adampow23@gmail.com</a></p>
 </body>
 </html>
