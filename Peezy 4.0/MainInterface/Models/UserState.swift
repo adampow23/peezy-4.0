@@ -164,11 +164,18 @@ struct UserState: Codable {
             self.moveDistance = MoveDistance(rawValue: normalized)
         }
 
-        // Cities (not in current assessment, but keep for future)
-        self.originCity = assessment["originCity"] as? String
-        self.originState = assessment["originState"] as? String
-        self.destinationCity = assessment["destinationCity"] as? String
-        self.destinationState = assessment["destinationState"] as? String
+        // City/state — parsed from the single address strings the assessment
+        // persists ("currentAddress"/"newAddress"); no per-component keys exist
+        if let current = assessment["currentAddress"] as? String {
+            let parsed = Self.cityAndState(fromAddress: current)
+            self.originCity = parsed.city
+            self.originState = parsed.state
+        }
+        if let new = assessment["newAddress"] as? String {
+            let parsed = Self.cityAndState(fromAddress: new)
+            self.destinationCity = parsed.city
+            self.destinationState = parsed.state
+        }
 
         // Property info - AssessmentDataManager saves as "currentDwellingType" and "newDwellingType"
         if let type = assessment["currentDwellingType"] as? String {
@@ -228,6 +235,35 @@ struct UserState: Codable {
         }
     }
     
+    // MARK: - Address Parsing
+
+    /// Extracts (city, state) from the comma-separated US address strings the
+    /// assessment stores: "170 Main St, Los Altos, CA, 94022" (canonical
+    /// AddressSearchManager.formatAddress output) or the completer fallback
+    /// "170 Main St, Los Altos, CA 94022, United States". The state is the
+    /// last two-letter uppercase token optionally followed by a zip; the city
+    /// is the component before it. Returns nils when no state is found.
+    private static func cityAndState(fromAddress address: String) -> (city: String?, state: String?) {
+        let parts = address
+            .components(separatedBy: ",")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+
+        for (index, part) in parts.enumerated().reversed() {
+            let tokens = part.split(separator: " ")
+            guard let state = tokens.first,
+                  state.count == 2,
+                  state.allSatisfy({ $0.isLetter && $0.isUppercase }),
+                  tokens.dropFirst().allSatisfy({ token in
+                      token.allSatisfy { $0.isNumber || $0 == "-" }
+                  })
+            else { continue }
+
+            let city = index > 0 && !parts[index - 1].isEmpty ? parts[index - 1] : nil
+            return (city, String(state))
+        }
+        return (nil, nil)
+    }
+
     // MARK: - Convert to Dictionary for Firebase
     
     func toDictionary() -> [String: Any] {
