@@ -17,6 +17,12 @@ service cloud.firestore {
       allow read, write: if request.auth != null && request.auth.uid == userId;
     }
 
+    // Per-user knowledge doc (assessment data keyed by uid) — written by
+    // AssessmentDataManager.saveAssessment and edited from Settings
+    match /userKnowledge/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
     // Task catalog — readable by any authenticated user
     match /taskCatalog/{document=**} {
       allow read: if request.auth != null;
