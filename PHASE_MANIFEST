@@ -1,10 +1,9 @@
-# Spec 04 Phase E — Dose freeze + reflect-backs (PERIPHERY)
+# Spec 04 Phase A validator follow-up — setStage empty-taskId guard
 # EDIT SITES
 tasks/todo.md
-Peezy 4.0/MainInterface/Models/DailyDoseEngine.swift
-Peezy 4.0/MainInterface/Models/PeezyHomeViewModel.swift
-Peezy 4.0/Assessment/AssessmentModels/AssessmentCoordinator.swift
-Peezy 4.0/Assessment/AssessmentModels/AssessmentFlowView.swift
-# READ SITES (audited, not edited)
-# Peezy 4.0/MainInterface/Views/PeezyHomeView.swift — dose counter/done-today consumers of dailyTarget
-# Peezy 4.0/Assessment/AssessmentModels/AssessmentDataManager.swift — beat condition fields
+Peezy 4.0/Tasks/FlowEngine/FlowEngineView.swift
+Peezy 4.0/MainInterface/Models/TaskActionService.swift
+# READ SITES
+# validation_A report — crash_manage_bank_121212.ips: Firestore documentWithPath: ObjC
+# exception (uncatchable in Swift) when taskId is empty; production always passes a real
+# taskId, the DEBUG harness may not.

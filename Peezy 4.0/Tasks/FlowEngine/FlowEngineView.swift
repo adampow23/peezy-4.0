@@ -292,7 +292,10 @@ struct FlowEngineView: View {
         path.append(nextId)
         persistProgress(answerKey: nil, values: nil)
 
-        if let stageRaw = nextStep.stage, let stage = TaskStage(rawValue: stageRaw) {
+        // Empty-taskId guard (Phase A validator finding): Firestore's
+        // documentWithPath: raises an uncatchable ObjC exception on an empty
+        // segment — the harness can run without a task doc.
+        if !taskId.isEmpty, let stageRaw = nextStep.stage, let stage = TaskStage(rawValue: stageRaw) {
             let id = taskId
             Task { await actionService.setStage(taskId: id, stage: stage) }
         }

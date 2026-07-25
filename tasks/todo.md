@@ -81,7 +81,41 @@ fresh-context validator (bounded retry 2). PERIPHERY D–F. Deploys: ONE batch a
       Harness lesson already folded in: stage defs JSON inside the app container
       (host-path sync read blocks first render on TCC).
 
-## Phase B: Catalog v2 + row-generation (CORE) — todo (own manifest at start)
+## Build status (writer side, evidence in commits + this session)
+
+- Phase B — BUILT + COMMITTED (16217a9). Catalog v2 = 46 rows (32 kept + 9 merges + 5 adds;
+  reweights verified already live). Definitions v2 = 25. Engine rows: forEachRow expansion
+  (2 bank taps → bank_credit_union_1/2 instances walked live in-sim), requiresRow skip
+  (DMV registration aliased away with no rows — walked live), FieldPath keeps dotted answer
+  keys flat (Firestore evidence). In-app flows built. Incremental add-only generation built.
+- Phase C — BUILT + COMMITTED (ffbbc78) + DEPLOY BATCH DONE. Router = thin resolver;
+  38 screens + TaskFlowDismissButton + newFlowIds + skipCurrentTask + rowIdentity fossil
+  deleted (−8,164 lines). TaskStatus.matchingInProgress added (the string actually written;
+  spec's pending_matching never lands on task docs — discrepancy cited). index.js:225 drops
+  phantom 'pending_matching'. DEPLOYED (sanctioned batch): getWorkflowQualifying +
+  submitWorkflowAnswers + peezyRespond (targeted — full deploy blocked on orphaned cloud
+  resetInventory function, flagged for Adam, NOT deleted); catalog v2 reseed (46, no ghosts);
+  flowDefinitions seed (25, full coverage). Post-deploy live walk: schedule_time_off_work
+  renders via engine from Firestore definition through the real app path; scan_inventory
+  bespoke via CaptureRegistry; unknown id → coming-right-up card (verified pre-deploy).
+- Phase D — BUILT + COMMITTED (a27694f). PaywallPolicy + PaywallGateSheet (the one
+  sanctioned second call site); gates: engine concierge submissions + FindMovers/FindCleaners
+  BOOK submissions.
+- Phase E — BUILT + COMMITTED (11e62e2). Dose freeze verified live: users/{uid}.dailyDose =
+  {date 2026-07-25, 4 taskIds} written on first load. Reflect-backs: sequence-relative beat
+  resolver + banner (validator screenshots pending).
+
+## Validation ledger
+
+- Phase A validator: DEFERRED (subagent session limit; resets 12:40 CT). Runs FIRST
+  (needs the pre-retake fixture + old binary from a6c04cb for side-by-sides).
+- Phases B+C+D+E validator: runs SECOND — assessment retake IS the spec's migration plan;
+  covers v2 generation evidence, full-catalog walk, 2-bank rows, ADD_NEW_ADDRESS distance
+  recompute, dose-freeze stability under mid-day insert, banners, paywall gates.
+- Cleanup done this session: 3 validator-orphan task docs (ARRANGE_PARKING_OLD, MANAGE_BANK,
+  UPDATE_INVESTMENT) deleted — fixture back to 16 before the retake.
+
+## Phase B: Catalog v2 + row-generation (CORE) — original plan (superseded by status above)
 
 Merges per sheet (9 targets), conditions/urgencies per sheet notes; BOOK_CLEANERS 25→55,
 TRANSFER_PHARMACY 55→75; adds ADD_NEW_ADDRESS/CONFIRM_MOVE_DATE (in-app flows reusing Settings

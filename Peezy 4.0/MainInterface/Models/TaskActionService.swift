@@ -9,7 +9,9 @@ struct TaskActionService {
     /// Persists the workflow spine stage on the task doc — direct write,
     /// matching the existing status-write pattern (no callable).
     func setStage(taskId: String, stage: TaskStage) async {
-        guard let userId = Auth.auth().currentUser?.uid else { return }
+        // Empty path segments raise uncatchable ObjC exceptions in Firestore —
+        // guard like the sibling flow-state writes do.
+        guard let userId = Auth.auth().currentUser?.uid, !taskId.isEmpty else { return }
         let db = Firestore.firestore()
         do {
             try await db.collection("users").document(userId).collection("tasks")
