@@ -4,10 +4,9 @@
 //
 //  Config-driven flow model (Spec 04 Phase A). One definition per workflowId,
 //  authored in functions/flowDefinitionsData.json, seeded to the Firestore
-//  `flowDefinitions` collection, and served to the client through the deployed
-//  getWorkflowQualifying callable (deployed rules have no client read on
-//  flowDefinitions; the callable is the sanctioned transport until the
-//  reconciled rules deploy — see Spec 04 Phase A report).
+//  `flowDefinitions` collection. Signed-in clients read definitions directly;
+//  getWorkflowQualifying remains a one-release fallback while the rules change
+//  rolls out (Spec 05 Phase 0).
 //
 //  Expressiveness is capped at what the 38 templated flow screens actually
 //  use: nine step kinds, value-keyed branches, and one conditional branch
@@ -16,6 +15,7 @@
 //
 
 import Foundation
+import FirebaseFirestore
 import FirebaseFunctions
 
 // MARK: - Flow Definition
@@ -221,10 +221,8 @@ extension FlowDefinition {
 
 // MARK: - Definition Store
 
-/// In-memory definition cache + callable fetch. Definitions live in the
-/// Firestore `flowDefinitions` collection; the client fetches them through
-/// getWorkflowQualifying (Firestore-first lookup, Phase B server edit)
-/// because the deployed rules do not grant a direct client read.
+/// In-memory definition cache + direct Firestore fetch. The callable remains a
+/// one-release fallback for a missing or failed direct read.
 @MainActor
 final class FlowDefinitionStore {
     static let shared = FlowDefinitionStore()
@@ -239,12 +237,34 @@ final class FlowDefinitionStore {
         cache[definition.workflowId] = definition
     }
 
-    /// Returns the cached definition or fetches it via the callable.
+    /// Returns the cached definition or reads it directly from Firestore.
     /// Returns nil when the server has no definition for this workflowId —
     /// the router renders the coming-right-up card in that case.
     func definition(for workflowId: String) async -> FlowDefinition? {
         if let hit = cache[workflowId] { return hit }
+        guard !workflowId.isEmpty else { return nil }
 
+        do {
+            let snapshot = try await Firestore.firestore()
+                .collection("flowDefinitions")
+                .document(workflowId)
+                .getDocument()
+            guard snapshot.exists else {
+                print("⚠️ Flow definition missing from Firestore; using callable fallback: \(workflowId)")
+                return await definitionFromCallable(workflowId: workflowId)
+            }
+            let definition = try snapshot.data(as: FlowDefinition.self)
+            cache[workflowId] = definition
+            print("✅ Flow definition direct Firestore read: \(workflowId)")
+            return definition
+        } catch {
+            print("⚠️ Flow definition direct read failed; using callable fallback for \(workflowId): \(error.localizedDescription)")
+        }
+
+        return await definitionFromCallable(workflowId: workflowId)
+    }
+
+    private func definitionFromCallable(workflowId: String) async -> FlowDefinition? {
         do {
             let callable = Functions.functions().httpsCallable("getWorkflowQualifying")
             let result = try await callable.call(["workflowId": workflowId])
@@ -255,9 +275,10 @@ final class FlowDefinitionStore {
             let json = try JSONSerialization.data(withJSONObject: definitionDict)
             let definition = try JSONDecoder().decode(FlowDefinition.self, from: json)
             cache[workflowId] = definition
+            print("⚠️ Flow definition callable fallback used: \(workflowId)")
             return definition
         } catch {
-            print("⚠️ Flow definition fetch failed for \(workflowId): \(error.localizedDescription)")
+            print("⚠️ Flow definition fallback failed for \(workflowId): \(error.localizedDescription)")
             return nil
         }
     }

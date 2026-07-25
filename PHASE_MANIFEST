@@ -1,8 +1,39 @@
-# Spec 04 Phase F — SESSION_NOTES + doc sync (PERIPHERY)
+# Spec 05 Phase 0 — Housekeeping batch (CORE)
+# RULES DEPLOY GATE: no `firebase deploy --only firestore:rules` until Adam
+# explicitly approves the presented local-vs-deployed diff in this session.
 # EDIT SITES
-tasks/todo.md
-CLAUDE.md
-peezy-conventions-v2.md
+PHASE_MANIFEST
+firestore.rules
+# The remaining edit sites are deliberately deferred until the rules-deploy gate
+# is approved. They are listed now so the complete Phase 0 scope is explicit.
+Peezy 4.0/Tasks/FlowEngine/FlowEngineView.swift
+Peezy 4.0/Tasks/FlowEngine/FlowDefinition.swift
+Peezy 4.0/Tasks/Task Card Components/TaskFlowBusinessSearchCard.swift
+Peezy 4.0/MainInterface/Models/DailyDoseEngine.swift
+Peezy 4.0/Menu/PeezySettingsView.swift
+Peezy 4.0/Assessment/AssessmentModels/AssessmentCoordinator.swift
 # READ SITES
-# functions/taskCatalogData.json — v2 counts for the corrected facts
-# validator reports (scratchpad validation_A/ + validation_BCDE/) — outcomes folded into docs
+# peezy-conventions-v2.md — deployed-rules and frozen-region constraints
+# peezy-v1-architecture.md — pricing and assessment-tier contracts
+# peezy-execution-protocol.md — validation protocol
+# peezy-v1-catalog-sheet.md — movers scope context
+# peezy-build-spec-05.md — Phase 0 acceptance criteria
+# CLAUDE.md — repository instructions and build command
+# firebase.json — local rules deployment configuration
+# functions/serviceAccountKey.json — Rules REST API credentials (read-only)
+# functions/package.json — Firebase CLI/function source context
+# functions/index.js — deployed-function inventory context
+# functions/joinWaitlist.js — deployed waitlist collection behavior
+# functions/flowDefinitionsData.json — business-search flow used for visual validation
+# Peezy 4.0/MainInterface/Models/PeezyHomeViewModel.swift — retake/daily-dose caller context
+# Peezy 4.0/MainInterface/Views/AppRootView.swift — retake notification receiver
+# Peezy 4.0/Menu/PeezySettingsView.swift — retake notification sender
+# Peezy 4.0/Tasks/Task Card Components/TaskFlowConfirmAddressCard.swift — related dropdown behavior
+# Peezy 4.0/Tasks/Task Card Components/TaskFlowStack.swift — card height allocation for dropdown diagnosis
+# Peezy 4.0/Assessment/PeezyTheme/PeezyCardChrome.swift — card chrome height constraints for dropdown diagnosis
+# Peezy 4.0/Tasks/FlowEngine/FlowEngineHarness.swift — DEBUG flow-entry path for visual validation
+# Peezy 4.0UITests/T04_TaskFlowTests.swift — existing live-flow UI test coverage
+# Peezy 4.0UITests/E2ETestBase.swift — test launch and screenshot harness
+# functions/testProfile/seedTestUser.js — isolated E2E data reseed for retake validation
+# functions/testProfile/teardownTestUser.js — E2E test-account cleanup contract
+# Peezy 4.0/Documents/GoogleService-Info.plist — Firebase API key for authenticated read-only rules validation; frozen, never edited

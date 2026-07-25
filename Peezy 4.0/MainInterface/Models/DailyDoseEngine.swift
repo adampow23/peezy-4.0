@@ -40,6 +40,23 @@ struct DailyDoseEngine {
         }
     }
 
+    /// Removes the old plan's frozen dose and its local progress counters so a
+    /// retake starts with the regenerated plan rather than same-day residue.
+    func resetForRetake(userId: String) async throws {
+        guard !userId.isEmpty else { return }
+
+        try await Firestore.firestore()
+            .collection("users")
+            .document(userId)
+            .updateData(["dailyDose": FieldValue.delete()])
+
+        let defaults = UserDefaults.standard
+        let prefix = "peezy.\(userId).dailyDose."
+        defaults.removeObject(forKey: "\(prefix)completedCount")
+        defaults.removeObject(forKey: "\(prefix)lastDate")
+        defaults.removeObject(forKey: "\(prefix)firstLaunchDate")
+    }
+
     func bufferDays(daysUntilMove: Int) -> Int {
         if daysUntilMove <= 10 { return 0 }
         if daysUntilMove <= 14 { return 3 }

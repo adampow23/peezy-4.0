@@ -35,11 +35,38 @@ service cloud.firestore {
       allow read: if request.auth != null;
     }
 
+    // Marketing-site waitlist — public unauthenticated create only.
+    // Created by peezy-site (Next.js) via Firestore client SDK.
+    match /waitlist/{doc} {
+      allow create: if
+        request.resource.data.keys().hasOnly(
+          ['email', 'source', 'timestamp', 'userAgent']
+        )
+        && request.resource.data.keys().hasAll(
+          ['email', 'source', 'timestamp', 'userAgent']
+        )
+        && request.resource.data.email is string
+        && request.resource.data.email.size() >= 5
+        && request.resource.data.email.size() <= 254
+        && request.resource.data.email.matches('.+@.+\\..+')
+        && request.resource.data.source in ['hero', 'footer']
+        && request.resource.data.userAgent is string
+        && request.resource.data.userAgent.size() <= 1024
+        && request.resource.data.timestamp == request.time;
+      allow read, update, delete: if false;
+    }
+
     // Marketing-site waitlist signups — writes only from the joinWaitlist
     // Cloud Function (via Admin SDK, which bypasses these rules).
     // No client read or write access.
     match /waitlistSignups/{document=**} {
       allow read, write: if false;
+    }
+
+    // Config-driven workflows are readable by signed-in clients only.
+    // Definitions remain backend-owned: no client writes.
+    match /flowDefinitions/{document=**} {
+      allow read: if request.auth != null;
     }
   }
 }

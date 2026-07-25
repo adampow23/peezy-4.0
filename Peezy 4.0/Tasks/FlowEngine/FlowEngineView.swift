@@ -413,8 +413,8 @@ struct FlowEngineView: View {
 // MARK: - Flow Engine Loader
 
 /// Router terminal for data-driven flows (Spec 04 Phase C): fetches the
-/// definition (cache → getWorkflowQualifying callable) and hands off to the
-/// engine. Ids with no definition render the coming-right-up card — the
+/// definition (cache → direct Firestore → callable fallback) and hands off to
+/// the engine. Ids with no definition render the coming-right-up card — the
 /// permanent-spinner dead end (old PeezyHomeView behavior) is gone.
 struct FlowEngineLoaderView: View {
     let workflowId: String

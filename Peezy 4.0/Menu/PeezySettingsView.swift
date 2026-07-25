@@ -657,7 +657,11 @@ struct PeezySettingsView: View {
                 // 3. Delete userKnowledge doc
                 try? await db.collection("userKnowledge").document(uid).delete()
                 
-                // 4. Post notification — AppRootView will call checkAssessmentStatus(),
+                // 4. Clear the old plan's frozen dose and local counters before
+                // task regeneration can establish the fresh daily dose.
+                try await DailyDoseEngine().resetForRetake(userId: uid)
+
+                // 5. Post notification — AppRootView will call checkAssessmentStatus(),
                 //    find no assessment docs, and route to .needsAssessment
                 await MainActor.run {
                     isProcessing = false

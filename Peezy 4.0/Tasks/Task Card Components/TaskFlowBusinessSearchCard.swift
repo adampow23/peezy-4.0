@@ -126,10 +126,13 @@ struct TaskFlowBusinessSearchCard: View {
                     .padding(.horizontal, 24)
             }
 
-            // 2. Compressible middle — results or spacer
+            // 2. Flexible middle — results must claim the available card height
+            // while the keyboard padding raises the pinned search controls.
             if showResults {
                 resultsDropdown
                     .padding(.top, 16)
+                    .frame(maxHeight: .infinity)
+                    .layoutPriority(1)
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
             } else {
                 Spacer()
@@ -151,9 +154,9 @@ struct TaskFlowBusinessSearchCard: View {
         }
         .contentShape(Rectangle())
         .onTapGesture { isFieldFocused = false }
-        // UX Keyboard Fix: Raises bottom content inside the card when keyboard opens.
-        // The card frame stays locked via .ignoresSafeArea(.keyboard) on TaskFlowStack.
-        .padding(.bottom, isFieldFocused ? 210 : 24)
+        // Raise the pinned controls for the keyboard only while no dropdown is
+        // open. Results need that middle-card space to remain visible.
+        .padding(.bottom, isFieldFocused ? (showResults ? 48 : 210) : 24)
         .animation(.easeOut(duration: 0.25), value: showResults)
         .animation(.easeOut(duration: 0.25), value: isFieldFocused)
         .onAppear {
@@ -288,6 +291,7 @@ struct TaskFlowBusinessSearchCard: View {
             .padding(.horizontal, 24)
             .padding(.vertical, 8)
         }
+        .accessibilityIdentifier("flow.businessSearch.results")
     }
 }
 
