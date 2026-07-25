@@ -1,34 +1,23 @@
-# Spec 05 Phase A — Rate cards + vendors collection (CORE)
+# Spec 05 Phase B — Pricing engine (CORE)
 # EDIT SITES
 PHASE_MANIFEST
-firestore.rules
-functions/vendorsData.json
-functions/seedVendors.js
-Peezy 4.0/MainInterface/Models/Vendor.swift
-Peezy 4.0Tests/VendorTests.swift
+Peezy 4.0/MainInterface/Models/PricingConstants.swift
+Peezy 4.0/MainInterface/Models/PricingEngine.swift
+Peezy 4.0/MainInterface/Models/MoveScopeFactory.swift
+Peezy 4.0/MainInterface/Models/PricingCalibrationHarness.swift
+Tests/PricingEngineTests.swift
+Tests/PricingCalibrationRunner.swift
 # READ SITES
-# peezy-conventions-v2.md — vendor scope and deployed-data constraints
-# peezy-v1-architecture.md — §6 vendor/rate-card schema
+# peezy-conventions-v2.md — frozen-region and validation constraints
+# peezy-v1-architecture.md — §1, §6, and §9b pricing contracts
 # peezy-execution-protocol.md — CORE validation and commit protocol
-# peezy-v1-catalog-sheet.md — movers vertical context
-# peezy-build-spec-05.md — Phase A acceptance criteria
+# peezy-v1-catalog-sheet.md — movers scope context
+# peezy-build-spec-05.md — Phase B acceptance criteria
 # CLAUDE.md — repository instructions and build command
-# firebase.json — rules deployment configuration
-# functions/serviceAccountKey.json — Rules REST API credentials (read-only)
-# Peezy 4.0/Documents/GoogleService-Info.plist — Firebase API key for authenticated vendor read-back; frozen, never edited
-# functions/package.json — seeding runtime/dependency pattern
-# functions/index.js — Firebase Admin initialization pattern
-# functions/ — existing Firestore seed-script discovery
-# functions/getWorkflowQualifying.js — existing server-side flow data path
-# functions/workflowQualifying.js — callable data-source helper
-# functions/vendorCatalog.js — existing vendor catalog boundary
-# functions/seedTaskCatalog.js — batch seed-script pattern
-# functions/flowDefinitionsData.json — seed-data header/structure pattern
-# functions/taskCatalogData.json — JSON dataset convention
-# Tests/IntegrationTest.swift — Swift test execution pattern
-# Peezy 4.0.xcodeproj/project.pbxproj — read-only target/file-synchronization discovery; frozen, never edited
-# Peezy 4.0Tests/ — unit-test target discovery
-# Peezy 4.0Tests/Peezy_4_0Tests.swift — XCTest convention
-# Peezy 4.0Tests/MoveDistanceIntegrationTests.swift — XCTest convention
-# Tests/ — existing Swift test placement discovery
-# Peezy 4.0/ — existing models/service placement discovery
+# Peezy 4.0/MainInterface/Models/Vendor.swift — Phase A rate-card contract
+# Peezy 4.0/MainInterface/Models/PeezyIdentity.swift — identity address inputs
+# Peezy 4.0/Inventory/Models/InventoryModels.swift — inventory item/session contract
+# Peezy 4.0/Inventory/Models/InventorySessionManager.swift — inventory session access contract
+# Peezy 4.0/Assessment/AssessmentModels/AssessmentDataManager.swift — storage/bedroom input keys
+# Peezy 4.0/Assessment/AssessmentModels/AssessmentCoordinator.swift — assessment persistence context
+# Tests/ — standalone executable test convention
