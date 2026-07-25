@@ -28,12 +28,12 @@ Per-phase: PHASE_MANIFEST → build → xcodebuild → commit → fresh-context 
 - [x] Remove moveConcerns dict key + @Published + dead moveDate-context reference (zero catalog conditions reference it; functions/testProfile/seedTestUser.js:34 still seeds it — backend test fixture, out of client scope)
 - [x] sqft: already out of sequence, views already deleted (b851224) — evidence-only
 - [x] xcodebuild BUILD SUCCEEDED
-- [ ] Commit + validator
+- [x] Commit 2a0b67e; validator PASS 3/3 (screen-by-screen evidence, condition-level task-count reconciliation 19−5+2=16, both pending flags in both docs)
 
 ## Phase C: reweights + reseed
-- [ ] BOOK_CLEANERS 25→55, TRANSFER_PHARMACY_RECORDS 55→75 in functions/taskCatalogData.json
-- [ ] node seedTaskCatalog.js (the ONLY deploy)
-- [ ] Ghost-task check: exactly 56 docs, values verified
+- [x] BOOK_CLEANERS 25→55, TRANSFER_PHARMACY_RECORDS 55→75 in functions/taskCatalogData.json (two-line diff, JSON valid, 56 tasks)
+- [x] node seedTaskCatalog.js — deleted 56, wrote 56 (the ONLY deploy)
+- [x] Ghost-task check: independent Admin-SDK read-back — 56 docs, BOOK_CLEANERS=55, TRANSFER_PHARMACY_RECORDS=75. Seeder's "CANCEL_YOGA NOT FOUND" is its own stale spot-check constant (catalog has MANAGE_YOGA) — pre-existing, flagged as separate task
 - [ ] Commit, validator
 
 ## Phase D: reflect-back interstitials

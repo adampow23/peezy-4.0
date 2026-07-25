@@ -118,7 +118,7 @@
     "estHours": 1.5,
     "estPeezy": "90 secs",
     "tips": "Insist 'inside appliances' is in writing \u2014 most charge extra otherwise.",
-    "urgencyPercentage": 25,
+    "urgencyPercentage": 55,
     "whyNeeded": "One missed area can cost you your entire security deposit."
   },
   {
@@ -788,7 +788,7 @@
     "estHours": 1.5,
     "estPeezy": "1 min",
     "tips": "Controlled prescriptions don't transfer \u2014 get a new one from your doctor.",
-    "urgencyPercentage": 55,
+    "urgencyPercentage": 75,
     "whyNeeded": "Running out mid-move means an urgent care visit just to refill.",
     "workflowId": "transfer_pharmacy_records"
   },

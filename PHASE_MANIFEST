@@ -1,24 +1,9 @@
-# Spec 02 — Phase B manifest (escape hatches + question removals).
+# Spec 02 — Phase C manifest (seed-file reweights + reseed).
 # The PreToolUse hook denies Write/Edit on any repo path not listed here.
 #
-# Read-site files this phase (per Spec 01 lesson):
-#   Peezy 4.0/Assessment/AssessmentModels/AssessmentCoordinator.swift (full)
-#   Peezy 4.0/Assessment/AssessmentViews/Questions/{NewAddress,MoveDate}.swift (full)
-#   Peezy 4.0/Assessment/AssessmentViews/Questions/AddressAutocompleteView.swift (full)
-#   Peezy 4.0/Assessment/AssessmentModels/PeezyAssessmentButton.swift (full)
-#   Peezy 4.0/MainInterface/Models/{PeezyIdentity,IdentityService}.swift (full)
-#   functions/taskCatalogData.json (zero moveConcerns/sqft condition refs — verified)
-#   git history: eab4193 (MoveDateType.swift pre-deletion source)
-#
-# NEEDS-CLARIFICATION addition (disclosed in phase report): the spec's Files
-# Summary lists PeezyIdentity.swift (+pending flags) but the pending flags can
-# only reach the identity doc through IdentityService.identity(fromAssessment:),
-# so that mapping function changes too. No other IdentityService lines change.
+# Read-site files this phase: functions/taskCatalogData.json,
+# functions/seedTaskCatalog.js (read-only — deploy mechanics).
+# Deploy: `cd functions && node seedTaskCatalog.js` — catalog reseed is the
+# ONLY deploy in Spec 02 (no functions, no rules).
 tasks/todo.md
-Peezy 4.0/Assessment/AssessmentModels/AssessmentDataManager.swift
-Peezy 4.0/Assessment/AssessmentModels/AssessmentCoordinator.swift
-Peezy 4.0/Assessment/AssessmentModels/AssessmentFlowView.swift
-Peezy 4.0/Assessment/AssessmentViews/Questions/NewAddress.swift
-Peezy 4.0/Assessment/AssessmentViews/Questions/MoveDateType.swift
-Peezy 4.0/MainInterface/Models/PeezyIdentity.swift
-Peezy 4.0/MainInterface/Models/IdentityService.swift
+functions/taskCatalogData.json
