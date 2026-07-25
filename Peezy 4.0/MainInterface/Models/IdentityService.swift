@@ -126,6 +126,8 @@ final class IdentityService {
         if let interstate = data["isInterstate"] as? String, !interstate.isEmpty {
             identity.isInterstate = interstate == "Yes"
         }
+        identity.newAddressPending = data["newAddressPending"] as? Bool
+        identity.moveDatePending = data["moveDatePending"] as? Bool
         return identity
     }
 

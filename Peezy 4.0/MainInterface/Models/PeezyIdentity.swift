@@ -117,6 +117,10 @@ struct PeezyIdentity: Codable, Equatable {
     var moveDate: Date?
     var moveDistanceMiles: Double?
     var isInterstate: Bool?
+    /// Escape-hatch flags (Spec 02 Phase B): the user completed the
+    /// assessment without a final new address / with a best-guess date.
+    var newAddressPending: Bool? = nil
+    var moveDatePending: Bool? = nil
 
     // MARK: Firestore encoding
 
@@ -128,6 +132,8 @@ struct PeezyIdentity: Codable, Equatable {
         if let moveDate { data["moveDate"] = Timestamp(date: moveDate) }
         if let moveDistanceMiles { data["moveDistanceMiles"] = moveDistanceMiles }
         if let isInterstate { data["isInterstate"] = isInterstate }
+        if let newAddressPending { data["newAddressPending"] = newAddressPending }
+        if let moveDatePending { data["moveDatePending"] = moveDatePending }
         return data
     }
 
@@ -159,5 +165,7 @@ struct PeezyIdentity: Codable, Equatable {
         }
         self.moveDistanceMiles = (firestoreData["moveDistanceMiles"] as? NSNumber)?.doubleValue
         self.isInterstate = firestoreData["isInterstate"] as? Bool
+        self.newAddressPending = firestoreData["newAddressPending"] as? Bool
+        self.moveDatePending = firestoreData["moveDatePending"] as? Bool
     }
 }

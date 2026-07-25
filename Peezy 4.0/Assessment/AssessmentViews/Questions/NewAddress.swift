@@ -28,9 +28,16 @@ struct NewAddress: View {
 
     @State private var showControls = false
     @State private var selectedAddress = ""
+    // Escape hatch (Spec 02 Phase B): no address yet — persist the pending
+    // flag and an optional coarse city/state/ZIP for a rough geocode.
+    @State private var noAddressYet = false
+    @State private var coarseLocation = ""
 
     @EnvironmentObject var data: AssessmentDataManager
     @EnvironmentObject var coordinator: AssessmentCoordinator
+
+    // Copy LOCKED per spec 02 Phase B.
+    private let pendingCopy = "No address yet? No problem — most people start planning before they've signed. We'll build your plan and you can drop it in later."
 
     var body: some View {
         ZStack {
@@ -63,25 +70,50 @@ struct NewAddress: View {
 
                 if showControls { Spacer() }
 
-                // ── ADDRESS AUTOCOMPLETE ──
+                // ── ADDRESS AUTOCOMPLETE / PENDING PATH ──
                 if showControls {
-                    AddressAutocompleteView(
-                        placeholder: placeholder,
-                        onAddressSelected: { address in
-                            selectedAddress = address
-                        },
-                        showUnitField: data.newDwellingType == "Apartment" || data.newDwellingType == "Condo",
-                        unitNumber: $data.newUnitNumber
-                    )
-                    .transition(.opacity)
+                    if noAddressYet {
+                        pendingSection
+                            .transition(.opacity)
+                    } else {
+                        AddressAutocompleteView(
+                            placeholder: placeholder,
+                            onAddressSelected: { address in
+                                selectedAddress = address
+                            },
+                            showUnitField: data.newDwellingType == "Apartment" || data.newDwellingType == "Condo",
+                            unitNumber: $data.newUnitNumber
+                        )
+                        .transition(.opacity)
+                    }
                 }
 
                 if showControls { Spacer() }
 
+                // ── ESCAPE HATCH TOGGLE ──
+                if showControls {
+                    Button {
+                        withAnimation(.easeOut(duration: 0.2)) { noAddressYet.toggle() }
+                    } label: {
+                        Text(noAddressYet ? "Actually, I have the address" : "I don't have it yet")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.6))
+                            .underline()
+                    }
+                    .accessibilityIdentifier("assessment.newAddress.noAddressYet")
+                    .padding(.bottom, 12)
+                }
+
                 // ── CONTINUE BUTTON ──
                 if showControls {
-                    PeezyAssessmentButton(buttonText, disabled: selectedAddress.isEmpty) {
-                        data.newAddress = selectedAddress
+                    PeezyAssessmentButton(buttonText, disabled: noAddressYet ? false : selectedAddress.isEmpty) {
+                        if noAddressYet {
+                            data.newAddress = coarseLocation.trimmingCharacters(in: .whitespacesAndNewlines)
+                            data.newAddressPending = true
+                        } else {
+                            data.newAddress = selectedAddress
+                            data.newAddressPending = false
+                        }
                         coordinator.goToNext()
                     }
                     .padding(.horizontal, buttonPadH)
@@ -94,6 +126,49 @@ struct NewAddress: View {
             selectedAddress = data.newAddress
             triggerMorph()
         }
+    }
+
+    // ── PENDING SECTION ─────────────────────────────────────────
+
+    private var pendingSection: some View {
+        VStack(spacing: 16) {
+            Text(pendingCopy)
+                .font(.system(size: 15, weight: .medium))
+                .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.7))
+                .lineSpacing(3)
+                .multilineTextAlignment(.center)
+                .accessibilityIdentifier("assessment.newAddress.pendingCopy")
+
+            TextField(
+                "",
+                text: $coarseLocation,
+                prompt: Text("City, state, or ZIP (optional)").foregroundColor(Color.gray.opacity(0.5))
+            )
+            .font(.system(size: 18, weight: .medium))
+            .foregroundColor(PeezyTheme.Colors.deepInk)
+            .tint(PeezyTheme.Colors.accentBlue)
+            .multilineTextAlignment(.center)
+            .textInputAutocapitalization(.words)
+            .autocorrectionDisabled()
+            .submitLabel(.done)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
+            .frame(minHeight: 52)
+            .background(
+                ZStack {
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(.regularMaterial)
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(Color.black.opacity(0.06))
+                }
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(Color.black.opacity(0.1), lineWidth: 1)
+            )
+            .accessibilityIdentifier("assessment.newAddress.coarseLocation")
+        }
+        .padding(.horizontal, 24)
     }
 
     // ── MORPH LOGIC ─────────────────────────────────────────────

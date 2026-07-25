@@ -13,21 +13,22 @@ Per-phase: PHASE_MANIFEST → build → xcodebuild → commit → fresh-context 
 - [NEEDS CLARIFICATION — Phase D] "interstitialComment system" has zero matches in the codebase; ConversationalInterestitialView deleted in eab4193; coordinator inputContext has zero consumers (dead code). Phase D handling decided at Phase D.
 
 ## Phase A: persistence repairs
-- [ ] PHASE_MANIFEST written
-- [ ] Restore 7 question views (current template API + accessibilityIdentifier)
-- [ ] Coordinator: 7 enum cases + historical sequence positions + isBranchingStep(hasStorage, hasDeclutter) + inputContext cases (dead but exhaustive)
-- [ ] AssessmentFlowView: routing cases (default: EmptyView would swallow them otherwise)
-- [ ] getAllAssessmentData: financialInstitutionCounts / healthcareProviderCounts / fitnessWellnessCounts
-- [ ] xcodebuild BUILD SUCCEEDED
-- [ ] Commit
-- [ ] Validator PASS
+- [x] PHASE_MANIFEST written
+- [x] Restore 7 question views (current template API + accessibilityIdentifier)
+- [x] Coordinator: 7 enum cases + historical sequence positions + isBranchingStep(hasStorage, hasDeclutter) + inputContext cases (dead but exhaustive)
+- [x] AssessmentFlowView: routing cases (default: EmptyView would swallow them otherwise)
+- [x] getAllAssessmentData: financialInstitutionCounts / healthcareProviderCounts / fitnessWellnessCounts
+- [x] xcodebuild BUILD SUCCEEDED
+- [x] Commit e8ee378
+- [x] Validator PASS 3/3 (Firestore read-back + task query + code citation; evidence in validator report)
 
 ## Phase B: escape hatches + removals
-- [ ] newAddress "I don't have it yet" (locked copy) + newAddressPending → dict + identity doc
-- [ ] Restore MoveDateType; Flexible → moveDatePending; locked copy
-- [ ] Remove moveConcerns dict key + @Published + dead references
-- [ ] sqft: evidence-only (already out of sequence)
-- [ ] Build, commit, validator
+- [x] newAddress "I don't have it yet" (locked copy) + newAddressPending → dict + identity doc
+- [x] Restore MoveDateType; Flexible → moveDatePending; locked copy as pre-choice subtext (auto-advance tiles leave no post-choice surface)
+- [x] Remove moveConcerns dict key + @Published + dead moveDate-context reference (zero catalog conditions reference it; functions/testProfile/seedTestUser.js:34 still seeds it — backend test fixture, out of client scope)
+- [x] sqft: already out of sequence, views already deleted (b851224) — evidence-only
+- [x] xcodebuild BUILD SUCCEEDED
+- [ ] Commit + validator
 
 ## Phase C: reweights + reseed
 - [ ] BOOK_CLEANERS 25→55, TRANSFER_PHARMACY_RECORDS 55→75 in functions/taskCatalogData.json

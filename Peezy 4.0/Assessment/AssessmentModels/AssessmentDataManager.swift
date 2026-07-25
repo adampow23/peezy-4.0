@@ -12,10 +12,10 @@ class AssessmentDataManager: ObservableObject {
     
     // MARK: - Timeline
     @Published var moveDate: Date = Date()
-    
-    // MARK: - Experience
-    @Published var moveConcerns: [String] = []
-    
+    /// "Strict" or "Flexible" — Flexible marks the date as a best guess
+    /// (moveDatePending) while still requiring a date for the dose math.
+    @Published var moveDateType: String = ""
+
     // MARK: - Current Home
     @Published var currentRentOrOwn: String = ""
     @Published var currentDwellingType: String = ""
@@ -30,6 +30,9 @@ class AssessmentDataManager: ObservableObject {
     @Published var newRentOrOwn: String = ""
     @Published var newDwellingType: String = ""
     @Published var newAddress: String = ""
+    /// True when the user chose "I don't have it yet" on the NewAddress
+    /// question; newAddress then holds an optional coarse city/state/ZIP.
+    @Published var newAddressPending: Bool = false
     @Published var newUnitNumber: String = ""
     @Published var newFloorAccess: String = ""
     @Published var newBedrooms: String = ""
@@ -137,10 +140,9 @@ class AssessmentDataManager: ObservableObject {
         
         // Timeline
         data["moveDate"] = Timestamp(date: moveDate)
-        
-        // Experience
-        data["moveConcerns"] = moveConcerns
-        
+        data["moveDateType"] = moveDateType
+        data["moveDatePending"] = moveDateType == "Flexible"
+
         // Current home
         data["currentRentOrOwn"] = currentRentOrOwn
         data["currentDwellingType"] = currentDwellingType
@@ -155,6 +157,7 @@ class AssessmentDataManager: ObservableObject {
         data["newRentOrOwn"] = newRentOrOwn
         data["newDwellingType"] = newDwellingType
         data["newAddress"] = newAddress
+        data["newAddressPending"] = newAddressPending
         data["newUnitNumber"] = newUnitNumber
         data["newFloorAccess"] = newFloorAccess
         data["newBedrooms"] = newBedrooms
@@ -302,7 +305,7 @@ class AssessmentDataManager: ObservableObject {
     func reset() {
         userName = ""
         moveDate = Date()
-        moveConcerns = []
+        moveDateType = ""
         currentRentOrOwn = ""
         currentDwellingType = ""
         currentAddress = ""
@@ -314,6 +317,7 @@ class AssessmentDataManager: ObservableObject {
         newRentOrOwn = ""
         newDwellingType = ""
         newAddress = ""
+        newAddressPending = false
         newUnitNumber = ""
         newFloorAccess = ""
         newBedrooms = ""

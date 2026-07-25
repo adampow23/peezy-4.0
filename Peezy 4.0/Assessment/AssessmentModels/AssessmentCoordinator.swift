@@ -23,6 +23,7 @@ enum AssessmentInputStep: String, Hashable {
     // Section 1: Basics
     case userName
     case moveDate
+    case moveDateType
 
     // Section 2: Current Home
     case currentRentOrOwn
@@ -256,6 +257,7 @@ class AssessmentCoordinator: ObservableObject {
             addStep(.userName)
         }
         addStep(.moveDate)
+        addStep(.moveDateType)
 
         // Section 2: Current Home
         addStep(.currentRentOrOwn)
@@ -355,15 +357,15 @@ class AssessmentCoordinator: ObservableObject {
             )
 
         case .moveDate:
-            let responseLine: String
-            if dataManager.moveConcerns.isEmpty {
-                responseLine = "No major stress? I like your style, \(dataManager.userName). Let's keep it that way."
-            } else {
-                responseLine = "Say no more. That is exactly the stuff I'm built to take off your plate. Take a deep breath—I've got it from here."
-            }
             return InputContext(
-                header: "\(responseLine)\n\nWhen are we moving? If it's not 100% official yet, just drop your best guess below!",
+                header: "When are we moving? If it's not 100% official yet, just drop your best guess below!",
                 subheader: nil
+            )
+
+        case .moveDateType:
+            return InputContext(
+                header: "Is your move date flexible?",
+                subheader: "We'll plan against your best guess — adjusting later takes one tap in Settings."
             )
 
             
