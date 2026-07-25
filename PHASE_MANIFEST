@@ -1,10 +1,22 @@
-# Spec 03 Phase D — Dose counter + completion feel + done-for-today
+# Spec 04 Phase A — FlowDefinition + FlowEngine (CORE)
 # EDIT SITES
 tasks/todo.md
-Peezy 4.0/MainInterface/Views/PeezyHomeView.swift
-Peezy 4.0/MainInterface/Models/PeezyHomeViewModel.swift
+Peezy 4.0/Tasks/FlowEngine/FlowDefinition.swift
+Peezy 4.0/Tasks/FlowEngine/FlowEngineView.swift
+Peezy 4.0/Tasks/FlowEngine/FlowEngineHarness.swift
+Peezy 4.0/MainInterface/Views/AppRootView.swift
+Peezy 4.0/MainInterface/Models/TaskActionService.swift
+functions/flowDefinitionsData.json
 # READ SITES (audited, not edited)
-# Peezy 4.0/Assessment/PeezyTheme/peezyHaptics.swift — PeezyHaptics.taskComplete()/success() (existing, reused)
-# Peezy 4.0/MainInterface/Models/DailyDoseEngine.swift — counter source via vm.dailyTarget
-# Peezy 4.0/Tasks/Store/TasksStore.swift — Tasks-tab pressure valve untouched
-# Peezy 4.0/MainInterface/Models/UserState.swift — moveDate for the done-for-today copy
+# Peezy 4.0/Tasks/Task Card Components/* — all 18 kit files read in full (renderer APIs)
+# Peezy 4.0/Tasks/Task Cards/* — 4 template bases read in full + all 34 siblings diffed
+# Peezy 4.0/MainInterface/Models/TaskFlowRouter.swift — 47-case switch, flow signatures
+# Peezy 4.0/MainInterface/Models/PeezyHomeViewModel.swift — newFlowIds + flow presentation contract
+# Peezy 4.0/MainInterface/Views/PeezyHomeView.swift — fullScreenCover presentation site :129-149
+# Peezy 4.0/MainInterface/Models/PeezyCard.swift — stage/payload fields, TaskStatus
+# Peezy 4.0/MainInterface/Models/TaskStage.swift — spine stages
+# Peezy 4.0/MainInterface/Models/WorkflowService.swift + WorkflowCardModels.swift — submission contract
+# Peezy 4.0/Tasks/Store/TasksStore.swift — listener + inventory special-case
+# functions/workflowQualifying.js + miniAssessmentWorkflows.js + getWorkflowQualifying.js — orphaned system
+# functions/taskCatalogData.json — workflowId census
+# firestore.rules (local) + deployed ruleset via Rules REST API — flowDefinitions read gap

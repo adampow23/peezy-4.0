@@ -27,30 +27,17 @@ struct AppRootView: View {
     
     var body: some View {
         Group {
-            switch appState {
-            case .loading:
-                AppLoadingView()
-                
-            case .notAuthenticated:
-                AuthView()
-                    .environmentObject(authViewModel)
-                
-            case .needsAssessment:
-                if !explainerSeen {
-                    ExplainerView(onFinished: {
-                        explainerSeen = true
-                        showAssessment = true
-                    })
-                } else if showAssessment {
-                    AssessmentFlowView(showAssessment: $showAssessment)
-                } else {
-                    AssessmentIntroView(showAssessment: $showAssessment)
-                }
-                
-            case .hasAssessment:
-                PeezyMainContainer(userState: $userState)
-                    .environmentObject(authViewModel)
+            #if DEBUG
+            // Spec 04 validation harness — active only when launched with
+            // FLOW_HARNESS_WORKFLOW in the environment; inert in normal runs.
+            if FlowEngineHarness.isActive {
+                FlowEngineHarness()
+            } else {
+                appStateContent
             }
+            #else
+            appStateContent
+            #endif
         }
         .onAppear {
             checkAppState()
@@ -77,7 +64,35 @@ struct AppRootView: View {
             }
         }
     }
-    
+
+    @ViewBuilder
+    private var appStateContent: some View {
+        switch appState {
+        case .loading:
+            AppLoadingView()
+
+        case .notAuthenticated:
+            AuthView()
+                .environmentObject(authViewModel)
+
+        case .needsAssessment:
+            if !explainerSeen {
+                ExplainerView(onFinished: {
+                    explainerSeen = true
+                    showAssessment = true
+                })
+            } else if showAssessment {
+                AssessmentFlowView(showAssessment: $showAssessment)
+            } else {
+                AssessmentIntroView(showAssessment: $showAssessment)
+            }
+
+        case .hasAssessment:
+            PeezyMainContainer(userState: $userState)
+                .environmentObject(authViewModel)
+        }
+    }
+
     // MARK: - State Management
     
     private func checkAppState() {

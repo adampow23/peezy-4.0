@@ -1,0 +1,2575 @@
+[
+  {
+    "workflowId": "return_key_fobs_remotes",
+    "taskTitle": "Return my access devices",
+    "steps": [
+      {
+        "id": "title",
+        "kind": "title",
+        "icon": "key.fill",
+        "next": "info"
+      },
+      {
+        "id": "info",
+        "kind": "info",
+        "body": "A missing $5 fob can cost $200 in lock-change charges. Photograph everything you're returning the moment you hand it over.",
+        "next": "status"
+      },
+      {
+        "id": "status",
+        "kind": "status"
+      }
+    ]
+  },
+  {
+    "workflowId": "schedule_time_off_work",
+    "taskTitle": "Request my time off",
+    "steps": [
+      {
+        "id": "title",
+        "kind": "title",
+        "icon": "calendar.badge.clock",
+        "next": "info"
+      },
+      {
+        "id": "info",
+        "kind": "info",
+        "body": "Block the day after move day — unpacking always runs longer than expected. Without time off, you'll be answering Slack with a couch on your back.",
+        "next": "status"
+      },
+      {
+        "id": "status",
+        "kind": "status"
+      }
+    ]
+  },
+  {
+    "workflowId": "update_employer_records",
+    "taskTitle": "Update my employer records",
+    "steps": [
+      {
+        "id": "title",
+        "kind": "title",
+        "icon": "building.2.fill",
+        "next": "info"
+      },
+      {
+        "id": "info",
+        "kind": "info",
+        "body": "Confirm payroll updated 'work state for taxes' — addresses don't sync. Wrong state withholding turns next April into a W-2 nightmare.",
+        "next": "status"
+      },
+      {
+        "id": "status",
+        "kind": "status"
+      }
+    ]
+  },
+  {
+    "workflowId": "update_drivers_license",
+    "taskTitle": "Update my license address",
+    "steps": [
+      {
+        "id": "title",
+        "kind": "title",
+        "icon": "person.text.rectangle.fill",
+        "next": "info"
+      },
+      {
+        "id": "info",
+        "kind": "info",
+        "body": "Check your state — many let you update online without an appointment. An outdated address can void traffic ticket service and jury duty notices.",
+        "next": "status"
+      },
+      {
+        "id": "status",
+        "kind": "status"
+      }
+    ]
+  },
+  {
+    "workflowId": "new_drivers_license",
+    "taskTitle": "Get my new state license",
+    "steps": [
+      {
+        "id": "title",
+        "kind": "title",
+        "icon": "person.text.rectangle.fill",
+        "next": "info"
+      },
+      {
+        "id": "info",
+        "kind": "info",
+        "body": "Request REAL ID — TSA needs a new one in your new state. Driving past the deadline on an out-of-state license is a moving violation.",
+        "next": "status"
+      },
+      {
+        "id": "status",
+        "kind": "status"
+      }
+    ]
+  },
+  {
+    "workflowId": "register_vehicle",
+    "taskTitle": "Register my vehicles",
+    "steps": [
+      {
+        "id": "title",
+        "kind": "title",
+        "icon": "car.fill",
+        "next": "info"
+      },
+      {
+        "id": "info",
+        "kind": "info",
+        "body": "Update auto insurance first — DMV won't register without it. Outdated tags risk tickets, towing, and insurance denial in a crash.",
+        "next": "status"
+      },
+      {
+        "id": "status",
+        "kind": "status"
+      }
+    ]
+  },
+  {
+    "workflowId": "photograph_rental_condition",
+    "taskTitle": "Photograph my rental",
+    "steps": [
+      {
+        "id": "title",
+        "kind": "title",
+        "icon": "camera.fill",
+        "next": "info"
+      },
+      {
+        "id": "info",
+        "kind": "info",
+        "body": "Shoot video too — it captures context photos miss. Slumlords count on you not having proof.",
+        "next": "status"
+      },
+      {
+        "id": "status",
+        "kind": "status"
+      }
+    ]
+  },
+  {
+    "workflowId": "buy_packing_supplies",
+    "taskTitle": "Buy packing supplies",
+    "steps": [
+      {
+        "id": "title",
+        "kind": "title",
+        "icon": "shippingbox.fill",
+        "next": "info"
+      },
+      {
+        "id": "info",
+        "kind": "info",
+        "body": "Buy 20% more small boxes than you think — books, kitchen stuff, and bathroom items fill them fast. Big boxes get dangerously heavy.",
+        "next": "status"
+      },
+      {
+        "id": "status",
+        "kind": "status"
+      }
+    ]
+  },
+  {
+    "workflowId": "buy_cleaning_supplies",
+    "taskTitle": "Buy cleaning supplies",
+    "steps": [
+      {
+        "id": "title",
+        "kind": "title",
+        "icon": "sparkles",
+        "next": "info"
+      },
+      {
+        "id": "info",
+        "kind": "info",
+        "body": "Pack a 'last bag' with cleaning supplies — load it onto the truck last. Once boxes are sealed, finding a sponge becomes a 30-minute hunt.",
+        "next": "status"
+      },
+      {
+        "id": "status",
+        "kind": "status"
+      }
+    ]
+  },
+  {
+    "workflowId": "defrost_freezer",
+    "taskTitle": "Defrost my freezer",
+    "steps": [
+      {
+        "id": "title",
+        "kind": "title",
+        "icon": "snowflake",
+        "next": "info"
+      },
+      {
+        "id": "info",
+        "kind": "info",
+        "body": "A freezer that's not fully defrosted leaks across the moving truck floor and ruins cardboard boxes on contact.",
+        "next": "status"
+      },
+      {
+        "id": "status",
+        "kind": "status"
+      }
+    ]
+  },
+  {
+    "workflowId": "diy_deep_cleaning",
+    "taskTitle": "Do the deep clean",
+    "steps": [
+      {
+        "id": "title",
+        "kind": "title",
+        "icon": "bubbles.and.sparkles",
+        "next": "info"
+      },
+      {
+        "id": "info",
+        "kind": "info",
+        "body": "Clean inside the oven and fridge first — they're the top deduction trigger. One missed area can cost you hundreds in deposit deductions.",
+        "next": "status"
+      },
+      {
+        "id": "status",
+        "kind": "status"
+      }
+    ]
+  },
+  {
+    "workflowId": "diy_final_cleaning",
+    "taskTitle": "Do the final touch-up",
+    "steps": [
+      {
+        "id": "title",
+        "kind": "title",
+        "icon": "sparkles",
+        "next": "info"
+      },
+      {
+        "id": "info",
+        "kind": "info",
+        "body": "Bring a flashlight — corners and closets hide more than you think. A forgotten item or dusty corner is exactly what landlords cite.",
+        "next": "status"
+      },
+      {
+        "id": "status",
+        "kind": "status"
+      }
+    ]
+  },
+  {
+    "workflowId": "forward_mail_usps",
+    "taskTitle": "Forward my mail",
+    "steps": [
+      {
+        "id": "title",
+        "kind": "title",
+        "icon": "envelope.fill",
+        "next": "info"
+      },
+      {
+        "id": "info",
+        "kind": "info",
+        "body": "Set up USPS mail forwarding online ($1.10 fee). Takes effect in 7-10 business days — do this 2 weeks before move day. Forwarding applies to the whole household, not individuals.",
+        "next": "status"
+      },
+      {
+        "id": "status",
+        "kind": "status"
+      }
+    ]
+  },
+  {
+    "workflowId": "coa_schools",
+    "taskTitle": "Update my child's school",
+    "steps": [
+      {
+        "id": "title",
+        "kind": "title",
+        "icon": "graduationcap.fill",
+        "next": "info"
+      },
+      {
+        "id": "info",
+        "kind": "info",
+        "body": "Contact the registrar with your new address and proof of residency. Also update emergency contacts, bus routes, and after-school programs.",
+        "next": "status"
+      },
+      {
+        "id": "status",
+        "kind": "status"
+      }
+    ]
+  },
+  {
+    "workflowId": "transfer_daycare",
+    "taskTitle": "Update my daycare",
+    "steps": [
+      {
+        "id": "title",
+        "kind": "title",
+        "icon": "figure.and.child.holdinghands",
+        "next": "info"
+      },
+      {
+        "id": "info",
+        "kind": "info",
+        "body": "Give your current daycare 2-4 weeks written notice. Request copies of developmental records and immunization history. Ask for recommendations near your new address.",
+        "next": "status"
+      },
+      {
+        "id": "status",
+        "kind": "status"
+      }
+    ]
+  },
+  {
+    "workflowId": "update_credit_card",
+    "taskTitle": "Update my credit cards",
+    "steps": [
+      {
+        "id": "title",
+        "kind": "title",
+        "icon": "creditcard.fill",
+        "next": "info"
+      },
+      {
+        "id": "info",
+        "kind": "info",
+        "body": "Update billing addresses before your next statement closes. A mismatch between your address and zip code can trigger fraud alerts and declined transactions — especially on online purchases.",
+        "next": "status"
+      },
+      {
+        "id": "status",
+        "kind": "status"
+      }
+    ]
+  },
+  {
+    "workflowId": "update_student_loans",
+    "taskTitle": "Update my student loans",
+    "steps": [
+      {
+        "id": "title",
+        "kind": "title",
+        "icon": "graduationcap.fill",
+        "next": "info"
+      },
+      {
+        "id": "info",
+        "kind": "info",
+        "body": "Log into your servicer's portal — most let you update your address in under a minute. If you're on income-driven repayment and crossed state lines, your state tax return changes too. Don't let that surprise you in April.",
+        "next": "status"
+      },
+      {
+        "id": "status",
+        "kind": "status"
+      }
+    ]
+  },
+  {
+    "workflowId": "begin_school_transfer",
+    "taskTitle": "Notify the current school",
+    "steps": [
+      {
+        "id": "title",
+        "kind": "title",
+        "icon": "graduationcap.fill",
+        "next": "info"
+      },
+      {
+        "id": "info",
+        "kind": "info",
+        "body": "Give the school at least 2-4 weeks written notice. Request sealed transcripts and a records transfer packet — the new school will need immunization records, IEP documents if applicable, and proof of completed coursework.",
+        "next": "status"
+      },
+      {
+        "id": "status",
+        "kind": "status"
+      }
+    ]
+  },
+  {
+    "workflowId": "new_school_enrollment",
+    "taskTitle": "Enroll in the new school",
+    "steps": [
+      {
+        "id": "title",
+        "kind": "title",
+        "icon": "graduationcap.fill",
+        "next": "info"
+      },
+      {
+        "id": "info",
+        "kind": "info",
+        "body": "Contact the new district's enrollment office before you move. You'll need proof of residency at the new address, immunization records, and your child's birth certificate. Many districts let you start the paperwork online.",
+        "next": "status"
+      },
+      {
+        "id": "status",
+        "kind": "status"
+      }
+    ]
+  },
+  {
+    "workflowId": "setup_daycare",
+    "taskTitle": "Find my new daycare",
+    "steps": [
+      {
+        "id": "title",
+        "kind": "title",
+        "icon": "figure.and.child.holdinghands",
+        "next": "info"
+      },
+      {
+        "id": "info",
+        "kind": "info",
+        "body": "Start calling providers now — waitlists for infant and toddler spots can be 3-6 months. Contact at least 5 providers near your new address, ask about openings for your child's age group, and get on every waitlist. It costs nothing and saves you from scrambling after the move.",
+        "next": "status"
+      },
+      {
+        "id": "status",
+        "kind": "status"
+      }
+    ]
+  },
+  {
+    "workflowId": "arrange_parking_old",
+    "taskTitle": "Reserve my loading parking",
+    "steps": [
+      {
+        "id": "title",
+        "kind": "title",
+        "icon": "car.fill",
+        "next": "handling"
+      },
+      {
+        "id": "handling",
+        "kind": "decision",
+        "timeSaved": "~1 hr",
+        "stage": "capture",
+        "next": "confirmed_address",
+        "branches": [
+          {
+            "value": "peezy",
+            "next": "confirmed_address"
+          },
+          {
+            "value": "self",
+            "next": "tip"
+          }
+        ]
+      },
+      {
+        "id": "confirmed_address",
+        "kind": "confirmAddress",
+        "question": "Is this where you're loading from?",
+        "addressSource": "current",
+        "displayIcon": "mappin",
+        "next": "confirmed_date"
+      },
+      {
+        "id": "confirmed_date",
+        "kind": "confirmDate",
+        "question": "Is this your move date?",
+        "next": "summary"
+      },
+      {
+        "id": "summary",
+        "kind": "summary",
+        "body": "We'll contact your current building and reserve a truck-sized loading spot for move day.",
+        "subtext": "Response times are typically 24–48 hours."
+      },
+      {
+        "id": "tip",
+        "kind": "info",
+        "body": "Reserve two adjacent spots — trucks need ramp clearance too.",
+        "next": "status"
+      },
+      {
+        "id": "status",
+        "kind": "status"
+      }
+    ]
+  },
+  {
+    "workflowId": "arrange_parking_new",
+    "taskTitle": "Reserve my unloading parking",
+    "steps": [
+      {
+        "id": "title",
+        "kind": "title",
+        "icon": "car.fill",
+        "next": "handling"
+      },
+      {
+        "id": "handling",
+        "kind": "decision",
+        "timeSaved": "~1 hr",
+        "stage": "capture",
+        "next": "confirmed_address",
+        "branches": [
+          {
+            "value": "peezy",
+            "next": "confirmed_address"
+          },
+          {
+            "value": "self",
+            "next": "tip"
+          }
+        ]
+      },
+      {
+        "id": "confirmed_address",
+        "kind": "confirmAddress",
+        "question": "Is this where you're unloading?",
+        "addressSource": "new",
+        "displayIcon": "mappin.and.ellipse",
+        "next": "confirmed_date"
+      },
+      {
+        "id": "confirmed_date",
+        "kind": "confirmDate",
+        "question": "Is this your move date?",
+        "next": "summary"
+      },
+      {
+        "id": "summary",
+        "kind": "summary",
+        "body": "We'll contact your new building and reserve a truck-sized spot for move day.",
+        "subtext": "Response times are typically 24–48 hours."
+      },
+      {
+        "id": "tip",
+        "kind": "info",
+        "body": "Ask the building to cone off the spot the night before.",
+        "next": "status"
+      },
+      {
+        "id": "status",
+        "kind": "status"
+      }
+    ]
+  },
+  {
+    "workflowId": "reserve_elevators_old",
+    "taskTitle": "Reserve my loading elevator",
+    "steps": [
+      {
+        "id": "title",
+        "kind": "title",
+        "icon": "arrow.up.arrow.down",
+        "next": "handling"
+      },
+      {
+        "id": "handling",
+        "kind": "decision",
+        "timeSaved": "~45 mins",
+        "stage": "capture",
+        "next": "confirmed_address",
+        "branches": [
+          {
+            "value": "peezy",
+            "next": "confirmed_address"
+          },
+          {
+            "value": "self",
+            "next": "tip"
+          }
+        ]
+      },
+      {
+        "id": "confirmed_address",
+        "kind": "confirmAddress",
+        "question": "Is this where you're loading from?",
+        "addressSource": "current",
+        "displayIcon": "mappin",
+        "next": "confirmed_date"
+      },
+      {
+        "id": "confirmed_date",
+        "kind": "confirmDate",
+        "question": "Is this your move date?",
+        "next": "summary"
+      },
+      {
+        "id": "summary",
+        "kind": "summary",
+        "body": "We'll reach out to your current building and lock in a service elevator window for move day.",
+        "subtext": "Response times are typically 24–48 hours."
+      },
+      {
+        "id": "tip",
+        "kind": "info",
+        "body": "Measure your couch against the elevator BEFORE move day.",
+        "next": "status"
+      },
+      {
+        "id": "status",
+        "kind": "status"
+      }
+    ]
+  },
+  {
+    "workflowId": "reserve_elevators_new",
+    "taskTitle": "Reserve my unloading elevator",
+    "steps": [
+      {
+        "id": "title",
+        "kind": "title",
+        "icon": "arrow.up.arrow.down",
+        "next": "handling"
+      },
+      {
+        "id": "handling",
+        "kind": "decision",
+        "timeSaved": "~45 mins",
+        "stage": "capture",
+        "next": "confirmed_address",
+        "branches": [
+          {
+            "value": "peezy",
+            "next": "confirmed_address"
+          },
+          {
+            "value": "self",
+            "next": "tip"
+          }
+        ]
+      },
+      {
+        "id": "confirmed_address",
+        "kind": "confirmAddress",
+        "question": "Is this where you're unloading?",
+        "addressSource": "new",
+        "displayIcon": "mappin.and.ellipse",
+        "next": "confirmed_date"
+      },
+      {
+        "id": "confirmed_date",
+        "kind": "confirmDate",
+        "question": "Is this your move date?",
+        "next": "summary"
+      },
+      {
+        "id": "summary",
+        "kind": "summary",
+        "body": "We'll reach out to your new building and lock in a service elevator window for move day.",
+        "subtext": "Response times are typically 24–48 hours."
+      },
+      {
+        "id": "tip",
+        "kind": "info",
+        "body": "Book the first morning slot — overtime starts at $100/hour.",
+        "next": "status"
+      },
+      {
+        "id": "status",
+        "kind": "status"
+      }
+    ]
+  },
+  {
+    "workflowId": "setup_utilities",
+    "taskTitle": "Set up my new utilities",
+    "steps": [
+      {
+        "id": "title",
+        "kind": "title",
+        "icon": "bolt.fill",
+        "next": "handling"
+      },
+      {
+        "id": "handling",
+        "kind": "decision",
+        "timeSaved": "~2.5 hrs",
+        "stage": "capture",
+        "next": "confirmed_address",
+        "branches": [
+          {
+            "value": "peezy",
+            "next": "confirmed_address"
+          },
+          {
+            "value": "self",
+            "next": "tip"
+          }
+        ]
+      },
+      {
+        "id": "confirmed_address",
+        "kind": "confirmAddress",
+        "question": "Is this your new address?",
+        "addressSource": "new",
+        "displayIcon": "mappin.and.ellipse",
+        "next": "summary"
+      },
+      {
+        "id": "summary",
+        "kind": "summary",
+        "body": "We'll contact the utility providers to set up service at your new address before you arrive.",
+        "subtext": "Response times are typically 24–48 hours."
+      },
+      {
+        "id": "tip",
+        "kind": "info",
+        "body": "Get a 'letter of credit' from your old utility — waives the deposit.",
+        "next": "status"
+      },
+      {
+        "id": "status",
+        "kind": "status"
+      }
+    ]
+  },
+  {
+    "workflowId": "cancel_utilities",
+    "taskTitle": "Cancel my utilities",
+    "steps": [
+      {
+        "id": "title",
+        "kind": "title",
+        "icon": "bolt.slash.fill",
+        "next": "handling"
+      },
+      {
+        "id": "handling",
+        "kind": "decision",
+        "timeSaved": "~1.25 hrs",
+        "stage": "capture",
+        "next": "confirmed_address",
+        "branches": [
+          {
+            "value": "peezy",
+            "next": "confirmed_address"
+          },
+          {
+            "value": "self",
+            "next": "tip"
+          }
+        ]
+      },
+      {
+        "id": "confirmed_address",
+        "kind": "confirmAddress",
+        "question": "Is this your current address?",
+        "addressSource": "current",
+        "displayIcon": "mappin",
+        "next": "summary"
+      },
+      {
+        "id": "summary",
+        "kind": "summary",
+        "body": "We'll contact each provider to schedule shutoffs at your current address after you move out.",
+        "subtext": "Response times are typically 24–48 hours."
+      },
+      {
+        "id": "tip",
+        "kind": "info",
+        "body": "Give them your forwarding address — credit refunds arrive by mail.",
+        "next": "status"
+      },
+      {
+        "id": "status",
+        "kind": "status"
+      }
+    ]
+  },
+  {
+    "workflowId": "transfer_utilities",
+    "taskTitle": "Transfer my utilities",
+    "steps": [
+      {
+        "id": "title",
+        "kind": "title",
+        "icon": "bolt.fill",
+        "next": "handling"
+      },
+      {
+        "id": "handling",
+        "kind": "decision",
+        "timeSaved": "~1.5 hrs",
+        "stage": "capture",
+        "next": "confirmed_address",
+        "branches": [
+          {
+            "value": "peezy",
+            "next": "confirmed_address"
+          },
+          {
+            "value": "self",
+            "next": "tip"
+          }
+        ]
+      },
+      {
+        "id": "confirmed_address",
+        "kind": "confirmAddress",
+        "question": "Is this your new address?",
+        "addressSource": "new",
+        "displayIcon": "mappin.and.ellipse",
+        "next": "summary"
+      },
+      {
+        "id": "summary",
+        "kind": "summary",
+        "body": "We'll contact each provider to transfer service to your new address with no overlap in billing.",
+        "subtext": "Response times are typically 24–48 hours."
+      },
+      {
+        "id": "tip",
+        "kind": "info",
+        "body": "Same provider = no new deposit, no credit check, no setup fee.",
+        "next": "status"
+      },
+      {
+        "id": "status",
+        "kind": "status"
+      }
+    ]
+  },
+  {
+    "workflowId": "manage_bank",
+    "taskTitle": "Handle my bank account",
+    "steps": [
+      {
+        "id": "title",
+        "kind": "title",
+        "icon": "banknote.fill",
+        "next": "action"
+      },
+      {
+        "id": "action",
+        "kind": "select",
+        "question": "What would you like to do?",
+        "stage": "capture",
+        "options": [
+          {
+            "id": "update",
+            "label": "Update my address",
+            "icon": "pencil.line"
+          },
+          {
+            "id": "find_new",
+            "label": "Open a new account",
+            "icon": "magnifyingglass"
+          }
+        ],
+        "next": "handling_update",
+        "branches": [
+          {
+            "value": "update",
+            "next": "handling_update"
+          },
+          {
+            "value": "find_new",
+            "next": "handling_cancel"
+          }
+        ]
+      },
+      {
+        "id": "handling_update",
+        "kind": "decision",
+        "next": "business_name",
+        "branches": [
+          {
+            "value": "peezy",
+            "next": "business_name"
+          },
+          {
+            "value": "self",
+            "next": "update_tip"
+          }
+        ]
+      },
+      {
+        "id": "business_name",
+        "kind": "businessSearch",
+        "question": "Which bank are you with?",
+        "placeholder": "Search for a bank...",
+        "searchHint": "bank",
+        "next": "update_summary"
+      },
+      {
+        "id": "update_summary",
+        "kind": "summary",
+        "body": "We'll reach out to your bank and get your address updated.",
+        "subtext": "Response times are typically 24–48 hours."
+      },
+      {
+        "id": "update_tip",
+        "kind": "info",
+        "body": "Most banks let you update your address through their app or online banking. Have your account number handy.",
+        "next": "update_status"
+      },
+      {
+        "id": "update_status",
+        "kind": "status"
+      },
+      {
+        "id": "handling_cancel",
+        "kind": "decision",
+        "question": "Want help closing your current account?",
+        "next": "current_business",
+        "branches": [
+          {
+            "value": "peezy",
+            "next": "current_business"
+          },
+          {
+            "value": "self",
+            "next": "handling_find"
+          }
+        ]
+      },
+      {
+        "id": "current_business",
+        "kind": "businessSearch",
+        "question": "Which bank are you with?",
+        "placeholder": "Search for a bank...",
+        "searchHint": "bank",
+        "next": "handling_find"
+      },
+      {
+        "id": "handling_find",
+        "kind": "decision",
+        "question": "Would you like help finding a new bank near your new place?",
+        "next": "find_summary",
+        "branches": [
+          {
+            "value": "peezy",
+            "next": "find_summary"
+          },
+          {
+            "value": "self",
+            "when": {
+              "handling_cancel": "peezy"
+            },
+            "next": "find_summary"
+          },
+          {
+            "value": "self",
+            "next": "find_tip"
+          }
+        ]
+      },
+      {
+        "id": "find_summary",
+        "kind": "summary",
+        "body": "We'll help find you a new bank near your new place.",
+        "subtext": "Response times are typically 24–48 hours.",
+        "bodyVariants": [
+          {
+            "when": {
+              "handling_cancel": "peezy",
+              "handling_find": "peezy"
+            },
+            "body": "We'll close your current account and help find you a new bank."
+          },
+          {
+            "when": {
+              "handling_cancel": "peezy"
+            },
+            "body": "We'll close your current account. You're all set to find a new one on your own."
+          }
+        ]
+      },
+      {
+        "id": "find_tip",
+        "kind": "info",
+        "body": "Close old accounts in person or by phone — online-only closure can leave pending transactions orphaned. Open the new account first so direct deposits transfer seamlessly.",
+        "next": "find_status"
+      },
+      {
+        "id": "find_status",
+        "kind": "status"
+      }
+    ]
+  },
+  {
+    "workflowId": "manage_gym",
+    "taskTitle": "Handle my gym membership",
+    "steps": [
+      {
+        "id": "title",
+        "kind": "title",
+        "icon": "dumbbell.fill",
+        "next": "action"
+      },
+      {
+        "id": "action",
+        "kind": "select",
+        "question": "What would you like to do?",
+        "stage": "capture",
+        "options": [
+          {
+            "id": "update",
+            "label": "Update my address",
+            "icon": "pencil.line"
+          },
+          {
+            "id": "find_new",
+            "label": "Find a new one",
+            "icon": "magnifyingglass"
+          }
+        ],
+        "next": "handling_update",
+        "branches": [
+          {
+            "value": "update",
+            "next": "handling_update"
+          },
+          {
+            "value": "find_new",
+            "next": "handling_cancel"
+          }
+        ]
+      },
+      {
+        "id": "handling_update",
+        "kind": "decision",
+        "next": "business_name",
+        "branches": [
+          {
+            "value": "peezy",
+            "next": "business_name"
+          },
+          {
+            "value": "self",
+            "next": "update_tip"
+          }
+        ]
+      },
+      {
+        "id": "business_name",
+        "kind": "businessSearch",
+        "question": "Which gym do you go to?",
+        "placeholder": "Search for a gym...",
+        "searchHint": "gym",
+        "next": "update_summary"
+      },
+      {
+        "id": "update_summary",
+        "kind": "summary",
+        "body": "We'll reach out to your gym and get your address updated.",
+        "subtext": "Response times are typically 24–48 hours."
+      },
+      {
+        "id": "update_tip",
+        "kind": "info",
+        "body": "Most gyms let you update your address online through your account settings or their app. If not, a quick call to the front desk usually takes less than 5 minutes.",
+        "next": "update_status"
+      },
+      {
+        "id": "update_status",
+        "kind": "status"
+      },
+      {
+        "id": "handling_cancel",
+        "kind": "decision",
+        "question": "First, do you want help canceling your current membership?",
+        "next": "current_business",
+        "branches": [
+          {
+            "value": "peezy",
+            "next": "current_business"
+          },
+          {
+            "value": "self",
+            "next": "handling_find"
+          }
+        ]
+      },
+      {
+        "id": "current_business",
+        "kind": "businessSearch",
+        "question": "Which gym are you canceling?",
+        "placeholder": "Search for a gym...",
+        "searchHint": "gym",
+        "next": "handling_find"
+      },
+      {
+        "id": "handling_find",
+        "kind": "decision",
+        "question": "Would you like help finding a new gym near your new place?",
+        "next": "find_summary",
+        "branches": [
+          {
+            "value": "peezy",
+            "next": "find_summary"
+          },
+          {
+            "value": "self",
+            "when": {
+              "handling_cancel": "peezy"
+            },
+            "next": "find_summary"
+          },
+          {
+            "value": "self",
+            "next": "find_tip"
+          }
+        ]
+      },
+      {
+        "id": "find_summary",
+        "kind": "summary",
+        "body": "We'll help find you a new gym near your new place.",
+        "subtext": "Response times are typically 24–48 hours.",
+        "bodyVariants": [
+          {
+            "when": {
+              "handling_cancel": "peezy",
+              "handling_find": "peezy"
+            },
+            "body": "We'll cancel your current membership and help find you a new gym near your new place."
+          },
+          {
+            "when": {
+              "handling_cancel": "peezy"
+            },
+            "body": "We'll cancel your current membership. You're all set to find a new one on your own."
+          }
+        ]
+      },
+      {
+        "id": "find_tip",
+        "kind": "info",
+        "body": "Call your gym to cancel — most require a phone call or in-person visit. For the new place, check if your current chain has a location nearby before signing up somewhere new.",
+        "next": "find_status"
+      },
+      {
+        "id": "find_status",
+        "kind": "status"
+      }
+    ]
+  },
+  {
+    "workflowId": "manage_doctor",
+    "taskTitle": "Handle my primary doctor",
+    "steps": [
+      {
+        "id": "title",
+        "kind": "title",
+        "icon": "stethoscope",
+        "next": "action"
+      },
+      {
+        "id": "action",
+        "kind": "select",
+        "question": "What would you like to do?",
+        "stage": "capture",
+        "options": [
+          {
+            "id": "update",
+            "label": "Update my address",
+            "icon": "pencil.line"
+          },
+          {
+            "id": "find_new",
+            "label": "Find a new one",
+            "icon": "magnifyingglass"
+          }
+        ],
+        "next": "handling_update",
+        "branches": [
+          {
+            "value": "update",
+            "next": "handling_update"
+          },
+          {
+            "value": "find_new",
+            "next": "handling_cancel"
+          }
+        ]
+      },
+      {
+        "id": "handling_update",
+        "kind": "decision",
+        "next": "business_name",
+        "branches": [
+          {
+            "value": "peezy",
+            "next": "business_name"
+          },
+          {
+            "value": "self",
+            "next": "update_tip"
+          }
+        ]
+      },
+      {
+        "id": "business_name",
+        "kind": "businessSearch",
+        "question": "Who's your primary care doctor?",
+        "placeholder": "Search for a doctor's office...",
+        "searchHint": "doctor",
+        "next": "update_summary"
+      },
+      {
+        "id": "update_summary",
+        "kind": "summary",
+        "body": "We'll reach out to your doctor and get your address updated.",
+        "subtext": "Response times are typically 24–48 hours."
+      },
+      {
+        "id": "update_tip",
+        "kind": "info",
+        "body": "Most medical offices let you update your address by calling the front desk or through their patient portal.",
+        "next": "update_status"
+      },
+      {
+        "id": "update_status",
+        "kind": "status"
+      },
+      {
+        "id": "handling_cancel",
+        "kind": "decision",
+        "question": "Want help transferring your records?",
+        "next": "current_business",
+        "branches": [
+          {
+            "value": "peezy",
+            "next": "current_business"
+          },
+          {
+            "value": "self",
+            "next": "handling_find"
+          }
+        ]
+      },
+      {
+        "id": "current_business",
+        "kind": "businessSearch",
+        "question": "Who's your current doctor?",
+        "placeholder": "Search for a doctor's office...",
+        "searchHint": "doctor",
+        "next": "handling_find"
+      },
+      {
+        "id": "handling_find",
+        "kind": "decision",
+        "question": "Would you like help finding a new doctor near your new place?",
+        "next": "find_summary",
+        "branches": [
+          {
+            "value": "peezy",
+            "next": "find_summary"
+          },
+          {
+            "value": "self",
+            "when": {
+              "handling_cancel": "peezy"
+            },
+            "next": "find_summary"
+          },
+          {
+            "value": "self",
+            "next": "find_tip"
+          }
+        ]
+      },
+      {
+        "id": "find_summary",
+        "kind": "summary",
+        "body": "We'll help find you a new doctor near your new place.",
+        "subtext": "Response times are typically 24–48 hours.",
+        "bodyVariants": [
+          {
+            "when": {
+              "handling_cancel": "peezy",
+              "handling_find": "peezy"
+            },
+            "body": "We'll transfer your records and help find you a new doctor."
+          },
+          {
+            "when": {
+              "handling_cancel": "peezy"
+            },
+            "body": "We'll transfer your records. You're all set to find a new one on your own."
+          }
+        ]
+      },
+      {
+        "id": "find_tip",
+        "kind": "info",
+        "body": "Call the front desk to request a records transfer — most offices can send them electronically. For the new place, ask your insurance for in-network providers near your new address.",
+        "next": "find_status"
+      },
+      {
+        "id": "find_status",
+        "kind": "status"
+      }
+    ]
+  },
+  {
+    "workflowId": "manage_dentist",
+    "taskTitle": "Handle my dentist",
+    "steps": [
+      {
+        "id": "title",
+        "kind": "title",
+        "icon": "mouth.fill",
+        "next": "action"
+      },
+      {
+        "id": "action",
+        "kind": "select",
+        "question": "What would you like to do?",
+        "stage": "capture",
+        "options": [
+          {
+            "id": "update",
+            "label": "Update my address",
+            "icon": "pencil.line"
+          },
+          {
+            "id": "find_new",
+            "label": "Find a new one",
+            "icon": "magnifyingglass"
+          }
+        ],
+        "next": "handling_update",
+        "branches": [
+          {
+            "value": "update",
+            "next": "handling_update"
+          },
+          {
+            "value": "find_new",
+            "next": "handling_cancel"
+          }
+        ]
+      },
+      {
+        "id": "handling_update",
+        "kind": "decision",
+        "next": "business_name",
+        "branches": [
+          {
+            "value": "peezy",
+            "next": "business_name"
+          },
+          {
+            "value": "self",
+            "next": "update_tip"
+          }
+        ]
+      },
+      {
+        "id": "business_name",
+        "kind": "businessSearch",
+        "question": "Who's your dentist?",
+        "placeholder": "Search for a dental office...",
+        "searchHint": "dentist",
+        "next": "update_summary"
+      },
+      {
+        "id": "update_summary",
+        "kind": "summary",
+        "body": "We'll reach out to your dentist and get your address updated.",
+        "subtext": "Response times are typically 24–48 hours."
+      },
+      {
+        "id": "update_tip",
+        "kind": "info",
+        "body": "Most medical offices let you update your address by calling the front desk or through their patient portal.",
+        "next": "update_status"
+      },
+      {
+        "id": "update_status",
+        "kind": "status"
+      },
+      {
+        "id": "handling_cancel",
+        "kind": "decision",
+        "question": "Want help transferring your records?",
+        "next": "current_business",
+        "branches": [
+          {
+            "value": "peezy",
+            "next": "current_business"
+          },
+          {
+            "value": "self",
+            "next": "handling_find"
+          }
+        ]
+      },
+      {
+        "id": "current_business",
+        "kind": "businessSearch",
+        "question": "Who's your current dentist?",
+        "placeholder": "Search for a dental office...",
+        "searchHint": "dentist",
+        "next": "handling_find"
+      },
+      {
+        "id": "handling_find",
+        "kind": "decision",
+        "question": "Would you like help finding a new dentist near your new place?",
+        "next": "find_summary",
+        "branches": [
+          {
+            "value": "peezy",
+            "next": "find_summary"
+          },
+          {
+            "value": "self",
+            "when": {
+              "handling_cancel": "peezy"
+            },
+            "next": "find_summary"
+          },
+          {
+            "value": "self",
+            "next": "find_tip"
+          }
+        ]
+      },
+      {
+        "id": "find_summary",
+        "kind": "summary",
+        "body": "We'll help find you a new dentist near your new place.",
+        "subtext": "Response times are typically 24–48 hours.",
+        "bodyVariants": [
+          {
+            "when": {
+              "handling_cancel": "peezy",
+              "handling_find": "peezy"
+            },
+            "body": "We'll transfer your records and help find you a new dentist."
+          },
+          {
+            "when": {
+              "handling_cancel": "peezy"
+            },
+            "body": "We'll transfer your records. You're all set to find a new one on your own."
+          }
+        ]
+      },
+      {
+        "id": "find_tip",
+        "kind": "info",
+        "body": "Call the front desk to request a records transfer — most offices can send them electronically including X-rays. For the new place, ask your insurance for in-network providers near your new address.",
+        "next": "find_status"
+      },
+      {
+        "id": "find_status",
+        "kind": "status"
+      }
+    ]
+  },
+  {
+    "workflowId": "manage_vet",
+    "taskTitle": "Handle my vet",
+    "steps": [
+      {
+        "id": "title",
+        "kind": "title",
+        "icon": "pawprint.fill",
+        "next": "action"
+      },
+      {
+        "id": "action",
+        "kind": "select",
+        "question": "What would you like to do?",
+        "stage": "capture",
+        "options": [
+          {
+            "id": "update",
+            "label": "Update my address",
+            "icon": "pencil.line"
+          },
+          {
+            "id": "find_new",
+            "label": "Find a new one",
+            "icon": "magnifyingglass"
+          }
+        ],
+        "next": "handling_update",
+        "branches": [
+          {
+            "value": "update",
+            "next": "handling_update"
+          },
+          {
+            "value": "find_new",
+            "next": "handling_cancel"
+          }
+        ]
+      },
+      {
+        "id": "handling_update",
+        "kind": "decision",
+        "next": "business_name",
+        "branches": [
+          {
+            "value": "peezy",
+            "next": "business_name"
+          },
+          {
+            "value": "self",
+            "next": "update_tip"
+          }
+        ]
+      },
+      {
+        "id": "business_name",
+        "kind": "businessSearch",
+        "question": "Who's your vet?",
+        "placeholder": "Search for a veterinary clinic...",
+        "searchHint": "veterinarian",
+        "next": "update_summary"
+      },
+      {
+        "id": "update_summary",
+        "kind": "summary",
+        "body": "We'll reach out to your vet and get your address updated.",
+        "subtext": "Response times are typically 24–48 hours."
+      },
+      {
+        "id": "update_tip",
+        "kind": "info",
+        "body": "Most vet offices let you update your address by calling the front desk or through their patient portal.",
+        "next": "update_status"
+      },
+      {
+        "id": "update_status",
+        "kind": "status"
+      },
+      {
+        "id": "handling_cancel",
+        "kind": "decision",
+        "question": "Want help transferring your records?",
+        "next": "current_business",
+        "branches": [
+          {
+            "value": "peezy",
+            "next": "current_business"
+          },
+          {
+            "value": "self",
+            "next": "handling_find"
+          }
+        ]
+      },
+      {
+        "id": "current_business",
+        "kind": "businessSearch",
+        "question": "Who's your current vet?",
+        "placeholder": "Search for a veterinary clinic...",
+        "searchHint": "veterinarian",
+        "next": "handling_find"
+      },
+      {
+        "id": "handling_find",
+        "kind": "decision",
+        "question": "Would you like help finding a new vet near your new place?",
+        "next": "find_summary",
+        "branches": [
+          {
+            "value": "peezy",
+            "next": "find_summary"
+          },
+          {
+            "value": "self",
+            "when": {
+              "handling_cancel": "peezy"
+            },
+            "next": "find_summary"
+          },
+          {
+            "value": "self",
+            "next": "find_tip"
+          }
+        ]
+      },
+      {
+        "id": "find_summary",
+        "kind": "summary",
+        "body": "We'll help find you a new vet near your new place.",
+        "subtext": "Response times are typically 24–48 hours.",
+        "bodyVariants": [
+          {
+            "when": {
+              "handling_cancel": "peezy",
+              "handling_find": "peezy"
+            },
+            "body": "We'll transfer your records and help find you a new vet."
+          },
+          {
+            "when": {
+              "handling_cancel": "peezy"
+            },
+            "body": "We'll transfer your records. You're all set to find a new one on your own."
+          }
+        ]
+      },
+      {
+        "id": "find_tip",
+        "kind": "info",
+        "body": "Call the front desk to request a records transfer — make sure vaccination records are included. For the new place, ask other pet owners in your new neighborhood for recommendations.",
+        "next": "find_status"
+      },
+      {
+        "id": "find_status",
+        "kind": "status"
+      }
+    ]
+  },
+  {
+    "workflowId": "transfer_pharmacy_records",
+    "taskTitle": "Handle my pharmacy",
+    "steps": [
+      {
+        "id": "title",
+        "kind": "title",
+        "icon": "pills.fill",
+        "next": "action"
+      },
+      {
+        "id": "action",
+        "kind": "select",
+        "question": "What would you like to do?",
+        "stage": "capture",
+        "options": [
+          {
+            "id": "update",
+            "label": "Update my address",
+            "icon": "pencil.line"
+          },
+          {
+            "id": "find_new",
+            "label": "Find a new one",
+            "icon": "magnifyingglass"
+          }
+        ],
+        "next": "handling_update",
+        "branches": [
+          {
+            "value": "update",
+            "next": "handling_update"
+          },
+          {
+            "value": "find_new",
+            "next": "handling_cancel"
+          }
+        ]
+      },
+      {
+        "id": "handling_update",
+        "kind": "decision",
+        "next": "business_name",
+        "branches": [
+          {
+            "value": "peezy",
+            "next": "business_name"
+          },
+          {
+            "value": "self",
+            "next": "update_tip"
+          }
+        ]
+      },
+      {
+        "id": "business_name",
+        "kind": "businessSearch",
+        "question": "Which pharmacy do you use?",
+        "placeholder": "Search for a pharmacy...",
+        "searchHint": "pharmacy",
+        "next": "update_summary"
+      },
+      {
+        "id": "update_summary",
+        "kind": "summary",
+        "body": "We'll reach out to your pharmacy and get your address updated.",
+        "subtext": "Response times are typically 24–48 hours."
+      },
+      {
+        "id": "update_tip",
+        "kind": "info",
+        "body": "Most pharmacies let you update your address online or through their app. Have your prescription numbers handy.",
+        "next": "update_status"
+      },
+      {
+        "id": "update_status",
+        "kind": "status"
+      },
+      {
+        "id": "handling_cancel",
+        "kind": "decision",
+        "question": "Want help transferring your prescriptions?",
+        "next": "current_business",
+        "branches": [
+          {
+            "value": "peezy",
+            "next": "current_business"
+          },
+          {
+            "value": "self",
+            "next": "handling_find"
+          }
+        ]
+      },
+      {
+        "id": "current_business",
+        "kind": "businessSearch",
+        "question": "Which pharmacy do you use?",
+        "placeholder": "Search for a pharmacy...",
+        "searchHint": "pharmacy",
+        "next": "handling_find"
+      },
+      {
+        "id": "handling_find",
+        "kind": "decision",
+        "question": "Would you like help finding a new pharmacy near your new place?",
+        "next": "find_summary",
+        "branches": [
+          {
+            "value": "peezy",
+            "next": "find_summary"
+          },
+          {
+            "value": "self",
+            "when": {
+              "handling_cancel": "peezy"
+            },
+            "next": "find_summary"
+          },
+          {
+            "value": "self",
+            "next": "find_tip"
+          }
+        ]
+      },
+      {
+        "id": "find_summary",
+        "kind": "summary",
+        "body": "We'll help find you a new pharmacy near your new place.",
+        "subtext": "Response times are typically 24–48 hours.",
+        "bodyVariants": [
+          {
+            "when": {
+              "handling_cancel": "peezy",
+              "handling_find": "peezy"
+            },
+            "body": "We'll transfer your prescriptions and help find you a new pharmacy."
+          },
+          {
+            "when": {
+              "handling_cancel": "peezy"
+            },
+            "body": "We'll transfer your prescriptions. You're all set to find a new one on your own."
+          }
+        ]
+      },
+      {
+        "id": "find_tip",
+        "kind": "info",
+        "body": "Most pharmacies can transfer prescriptions with just a phone call to the new location. Give them your name, date of birth, and current pharmacy — they handle the rest.",
+        "next": "find_status"
+      },
+      {
+        "id": "find_status",
+        "kind": "status"
+      }
+    ]
+  },
+  {
+    "workflowId": "transfer_specialists_records",
+    "taskTitle": "Handle my specialist",
+    "steps": [
+      {
+        "id": "title",
+        "kind": "title",
+        "icon": "cross.case.fill",
+        "next": "action"
+      },
+      {
+        "id": "action",
+        "kind": "select",
+        "question": "What would you like to do?",
+        "stage": "capture",
+        "options": [
+          {
+            "id": "update",
+            "label": "Update my address",
+            "icon": "pencil.line"
+          },
+          {
+            "id": "find_new",
+            "label": "Find a new one",
+            "icon": "magnifyingglass"
+          }
+        ],
+        "next": "handling_update",
+        "branches": [
+          {
+            "value": "update",
+            "next": "handling_update"
+          },
+          {
+            "value": "find_new",
+            "next": "handling_cancel"
+          }
+        ]
+      },
+      {
+        "id": "handling_update",
+        "kind": "decision",
+        "next": "business_name",
+        "branches": [
+          {
+            "value": "peezy",
+            "next": "business_name"
+          },
+          {
+            "value": "self",
+            "next": "update_tip"
+          }
+        ]
+      },
+      {
+        "id": "business_name",
+        "kind": "businessSearch",
+        "question": "Who's your specialist?",
+        "placeholder": "Search for a specialist's office...",
+        "searchHint": "medical specialist",
+        "next": "update_summary"
+      },
+      {
+        "id": "update_summary",
+        "kind": "summary",
+        "body": "We'll reach out to your specialist and get your address updated.",
+        "subtext": "Response times are typically 24–48 hours."
+      },
+      {
+        "id": "update_tip",
+        "kind": "info",
+        "body": "Most specialist offices let you update your address by calling the front desk or through their patient portal.",
+        "next": "update_status"
+      },
+      {
+        "id": "update_status",
+        "kind": "status"
+      },
+      {
+        "id": "handling_cancel",
+        "kind": "decision",
+        "question": "Want help transferring your records?",
+        "next": "current_business",
+        "branches": [
+          {
+            "value": "peezy",
+            "next": "current_business"
+          },
+          {
+            "value": "self",
+            "next": "handling_find"
+          }
+        ]
+      },
+      {
+        "id": "current_business",
+        "kind": "businessSearch",
+        "question": "Who's your current specialist?",
+        "placeholder": "Search for a specialist's office...",
+        "searchHint": "medical specialist",
+        "next": "handling_find"
+      },
+      {
+        "id": "handling_find",
+        "kind": "decision",
+        "question": "Would you like help finding a new specialist near your new place?",
+        "next": "find_summary",
+        "branches": [
+          {
+            "value": "peezy",
+            "next": "find_summary"
+          },
+          {
+            "value": "self",
+            "when": {
+              "handling_cancel": "peezy"
+            },
+            "next": "find_summary"
+          },
+          {
+            "value": "self",
+            "next": "find_tip"
+          }
+        ]
+      },
+      {
+        "id": "find_summary",
+        "kind": "summary",
+        "body": "We'll help find you a new specialist near your new place.",
+        "subtext": "Response times are typically 24–48 hours.",
+        "bodyVariants": [
+          {
+            "when": {
+              "handling_cancel": "peezy",
+              "handling_find": "peezy"
+            },
+            "body": "We'll transfer your records and help find you a new specialist."
+          },
+          {
+            "when": {
+              "handling_cancel": "peezy"
+            },
+            "body": "We'll transfer your records. You're all set to find a new one on your own."
+          }
+        ]
+      },
+      {
+        "id": "find_tip",
+        "kind": "info",
+        "body": "Request records be sent to your new provider before your first appointment. Ask your primary care doctor for specialist referrals near your new address — they often know the best options.",
+        "next": "find_status"
+      },
+      {
+        "id": "find_status",
+        "kind": "status"
+      }
+    ]
+  },
+  {
+    "workflowId": "manage_yoga",
+    "taskTitle": "Handle my yoga membership",
+    "steps": [
+      {
+        "id": "title",
+        "kind": "title",
+        "icon": "figure.yoga",
+        "next": "action"
+      },
+      {
+        "id": "action",
+        "kind": "select",
+        "question": "What would you like to do?",
+        "stage": "capture",
+        "options": [
+          {
+            "id": "update",
+            "label": "Update my address",
+            "icon": "pencil.line"
+          },
+          {
+            "id": "find_new",
+            "label": "Find a new one",
+            "icon": "magnifyingglass"
+          }
+        ],
+        "next": "handling_update",
+        "branches": [
+          {
+            "value": "update",
+            "next": "handling_update"
+          },
+          {
+            "value": "find_new",
+            "next": "handling_cancel"
+          }
+        ]
+      },
+      {
+        "id": "handling_update",
+        "kind": "decision",
+        "next": "business_name",
+        "branches": [
+          {
+            "value": "peezy",
+            "next": "business_name"
+          },
+          {
+            "value": "self",
+            "next": "update_tip"
+          }
+        ]
+      },
+      {
+        "id": "business_name",
+        "kind": "businessSearch",
+        "question": "Which studio do you go to?",
+        "placeholder": "Search for a yoga studio...",
+        "searchHint": "yoga studio",
+        "next": "update_summary"
+      },
+      {
+        "id": "update_summary",
+        "kind": "summary",
+        "body": "We'll reach out to your studio and get your address updated.",
+        "subtext": "Response times are typically 24–48 hours."
+      },
+      {
+        "id": "update_tip",
+        "kind": "info",
+        "body": "Most studios let you update your address online through your account settings or their app. If not, a quick call to the front desk usually takes less than 5 minutes.",
+        "next": "update_status"
+      },
+      {
+        "id": "update_status",
+        "kind": "status"
+      },
+      {
+        "id": "handling_cancel",
+        "kind": "decision",
+        "question": "Want help canceling your current membership?",
+        "next": "current_business",
+        "branches": [
+          {
+            "value": "peezy",
+            "next": "current_business"
+          },
+          {
+            "value": "self",
+            "next": "handling_find"
+          }
+        ]
+      },
+      {
+        "id": "current_business",
+        "kind": "businessSearch",
+        "question": "Which studio are you canceling?",
+        "placeholder": "Search for a yoga studio...",
+        "searchHint": "yoga studio",
+        "next": "handling_find"
+      },
+      {
+        "id": "handling_find",
+        "kind": "decision",
+        "question": "Would you like help finding a new studio near your new place?",
+        "next": "find_summary",
+        "branches": [
+          {
+            "value": "peezy",
+            "next": "find_summary"
+          },
+          {
+            "value": "self",
+            "when": {
+              "handling_cancel": "peezy"
+            },
+            "next": "find_summary"
+          },
+          {
+            "value": "self",
+            "next": "find_tip"
+          }
+        ]
+      },
+      {
+        "id": "find_summary",
+        "kind": "summary",
+        "body": "We'll help find you a new studio near your new place.",
+        "subtext": "Response times are typically 24–48 hours.",
+        "bodyVariants": [
+          {
+            "when": {
+              "handling_cancel": "peezy",
+              "handling_find": "peezy"
+            },
+            "body": "We'll cancel your current membership and help find you a new studio near your new place."
+          },
+          {
+            "when": {
+              "handling_cancel": "peezy"
+            },
+            "body": "We'll cancel your current membership. You're all set to find a new one on your own."
+          }
+        ]
+      },
+      {
+        "id": "find_tip",
+        "kind": "info",
+        "body": "Check your membership terms for cancellation requirements — some need 30 days written notice. For the new place, check if your current chain has a location nearby before signing up somewhere new.",
+        "next": "find_status"
+      },
+      {
+        "id": "find_status",
+        "kind": "status"
+      }
+    ]
+  },
+  {
+    "workflowId": "manage_spin",
+    "taskTitle": "Handle my cycling membership",
+    "steps": [
+      {
+        "id": "title",
+        "kind": "title",
+        "icon": "bicycle",
+        "next": "action"
+      },
+      {
+        "id": "action",
+        "kind": "select",
+        "question": "What would you like to do?",
+        "stage": "capture",
+        "options": [
+          {
+            "id": "update",
+            "label": "Update my address",
+            "icon": "pencil.line"
+          },
+          {
+            "id": "find_new",
+            "label": "Find a new one",
+            "icon": "magnifyingglass"
+          }
+        ],
+        "next": "handling_update",
+        "branches": [
+          {
+            "value": "update",
+            "next": "handling_update"
+          },
+          {
+            "value": "find_new",
+            "next": "handling_cancel"
+          }
+        ]
+      },
+      {
+        "id": "handling_update",
+        "kind": "decision",
+        "next": "business_name",
+        "branches": [
+          {
+            "value": "peezy",
+            "next": "business_name"
+          },
+          {
+            "value": "self",
+            "next": "update_tip"
+          }
+        ]
+      },
+      {
+        "id": "business_name",
+        "kind": "businessSearch",
+        "question": "Which studio do you go to?",
+        "placeholder": "Search for a cycling studio...",
+        "searchHint": "cycling studio",
+        "next": "update_summary"
+      },
+      {
+        "id": "update_summary",
+        "kind": "summary",
+        "body": "We'll reach out to your studio and get your address updated.",
+        "subtext": "Response times are typically 24–48 hours."
+      },
+      {
+        "id": "update_tip",
+        "kind": "info",
+        "body": "Most studios let you update your address online through your account settings or their app. If not, a quick call to the front desk usually takes less than 5 minutes.",
+        "next": "update_status"
+      },
+      {
+        "id": "update_status",
+        "kind": "status"
+      },
+      {
+        "id": "handling_cancel",
+        "kind": "decision",
+        "question": "Want help canceling your current membership?",
+        "next": "current_business",
+        "branches": [
+          {
+            "value": "peezy",
+            "next": "current_business"
+          },
+          {
+            "value": "self",
+            "next": "handling_find"
+          }
+        ]
+      },
+      {
+        "id": "current_business",
+        "kind": "businessSearch",
+        "question": "Which studio are you canceling?",
+        "placeholder": "Search for a cycling studio...",
+        "searchHint": "cycling studio",
+        "next": "handling_find"
+      },
+      {
+        "id": "handling_find",
+        "kind": "decision",
+        "question": "Would you like help finding a new studio near your new place?",
+        "next": "find_summary",
+        "branches": [
+          {
+            "value": "peezy",
+            "next": "find_summary"
+          },
+          {
+            "value": "self",
+            "when": {
+              "handling_cancel": "peezy"
+            },
+            "next": "find_summary"
+          },
+          {
+            "value": "self",
+            "next": "find_tip"
+          }
+        ]
+      },
+      {
+        "id": "find_summary",
+        "kind": "summary",
+        "body": "We'll help find you a new cycling studio near your new place.",
+        "subtext": "Response times are typically 24–48 hours.",
+        "bodyVariants": [
+          {
+            "when": {
+              "handling_cancel": "peezy",
+              "handling_find": "peezy"
+            },
+            "body": "We'll cancel your current membership and help find you a new cycling studio near your new place."
+          },
+          {
+            "when": {
+              "handling_cancel": "peezy"
+            },
+            "body": "We'll cancel your current membership. You're all set to find a new one on your own."
+          }
+        ]
+      },
+      {
+        "id": "find_tip",
+        "kind": "info",
+        "body": "Check your membership terms for cancellation requirements — some need 30 days written notice. For the new place, check if your current chain has a location nearby before signing up somewhere new.",
+        "next": "find_status"
+      },
+      {
+        "id": "find_status",
+        "kind": "status"
+      }
+    ]
+  },
+  {
+    "workflowId": "manage_massage",
+    "taskTitle": "Handle my spa membership",
+    "steps": [
+      {
+        "id": "title",
+        "kind": "title",
+        "icon": "hands.sparkles.fill",
+        "next": "action"
+      },
+      {
+        "id": "action",
+        "kind": "select",
+        "question": "What would you like to do?",
+        "stage": "capture",
+        "options": [
+          {
+            "id": "update",
+            "label": "Update my address",
+            "icon": "pencil.line"
+          },
+          {
+            "id": "find_new",
+            "label": "Find a new one",
+            "icon": "magnifyingglass"
+          }
+        ],
+        "next": "handling_update",
+        "branches": [
+          {
+            "value": "update",
+            "next": "handling_update"
+          },
+          {
+            "value": "find_new",
+            "next": "handling_cancel"
+          }
+        ]
+      },
+      {
+        "id": "handling_update",
+        "kind": "decision",
+        "next": "business_name",
+        "branches": [
+          {
+            "value": "peezy",
+            "next": "business_name"
+          },
+          {
+            "value": "self",
+            "next": "update_tip"
+          }
+        ]
+      },
+      {
+        "id": "business_name",
+        "kind": "businessSearch",
+        "question": "Which spa do you go to?",
+        "placeholder": "Search for a spa...",
+        "searchHint": "spa massage",
+        "next": "update_summary"
+      },
+      {
+        "id": "update_summary",
+        "kind": "summary",
+        "body": "We'll reach out to your spa and get your address updated.",
+        "subtext": "Response times are typically 24–48 hours."
+      },
+      {
+        "id": "update_tip",
+        "kind": "info",
+        "body": "Most studios let you update your address online through your account settings or their app. If not, a quick call to the front desk usually takes less than 5 minutes.",
+        "next": "update_status"
+      },
+      {
+        "id": "update_status",
+        "kind": "status"
+      },
+      {
+        "id": "handling_cancel",
+        "kind": "decision",
+        "question": "Want help canceling your current membership?",
+        "next": "current_business",
+        "branches": [
+          {
+            "value": "peezy",
+            "next": "current_business"
+          },
+          {
+            "value": "self",
+            "next": "handling_find"
+          }
+        ]
+      },
+      {
+        "id": "current_business",
+        "kind": "businessSearch",
+        "question": "Which spa are you canceling?",
+        "placeholder": "Search for a spa...",
+        "searchHint": "spa massage",
+        "next": "handling_find"
+      },
+      {
+        "id": "handling_find",
+        "kind": "decision",
+        "question": "Would you like help finding a new spa near your new place?",
+        "next": "find_summary",
+        "branches": [
+          {
+            "value": "peezy",
+            "next": "find_summary"
+          },
+          {
+            "value": "self",
+            "when": {
+              "handling_cancel": "peezy"
+            },
+            "next": "find_summary"
+          },
+          {
+            "value": "self",
+            "next": "find_tip"
+          }
+        ]
+      },
+      {
+        "id": "find_summary",
+        "kind": "summary",
+        "body": "We'll help find you a new spa near your new place.",
+        "subtext": "Response times are typically 24–48 hours.",
+        "bodyVariants": [
+          {
+            "when": {
+              "handling_cancel": "peezy",
+              "handling_find": "peezy"
+            },
+            "body": "We'll cancel your current membership and help find you a new spa near your new place."
+          },
+          {
+            "when": {
+              "handling_cancel": "peezy"
+            },
+            "body": "We'll cancel your current membership. You're all set to find a new one on your own."
+          }
+        ]
+      },
+      {
+        "id": "find_tip",
+        "kind": "info",
+        "body": "Check your membership terms for cancellation requirements — some need 30 days written notice. For the new place, check if your current chain has a location nearby before signing up somewhere new.",
+        "next": "find_status"
+      },
+      {
+        "id": "find_status",
+        "kind": "status"
+      }
+    ]
+  },
+  {
+    "workflowId": "update_investment",
+    "taskTitle": "Handle my investment accounts",
+    "steps": [
+      {
+        "id": "title",
+        "kind": "title",
+        "icon": "chart.line.uptrend.xyaxis",
+        "next": "action"
+      },
+      {
+        "id": "action",
+        "kind": "select",
+        "question": "What would you like to do?",
+        "stage": "capture",
+        "options": [
+          {
+            "id": "update",
+            "label": "Update my address",
+            "icon": "pencil.line"
+          },
+          {
+            "id": "find_new",
+            "label": "Transfer to a new brokerage",
+            "icon": "magnifyingglass"
+          }
+        ],
+        "next": "handling_update",
+        "branches": [
+          {
+            "value": "update",
+            "next": "handling_update"
+          },
+          {
+            "value": "find_new",
+            "next": "handling_cancel"
+          }
+        ]
+      },
+      {
+        "id": "handling_update",
+        "kind": "decision",
+        "next": "business_name",
+        "branches": [
+          {
+            "value": "peezy",
+            "next": "business_name"
+          },
+          {
+            "value": "self",
+            "next": "update_tip"
+          }
+        ]
+      },
+      {
+        "id": "business_name",
+        "kind": "businessSearch",
+        "question": "Which brokerage are you with?",
+        "placeholder": "Search for a brokerage...",
+        "searchHint": "brokerage investment",
+        "next": "update_summary"
+      },
+      {
+        "id": "update_summary",
+        "kind": "summary",
+        "body": "We'll reach out to your brokerage and get your address updated.",
+        "subtext": "Response times are typically 24–48 hours."
+      },
+      {
+        "id": "update_tip",
+        "kind": "info",
+        "body": "Most brokerages let you update your address online. Tax documents go to the address on file — update before year-end to avoid chasing 1099s.",
+        "next": "update_status"
+      },
+      {
+        "id": "update_status",
+        "kind": "status"
+      },
+      {
+        "id": "handling_cancel",
+        "kind": "decision",
+        "question": "Want help transferring your accounts?",
+        "next": "current_business",
+        "branches": [
+          {
+            "value": "peezy",
+            "next": "current_business"
+          },
+          {
+            "value": "self",
+            "next": "handling_find"
+          }
+        ]
+      },
+      {
+        "id": "current_business",
+        "kind": "businessSearch",
+        "question": "Which brokerage are you with?",
+        "placeholder": "Search for a brokerage...",
+        "searchHint": "brokerage investment",
+        "next": "handling_find"
+      },
+      {
+        "id": "handling_find",
+        "kind": "decision",
+        "question": "Would you like help finding a new brokerage?",
+        "next": "find_summary",
+        "branches": [
+          {
+            "value": "peezy",
+            "next": "find_summary"
+          },
+          {
+            "value": "self",
+            "when": {
+              "handling_cancel": "peezy"
+            },
+            "next": "find_summary"
+          },
+          {
+            "value": "self",
+            "next": "find_tip"
+          }
+        ]
+      },
+      {
+        "id": "find_summary",
+        "kind": "summary",
+        "body": "We'll help find you a new brokerage.",
+        "subtext": "Response times are typically 24–48 hours.",
+        "bodyVariants": [
+          {
+            "when": {
+              "handling_cancel": "peezy",
+              "handling_find": "peezy"
+            },
+            "body": "We'll transfer your accounts and help find you a new brokerage."
+          },
+          {
+            "when": {
+              "handling_cancel": "peezy"
+            },
+            "body": "We'll transfer your accounts. You're all set to find a new one on your own."
+          }
+        ]
+      },
+      {
+        "id": "find_tip",
+        "kind": "info",
+        "body": "Start an ACATS transfer with the new brokerage — they pull the accounts from the old one. It takes 5-7 business days. Don't close the old account until the transfer settles.",
+        "next": "find_status"
+      },
+      {
+        "id": "find_status",
+        "kind": "status"
+      }
+    ]
+  }
+]

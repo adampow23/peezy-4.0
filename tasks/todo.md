@@ -1,67 +1,116 @@
-# Spec 03 — Card + Stage Model — execution plan (session 2026-07-25)
+# Spec 04 — Flow Engine + Catalog v2 — execution plan (session 2026-07-25)
 
-Governing docs: peezy-build-spec-03.md, peezy-execution-protocol.md, peezy-conventions-v2.md.
-CORE tier: per-phase PHASE_MANIFEST (incl. read-site files) → build → xcodebuild → commit → fresh-context validator (bounded retry 2). Nothing deploys.
+Governing docs: peezy-build-spec-04.md, peezy-execution-protocol.md, peezy-conventions-v2.md,
+peezy-v1-architecture.md (§2 §3 §9b §10), peezy-v1-catalog-sheet.md.
+CORE tier A–C: per-phase PHASE_MANIFEST (incl. read sites) → build → xcodebuild → commit →
+fresh-context validator (bounded retry 2). PERIPHERY D–F. Deploys: ONE batch after Phase C
+(catalog v2 reseed + flowDefinitions seed + functions edits), nothing else.
 
-## Pre-flight findings (evidence: this session's reads/greps)
+## Pre-flight findings (evidence: this session's reads)
 
-- Tree clean at 39c4477. Baseline xcodebuild on the untouched tree: BUILD SUCCEEDED.
-- Live Firestore→PeezyCard paths confirmed exactly two: PeezyHomeViewModel.loadTasks:295 (inline construction) and TasksStore:51 → PeezyCardFirestoreMapper.card():36. PeezyStackViewModel constructs cards (:140,:171) but is DEAD — zero instantiation (PeezyMainContainer:18 is a stale comment only; DEAD_CODE_REMOVAL_LIST item 6 predates the cleanup commit). Left untouched (deletion is Adam's Xcode task).
-- Project uses PBXFileSystemSynchronizedRootGroup (5 hits) — new .swift files under the source root compile without pbxproj edits.
-- Server status writes: 'pending' (functions/index.js:405,425,464; getWorkflowQualifying.js:210). Nothing anywhere writes "MatchingInProgress" (CamelCase). No client Firestore query references it (queries: PeezyHomeViewModel:261, dead PeezyStackViewModel:92, TasksStore listener unfiltered) → spec's deletion condition met.
-- Server also writes 'pending_matching' (getWorkflowQualifying.js:231,274) and queries 'matching_in_progress' (index.js:225) — OUT OF SPEC 03 SCOPE (orphaned workflow system, adopted Spec 04). Reported, not built.
-- Equatable(id-only) consumers audited: TasksTabView:54 onChange(of: store.tasks) — id-membership check inside, safe under memberwise; PeezyHomeView:140 onChange(of: focusedTask) — always transitions through nil, safe; TasksList:72-77 .id(rowIdentity incl. status) — existing WORKAROUND for the id-only staleness; all removeAll/firstIndex sites already compare $0.id explicitly. No firstIndex(of:)/contains(element:) on PeezyCard. TaskGrouping.Groups: Equatable declared, never compared.
-- PeezyCard has no JSON persistence (PeezyClient decodes its own response types; PeezyResponse:95 constructs cards via explicit string switch, no matchingInProgress reference) → enum case deletion has no decode-migration risk.
-- [NEEDS CLARIFICATION — bounded interpretation, Phase A criterion 1] "Home UI visibly updates" / "snoozedUntil lapses": Home renders greeting/flow states only (no live card-diffing surface; one-shot loader, view state discarded on tab switch), and a time lapse alone produces no Firestore event, so no Equatable change can repaint anything without a data push. Closest faithful demonstration of the id-only bug: Tasks tab (the live listener surface), server-side mutation of a field NOT in rowIdentity (set/clear snoozedUntil on an Upcoming task → "Snoozed" badge via TaskGrouping.isSnoozedEffective) with unchanged id+section+status. Before: row stays stale. After: repaints. Home shown updating on tab re-entry (fresh load) for the without-relaunch half.
-- Phase D "greeting-card rendering" located: PeezyHomeView state switch :65-80; dailyGreetingCard :235-269, returningMidDayCard :273-307, dailyCompleteCard :325-368. PeezyHaptics at Assessment/PeezyTheme/peezyHaptics.swift (has .success()). Dose reset uses raw Date() (not DateProvider) → next-day criterion via dose recompute (UserDefaults lastDate rewind + relaunch).
+- Flow census: 47 files in Tasks/Task Cards. 38 are template instances across exactly 3 families:
+  Type 1 (20 × 88 lines: title→info→status; config = taskTitle/workflowId/icon/bodyText),
+  Type 2 (11 × ~405: 13-card branching manage-provider; per-flow strings + 3-variant find-summary
+  keyed on handling_cancel/handling_find), Type 3 (4 × 246 access: decision→confirmAddr→confirmDate→
+  summary | tip→status; 3 × 230 utilities: same minus confirmDate). All deltas captured via diff —
+  every config string in hand. The spec's "39 templated" over-counts by one: 47 − 8 customs
+  (insurance ×2, FindMovers, FindCleaners, SetupInternet, SellItems, RemoveItems, RentTruck) −
+  ScanInventory (bespoke, kept) = 38. [NEEDS CLARIFICATION marker carried in phase report; 38 is
+  the code-verified count.]
+- Kit usage by the 38: TitleCard, InfoCard, StatusCard, DecisionCard, TilesCard-single-2 (via
+  Select2), BusinessSearchCard, ConfirmAddressCard, ConfirmDateCard, SummaryCard. Nothing else
+  (FillBar/CompactTiles/Multi*/Select3-5 are custom-flow-only). componentKind enum capped there.
+- One conditional transition exists (ManageBank family): find-decision "self" routes to
+  find-summary iff handling_cancel=peezy else find-tip → branch model needs {value, when?, next}.
+- Off-app tasks (12) carry NO workflowId in catalog; routing today falls back to lowercased
+  taskId (PeezyHomeViewModel.newFlowId :115-122). Data-driven router must keep this fallback.
+- MANAGE_GOLF is in catalog with workflowId manage_golf but has NO router case and NO Swift flow —
+  it is a live unroutable task today (EmptyView → spinner). Dies in Phase B merge (MEMBERSHIPS).
+- Presentation funnel is single: PeezyHomeView fullScreenCover :129-149. Tasks tab routes through
+  focusedTask → container switches to Home tab. One integration point for FlowEngineView.
+- submitWorkflowAnswers (deployed): guidance → marks task Completed; vendor → workflowSubmissions
+  ('pending_matching') + task status 'matching_in_progress' (getWorkflowQualifying.js:254).
+  index.js:225 queries BOTH snake strings on tasks; 'pending_matching' never lands on task docs →
+  the query fix. Spec C.4 names `pending_matching` as the client case but the string actually
+  written to task docs is `matching_in_progress` — implement per reality, cite in report.
+- DEPLOYED Firestore rules fetched read-only via Rules REST API: default-deny; NO flowDefinitions
+  read; rules deploys are Adam-gated (waitlist reconciliation). → Client cannot read a new
+  flowDefinitions collection directly. Bounded resolution [NEEDS CLARIFICATION, reversible]:
+  definitions live in Firestore `flowDefinitions` (seeded from flowDefinitionsData.json per spec);
+  client fetches THROUGH the already-deployed getWorkflowQualifying callable (Q11 "adopt the
+  orphaned server system — becomes the definition source"), extended with a Firestore-first
+  lookup. Ships inside the sanctioned Phase B/C deploy batch. Swap to direct reads is a one-
+  function change after Adam's rules deploy.
+- TaskConditionParser: Bool→"Yes"/"No", nil matches ["nil",""], multi-select arrays, ">=N".
+  newAddressPending/moveDatePending are Bools in assessment data; hasDeclutter/wantToSell exist
+  (Spec 02); storageNeeded does not exist yet (STORAGE_NEED card writes it).
+- TaskGenerationService is one-shot at assessment completion; batch.setData would RESET existing
+  docs on rerun → dose cards (DECLUTTER_INTENT/STORAGE_NEED) need an add-only incremental
+  generation (skip existing doc ids), never a full rerun.
+- Catalog v2 arithmetic: 56 − 24 removed (23 merged sources + BUY_CLEANING_SUPPLIES absorbed)
+  + 9 merge targets + 5 adds (ADD_NEW_ADDRESS, CONFIRM_MOVE_DATE, DECLUTTER_INTENT, STORAGE_NEED,
+  STORAGE_UNIT) = 46 rows. Sheet said ~40; exact number stated per acceptance criterion.
+- Xcode project uses PBXFileSystemSynchronizedRootGroup → file create/delete needs no pbxproj edit.
 
-## Phase A: PeezyCard rewrite + single decoding path — COMMIT 8ab37c4, VALIDATOR PASS 4/4
-- [x] PHASE_MANIFEST (edit sites + read sites)
-- [x] Custom == deleted → synthesized memberwise. Bug demonstrated live pre-fix (server title edit invisible 175s despite data in store; only view recreation repainted) and fixed post-fix (passive repaint <10s; badge + reorder live). Audited id-only-semantics sites: TasksTabView:54 (id-membership check — safe), PeezyHomeView:140 (nil-mediated — safe), TasksList:72-77 rowIdentity workaround (retained)
-- [x] TaskStatus: + pending = "pending"; matchingInProgress deleted (no live query; nothing ever wrote the CamelCase string); TaskRowHeader/TaskGrouping/shouldShow reconciled. Temp pending doc rendered waiting treatment (To-Do stayed 16, In Progress 1, "Matching vendors" badge)
-- [x] stage/payload fields + TaskStage.swift + CardPayload/VendorRef/CaptureRef shells in PeezyCard.swift
-- [x] loadTasks consumes the mapper; .pending buffers with .inProgress; dead colorNameForPriority removed
-- [x] Single-path marker comment in mapper
-- [x] Build green → commit → validator PASS 4/4 (independent re-run of mutations, pending doc, parity citation, build + 5-flow spot-check)
+## Phase A: FlowDefinition + FlowEngine (CORE) — IN PROGRESS
 
-## Phase B: TaskStage persisted — COMMIT 830416d, VALIDATOR PASS 4/4
-- [x] Mapper decodes stage nil-tolerantly; TaskActionService.setStage (no caller by design — Phase C absorbs, Spec 04 renders)
-- [x] Round trip: write → kill → relaunch → in-process decode proof via lldb frame variable on the listener assignment ((Peezy_4_0.TaskStage?) tasks[0].stage = compare); Firestore read-back; screenshot parity Home+Tasks
-- [x] Build green → commit → validator PASS 4/4 (own round trip with a different value; honesty check on the setStage-proxy accepted)
+- [ ] PHASE_MANIFEST written (edit + read sites)
+- [ ] FlowDefinition.swift — Codable model: FlowDefinition{workflowId, taskTitle, steps},
+      FlowStep{id, kind, config fields, next, branches[{value, when?, next}], stage?},
+      StepKind ∈ {title, info, decision, select, businessSearch, confirmAddress, confirmDate,
+      summary, status}; SummaryVariant{when, body}; + FlowDefinitionStore (in-memory cache;
+      callable fetch lands here, harness injects local JSON in DEBUG)
+- [ ] flowDefinitionsData.json — 38 definitions transcribed from the Swift flows (strings/icons/
+      options byte-exact from this session's diffs); WORKFLOW_QUALIFYING folded in as the
+      documented seed for Phase B's merged-flow definitions
+- [ ] FlowEngineView.swift — renders steps via the kit verbatim; per-step answer persistence to
+      task doc (flowAnswers.{stepId}, flowPath) via TaskActionService; resume from persisted path;
+      stage transitions via setStage where a step declares one; submission via WorkflowService
+      unchanged; flow-state cleared on terminal (summary submit / status action); a11y ids
+      flow.<workflowId>.<stepId>
+- [ ] TaskActionService — writeFlowProgress/clearFlowState (same direct-write pattern as setStage)
+- [ ] FlowEngineHarness.swift (DEBUG) + 3-line AppRootView hook — env-driven: FLOW_DEFS_PATH
+      (host JSON path) + FLOW_HARNESS_WORKFLOW; drives Phase A validation before router lands
+- [ ] xcodebuild green → commit → validator (5 flows across types: side-by-side vs old screens,
+      kill/relaunch resume, workflowResponses payload parity old-vs-new)
 
-## Phase C: PeezyHomeViewModel split — COMMIT 9cfedc6, VALIDATOR PASS 4/4
-- [x] DailyDoseEngine (math + urgency sort verbatim), TaskActionService absorbs 4 write funcs verbatim, thin VM composes; newFlowIds byte-identical
-- [x] Dose target "Just 4 tasks per day" identical pre/post; validator re-derived 4 from identity moveDate 2026-07-30 + engine formula
-- [x] Live +2d snooze through the split path: doc diff exactly {status Snoozed, snoozedUntil tap+48h, lastSnoozedAt serverTS}; +1d path (skipCurrentTask) has zero UI callers — source-level identity
-- [x] Build green → commit → validator PASS 4/4
+## Phase B: Catalog v2 + row-generation (CORE) — todo (own manifest at start)
 
-## Phase D: Dose counter + completion feel + done-for-today — COMMIT db99a3f, VALIDATOR PASS
-- [x] "N for today" chip (home.dose_counter) + per-card "X of N" (home.card_position, numericText transition); haptic on 3 completion paths; card-exit transition on state switch (reduce-motion honored)
-- [x] Done-for-today locked copy "That's today. / You're on pace for [move date]." (home.done_today_pace); celebrationSubtext removed with its only consumer; get-ahead retained (existing feature)
-- [x] Validator live run: 1/3→2/3→3/3 sequential evidence, done card with July 30, same-day relaunch no-leak, Tasks tab To-Do 9/Done 7, next-day fresh dose
-- [x] Fixture restored to pristine (16 Upcoming, fresh app container, keychain sign-in intact)
+Merges per sheet (9 targets), conditions/urgencies per sheet notes; BOOK_CLEANERS 25→55,
+TRANSFER_PHARMACY 55→75; adds ADD_NEW_ADDRESS/CONFIRM_MOVE_DATE (in-app flows reusing Settings
+sheets), DECLUTTER_INTENT/STORAGE_NEED one-tap dose cards (write keys + add-only incremental
+generation), STORAGE_UNIT (thin, conditions storageNeeded=Yes); REMOVE_ITEMS/SELL_ITEMS stay on
+wantToSell; row-generation for FINANCIAL_ACCOUNTS/MEDICAL_RECORDS/MEMBERSHIPS as repeatable step
+group (engine extension, count-expanded from Spec 02 count keys); merged-flow definitions authored
+into flowDefinitionsData.json (seeded from Swift merge sources + WORKFLOW_QUALIFYING + mini-
+assessment question data); seedTaskCatalog.js gains flowDefinitions seeding + CANCEL_YOGA
+spot-check fix; getWorkflowQualifying.js Firestore-first definition lookup. NO deploy yet.
+
+## Phase C: Router replacement (CORE) — todo (own manifest at start)
+
+Data-driven resolution workflowId→definition→FlowEngineView; explicit map for 8 customs + 4 new
+in-app tasks; ScanInventory via CaptureKind registry shim; DELETE 38 templated files +
+TaskFlowDismissButton + 47-case switch body + newFlowIds + skipCurrentTask + rowIdentity fossil;
+coming-right-up card for unroutable; TaskStatus snake-case case (matching_in_progress — the string
+actually written; cite discrepancy); index.js:225 query fix. THEN the single deploy batch:
+functions deploy + catalog v2 reseed + flowDefinitions seed. Validator walks EVERY catalog task.
+
+## Phase D: Paywall gate (c) (PERIPHERY) — todo
+
+PaywallPolicy.swift (requiresSubscription(for:)); gates BOOK-stage/kit/concierge; PaywallGateView
+second call site (manifest-sanctioned); soft post-assessment offer untouched.
+
+## Phase E: Dose freeze + reflect-backs (PERIPHERY) — todo
+
+DailyDoseEngine freeze: once/calendar-day {date, taskIds} persisted on user doc; served frozen;
+done-for-today on frozen-set completion. Reflect-back banners (mechanism (a), LOCKED copy) after
+pets/kids/address-pair/services questions.
+
+## Phase F: SESSION_NOTES + doc sync (PERIPHERY) — todo
+
+CLAUDE.md corrected-facts update (catalog count, router, deleted files); conventions edits
+proposal per protocol §6.
 
 ## Review
 
-All four phases executed under the execution protocol at CORE tier: separate commits (8ab37c4, 830416d, 9cfedc6, db99a3f), per-phase PHASE_MANIFEST including read sites, fresh-context validator per phase — 4× PASS, zero bounded-retry cycles needed. Nothing deployed. Test-bot fixture and app container restored to pristine after every evidence run.
-
-Observed items for the next spec author (details in SESSION_NOTES):
-- Server also writes 'pending_matching' and queries 'matching_in_progress' (snake) — no TaskStatus case; falls back to .upcoming. Reconcile in Spec 04 when adopting getWorkflowQualifying.
-- dailyTarget recomputes from the LIVE active count, so the announced target can shrink mid-day (from 9 actives: "3 for today" closed after 2). Pre-existing verbatim math, surfaced by Phase D's counter. DECISION candidate: freeze the day's target at first computation.
-- skipCurrentTask (+1d snooze) has zero UI callers — dead path.
-- Runtime a11y-id shadowing: container card ids (daily_greeting_card etc.) clobber child ids in the AX tree (pre-existing pattern).
-
-## SESSION_NOTES (protocol §6)
-
-What the spec got wrong / underspecified:
-1. Phase A criterion 1 says "the Home UI visibly updates" when "snoozedUntil lapses" — Home has no live card-diffing surface (one-shot loader, state discarded on tab switch) and a time lapse alone produces no Firestore event. The demonstration surface had to be the Tasks tab listener with a server-side field mutation. Proposed conventions edit under Live data paths: "Only the Tasks tab live-updates (listener). Home re-queries on tab entry. Any UI-update criterion must specify a data event, not time passing."
-2. Phase B's round-trip criterion implies exercising setStage, but the phase itself forbids any UI consumer — setStage necessarily has zero callers until Phase C/Spec 04 wires it. The admin-write payload-identity proxy + lldb decode proof was accepted by the validator; future specs should name the acceptable proxy up front.
-3. Phase D's "GIVEN a 3-task dose" needs the fixture shape stated: with 9 actives the live-recomputed target shrinks mid-day and the day closes early; only a 12-active shape keeps the target at 3 across three completions.
-
-What surprised us:
-- The id-only Equatable staleness is total, not cosmetic: data arrives in the store, and even unrelated re-renders keep showing stale row content; only view recreation (tab switch) refreshed. TasksList's .id(rowIdentity-with-status) was a fossil workaround for exactly this bug.
-- lldb `po`/`expr` cannot evaluate in [weak self] closure frames ("non-nominal type $__lldb_context"); `frame variable` with member paths is the reliable in-process inspection tool.
-- `xcrun simctl spawn <udid> defaults` (read AND write) targets the device-level prefs domain, not the app container — writes look successful but the app never sees them. Deterministic prefs manipulation: shut the sim down, plutil the container plist, boot. Fresh install (uninstall+install) is the clean full reset; Firebase keychain keeps the test bot signed in.
-- Flow-kit buttons expose the card TITLE as their a11y label (Continue vs the snooze-writing "Later" link distinguishable only by frame geometry). New Phase D elements got explicit ids; the flow kit predates the convention — Spec 04's FlowEngine should id every control.
-
-Proposed doc edits: fold items 1–3 + the simulator lessons into peezy-conventions-v2 §Environment; add 'pending_matching'/'matching_in_progress' reconciliation as a Spec 04 line item; put the shrinking-dose-target DECISION in front of Adam before Spec 04 renders resume-at-stage against the dose.
+(filled at close)

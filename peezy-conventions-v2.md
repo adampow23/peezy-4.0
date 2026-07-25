@@ -24,7 +24,7 @@ Parity rule (LE-025/LE-031, updated): these two loaders must stay field-identica
 |---|---|---|
 | Entry | MainInterface/Models/PeezyV1App.swift | @main; injects SubscriptionManager.shared (only root env object) |
 | Root gate | MainInterface/Views/AppRootView.swift | Builds UserState at :137 (only live construction site) |
-| Container | MainInterface/Views/PeezyMainContainer.swift | 4 tabs; PeezyStackViewModel instantiation removed in cleanup |
+| Container | MainInterface/Views/PeezyMainContainer.swift | 4 tabs; still instantiates PeezyStackViewModel at :19/:101/:103 — excise those lines BEFORE deleting that file (Spec 01 run verified deletion-without-excision breaks the build) |
 | Home VM | MainInterface/Models/PeezyHomeViewModel.swift | Daily Dose math :182-193; hardcoded newFlowIds :84-113; REWRITE target |
 | Router | MainInterface/Models/TaskFlowRouter.swift | Closed 47-case switch; REWRITE target |
 | Card model | MainInterface/Models/PeezyCard.swift | 28 fields; id-only Equatable :365-367 (hazard); REWRITE target |
@@ -72,6 +72,33 @@ Parity rule (LE-025/LE-031, updated): these two loaders must stay field-identica
 - Deployed Firestore rules are NOT readable via firebase-tools 15.6.0; use the Rules REST API with functions/serviceAccountKey.json (read-only). Local firestore.rules is known to drift from deployed — deployed has a live waitlist rule the local file lacks
 - Test creds: peezy-test-bot@test.peezyapp.com / PeezyTest2026!
 - Accessibility ids: 51 usages in 13 files, mapped to T01-T10 UITests. **All new views require .accessibilityIdentifier() — mandatory convention**
+
+## Corrections from Spec 03 run (2026-07-25)
+
+- TaskStatus: `pending` case added (server lowercase); `matchingInProgress` deleted (never written, never queried). Server ALSO writes `pending_matching` and queries `matching_in_progress` (snake case) — no client case, falls back to .upcoming; reconcile in Spec 04.
+- PeezyCard Equatable is now synthesized memberwise; the TasksList `.id(rowIdentity)` fossil workaround remains (harmless) — removable in Spec 04.
+- Single decode path: PeezyCardFirestoreMapper is the only Firestore→PeezyCard constructor; marker comment in place.
+- DailyDoseEngine holds the dose math verbatim; TaskActionService holds all status writes + setStage. `skipCurrentTask` (+1d snooze) has zero UI callers — delete in Spec 04.
+- Dose target currently recomputes live (day can close early) — freeze-at-first-computation lands in Spec 04.
+- Simulator: `simctl defaults` writes never reach the app container; use the lldb `frame variable` recipe for in-process decode checks.
+
+## Corrections from Spec 02 run (2026-07-25)
+
+- **The dead-key origin story:** commit eab4193 ("Cleanup complete", April 10) deleted the question VIEWS for hasVehicles, wantToSell, storage trio, bedrooms, moveDateType, MoveConcerns, and the entire interstitial system — but left the dict keys and catalog conditions alive. That's what created the four production-dead tasks. Lesson: deleting a question requires retiring its keys AND its catalog conditions in the same commit, or the catalog silently rots.
+- Spec-author rule: before writing any assessment phase, check question-view existence against the Coordinator's step enum — the data manager keeps keys alive after views die.
+- The interstitial/inputContext system does not exist (deleted in eab4193); inputContext(for:) is dead code with zero consumers. Reflect-back beats need a mechanism decision (Spec 04).
+- Restored views (Spec 02 Phase A/B): HasVehicles, WantToSell, HasStorage/StorageSize/StorageFullness, CurrentBedrooms, NewBedrooms, MoveDateType — from git history, current template API, accessibility ids.
+- seedTaskCatalog.js has a stale spot-check constant (CANCEL_YOGA) — one-line fix queued.
+- iOS Simulator MCP can hold a stale xcode-select env; AXe fallback works. Fix: restart server or `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer`.
+
+## Corrections from Spec 01 run (2026-07-25)
+
+- `AssessmentDataManager.completeAssessment` does not exist — the method is `saveAssessment()`; `completeAssessment` lives on the Coordinator
+- `saveAssessment`'s userKnowledge write THROWS under deployed rules — any code appended after it never runs until rules deploy. Order new writes before it
+- peezyLayout.swift's `peezyGlassBackground(cornerRadius:)` (:40) is live via PeezyLiquidGlass.swift:64 — remove that call before deleting the file
+- Spec rule: any phase touching a read site must list the read-site files in its manifest
+- XcodeBuildMCP may register but not connect; the bundled-AXe fallback works
+- Identity doc lives at users/{uid}/identity/identity (doc id "identity")
 
 ## Open items (tracked, not forgotten)
 
