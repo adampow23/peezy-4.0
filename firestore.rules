@@ -68,5 +68,10 @@ service cloud.firestore {
     match /flowDefinitions/{document=**} {
       allow read: if request.auth != null;
     }
+
+    // Vendor rate cards are backend-owned; signed-in clients may only read.
+    match /vendors/{document=**} {
+      allow read: if request.auth != null;
+    }
   }
 }

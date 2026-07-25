@@ -1,39 +1,34 @@
-# Spec 05 Phase 0 — Housekeeping batch (CORE)
-# RULES DEPLOY GATE: no `firebase deploy --only firestore:rules` until Adam
-# explicitly approves the presented local-vs-deployed diff in this session.
+# Spec 05 Phase A — Rate cards + vendors collection (CORE)
 # EDIT SITES
 PHASE_MANIFEST
 firestore.rules
-# The remaining edit sites are deliberately deferred until the rules-deploy gate
-# is approved. They are listed now so the complete Phase 0 scope is explicit.
-Peezy 4.0/Tasks/FlowEngine/FlowEngineView.swift
-Peezy 4.0/Tasks/FlowEngine/FlowDefinition.swift
-Peezy 4.0/Tasks/Task Card Components/TaskFlowBusinessSearchCard.swift
-Peezy 4.0/MainInterface/Models/DailyDoseEngine.swift
-Peezy 4.0/Menu/PeezySettingsView.swift
-Peezy 4.0/Assessment/AssessmentModels/AssessmentCoordinator.swift
+functions/vendorsData.json
+functions/seedVendors.js
+Peezy 4.0/MainInterface/Models/Vendor.swift
+Peezy 4.0Tests/VendorTests.swift
 # READ SITES
-# peezy-conventions-v2.md — deployed-rules and frozen-region constraints
-# peezy-v1-architecture.md — pricing and assessment-tier contracts
-# peezy-execution-protocol.md — validation protocol
-# peezy-v1-catalog-sheet.md — movers scope context
-# peezy-build-spec-05.md — Phase 0 acceptance criteria
+# peezy-conventions-v2.md — vendor scope and deployed-data constraints
+# peezy-v1-architecture.md — §6 vendor/rate-card schema
+# peezy-execution-protocol.md — CORE validation and commit protocol
+# peezy-v1-catalog-sheet.md — movers vertical context
+# peezy-build-spec-05.md — Phase A acceptance criteria
 # CLAUDE.md — repository instructions and build command
-# firebase.json — local rules deployment configuration
+# firebase.json — rules deployment configuration
 # functions/serviceAccountKey.json — Rules REST API credentials (read-only)
-# functions/package.json — Firebase CLI/function source context
-# functions/index.js — deployed-function inventory context
-# functions/joinWaitlist.js — deployed waitlist collection behavior
-# functions/flowDefinitionsData.json — business-search flow used for visual validation
-# Peezy 4.0/MainInterface/Models/PeezyHomeViewModel.swift — retake/daily-dose caller context
-# Peezy 4.0/MainInterface/Views/AppRootView.swift — retake notification receiver
-# Peezy 4.0/Menu/PeezySettingsView.swift — retake notification sender
-# Peezy 4.0/Tasks/Task Card Components/TaskFlowConfirmAddressCard.swift — related dropdown behavior
-# Peezy 4.0/Tasks/Task Card Components/TaskFlowStack.swift — card height allocation for dropdown diagnosis
-# Peezy 4.0/Assessment/PeezyTheme/PeezyCardChrome.swift — card chrome height constraints for dropdown diagnosis
-# Peezy 4.0/Tasks/FlowEngine/FlowEngineHarness.swift — DEBUG flow-entry path for visual validation
-# Peezy 4.0UITests/T04_TaskFlowTests.swift — existing live-flow UI test coverage
-# Peezy 4.0UITests/E2ETestBase.swift — test launch and screenshot harness
-# functions/testProfile/seedTestUser.js — isolated E2E data reseed for retake validation
-# functions/testProfile/teardownTestUser.js — E2E test-account cleanup contract
-# Peezy 4.0/Documents/GoogleService-Info.plist — Firebase API key for authenticated read-only rules validation; frozen, never edited
+# Peezy 4.0/Documents/GoogleService-Info.plist — Firebase API key for authenticated vendor read-back; frozen, never edited
+# functions/package.json — seeding runtime/dependency pattern
+# functions/index.js — Firebase Admin initialization pattern
+# functions/ — existing Firestore seed-script discovery
+# functions/getWorkflowQualifying.js — existing server-side flow data path
+# functions/workflowQualifying.js — callable data-source helper
+# functions/vendorCatalog.js — existing vendor catalog boundary
+# functions/seedTaskCatalog.js — batch seed-script pattern
+# functions/flowDefinitionsData.json — seed-data header/structure pattern
+# functions/taskCatalogData.json — JSON dataset convention
+# Tests/IntegrationTest.swift — Swift test execution pattern
+# Peezy 4.0.xcodeproj/project.pbxproj — read-only target/file-synchronization discovery; frozen, never edited
+# Peezy 4.0Tests/ — unit-test target discovery
+# Peezy 4.0Tests/Peezy_4_0Tests.swift — XCTest convention
+# Peezy 4.0Tests/MoveDistanceIntegrationTests.swift — XCTest convention
+# Tests/ — existing Swift test placement discovery
+# Peezy 4.0/ — existing models/service placement discovery

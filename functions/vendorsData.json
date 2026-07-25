@@ -1,0 +1,171 @@
+{
+  "_adminNote": "PLACEHOLDER DATA ONLY. Real vendors are added by editing this file and running node seedVendors.js, or by direct Firestore console writes. Preserve the vendorId document key and the complete rateCard shape.",
+  "vendors": [
+    {
+      "vendorId": "test_mover_a",
+      "name": "Test Mover A",
+      "vertical": "movers",
+      "serviceRadius": {
+        "center": "Kansas City, MO",
+        "miles": 35
+      },
+      "rateCard": {
+        "hourlyByCrew": {
+          "2": 145,
+          "3": 185,
+          "4": 220
+        },
+        "tripChargeModel": {
+          "kind": "flat",
+          "amount": 129
+        },
+        "minimumHours": 2,
+        "clockPolicy": "portal_to_portal",
+        "materials": {
+          "included": false,
+          "boxBundle": 42,
+          "packingPaperBundle": 24
+        },
+        "valuationTiers": [
+          {
+            "id": "standard",
+            "label": "Standard valuation",
+            "coveragePerPound": 0.6,
+            "additionalCost": 0
+          },
+          {
+            "id": "full",
+            "label": "Full-value protection",
+            "coveragePerPound": 6,
+            "additionalCost": 95
+          }
+        ],
+        "surcharges": {
+          "weekend": 0.1,
+          "monthEnd": 0.08,
+          "peakSeason": 0.12
+        },
+        "blackoutDates": [
+          "2026-12-25",
+          "2027-01-01"
+        ]
+      },
+      "accountability": {
+        "standardsVersion": "v1",
+        "strikes": 0
+      },
+      "active": true
+    },
+    {
+      "vendorId": "test_mover_b",
+      "name": "Test Mover B",
+      "vertical": "movers",
+      "serviceRadius": {
+        "center": "Kansas City, MO",
+        "miles": 45
+      },
+      "rateCard": {
+        "hourlyByCrew": {
+          "2": 160,
+          "3": 205,
+          "4": 245
+        },
+        "tripChargeModel": {
+          "kind": "flat",
+          "amount": 149
+        },
+        "minimumHours": 3,
+        "clockPolicy": "portal_to_portal",
+        "materials": {
+          "included": true,
+          "boxBundle": 39,
+          "packingPaperBundle": 22
+        },
+        "valuationTiers": [
+          {
+            "id": "standard",
+            "label": "Standard valuation",
+            "coveragePerPound": 0.6,
+            "additionalCost": 0
+          },
+          {
+            "id": "full",
+            "label": "Full-value protection",
+            "coveragePerPound": 6,
+            "additionalCost": 110
+          }
+        ],
+        "surcharges": {
+          "weekend": 0.12,
+          "monthEnd": 0.1,
+          "peakSeason": 0.15
+        },
+        "blackoutDates": [
+          "2026-11-26",
+          "2026-12-25",
+          "2027-01-01"
+        ]
+      },
+      "accountability": {
+        "standardsVersion": "v1",
+        "strikes": 0
+      },
+      "active": true
+    },
+    {
+      "vendorId": "test_mover_c",
+      "name": "Test Mover C",
+      "vertical": "movers",
+      "serviceRadius": {
+        "center": "Kansas City, MO",
+        "miles": 30
+      },
+      "rateCard": {
+        "hourlyByCrew": {
+          "2": 135,
+          "3": 175,
+          "4": 215
+        },
+        "tripChargeModel": {
+          "kind": "flat",
+          "amount": 119
+        },
+        "minimumHours": 2,
+        "clockPolicy": "portal_to_portal",
+        "materials": {
+          "included": false,
+          "boxBundle": 45,
+          "packingPaperBundle": 26
+        },
+        "valuationTiers": [
+          {
+            "id": "standard",
+            "label": "Standard valuation",
+            "coveragePerPound": 0.6,
+            "additionalCost": 0
+          },
+          {
+            "id": "full",
+            "label": "Full-value protection",
+            "coveragePerPound": 6,
+            "additionalCost": 88
+          }
+        ],
+        "surcharges": {
+          "weekend": 0.08,
+          "monthEnd": 0.06,
+          "peakSeason": 0.1
+        },
+        "blackoutDates": [
+          "2026-12-25",
+          "2027-01-01"
+        ]
+      },
+      "accountability": {
+        "standardsVersion": "v1",
+        "strikes": 0
+      },
+      "active": true
+    }
+  ]
+}
