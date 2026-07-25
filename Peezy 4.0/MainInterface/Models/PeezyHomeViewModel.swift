@@ -177,19 +177,16 @@ final class PeezyHomeViewModel {
         return name.isEmpty ? "Welcome back!" : "Welcome back, \(name)!"
     }
 
-    // MARK: - Daily Dose Computed
+    // MARK: - Daily Dose Computed (math lives in DailyDoseEngine — Spec 03 Phase C)
+
+    private let doseEngine = DailyDoseEngine()
+    private let actionService = TaskActionService()
 
     private var daysUntilMoveValue: Int { userState?.daysUntilMove ?? 30 }
-    private var bufferDays: Int {
-        if daysUntilMoveValue <= 10 { return 0 }
-        if daysUntilMoveValue <= 14 { return 3 }
-        return 7
-    }
-    private var workingDays: Int { max(daysUntilMoveValue - bufferDays, 1) }
+    private var bufferDays: Int { doseEngine.bufferDays(daysUntilMove: daysUntilMoveValue) }
 
     var dailyTarget: Int {
-        guard !allActiveTasks.isEmpty else { return 0 }
-        return max(Int(ceil(Double(allActiveTasks.count) / Double(workingDays))), 1)
+        doseEngine.dailyTarget(activeTaskCount: allActiveTasks.count, daysUntilMove: daysUntilMoveValue)
     }
 
     var isTodayComplete: Bool {
@@ -291,12 +288,7 @@ final class PeezyHomeViewModel {
                 }
             }
 
-            let sorted = cards.sorted { a, b in
-                let ua = a.urgencyPercentage ?? 0
-                let ub = b.urgencyPercentage ?? 0
-                if ua != ub { return ua > ub }
-                return a.title < b.title
-            }
+            let sorted = doseEngine.urgencySorted(cards)
 
             await MainActor.run {
                 self.allActiveTasks = sorted
@@ -365,7 +357,7 @@ final class PeezyHomeViewModel {
 
     func completeCurrentTask() {
         guard let task = currentTask else { return }
-        Task { await markTaskCompleted(task) }
+        Task { await actionService.markTaskCompleted(task) }
         completedThisSession += 1
         dailyDoseCompletedCount += 1
         totalCompletedCount += 1
@@ -380,7 +372,7 @@ final class PeezyHomeViewModel {
     func markCurrentTaskUserInProgress() {
         guard let task = currentTask else { return }
         let returnDate = Calendar.current.date(byAdding: .day, value: 3, to: Date()) ?? Date()
-        Task { await writeUserInProgress(task, returnDate: returnDate) }
+        Task { await actionService.writeUserInProgress(task, returnDate: returnDate) }
         dailyDoseCompletedCount += 1
         completedThisSession += 1
         currentTask = nil
@@ -393,7 +385,7 @@ final class PeezyHomeViewModel {
     func markCurrentTaskPeezyHandling() {
         guard let task = currentTask else { return }
         Task {
-            await markTaskInProgress(task)
+            await actionService.markTaskInProgress(task)
             Task {
                 do {
                     let callable = Functions.functions().httpsCallable("requestConcierge")
@@ -453,8 +445,8 @@ final class PeezyHomeViewModel {
 
         let isSelfService = task.selfServiceOnly || task.actionType == "off-app"
         Task {
-            if isSelfService { await markTaskCompleted(task) }
-            else { await markTaskInProgress(task) }
+            if isSelfService { await actionService.markTaskCompleted(task) }
+            else { await actionService.markTaskInProgress(task) }
         }
 
         completedThisSession += 1
@@ -486,7 +478,7 @@ final class PeezyHomeViewModel {
             return
         }
 
-        Task { await markTaskCompleted(task) }
+        Task { await actionService.markTaskCompleted(task) }
 
         completedThisSession += 1
         dailyDoseCompletedCount += 1
@@ -503,7 +495,7 @@ final class PeezyHomeViewModel {
         }
 
         let returnDate = Calendar.current.date(byAdding: .day, value: 3, to: Date()) ?? Date()
-        Task { await writeUserInProgress(task, returnDate: returnDate) }
+        Task { await actionService.writeUserInProgress(task, returnDate: returnDate) }
 
         dailyDoseCompletedCount += 1
         completedThisSession += 1
@@ -518,7 +510,7 @@ final class PeezyHomeViewModel {
         }
 
         let snoozedUntil = Calendar.current.date(byAdding: .day, value: 2, to: Date()) ?? Date()
-        Task { await writeSnooze(task, snoozedUntil: snoozedUntil) }
+        Task { await actionService.writeSnooze(task, snoozedUntil: snoozedUntil) }
 
         allActiveTasks.removeAll { $0.id == task.id }
         dailyDoseCompletedCount += 1
@@ -548,67 +540,13 @@ final class PeezyHomeViewModel {
     func skipCurrentTask() {
         if let task = currentTask {
             let snoozedUntil = Calendar.current.date(byAdding: .day, value: 1, to: Date()) ?? Date()
-            Task { await writeSnooze(task, snoozedUntil: snoozedUntil) }
+            Task { await actionService.writeSnooze(task, snoozedUntil: snoozedUntil) }
             allActiveTasks.removeAll { $0.id == task.id }
         }
         dailyDoseCompletedCount += 1
         currentTask = nil
         isFocusedTask = false
         advanceAfterTask()
-    }
-
-    // MARK: - Firestore Write
-
-    private func markTaskCompleted(_ task: PeezyCard) async {
-        guard let userId = Auth.auth().currentUser?.uid else { return }
-        let db = Firestore.firestore()
-        do {
-            try await db.collection("users").document(userId).collection("tasks")
-                .document(task.id).updateData(["status": "Completed", "completedAt": FieldValue.serverTimestamp()])
-        } catch {
-            print("⚠️ Failed to mark task completed: \(error.localizedDescription)")
-        }
-    }
-
-    private func markTaskInProgress(_ task: PeezyCard) async {
-        guard let userId = Auth.auth().currentUser?.uid else { return }
-        let db = Firestore.firestore()
-        do {
-            try await db.collection("users").document(userId).collection("tasks")
-                .document(task.id).updateData(["status": "InProgress", "inProgressAt": FieldValue.serverTimestamp()])
-        } catch {
-            print("⚠️ Failed to mark task in progress: \(error.localizedDescription)")
-        }
-    }
-
-    private func writeUserInProgress(_ task: PeezyCard, returnDate: Date) async {
-        guard let userId = Auth.auth().currentUser?.uid else { return }
-        let db = Firestore.firestore()
-        do {
-            try await db.collection("users").document(userId).collection("tasks")
-                .document(task.id).updateData([
-                    "status": "UserInProgress",
-                    "userInProgressDate": Timestamp(date: Date()),
-                    "userInProgressReturnDate": Timestamp(date: returnDate)
-                ])
-        } catch {
-            print("⚠️ Failed to mark task as user in progress: \(error.localizedDescription)")
-        }
-    }
-
-    private func writeSnooze(_ task: PeezyCard, snoozedUntil: Date) async {
-        guard let userId = Auth.auth().currentUser?.uid else { return }
-        let db = Firestore.firestore()
-        do {
-            try await db.collection("users").document(userId).collection("tasks")
-                .document(task.id).updateData([
-                    "status": "Snoozed",
-                    "snoozedUntil": Timestamp(date: snoozedUntil),
-                    "lastSnoozedAt": FieldValue.serverTimestamp()
-                ])
-        } catch {
-            print("⚠️ Failed to snooze task: \(error.localizedDescription)")
-        }
     }
 
     // MARK: - State Determination

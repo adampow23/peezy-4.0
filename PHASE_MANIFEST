@@ -1,10 +1,11 @@
-# Spec 03 Phase B — TaskStage persisted (model + decode + write path, no UI)
+# Spec 03 Phase C — PeezyHomeViewModel split (DailyDoseEngine + TaskActionService + thin VM)
 # EDIT SITES
 tasks/todo.md
-Peezy 4.0/Tasks/Store/PeezyCardFirestoreMapper.swift
+Peezy 4.0/MainInterface/Models/PeezyHomeViewModel.swift
+Peezy 4.0/MainInterface/Models/DailyDoseEngine.swift
 Peezy 4.0/MainInterface/Models/TaskActionService.swift
 # READ SITES (audited, not edited)
-# Peezy 4.0/MainInterface/Models/TaskStage.swift — enum created Phase A, unchanged
-# Peezy 4.0/MainInterface/Models/PeezyCard.swift — stage field created Phase A
-# Peezy 4.0/MainInterface/Models/PeezyHomeViewModel.swift — write-pattern reference (markTaskCompleted et al.)
-# Peezy 4.0/Tasks/Store/TasksStore.swift — listener path exercising the decode
+# Peezy 4.0/MainInterface/Views/PeezyHomeView.swift — VM consumer, API surface must stay compatible
+# Peezy 4.0/MainInterface/Models/PeezyCard.swift — card model (unchanged)
+# Peezy 4.0/MainInterface/Models/TaskStage.swift — unchanged
+# Peezy 4.0/Tasks/Store/TasksStore.swift — unrelated write path, untouched by the split
