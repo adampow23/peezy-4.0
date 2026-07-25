@@ -73,6 +73,23 @@ Parity rule (LE-025/LE-031, updated): these two loaders must stay field-identica
 - Test creds: peezy-test-bot@test.peezyapp.com / PeezyTest2026!
 - Accessibility ids: 51 usages in 13 files, mapped to T01-T10 UITests. **All new views require .accessibilityIdentifier() — mandatory convention**
 
+## Corrections from Spec 04 run (2026-07-25)
+
+- **"39 templated flows" is 38.** 47 files − 8 customs − ScanInventory. 38 transcribed (495 strings script-verified byte-for-byte against sources), 38 deleted. Tasks/Task Cards/ now holds exactly 9 structs.
+- **Deployed rules are default-deny for new collections** (verified via Rules REST API this session). flowDefinitions therefore has NO client read; it is served through the getWorkflowQualifying callable (Firestore-first lookup — the Q11 adoption, literally). Switch to direct reads only after Adam's reconciled-rules deploy. NOTE: the DEPLOYED ruleset contains the live waitlist rule; the LOCAL firestore.rules still lacks it — the deployed text was captured this session if needed for reconciliation.
+- **Spec C.4's `pending_matching` client case was the wrong string.** submitWorkflowAnswers writes `matching_in_progress` to TASK docs (getWorkflowQualifying.js); `pending_matching` only ever lands on workflowSubmissions docs. Client case added for the real string; index.js:225 dropped the phantom from its filter.
+- **Full `firebase deploy --only functions` ABORTS**: orphaned cloud function `resetInventory` (us-central1) has no local source (client resets inventory via direct Firestore deletes, InventorySessionManager.swift:428). Use targeted deploys, or Adam runs `firebase functions:delete resetInventory --region us-central1`.
+- **Sim + host filesystem:** a synchronous `Data(contentsOf:)` on a host path (~/Desktop) from a sim process blocks first render on TCC — the app shows a white screen with an EMPTY AX tree. Stage files into the app container (`$(simctl get_app_container ...)/tmp`) and read async. Container resets on reinstall — re-stage after every install.
+- **Firestore ObjC exceptions are uncatchable in Swift**: `documentWithPath:` with an empty segment SIGABRTs straight through `do/catch`. Guard `!id.isEmpty` before every document() call built from variables (validator-confirmed crash; fixed 45d3197).
+- **Type-2 answer keys are a payload contract**: step ids action / handling_update / business_name / current_business / handling_cancel / handling_find must survive any definition edit — submission byte-parity was validated on them.
+- **Engine expressiveness is capped at observed need** — {value,when,next} branches, bodyVariants, forEachRow+rowConfigs, requiresRow, {rowsList} rowLabels. Extend only against a new observed need.
+- **PBXFileSystemSynchronizedRootGroup handles deletion too** — the 38-file delete built green with zero pbxproj edits.
+- **Assessment count UI**: raising a category count is the "+" stepper on a selected tile — re-tapping the tile is a no-op (MultiSelectTile.swift:128-138).
+- **Post-submit stage residue**: the engine leaves stage:"capture" on the task doc after submission (old screens wrote no stage). Reconcile when the spine stages become live UI (Spec 05+).
+- **Retake leftovers**: assessment retake does not reset the per-uid dose UserDefaults counters and leaves the frozen dailyDose doc — a fresh plan can claim same-day progress (task chip spawned; fix at retakeAssessment).
+- **Dead validator agents leave fixture debris** — first Phase A validator died mid-setup (session limit) leaving 3 copied task docs (giveaway: identical rounded .000 createdAt). Audit users/{uid}/tasks after any aborted validator run.
+- businessSearch dropdown never renders visually in ANY binary (zero-height ScrollView; rows present in AX) — pre-existing kit bug, both TaskFlowBusinessSearchCard and likely ConfirmAddressCard; task chip spawned.
+
 ## Corrections from Spec 03 run (2026-07-25)
 
 - TaskStatus: `pending` case added (server lowercase); `matchingInProgress` deleted (never written, never queried). Server ALSO writes `pending_matching` and queries `matching_in_progress` (snake case) — no client case, falls back to .upcoming; reconcile in Spec 04.
@@ -102,7 +119,11 @@ Parity rule (LE-025/LE-031, updated): these two loaders must stay field-identica
 
 ## Open items (tracked, not forgotten)
 
-- Deploy reconciled firestore.rules (Adam reviews; waitlist rule must be merged in first)
+- Deploy reconciled firestore.rules (Adam reviews; waitlist rule must be merged in first). After that: optionally add a flowDefinitions read rule and swap FlowDefinitionStore to direct reads (one function)
+- Adam: delete or re-source the orphaned cloud fn resetInventory so full functions deploys stop aborting
+- markCurrentTaskPeezyHandling + PeezyHomeView's legacy activeTask card path are unreachable post-universal-routing — delete in Spec 05
+- seedTaskCatalog.js never writes estPeezy to Firestore though the JSON carries it (pre-existing) — reconcile on next catalog-field change
+- Paywall subscribed-pass-through is environment-limited under simctl (StoreKit test config needs an Xcode scheme launch) — verify from Xcode before submission
 - Dead-code deletion via Xcode per DEAD_CODE_REMOVAL_LIST.md (7 SAFE + 2 staged removals)
 - PrivacyInfo.xcprivacy has no NSPrivacyCollectedDataTypes despite account data + frames→Anthropic; no ToS/Privacy links on auth screens (cheap hardening, next submission)
 - backup/friend-changes-2026-04-28 branch: confirm-then-delete

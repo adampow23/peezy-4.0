@@ -17,8 +17,9 @@ iOS moving concierge app. Swift/SwiftUI client + Firebase backend (Cloud Functio
 
 1. **Paywall gate is post-assessment, not "after three completed tasks."** The three-task trigger does not exist in code. Hard gate at CompletionFlowView.swift:52-58, dismissible via X (PaywallGateView:31-41). This is the Review #3-approved behavior; changing it is a product decision, not a bug fix.
 2. **Four tabs:** Home / Tasks / Chat / Settings. Chat = SupportChatView (live, Firestore-backed support chat). The AI chat was removed; support chat was not.
-3. **Catalog is 56 tasks.** actionType: workflow=43, off-app=12, in-app-inventory=1. taskType: survey=43, provide_info=13. 44 distinct workflowIds.
+3. **Catalog v2 is 46 tasks (Spec 04).** actionType: workflow=32, off-app=9, in-app=4, in-app-inventory=1. taskType: survey=32, provide_info=14. 33 rows carry a workflowId (incl. scan_inventory). The 56-task catalog is history: 24 rows removed by the approved merges, 9 merge targets + 5 in-app adds landed. Flow content lives in the Firestore `flowDefinitions` collection (25 docs) seeded from functions/flowDefinitionsData.json — adding a vertical is a Firestore write.
 4. **WorkflowManager.swift does not exist.** TimelineService is deleted. The live task-loading paths are exactly the two below.
+5. **Flow rendering is config-driven (Spec 04).** FlowEngineView renders flowDefinitions through the untouched component kit; TaskFlowRouter is a thin resolver (capture registry → admin-pushed → in-app map → 8 Swift customs → flowDefinitions lookup → coming-right-up card). The 38 templated screens and the newFlowIds allowlist are deleted. Definitions reach the client THROUGH the getWorkflowQualifying callable — deployed rules grant no direct read on flowDefinitions (rules deploys are Adam-gated).
 
 ## Live Data Paths (the only two)
 
@@ -36,14 +37,16 @@ Parity rule: these two loaders must stay field-identical except `completedAt` (M
 | Entry | MainInterface/Models/PeezyV1App.swift | @main; injects SubscriptionManager.shared (only root env object) |
 | Root gate | MainInterface/Views/AppRootView.swift | Builds UserState at :137 (only live construction site) |
 | Container | MainInterface/Views/PeezyMainContainer.swift | 4 tabs |
-| Home VM | MainInterface/Models/PeezyHomeViewModel.swift | Daily Dose math :182-193; hardcoded newFlowIds :84-113; REWRITE target |
-| Router | MainInterface/Models/TaskFlowRouter.swift | Closed 47-case switch; REWRITE target |
-| Card model | MainInterface/Models/PeezyCard.swift | 28 fields; id-only Equatable :365-367 (hazard); REWRITE target |
+| Home VM | MainInterface/Models/PeezyHomeViewModel.swift | Thin VM; dose frozen per day via DailyDoseEngine (users/{uid}.dailyDose); universal flowId routing (workflowId ?? lowercased taskId) |
+| Router | MainInterface/Models/TaskFlowRouter.swift | Thin resolver (Spec 04); unknown ids → ComingRightUpCard |
+| Flow engine | Tasks/FlowEngine/ | FlowDefinition (+row resolution), FlowEngineView (+loader/coming-right-up), InAppTaskFlows, CaptureRegistry, FlowEngineHarness (DEBUG, env-gated) |
+| Card model | MainInterface/Models/PeezyCard.swift | Memberwise Equatable; stage/payload fields; TaskStatus incl. pending + matching_in_progress |
+| Paywall policy | MainInterface/Models/PaywallPolicy.swift | requiresSubscription(for:) + PaywallGateSheet — the ONE sanctioned second PaywallGateView call site |
 | Identity | MainInterface/Models/UserState.swift | Address parse fixed 8413f2d (city/state only); full rebuild in v1 |
 | StoreKit | MainInterface/Models/SubscriptionManager.swift | COMPLIANCE — port verbatim, never touch |
 | Paywall | MainInterface/Views/Paywall/PaywallGateView.swift | COMPLIANCE — Review #3 fix lives here |
-| Flow kit | Tasks/Task Card Components/ (18 hubs) | All real flow UI; TaskFlowTitleCard has 49 dependents |
-| Flow screens | Tasks/Task Cards/ (47 structs) | Templated configs over the kit; superseded by v1 engine |
+| Flow kit | Tasks/Task Card Components/ (17 hubs) | Renderer library for the engine — PORT VERBATIM (TaskFlowDismissButton deleted Spec 04) |
+| Flow screens | Tasks/Task Cards/ (9 structs) | 8 Swift customs (die Specs 05–06) + ScanInventoryFlow (capture registry) |
 | Submission | MainInterface/Models/WorkflowService.swift | Callable pattern (LE-029); 27 consumers |
 | Parser | TaskConditionerParser.swift | AND keys / OR values / strict-cast fail-false :69-74 |
 | Generation | TaskGenerationService | NSNumber cast canonical at :73 |
@@ -64,7 +67,8 @@ Parity rule: these two loaders must stay field-identical except `completedAt` (M
 ## Contract Facts a New Client Must Honor
 
 - Zero client-side webhook URLs. Callable → Firestore audit → server-side webhook + Twilio (LE-029)
-- Server-created tasks carry status string "pending" — no TaskStatus case; decodes to .upcoming. Reconcile deliberately in the stage-model work; do not "fix" in passing
+- Server task-doc statuses: "pending" (creation) and "matching_in_progress" (post-vendor-submission) — both have TaskStatus cases with waiting treatment (Spec 03/04). "pending_matching" exists ONLY on workflowSubmissions docs, never on task docs
+- Merged flows carry per-user rows: catalog rowGeneration → TaskGenerationService stamps flowRows on the task doc → engine expands (forEachRow/requiresRow). 2 bank taps = 2 bank rows inside FINANCIAL_ACCOUNTS
 - submitWorkflowAnswers response omits submissionId/message/estimatedResponseTime; client defaults mask it
 - userKnowledge/{uid}: rules gap patched locally (861f7e2, NOT deployed — reconcile waitlist rule first). Backend contextBuilder.js:40-47 expects {entries:{...}}; collection has never had a successful write → schema is greenfield, designed in v1
 - Firestore numbers: NSNumber cast pattern everywhere; no unguarded `as? Int`

@@ -76,10 +76,17 @@ fresh-context validator (bounded retry 2). PERIPHERY D–F. Deploys: ONE batch a
       conditional-branch-to-find_summary with cancelOnly bodyVariant (AX dumps);
       setup_utilities persistence {flowPath, flowAnswers, stage:capture} + kill/relaunch
       resume at confirmed_address (Firestore reads); fixture restored pristine
-- [ ] VALIDATOR DEFERRED: fresh-context agent hit the session usage limit (resets 12:40pm CT).
-      Re-run after reset; Phase A+B validators must BOTH pass before the Phase C deploy batch.
-      Harness lesson already folded in: stage defs JSON inside the app container
-      (host-path sync read blocks first render on TCC).
+- [x] VALIDATOR PASS 3/3 (fresh-context, 141 evidence files in scratchpad/validation_A/):
+      parity — 26 screen pairs across 5 flows (both manage_bank branches) pixel-identical
+      after masking status bar/caret; resume — kill/relaunch landed on current_business with
+      the variant-proving answer restored; payload — old vs new manage_vet submissions
+      byte-identical on canonicalized answers (2 expected admin SMS). Findings: (1)
+      harness-only SIGABRT — setStage with empty taskId → uncatchable Firestore ObjC
+      exception (FIXED, 45d3197); (2) businessSearch dropdown never renders visually in
+      EITHER binary — pre-existing kit bug, spun off as its own task; (3) engine leaves
+      stage:"capture" on the doc post-submit (old wrote none) — stage-model nuance for
+      SESSION_NOTES; (4) first validator attempt died on the session limit mid-fixture —
+      3 orphan docs found + cleaned. Fixture verified pristine post-run.
 
 ## Build status (writer side, evidence in commits + this session)
 
@@ -154,4 +161,63 @@ proposal per protocol §6.
 
 ## Review
 
-(filled at close)
+Six phases executed under the execution protocol: CORE A–C as separate commits with per-phase
+manifests and hub-diff-walkable histories (a6c04cb, 16217a9, ffbbc78 + follow-up 45d3197),
+PERIPHERY D–F (a27694f, 11e62e2, + this close). ONE deploy batch, exactly as sanctioned:
+targeted functions deploy (getWorkflowQualifying + submitWorkflowAnswers + peezyRespond;
+full deploy aborts on the orphaned cloud resetInventory — flagged, not deleted) + catalog v2
+reseed (46, ghost-check clean) + flowDefinitions seed (25, coverage-check clean).
+
+Validation: two fresh-context validators, zero bounded-retry cycles.
+- Phase A: PASS 3/3 (parity 26 screen pairs / resume / payload byte-parity), 141 evidence files.
+- Phases B–E: 13 PASS, 1 ENVIRONMENT-LIMITED (subscribed pass-through needs an Xcode-scheme
+  launch for StoreKit test config; code path documented), 0 FAIL, 101 evidence files.
+  46/46 catalog rows route; dose froze at 4 through a urgency-97 insert; three banners
+  rendered + the address banner correctly absent under newAddressPending; both paywall
+  gates fired with live prices and zero submissions leaked (zero admin SMS in the B–E run;
+  2 expected SMS in the A payload test).
+
+End state: test bot on the fresh catalog-v2 fixture (27 tasks; ADD_NEW_ADDRESS Completed by
+design — its completion recomputed distance to 561.7 mi / interstate). Defect found by
+validation fixed in-session (setStage empty-taskId SIGABRT). Two pre-existing bugs spun off
+as task chips (businessSearch dropdown invisible; retake doesn't reset dose counters).
+
+## SESSION_NOTES (protocol §6)
+
+What the spec got wrong / underspecified:
+1. "39 templated flows" — code-verified 38 (47 − 8 customs − ScanInventory). No harm; count
+   corrected in conventions.
+2. Phase C.4 named the client case `pending_matching`; the string actually written to task
+   docs is `matching_in_progress` (pending_matching is workflowSubmissions-only). Built per
+   reality, cited in the commit and conventions. Spec-author rule: name the WRITE SITE, not
+   the string, when reconciling statuses.
+3. The spec assumed the client can read a new `flowDefinitions` collection; deployed rules
+   are default-deny and rules deploys are Adam-gated. Resolved inside Q11's own decision:
+   getWorkflowQualifying serves the definitions (Firestore-first lookup). Spec-author rule:
+   any new client-read collection needs a rules line-item or a callable transport decision
+   IN the spec.
+4. Phase A's acceptance criteria (side-by-sides, resume, payload parity) predate the router —
+   nothing routes to the engine in Phase A. Filled with an env-gated DEBUG harness
+   (FlowEngineHarness + a 3-line AppRootView hook) that later phases kept using. Spec-author
+   rule: when a phase builds an engine before its router, the spec should name the
+   validation harness up front.
+5. "Deploys: the Phase B/C batch only" collided with `firebase deploy --only functions`
+   aborting on the orphaned resetInventory function — targeted deploy was the escape.
+6. Validator-brief errata worth keeping: account counts raise via the "+" stepper (not
+   re-taps); FindMovers' Book control is the summary's "Done" button.
+
+What surprised us:
+- A sync host-path file read from a sim process freezes FIRST RENDER (TCC) — white screen,
+  EMPTY AX tree. Container-staged files + async reads are mandatory harness hygiene.
+- Firestore ObjC exceptions sail through Swift catch: empty document path = SIGABRT.
+- Subagent session limits can kill a validator mid-fixture-mutation; debris audit
+  (rounded .000 createdAt copies) is now part of the recipe.
+- The kit's businessSearch dropdown has NEVER rendered visually (zero-height ScrollView);
+  free-text + Continue is what every user has actually been doing.
+- StoreKit test config is scheme-scoped: simctl-launched builds can't purchase, so
+  subscribed-path criteria need an Xcode-side check.
+
+Proposed doc edits: all applied this session (CLAUDE.md corrected facts §3–5, key files;
+conventions "Corrections from Spec 04 run" + open items). Decisions for Adam surfaced in
+open items: orphaned resetInventory deletion; rules reconciliation (deployed text captured);
+Xcode-side subscribed-path verification before submission.

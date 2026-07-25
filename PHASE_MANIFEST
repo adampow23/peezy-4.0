@@ -1,9 +1,8 @@
-# Spec 04 Phase A validator follow-up — setStage empty-taskId guard
+# Spec 04 Phase F — SESSION_NOTES + doc sync (PERIPHERY)
 # EDIT SITES
 tasks/todo.md
-Peezy 4.0/Tasks/FlowEngine/FlowEngineView.swift
-Peezy 4.0/MainInterface/Models/TaskActionService.swift
+CLAUDE.md
+peezy-conventions-v2.md
 # READ SITES
-# validation_A report — crash_manage_bank_121212.ips: Firestore documentWithPath: ObjC
-# exception (uncatchable in Swift) when taskId is empty; production always passes a real
-# taskId, the DEBUG harness may not.
+# functions/taskCatalogData.json — v2 counts for the corrected facts
+# validator reports (scratchpad validation_A/ + validation_BCDE/) — outcomes folded into docs
