@@ -4,7 +4,7 @@ enum TaskGrouping {
     struct Groups: Equatable {
         var todo: [PeezyCard]              // upcoming + snoozed (snoozed at bottom)
         var userInProgress: [PeezyCard]    // "You're on it"
-        var peezyOnIt: [PeezyCard]         // "Peezy is on it" — includes .inProgress and .matchingInProgress
+        var peezyOnIt: [PeezyCard]         // "Peezy is on it" — includes .inProgress and .pending
         var completed: [PeezyCard]
     }
 
@@ -23,7 +23,7 @@ enum TaskGrouping {
                 completed.append(task)
             case .userInProgress:
                 userInProgress.append(task)
-            case .inProgress, .matchingInProgress:
+            case .inProgress, .pending:
                 peezyOnIt.append(task)
             case .upcoming, .snoozed:
                 todo.append(task)

@@ -12,8 +12,8 @@ struct TaskRowHeader: View {
         TaskGrouping.isSnoozedEffective(task)
     }
 
-    private var isMatchingInProgress: Bool {
-        task.status == .matchingInProgress
+    private var isMatchingVendors: Bool {
+        task.status == .pending
     }
 
     var body: some View {
@@ -84,7 +84,7 @@ struct TaskRowHeader: View {
         case .userInProgress:
             badge(text: "You're on it", color: PeezyTheme.Colors.infoBlue)
         case .peezyOnIt:
-            badge(text: isMatchingInProgress ? "Matching vendors" : "Peezy is on it", color: PeezyTheme.Colors.accentBlue)
+            badge(text: isMatchingVendors ? "Matching vendors" : "Peezy is on it", color: PeezyTheme.Colors.accentBlue)
         case .todo where isSnoozed:
             badge(text: "Snoozed", color: PeezyTheme.Colors.warningOrange)
         default:

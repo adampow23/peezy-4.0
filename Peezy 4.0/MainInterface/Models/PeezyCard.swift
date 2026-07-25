@@ -6,7 +6,10 @@ import FirebaseFirestore
 enum TaskStatus: String, Codable {
     case upcoming = "Upcoming"
     case inProgress = "InProgress"
-    case matchingInProgress = "MatchingInProgress"
+    // Server-created tasks carry lowercase "pending" (functions/index.js). Rendered as
+    // waiting — same treatment the removed MatchingInProgress case had (nothing ever
+    // wrote that CamelCase string; verified Spec 03 Phase A).
+    case pending = "pending"
     case userInProgress = "UserInProgress"
     case completed = "Completed"
     case snoozed = "Snoozed"
@@ -74,6 +77,12 @@ struct PeezyCard: Identifiable, Equatable, Codable {
     // Estimated effort: Peezy-handled time string and self-service hours
     var estPeezy: String?
     var estHours: Double?
+
+    // Workflow spine stage (persisted; nil = notStarted for workflow tasks)
+    var stage: TaskStage?
+
+    // Per-type payload (shells until Specs 04–05; nil = no payload)
+    var payload: CardPayload?
 
     // MARK: - Card Types
     enum CardType: String, Codable {
@@ -187,8 +196,9 @@ struct PeezyCard: Identifiable, Equatable, Codable {
         if isSnoozed {
             return false
         }
-        // Don't show completed, skipped, in-progress, or user-in-progress tasks
-        if status == .completed || status == .skipped || status == .inProgress || status == .userInProgress {
+        // Don't show completed, skipped, in-progress, pending (server matching), or
+        // user-in-progress tasks — none are actionable from the stack
+        if status == .completed || status == .skipped || status == .inProgress || status == .userInProgress || status == .pending {
             return false
         }
         return true
@@ -223,7 +233,9 @@ struct PeezyCard: Identifiable, Equatable, Codable {
         tips: String? = nil,
         whyNeeded: String? = nil,
         estPeezy: String? = nil,
-        estHours: Double? = nil
+        estHours: Double? = nil,
+        stage: TaskStage? = nil,
+        payload: CardPayload? = nil
     ) {
         self.id = id
         self.type = type
@@ -253,6 +265,8 @@ struct PeezyCard: Identifiable, Equatable, Codable {
         self.whyNeeded = whyNeeded
         self.estPeezy = estPeezy
         self.estHours = estHours
+        self.stage = stage
+        self.payload = payload
     }
     
     // MARK: - Factory Methods
@@ -361,11 +375,24 @@ struct PeezyCard: Identifiable, Equatable, Codable {
         }
     }
     
-    // MARK: - Equatable
-    static func == (lhs: PeezyCard, rhs: PeezyCard) -> Bool {
-        lhs.id == rhs.id
-    }
+    // Equatable is synthesized MEMBERWISE on purpose (Spec 03 Phase A). The old
+    // id-only == made SwiftUI skip row bodies when only fields changed, leaving
+    // stale UI. Where identity — not value — is intended, compare card.id.
 }
+
+// MARK: - Card Payload (empty shells — populated in Specs 04–05)
+
+/// Per-type payload carried by a card. Absent (nil) means no payload.
+enum CardPayload: Codable, Equatable {
+    case vendor(VendorRef)
+    case capture(CaptureRef)
+}
+
+/// Shell — vendor fields arrive with the vendor verticals (Spec 04).
+struct VendorRef: Codable, Equatable {}
+
+/// Shell — capture fields arrive with the capture registry (Spec 05).
+struct CaptureRef: Codable, Equatable {}
 
 // MARK: - Card Action Result
 /// Tracks what happened when user swiped a card

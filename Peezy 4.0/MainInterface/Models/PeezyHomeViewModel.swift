@@ -267,60 +267,18 @@ final class PeezyHomeViewModel {
             let now = Date()
 
             for document in snapshot.documents {
-                let data = document.data()
-                let statusString = data["status"] as? String ?? "Upcoming"
-                let status = TaskStatus(rawValue: statusString) ?? .upcoming
-                if status == .completed || status == .skipped { continue }
+                // Single decode path: PeezyCardFirestoreMapper (LE-025/031 successor).
+                // Do not re-inline field decoding here.
+                guard var card = PeezyCardFirestoreMapper.card(from: document) else { continue }
+                if card.status == .completed || card.status == .skipped { continue }
 
-                let priorityString = data["priority"] as? String ?? "Medium"
-                let priority: PeezyCard.Priority
-                switch priorityString.lowercased() {
-                case "high", "urgent": priority = .high
-                case "low": priority = .low
-                default: priority = .normal
-                }
+                if let snoozedUntil = card.snoozedUntil, snoozedUntil > now { continue }
 
-                let dueDate = (data["dueDate"] as? Timestamp)?.dateValue()
-                let snoozedUntil = (data["snoozedUntil"] as? Timestamp)?.dateValue()
-                let lastSnoozedAt = (data["lastSnoozedAt"] as? Timestamp)?.dateValue()
-                let urgencyPercentage = (data["urgencyPercentage"] as? NSNumber)?.intValue
-                let userInProgressDate = (data["userInProgressDate"] as? Timestamp)?.dateValue()
-                let userInProgressReturnDate = (data["userInProgressReturnDate"] as? Timestamp)?.dateValue()
-
-                if let snoozedUntil = snoozedUntil, snoozedUntil > now { continue }
-
-                let isVendorTask = (data["category"] as? String)?.lowercased().contains("vendor") ?? false
-                let cardType: PeezyCard.CardType = isVendorTask ? .vendor : .task
-
-                var card = PeezyCard(
-                    id: document.documentID, type: cardType,
-                    title: data["title"] as? String ?? "Untitled Task",
-                    subtitle: data["desc"] as? String ?? "",
-                    colorName: colorNameForPriority(priority),
-                    taskId: data["id"] as? String ?? document.documentID,
-                    workflowId: data["workflowId"] as? String,
-                    vendorCategory: isVendorTask ? (data["category"] as? String) : nil,
-                    priority: priority,
-                    createdAt: (data["createdAt"] as? Timestamp)?.dateValue() ?? Date(),
-                    status: status, dueDate: dueDate,
-                    snoozedUntil: snoozedUntil, lastSnoozedAt: lastSnoozedAt,
-                    taskCategory: data["category"] as? String,
-                    urgencyPercentage: urgencyPercentage,
-                    userInProgressDate: userInProgressDate,
-                    userInProgressReturnDate: userInProgressReturnDate,
-                    selfServiceOnly: (data["selfServiceOnly"] as? Bool) ?? false,
-                    actionType: data["actionType"] as? String,
-                    taskType: data["taskType"] as? String,
-                    tips: data["tips"] as? String,
-                    whyNeeded: data["whyNeeded"] as? String,
-                    estPeezy: data["estPeezy"] as? String,
-                    estHours: (data["estHours"] as? NSNumber)?.doubleValue
-                )
-
-                if card.status == .inProgress {
+                if card.status == .inProgress || card.status == .pending {
+                    // pending = server matching in progress — waiting, not actionable
                     inProgressBuffer.append(card)
                 } else if card.status == .userInProgress {
-                    if let returnDate = userInProgressReturnDate, returnDate <= now {
+                    if let returnDate = card.userInProgressReturnDate, returnDate <= now {
                         card.status = .upcoming
                         card.userInProgressDate = nil
                         card.userInProgressReturnDate = nil
@@ -753,14 +711,4 @@ final class PeezyHomeViewModel {
     }
     #endif
 
-    // MARK: - Helpers
-
-    private func colorNameForPriority(_ priority: PeezyCard.Priority) -> String {
-        switch priority {
-        case .urgent: return "red"
-        case .high: return "orange"
-        case .normal: return "green"
-        case .low: return "gray"
-        }
-    }
 }

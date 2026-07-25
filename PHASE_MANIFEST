@@ -1,11 +1,20 @@
-# Spec 02 — Phase D manifest (reflect-back interstitials).
-# Phase D produced NO code: the spec's target mechanism ("the
-# interstitialComment system in AssessmentCoordinator") does not exist in the
-# codebase — zero case-insensitive matches for "interstitial" in any Swift
-# file, ConversationalInterestitialView.swift deleted in eab4193, and the
-# coordinator's inputContext system has zero consumers (dead code). Per the
-# spec's own rule ("if the mechanism can't support a beat without new UI,
-# mark NEEDS-CLARIFICATION and skip that beat rather than building UI"), all
-# four beats are marked NEEDS-CLARIFICATION and skipped. Details + options in
-# tasks/todo.md and the phase report.
+# Spec 03 Phase A — PeezyCard rewrite + single decoding path
+# EDIT SITES
 tasks/todo.md
+Peezy 4.0/MainInterface/Models/PeezyCard.swift
+Peezy 4.0/MainInterface/Models/TaskStage.swift
+Peezy 4.0/Tasks/Store/PeezyCardFirestoreMapper.swift
+Peezy 4.0/MainInterface/Models/PeezyHomeViewModel.swift
+Peezy 4.0/Tasks/Store/TaskGrouping.swift
+Peezy 4.0/Tasks/Views/TaskRowHeader.swift
+# READ SITES (audited this session, not edited; listed per CORE-tier read-site rule)
+# Peezy 4.0/Tasks/Store/TasksStore.swift — mapper consumer, no decode change needed
+# Peezy 4.0/Tasks/Views/TasksTabView.swift — onChange(of: store.tasks) Equatable audit
+# Peezy 4.0/Tasks/Views/TasksList.swift — .id(rowIdentity) Equatable workaround audit
+# Peezy 4.0/Tasks/Views/TaskRow.swift — preview construction sites
+# Peezy 4.0/MainInterface/Views/PeezyHomeView.swift — onChange(of: focusedTask) audit
+# Peezy 4.0/MainInterface/Views/PeezyMainContainer.swift — focusedTask plumbing, StackVM dead check
+# Peezy 4.0/MainInterface/Models/PeezyStackViewModel.swift — DEAD, zero instantiation
+# Peezy 4.0/MainInterface/Models/PeezyResponse.swift — card construction w/o matchingInProgress
+# Peezy 4.0/MainInterface/Views/TaskFlow/PreviewData.swift — preview constructions
+# Preview Content/PreviewHelpers.swift — preview constructions

@@ -2,8 +2,10 @@ import FirebaseFirestore
 import Foundation
 
 enum PeezyCardFirestoreMapper {
-    /// Converts a Firestore document to a PeezyCard, or nil if parsing fails.
-    /// Ported from TimelineService.fetchUserTasks().
+    /// THE single Firestore→PeezyCard decode path (successor to the LE-025/031
+    /// parity rule). Home (PeezyHomeViewModel.loadTasks) and the Tasks tab
+    /// (TasksStore listener) BOTH decode through this function — do not add a
+    /// second path or re-inline field decoding at a call site.
     static func card(from document: QueryDocumentSnapshot) -> PeezyCard? {
         let data = document.data()
 
