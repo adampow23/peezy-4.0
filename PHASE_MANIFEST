@@ -1,9 +1,11 @@
-# Spec 02 — Phase C manifest (seed-file reweights + reseed).
-# The PreToolUse hook denies Write/Edit on any repo path not listed here.
-#
-# Read-site files this phase: functions/taskCatalogData.json,
-# functions/seedTaskCatalog.js (read-only — deploy mechanics).
-# Deploy: `cd functions && node seedTaskCatalog.js` — catalog reseed is the
-# ONLY deploy in Spec 02 (no functions, no rules).
+# Spec 02 — Phase D manifest (reflect-back interstitials).
+# Phase D produced NO code: the spec's target mechanism ("the
+# interstitialComment system in AssessmentCoordinator") does not exist in the
+# codebase — zero case-insensitive matches for "interstitial" in any Swift
+# file, ConversationalInterestitialView.swift deleted in eab4193, and the
+# coordinator's inputContext system has zero consumers (dead code). Per the
+# spec's own rule ("if the mechanism can't support a beat without new UI,
+# mark NEEDS-CLARIFICATION and skip that beat rather than building UI"), all
+# four beats are marked NEEDS-CLARIFICATION and skipped. Details + options in
+# tasks/todo.md and the phase report.
 tasks/todo.md
-functions/taskCatalogData.json
