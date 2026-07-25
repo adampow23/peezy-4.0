@@ -16,7 +16,6 @@ struct PeezyMainContainer: View {
     @Binding var userState: UserState?
 
     // Timeline still uses PeezyStackViewModel for its data loading
-    @State private var timelineViewModel = PeezyStackViewModel()
     @State private var hasLoadedTimeline = false
 
     // Tasks tab listener-backed store — lifecycle owned here so it spans tab switches
@@ -98,9 +97,7 @@ struct PeezyMainContainer: View {
         }
         .onChange(of: selectedTab) { _, newValue in
             if newValue == .tasks && !hasLoadedTimeline {
-                timelineViewModel.userState = userState
                 Task {
-                    await timelineViewModel.loadInitialCards()
                     hasLoadedTimeline = true
                 }
             }

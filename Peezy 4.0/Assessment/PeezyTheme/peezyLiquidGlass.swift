@@ -61,7 +61,6 @@ struct PeezyLiquidGlassModifier: ViewModifier {
         } else {
             // iOS 16 fallback: existing DIY glass
             content
-                .peezyGlassBackground(cornerRadius: cornerRadius)
         }
     }
 
