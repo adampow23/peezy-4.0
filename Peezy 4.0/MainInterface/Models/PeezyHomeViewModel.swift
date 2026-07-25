@@ -154,8 +154,14 @@ final class PeezyHomeViewModel {
     private var daysUntilMoveValue: Int { userState?.daysUntilMove ?? 30 }
     private var bufferDays: Int { doseEngine.bufferDays(daysUntilMove: daysUntilMoveValue) }
 
+    /// Today's frozen dose ids (Spec 04 Phase E). Set by loadTasks; nil only
+    /// before the first load. While set, the announced target is the frozen
+    /// count — mid-day inserts and completions can no longer move it.
+    var frozenDoseTaskIds: [String]?
+
     var dailyTarget: Int {
-        doseEngine.dailyTarget(activeTaskCount: allActiveTasks.count, daysUntilMove: daysUntilMoveValue)
+        frozenDoseTaskIds?.count
+            ?? doseEngine.dailyTarget(activeTaskCount: allActiveTasks.count, daysUntilMove: daysUntilMoveValue)
     }
 
     var isTodayComplete: Bool {
@@ -259,12 +265,32 @@ final class PeezyHomeViewModel {
 
             let sorted = doseEngine.urgencySorted(cards)
 
+            // Dose freeze (Spec 04 Phase E): first computation of the day
+            // locks {date, taskIds} on the user doc; every later load today
+            // serves the frozen set. Tasks generated mid-day join tomorrow.
+            let today = todayISOString()
+            var frozen = await doseEngine.loadFrozenDose(userId: userId)
+            if frozen?.date != today {
+                let target = doseEngine.dailyTarget(
+                    activeTaskCount: sorted.count,
+                    daysUntilMove: userState?.daysUntilMove ?? 30
+                )
+                let dose = DailyDoseEngine.FrozenDose(
+                    date: today,
+                    taskIds: sorted.prefix(target).map { $0.id }
+                )
+                await doseEngine.freeze(dose, userId: userId)
+                frozen = dose
+            }
+            let frozenIds = frozen?.taskIds ?? []
+
             await MainActor.run {
                 self.allActiveTasks = sorted
                 self.inProgressTaskCount = inProgressBuffer.count
                 self.userInProgressTaskCount = userInProgressBuffer.count
-                let batch = Array(sorted.prefix(self.dailyTarget))
-                self.taskQueue = batch
+                self.frozenDoseTaskIds = frozenIds
+                // Queue = frozen ids still active, in frozen order.
+                self.taskQueue = frozenIds.compactMap { id in sorted.first { $0.id == id } }
                 self.determineHomeState()
             }
         } catch {
@@ -539,8 +565,12 @@ final class PeezyHomeViewModel {
     func dismissFirstTimeWelcome() {
         UserDefaults.standard.set(true, forKey: kHasSeenFirstTimeWelcome)
         if taskQueue.isEmpty {
-            let batch = Array(allActiveTasks.prefix(dailyTarget))
-            taskQueue = batch
+            if let frozenIds = frozenDoseTaskIds {
+                // Rebuild strictly from today's frozen set (Spec 04 Phase E).
+                taskQueue = frozenIds.compactMap { id in allActiveTasks.first { $0.id == id } }
+            } else {
+                taskQueue = Array(allActiveTasks.prefix(dailyTarget))
+            }
         }
         determineHomeState()
     }

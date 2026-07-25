@@ -1,14 +1,10 @@
-# Spec 04 Phase D — Paywall gate (c) (PERIPHERY)
+# Spec 04 Phase E — Dose freeze + reflect-backs (PERIPHERY)
 # EDIT SITES
 tasks/todo.md
-Peezy 4.0/MainInterface/Models/PaywallPolicy.swift
-Peezy 4.0/Tasks/FlowEngine/FlowEngineView.swift
-Peezy 4.0/Tasks/Task Cards/FindMoversFlow.swift
-Peezy 4.0/Tasks/Task Cards/FindCleanersFlow.swift
-# SANCTIONED SECOND PaywallGateView CALL SITE (presentation code untouched):
-# PaywallPolicy.swift hosts the single new PaywallGateView instantiation
-# (PaywallGateSheet); engine + SPINE flows present it through that one site.
-# READ SITES (audited, not edited — COMPLIANCE)
-# Peezy 4.0/MainInterface/Views/Paywall/PaywallGateView.swift — init(onDismiss:), env SubscriptionManager
-# Peezy 4.0/MainInterface/Models/SubscriptionManager.swift — .shared.isSubscribed
-# Peezy 4.0/Assessment/AssessmentViews/Onboarding/CompletionFlowView.swift — soft gate untouched
+Peezy 4.0/MainInterface/Models/DailyDoseEngine.swift
+Peezy 4.0/MainInterface/Models/PeezyHomeViewModel.swift
+Peezy 4.0/Assessment/AssessmentModels/AssessmentCoordinator.swift
+Peezy 4.0/Assessment/AssessmentModels/AssessmentFlowView.swift
+# READ SITES (audited, not edited)
+# Peezy 4.0/MainInterface/Views/PeezyHomeView.swift — dose counter/done-today consumers of dailyTarget
+# Peezy 4.0/Assessment/AssessmentModels/AssessmentDataManager.swift — beat condition fields

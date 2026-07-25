@@ -341,8 +341,41 @@ class AssessmentCoordinator: ObservableObject {
         }
     }
     
+    // MARK: - Reflect-Backs (Spec 04 Phase E — copy LOCKED)
+
+    /// Banner rendered on the question FOLLOWING each beat — the revived
+    /// inputContext pathway, mechanism (a) from the Spec 02 report. Beats
+    /// resolve against the LIVE sequence (branching-safe: the banner lands
+    /// on whichever step actually follows the beat) and only fire when the
+    /// beat put something on the plan.
+    func reflectBack(for step: AssessmentInputStep) -> String? {
+        guard let index = sequence.firstIndex(of: .input(step)), index > 0,
+              let previous = sequence[index - 1].inputStep else { return nil }
+
+        switch previous {
+        case .hasVet where dataManager.hasVet.lowercased() == "yes":
+            return "Vet transfer just went on your plan."
+
+        case .childrenInDaycare where dataManager.childrenInSchool.lowercased() == "yes"
+            || dataManager.childrenInDaycare.lowercased() == "yes":
+            return "School and daycare handling — on the plan."
+
+        case .newAddress where !dataManager.newAddressPending
+            && !dataManager.newAddress.isEmpty
+            && !dataManager.currentAddress.isEmpty:
+            return "Got both addresses — your plan is taking shape."
+
+        case .hireCleaners where dataManager.hireMovers.lowercased() == "yes"
+            || dataManager.hireCleaners.lowercased() == "yes":
+            return "Movers, cleaning, supplies: we'll bring you options — you'll never chase quotes."
+
+        default:
+            return nil
+        }
+    }
+
     // MARK: - Input Context (Header + Subheader for Input Screens)
-    
+
     /// Returns the context that appears at the top of an input screen.
     /// This typewriters in, then the input controls are revealed below.
     func inputContext(for step: AssessmentInputStep) -> InputContext {

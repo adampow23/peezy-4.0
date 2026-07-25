@@ -108,7 +108,15 @@ struct AssessmentFlowView: View {
     private func questionView(for node: AssessmentNode) -> some View {
         switch node {
         case .input(let step):
-            questionContent(for: step)
+            VStack(spacing: 0) {
+                // Reflect-back beat (Spec 04 Phase E): confirmation banner on
+                // the question following pets / kids / address pair / services.
+                if let reflectText = coordinator.reflectBack(for: step) {
+                    ReflectBackBanner(text: reflectText)
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+                questionContent(for: step)
+            }
         }
     }
     
@@ -165,6 +173,42 @@ struct AssessmentFlowView: View {
 
         default:                     EmptyView()
         }
+    }
+}
+
+// MARK: - Reflect-Back Banner (Spec 04 Phase E)
+
+/// Confirmation beat rendered above the question that follows it —
+/// "your answer just did something" made visible.
+struct ReflectBackBanner: View {
+    let text: String
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "checkmark.seal.fill")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(PeezyTheme.Colors.successGreen)
+
+            Text(text)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.75))
+                .fixedSize(horizontal: false, vertical: true)
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(PeezyTheme.Colors.successGreen.opacity(0.08))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(PeezyTheme.Colors.successGreen.opacity(0.18), lineWidth: 1)
+        )
+        .padding(.horizontal, 24)
+        .padding(.top, 8)
+        .accessibilityIdentifier("assessment.reflect_back")
     }
 }
 
