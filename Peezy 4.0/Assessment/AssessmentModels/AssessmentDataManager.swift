@@ -104,6 +104,10 @@ class AssessmentDataManager: ObservableObject {
     @Published var moveDistance: String = ""
     @Published var isInterstate: String = ""
 
+    /// Raw geocoded miles from the last computeDistanceAndInterstate() run.
+    /// Persisted on the identity doc; nil when geocoding failed or never ran.
+    private(set) var moveDistanceMiles: Double?
+
     // MARK: - Auto Room List (for Inventory Scanner)
 
     /// Generates a default room list based on bedroom count.
@@ -230,54 +234,25 @@ class AssessmentDataManager: ObservableObject {
     /// Geocodes both addresses and computes moveDistance and isInterstate.
     /// Call this before getAllAssessmentData() to populate the computed fields.
     /// Defaults to "Long Distance" / "Yes" on failure (better to over-prepare).
+    /// Geocoding itself lives in IdentityService.geocodedDistance (shared with
+    /// the Settings edit path).
     func computeDistanceAndInterstate() async {
-        let geocoder = CLGeocoder()
-
-        guard !currentAddress.isEmpty, !newAddress.isEmpty else {
+        guard let result = await IdentityService.shared.geocodedDistance(
+            from: currentAddress, to: newAddress
+        ) else {
             moveDistance = "Long Distance"
             isInterstate = "Yes"
+            moveDistanceMiles = nil
             return
         }
 
-        do {
-            // CLGeocoder requires sequential calls (shared internal state)
-            let fromPlacemarks = try await geocoder.geocodeAddressString(currentAddress)
-            let toPlacemarks = try await geocoder.geocodeAddressString(newAddress)
+        moveDistanceMiles = result.miles
+        moveDistance = result.miles >= 50 ? "Long Distance" : "Local"
+        isInterstate = result.isInterstate ? "Yes" : "No"
 
-            guard let fromPlacemark = fromPlacemarks.first,
-                  let toPlacemark = toPlacemarks.first,
-                  let fromLocation = fromPlacemark.location,
-                  let toLocation = toPlacemark.location else {
-                moveDistance = "Long Distance"
-                isInterstate = "Yes"
-                return
-            }
-
-            // Distance in miles
-            let distanceMeters = fromLocation.distance(from: toLocation)
-            let distanceMiles = distanceMeters / 1609.34
-            moveDistance = distanceMiles >= 50 ? "Long Distance" : "Local"
-
-            // Interstate comparison
-            let fromState = fromPlacemark.administrativeArea ?? ""
-            let toState = toPlacemark.administrativeArea ?? ""
-            if fromState.isEmpty || toState.isEmpty {
-                isInterstate = "Yes"
-            } else {
-                isInterstate = fromState.lowercased() == toState.lowercased() ? "No" : "Yes"
-            }
-
-            #if DEBUG
-            print("📍 Geocoding: \(String(format: "%.1f", distanceMiles)) miles, interstate: \(isInterstate)")
-            #endif
-
-        } catch {
-            #if DEBUG
-            print("⚠️ Geocoding failed: \(error.localizedDescription) — defaulting to Long Distance / Yes")
-            #endif
-            moveDistance = "Long Distance"
-            isInterstate = "Yes"
-        }
+        #if DEBUG
+        print("📍 Geocoding: \(String(format: "%.1f", result.miles)) miles, interstate: \(isInterstate)")
+        #endif
     }
 
     // MARK: - Save to Firestore
@@ -298,7 +273,18 @@ class AssessmentDataManager: ObservableObject {
             .document(userId)
             .collection("user_assessments")
             .addDocument(data: assessmentData)
-        
+
+        // Identity doc (v1 identity object) — additive; user_assessments keeps
+        // writing for backend compatibility this phase. Ordered before the
+        // userKnowledge write, which fails under currently deployed rules.
+        let identity = IdentityService.identity(
+            fromAssessment: assessmentData,
+            email: Auth.auth().currentUser?.email,
+            displayName: Auth.auth().currentUser?.displayName,
+            moveDistanceMiles: moveDistanceMiles
+        )
+        try await IdentityService.shared.save(identity, userId: userId)
+
         // Write to userKnowledge (keyed by uid — overwrites)
         try await db.collection("userKnowledge")
             .document(userId)
@@ -355,6 +341,7 @@ class AssessmentDataManager: ObservableObject {
         promoCode = ""
         moveDistance = ""
         isInterstate = ""
+        moveDistanceMiles = nil
         saveError = nil
     }
 }
