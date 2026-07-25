@@ -112,6 +112,16 @@ class TaskGenerationService {
                 // Copy selfServiceOnly flag (defaults to false if absent)
                 userTask["selfServiceOnly"] = taskData["selfServiceOnly"] as? Bool ?? false
 
+                // Row-generation (Spec 04 Phase B): stamp per-user rows the
+                // FlowEngine expands (merged flows, count-expanded providers,
+                // conditional sections). Absent config or zero rows = no field.
+                if let rowGen = taskData["rowGeneration"] as? [String: Any] {
+                    let rows = Self.flowRows(from: rowGen, assessment: assessment)
+                    if !rows.isEmpty {
+                        userTask["flowRows"] = rows
+                    }
+                }
+
                 tasksToCreate.append(userTask)
             } else {
                 #if DEBUG
@@ -153,6 +163,139 @@ class TaskGenerationService {
         #endif
 
         return totalTasks
+    }
+
+    // MARK: - Incremental Generation (Spec 04 Phase B)
+
+    /// Add-only generation for the tier-2 dose cards (DECLUTTER_INTENT /
+    /// STORAGE_NEED): after a card writes its assessment keys, this creates
+    /// tasks that NOW match — and never touches existing docs (a full rerun
+    /// would batch.setData over live statuses).
+    @MainActor
+    func generateNewlyMatchingTasks(
+        userId: String,
+        assessment: [String: Any],
+        moveDate: Date
+    ) async throws -> Int {
+        let existingSnapshot = try await db.collection("users").document(userId)
+            .collection("tasks").getDocuments()
+        let existingIds = Set(existingSnapshot.documents.map { $0.documentID })
+
+        let catalogSnapshot = try await db.collection("taskCatalog").getDocuments()
+
+        let batch = db.batch()
+        let userTasksRef = db.collection("users").document(userId).collection("tasks")
+        var created = 0
+
+        for document in catalogSnapshot.documents {
+            guard !existingIds.contains(document.documentID) else { continue }
+            let taskData = document.data()
+            let conditions = taskData["conditions"] as? [String: Any]
+            guard TaskConditionParser.evaluateConditions(conditions, against: assessment) else { continue }
+
+            let urgencyPercentage = (taskData["urgencyPercentage"] as? NSNumber)?.intValue ?? 50
+            let dueDate = calculateDueDate(moveDate: moveDate, urgencyPercentage: urgencyPercentage)
+
+            var userTask: [String: Any] = [
+                "id": document.documentID,
+                "taskId": taskData["taskId"] ?? document.documentID,
+                "title": taskData["title"] ?? "",
+                "desc": taskData["desc"] ?? "",
+                "category": taskData["category"] ?? "custom",
+                "actionCategory": taskData["actionCategory"] ?? "",
+                "actionType": taskData["actionType"] ?? "off-app",
+                "taskType": taskData["taskType"] as? String ?? "provide_info",
+                "urgencyPercentage": urgencyPercentage,
+                "estHours": taskData["estHours"] ?? 0,
+                "tips": taskData["tips"] ?? "",
+                "whyNeeded": taskData["whyNeeded"] ?? "",
+                "conditions": taskData["conditions"] ?? [:],
+                "dueDate": Timestamp(date: dueDate),
+                "status": "Upcoming",
+                "userId": userId,
+                "createdAt": Timestamp(date: Date()),
+            ]
+            if let workflowId = taskData["workflowId"] as? String {
+                userTask["workflowId"] = workflowId
+            }
+            userTask["selfServiceOnly"] = taskData["selfServiceOnly"] as? Bool ?? false
+            if let rowGen = taskData["rowGeneration"] as? [String: Any] {
+                let rows = Self.flowRows(from: rowGen, assessment: assessment)
+                if !rows.isEmpty {
+                    userTask["flowRows"] = rows
+                }
+            }
+
+            batch.setData(userTask, forDocument: userTasksRef.document(document.documentID))
+            created += 1
+        }
+
+        if created > 0 {
+            try await batch.commit()
+        }
+        return created
+    }
+
+    // MARK: - Flow Rows
+
+    /// Computes the per-user `flowRows` stamped on a task doc from the
+    /// catalog's rowGeneration config. Modes:
+    /// - counts: one row per selected category × its Spec-02 tap count
+    ///   (missing count = 1 for pre-count assessments)
+    /// - flag: a single named row when the assessment key is "Yes"
+    /// - accessRows: fixed rows plus key==value conditional rows
+    static func flowRows(from config: [String: Any], assessment: [String: Any]) -> [[String: Any]] {
+        let mode = config["mode"] as? String ?? ""
+
+        switch mode {
+        case "counts":
+            guard let categories = config["categories"] as? [String] else { return [] }
+            let countsKey = config["source"] as? String ?? ""
+            let selectionKey = config["selectionKey"] as? String ?? ""
+            let counts = assessment[countsKey] as? [String: Any] ?? [:]
+            let selected = assessment[selectionKey] as? [String] ?? []
+
+            var rows: [[String: Any]] = []
+            for category in categories where selected.contains(category) {
+                let count = max((counts[category] as? NSNumber)?.intValue ?? 1, 1)
+                let slug = Self.rowSlug(category)
+                for ordinal in 1...count {
+                    rows.append(["id": "\(slug)_\(ordinal)", "category": category])
+                }
+            }
+            return rows
+
+        case "flag":
+            guard let rowId = config["rowId"] as? String,
+                  let source = config["source"] as? String,
+                  (assessment[source] as? String)?.lowercased() == "yes" else { return [] }
+            return [["id": rowId]]
+
+        case "accessRows":
+            var rows: [[String: Any]] = (config["always"] as? [String] ?? []).map { ["id": $0] }
+            for conditional in config["conditional"] as? [[String: Any]] ?? [] {
+                guard let rowId = conditional["rowId"] as? String,
+                      let key = conditional["key"] as? String,
+                      let expected = conditional["equals"] as? String else { continue }
+                if (assessment[key] as? String) == expected {
+                    rows.append(["id": rowId])
+                }
+            }
+            return rows
+
+        default:
+            return []
+        }
+    }
+
+    private static func rowSlug(_ category: String) -> String {
+        category.lowercased()
+            .map { $0.isLetter || $0.isNumber ? $0 : "_" }
+            .reduce(into: "") { result, char in
+                if char == "_" && result.hasSuffix("_") { return }
+                result.append(char)
+            }
+            .trimmingCharacters(in: CharacterSet(charactersIn: "_"))
     }
 
     // MARK: - Due Date Calculation

@@ -53,7 +53,7 @@ enum FlowStepKind: String, Codable, Equatable {
 /// Swift screens. Config fields are optional; absent means the kit
 /// component's own default (restated in FlowEngineView) applies.
 struct FlowStep: Codable, Equatable {
-    let id: String
+    var id: String
     let kind: FlowStepKind
 
     // Navigation. `next` is the default successor (also drives the depth-card
@@ -88,6 +88,38 @@ struct FlowStep: Codable, Equatable {
     // summary
     var subtext: String?
     var bodyVariants: [FlowSummaryVariant]?
+
+    // Row-generation (Spec 04 Phase B). Rows are stamped on the task doc as
+    // `flowRows` by TaskGenerationService from the catalog's rowGeneration
+    // config; definitions reference them three ways:
+    /// Step included only when the task's rows contain this row id
+    /// (e.g. the DMV registration section when hasVehicles).
+    var requiresRow: String?
+    /// Step expands into one chained instance per row (instance id
+    /// "{rowId}.{stepId}" — also the answer key), config per row category.
+    var forEachRow: Bool?
+    var rowConfigs: [String: FlowRowConfig]?
+    /// Summary-step labels for the {rowsList} substitution, keyed by row id.
+    var rowLabels: [String: String]?
+}
+
+/// Per-category strings for a forEachRow step instance.
+struct FlowRowConfig: Codable, Equatable {
+    let question: String
+    let placeholder: String
+    let searchHint: String
+}
+
+/// One stamped row from the task doc's `flowRows` array.
+struct FlowRow: Equatable {
+    let id: String
+    let category: String?
+
+    init?(firestoreData: [String: Any]) {
+        guard let id = firestoreData["id"] as? String else { return nil }
+        self.id = id
+        self.category = firestoreData["category"] as? String
+    }
 }
 
 /// Branch taken when the step's answer equals `value` and every `when`
@@ -110,6 +142,81 @@ struct FlowOptionDef: Codable, Equatable {
 struct FlowSummaryVariant: Codable, Equatable {
     let when: [String: String]
     let body: String
+}
+
+// MARK: - Row Resolution
+
+extension FlowDefinition {
+    /// Steps specialized to this task's stamped rows: forEachRow steps expand
+    /// into one chained instance per matching row, requiresRow steps drop when
+    /// their row is absent, and every next/branch target is re-aliased so the
+    /// graph stays closed. Definitions without row features return unchanged.
+    func resolvedSteps(rows: [FlowRow]) -> [FlowStep] {
+        var result: [FlowStep] = []
+        // original id → replacement target ("" = fall through to nothing)
+        var alias: [String: String] = [:]
+
+        for step in steps {
+            if let required = step.requiresRow, !rows.contains(where: { $0.id == required }) {
+                alias[step.id] = step.next ?? ""
+                continue
+            }
+
+            if step.forEachRow == true {
+                var instances: [FlowStep] = rows.compactMap { row in
+                    guard let config = step.rowConfigs?[row.category ?? row.id] else { return nil }
+                    var instance = step
+                    instance.id = "\(row.id).\(step.id)"
+                    instance.question = config.question
+                    instance.placeholder = config.placeholder
+                    instance.searchHint = config.searchHint
+                    instance.forEachRow = nil
+                    instance.rowConfigs = nil
+                    return instance
+                }
+                guard !instances.isEmpty else {
+                    alias[step.id] = step.next ?? ""
+                    continue
+                }
+                for index in instances.indices {
+                    instances[index].next = index + 1 < instances.count
+                        ? instances[index + 1].id
+                        : step.next
+                }
+                alias[step.id] = instances[0].id
+                result.append(contentsOf: instances)
+                continue
+            }
+
+            result.append(step)
+        }
+
+        guard !alias.isEmpty else { return result }
+
+        func resolve(_ target: String?) -> String? {
+            var current = target
+            var hops = 0
+            while let id = current, let replacement = alias[id], hops <= steps.count {
+                current = replacement.isEmpty ? nil : replacement
+                hops += 1
+            }
+            return current
+        }
+
+        for index in result.indices {
+            result[index].next = resolve(result[index].next)
+            if let branches = result[index].branches {
+                result[index].branches = branches.map { branch in
+                    FlowBranch(
+                        value: branch.value,
+                        when: branch.when,
+                        next: resolve(branch.next) ?? branch.next
+                    )
+                }
+            }
+        }
+        return result
+    }
 }
 
 // MARK: - Definition Store

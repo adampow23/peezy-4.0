@@ -121,6 +121,12 @@ async function seedCollection() {
       // Include selfServiceOnly flag (defaults to false if absent)
       doc.selfServiceOnly = task.selfServiceOnly || false;
 
+      // Row-generation config (Spec 04 catalog v2) — consumed by the client's
+      // TaskGenerationService to stamp per-user flowRows on task docs
+      if (task.rowGeneration) {
+        doc.rowGeneration = task.rowGeneration;
+      }
+
       batch.set(docRef, doc);
     }
 
@@ -139,8 +145,18 @@ async function verifySeed() {
   const snapshot = await db.collection(COLLECTION).get();
   console.log(`   Documents in collection: ${snapshot.size}`);
 
-  // Spot-check a few documents
-  const spotChecks = ["BOOK_MOVERS", "SETUP_INTERNET", "CANCEL_YOGA"];
+  // Ghost-task check: every doc in the collection must exist in the JSON
+  const tasks = JSON.parse(fs.readFileSync(path.join(__dirname, "taskCatalogData.json"), "utf8"));
+  const jsonIds = new Set(tasks.map((t) => t.taskId));
+  const ghosts = snapshot.docs.filter((d) => !jsonIds.has(d.id)).map((d) => d.id);
+  if (ghosts.length > 0) {
+    console.log(`   ✗ GHOST TASKS (in Firestore, not in JSON): ${ghosts.join(", ")}`);
+  } else {
+    console.log(`   ✓ No ghost tasks — collection matches taskCatalogData.json exactly`);
+  }
+
+  // Spot-check a few documents (catalog v2 ids)
+  const spotChecks = ["BOOK_MOVERS", "SETUP_INTERNET", "MEMBERSHIPS", "FINANCIAL_ACCOUNTS", "STORAGE_UNIT"];
   for (const id of spotChecks) {
     const doc = await db.collection(COLLECTION).doc(id).get();
     if (doc.exists) {
@@ -155,6 +171,65 @@ async function verifySeed() {
   }
 }
 
+// ── Flow definitions (Spec 04) ──
+// Seeds the `flowDefinitions` collection from flowDefinitionsData.json.
+// Doc id = workflowId. Served to the client through getWorkflowQualifying
+// (deployed rules have no direct client read on this collection).
+
+const FLOW_COLLECTION = "flowDefinitions";
+
+async function seedFlowDefinitions() {
+  const dataPath = path.join(__dirname, "flowDefinitionsData.json");
+  if (!fs.existsSync(dataPath)) {
+    console.error(`\n❌ flowDefinitionsData.json not found at ${dataPath}`);
+    process.exit(1);
+  }
+
+  const definitions = JSON.parse(fs.readFileSync(dataPath, "utf8"));
+  console.log(`\n📦 Seeding ${definitions.length} flow definitions into '${FLOW_COLLECTION}'...`);
+
+  // Wipe (definitions retired by catalog v2 must not linger)
+  const existing = await db.collection(FLOW_COLLECTION).get();
+  if (!existing.empty) {
+    const batch = db.batch();
+    existing.docs.forEach((doc) => batch.delete(doc.ref));
+    await batch.commit();
+    console.log(`   Deleted ${existing.size} existing definitions.`);
+  }
+
+  const batch = db.batch();
+  for (const definition of definitions) {
+    batch.set(db.collection(FLOW_COLLECTION).doc(definition.workflowId), definition);
+  }
+  await batch.commit();
+  console.log(`   ✅ Seeded ${definitions.length} flow definitions.`);
+
+  // Cross-check: every catalog workflowId that the engine routes must have a
+  // definition. The Swift-custom flows keep their screens this spec.
+  const SWIFT_CUSTOM = new Set([
+    "book_movers", "book_cleaners", "setup_internet", "sell_items", "remove_items",
+    "rent_truck", "handle_auto_insurance", "update_auto_insurance", "handle_home_insurance",
+    "cancel_renters_insurance", "setup_renters_insurance", "transfer_renters_insurance",
+    "cancel_condo_insurance", "setup_condo_insurance", "transfer_condo_insurance",
+    "cancel_homeowners_insurance", "setup_homeowners_insurance", "transfer_homeowners_insurance",
+    "scan_inventory",
+  ]);
+  const tasks = JSON.parse(fs.readFileSync(path.join(__dirname, "taskCatalogData.json"), "utf8"));
+  const definitionIds = new Set(definitions.map((d) => d.workflowId));
+  const missing = [];
+  for (const task of tasks) {
+    const flowId = task.workflowId || task.taskId.toLowerCase();
+    if (task.actionType === "in-app" || task.actionType === "in-app-inventory") continue;
+    if (SWIFT_CUSTOM.has(flowId)) continue;
+    if (!definitionIds.has(flowId)) missing.push(`${task.taskId} → ${flowId}`);
+  }
+  if (missing.length > 0) {
+    console.log(`   ✗ CATALOG TASKS WITHOUT DEFINITIONS: ${missing.join(", ")}`);
+  } else {
+    console.log(`   ✓ Every engine-routed catalog task has a flow definition`);
+  }
+}
+
 async function main() {
   console.log("═══════════════════════════════════════════");
   console.log("  Peezy Task Catalog Seeder");
@@ -165,6 +240,7 @@ async function main() {
     const deleted = await deleteCollection();
     const written = await seedCollection();
     await verifySeed();
+    await seedFlowDefinitions();
 
     console.log("\n═══════════════════════════════════════════");
     console.log(`  Done! Deleted ${deleted}, wrote ${written}.`);

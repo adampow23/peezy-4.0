@@ -52,7 +52,7 @@ fresh-context validator (bounded retry 2). PERIPHERY D–F. Deploys: ONE batch a
   STORAGE_UNIT) = 46 rows. Sheet said ~40; exact number stated per acceptance criterion.
 - Xcode project uses PBXFileSystemSynchronizedRootGroup → file create/delete needs no pbxproj edit.
 
-## Phase A: FlowDefinition + FlowEngine (CORE) — IN PROGRESS
+## Phase A: FlowDefinition + FlowEngine (CORE) — BUILT + COMMITTED (a6c04cb), VALIDATOR DEFERRED
 
 - [ ] PHASE_MANIFEST written (edit + read sites)
 - [ ] FlowDefinition.swift — Codable model: FlowDefinition{workflowId, taskTitle, steps},
@@ -71,8 +71,15 @@ fresh-context validator (bounded retry 2). PERIPHERY D–F. Deploys: ONE batch a
 - [ ] TaskActionService — writeFlowProgress/clearFlowState (same direct-write pattern as setStage)
 - [ ] FlowEngineHarness.swift (DEBUG) + 3-line AppRootView hook — env-driven: FLOW_DEFS_PATH
       (host JSON path) + FLOW_HARNESS_WORKFLOW; drives Phase A validation before router lands
-- [ ] xcodebuild green → commit → validator (5 flows across types: side-by-side vs old screens,
-      kill/relaunch resume, workflowResponses payload parity old-vs-new)
+- [x] All build items above complete; build green first attempt; commit a6c04cb
+- [x] Writer smoke evidence: manage_bank title/action/cancel-decision/business-search/
+      conditional-branch-to-find_summary with cancelOnly bodyVariant (AX dumps);
+      setup_utilities persistence {flowPath, flowAnswers, stage:capture} + kill/relaunch
+      resume at confirmed_address (Firestore reads); fixture restored pristine
+- [ ] VALIDATOR DEFERRED: fresh-context agent hit the session usage limit (resets 12:40pm CT).
+      Re-run after reset; Phase A+B validators must BOTH pass before the Phase C deploy batch.
+      Harness lesson already folded in: stage defs JSON inside the app container
+      (host-path sync read blocks first render on TCC).
 
 ## Phase B: Catalog v2 + row-generation (CORE) — todo (own manifest at start)
 

@@ -1,87 +1,5 @@
 [
   {
-    "taskId": "ARRANGE_PARKING_NEW",
-    "title": "Reserve unloading parking",
-    "actionCategory": "book-schedule",
-    "category": "moving",
-    "actionType": "workflow",
-    "taskType": "survey",
-    "conditions": {
-      "newDwellingType": [
-        "Apartment",
-        "Condo"
-      ]
-    },
-    "desc": "Reserve a truck-sized loading spot at your new building two weeks out. Most charge a deposit and require a Certificate of Insurance.",
-    "estHours": 1,
-    "estPeezy": "1 min",
-    "tips": "Ask the building to cone off the spot the night before.",
-    "urgencyPercentage": 72,
-    "whyNeeded": "Without it, you'll be hauling boxes from wherever you can park.",
-    "workflowId": "arrange_parking_new"
-  },
-  {
-    "taskId": "ARRANGE_PARKING_OLD",
-    "title": "Reserve loading parking",
-    "actionCategory": "book-schedule",
-    "category": "moving",
-    "actionType": "workflow",
-    "taskType": "survey",
-    "conditions": {
-      "currentDwellingType": [
-        "Apartment",
-        "Condo"
-      ]
-    },
-    "desc": "Reserve a truck-sized loading spot at your current building two weeks out. Most charge a deposit and require a Certificate of Insurance.",
-    "estHours": 1,
-    "estPeezy": "1 min",
-    "tips": "Reserve two adjacent spots \u2014 trucks need ramp clearance too.",
-    "urgencyPercentage": 73,
-    "whyNeeded": "Every block away adds 30+ minutes to your move \u2014 and your bill.",
-    "workflowId": "arrange_parking_old"
-  },
-  {
-    "taskId": "RESERVE_ELEVATORS_NEW",
-    "title": "Reserve unloading elevator",
-    "actionCategory": "book-schedule",
-    "category": "moving",
-    "actionType": "workflow",
-    "taskType": "survey",
-    "conditions": {
-      "newFloorAccess": [
-        "Reserved Elevator"
-      ]
-    },
-    "desc": "Lock in a service elevator window at your new building. Most allow 2-4 hours; overtime runs $100-200 per hour after.",
-    "estHours": 0.75,
-    "estPeezy": "1 min",
-    "tips": "Book the first morning slot \u2014 overtime starts at $100/hour.",
-    "urgencyPercentage": 70,
-    "whyNeeded": "Without a slot, you're competing with every other resident's groceries and laundry.",
-    "workflowId": "reserve_elevators_new"
-  },
-  {
-    "taskId": "RESERVE_ELEVATORS_OLD",
-    "title": "Reserve loading elevator",
-    "actionCategory": "book-schedule",
-    "category": "moving",
-    "actionType": "workflow",
-    "taskType": "survey",
-    "conditions": {
-      "currentFloorAccess": [
-        "Reserved Elevator"
-      ]
-    },
-    "desc": "Lock in a service elevator window at your current building. Most allow 2-4 hours; overtime runs $100-200 per hour after.",
-    "estHours": 0.75,
-    "estPeezy": "1 min",
-    "tips": "Measure your couch against the elevator BEFORE move day.",
-    "urgencyPercentage": 71,
-    "whyNeeded": "Without one, you lose 10 minutes every time a neighbor calls it.",
-    "workflowId": "reserve_elevators_old"
-  },
-  {
     "taskId": "BOOK_MOVERS",
     "title": "Book your movers",
     "actionCategory": "book-schedule",
@@ -97,7 +15,7 @@
     "desc": "Get binding estimates from three USDOT-licensed movers. Book 8-12 weeks out for summer moves, 4-6 weeks off-season.",
     "estHours": 3,
     "estPeezy": "90 secs",
-    "tips": "Get a binding estimate \u2014 federal law caps your final bill at 110%.",
+    "tips": "Get a binding estimate — federal law caps your final bill at 110%.",
     "urgencyPercentage": 94,
     "whyNeeded": "Booking late means leftover dates, leftover crews, and leftover quality."
   },
@@ -117,7 +35,7 @@
     "desc": "Schedule a move-out deep clean for the day after your movers finish. Get three quotes and confirm scope in writing.",
     "estHours": 1.5,
     "estPeezy": "90 secs",
-    "tips": "Insist 'inside appliances' is in writing \u2014 most charge extra otherwise.",
+    "tips": "Insist 'inside appliances' is in writing — most charge extra otherwise.",
     "urgencyPercentage": 55,
     "whyNeeded": "One missed area can cost you your entire security deposit."
   },
@@ -134,10 +52,10 @@
         "Yes"
       ]
     },
-    "desc": "Compare U-Haul, Penske, and Budget on size, mileage, and total cost. Reserve 4-6 weeks out \u2014 earlier in summer.",
+    "desc": "Compare U-Haul, Penske, and Budget on size, mileage, and total cost. Reserve 4-6 weeks out — earlier in summer.",
     "estHours": 2,
     "estPeezy": "1 min",
-    "tips": "Size up if borderline \u2014 one trip always beats two.",
+    "tips": "Size up if borderline — one trip always beats two.",
     "urgencyPercentage": 91,
     "whyNeeded": "Late means the wrong size, wrong pickup location, or no truck at all."
   },
@@ -150,10 +68,10 @@
     "taskType": "survey",
     "workflowId": "setup_internet",
     "conditions": {},
-    "desc": "Order service 2-3 weeks ahead. Ask for self-install if your home is pre-wired \u2014 it saves $50-100 and a technician window.",
+    "desc": "Order service 2-3 weeks ahead. Ask for self-install if your home is pre-wired — it saves $50-100 and a technician window.",
     "estHours": 1.5,
     "estPeezy": "90 secs",
-    "tips": "Self-install saves $50-100 \u2014 confirm your address qualifies first.",
+    "tips": "Self-install saves $50-100 — confirm your address qualifies first.",
     "urgencyPercentage": 81,
     "whyNeeded": "Without it, you're tethering work calls to your phone for days."
   },
@@ -176,7 +94,7 @@
     "desc": "List on Facebook Marketplace, OfferUp, or Craigslist 4+ weeks out. Drop the price 10-20% every three days until it sells.",
     "estHours": 6,
     "estPeezy": "90 secs",
-    "tips": "Post photos in natural daylight \u2014 listings sell twice as fast.",
+    "tips": "Post photos in natural daylight — listings sell twice as fast.",
     "urgencyPercentage": 75,
     "whyNeeded": "Every unsold item becomes a box you pay to move."
   },
@@ -196,72 +114,12 @@
         "No"
       ]
     },
-    "desc": "Book a free pickup with Salvation Army or Habitat ReStore 3-4 weeks out \u2014 peak season wait times stretch to a month.",
+    "desc": "Book a free pickup with Salvation Army or Habitat ReStore 3-4 weeks out — peak season wait times stretch to a month.",
     "estHours": 4,
     "estPeezy": "90 secs",
-    "tips": "Get an itemized receipt at pickup \u2014 it's a tax write-off.",
+    "tips": "Get an itemized receipt at pickup — it's a tax write-off.",
     "urgencyPercentage": 70,
     "whyNeeded": "Last-minute, you'll be hauling furniture to the curb yourself."
-  },
-  {
-    "taskId": "MANAGE_BANK",
-    "title": "Handle your bank account",
-    "actionCategory": "manage-service",
-    "category": "finance",
-    "actionType": "workflow",
-    "taskType": "survey",
-    "workflowId": "manage_bank",
-    "conditions": {
-      "financialInstitutions": [
-        "Bank / Credit Union"
-      ]
-    },
-    "desc": "If your bank is national, just update your address. If regional, you may need to open a new account and reroute direct deposits.",
-    "estHours": 1.5,
-    "estPeezy": "1 min",
-    "tips": "Open the new account before closing the old \u2014 overlap protects autopay.",
-    "urgencyPercentage": 84,
-    "whyNeeded": "Outdated info triggers fraud alerts and frozen cards on day one."
-  },
-  {
-    "taskId": "MANAGE_DOCTOR",
-    "title": "Handle your primary doctor",
-    "actionCategory": "manage-service",
-    "category": "health",
-    "actionType": "workflow",
-    "taskType": "survey",
-    "workflowId": "manage_doctor",
-    "conditions": {
-      "healthcareProviders": [
-        "Doctor"
-      ]
-    },
-    "desc": "Update your address if staying. If switching, request your full record through the patient portal \u2014 it's free and faster than fax.",
-    "estHours": 2,
-    "estPeezy": "1 min",
-    "tips": "Download records from the portal yourself \u2014 providers have 30 days by law.",
-    "urgencyPercentage": 68,
-    "whyNeeded": "Without records, every new visit starts you over from zero."
-  },
-  {
-    "taskId": "MANAGE_DENTIST",
-    "title": "Handle your dentist",
-    "actionCategory": "manage-service",
-    "category": "health",
-    "actionType": "workflow",
-    "taskType": "survey",
-    "workflowId": "manage_dentist",
-    "conditions": {
-      "healthcareProviders": [
-        "Dentist"
-      ]
-    },
-    "desc": "Update your address if staying. If switching, request records and recent X-rays \u2014 most offices charge for paper copies but email is free.",
-    "estHours": 1,
-    "estPeezy": "1 min",
-    "tips": "Ask for digital X-ray transfer \u2014 most offices send them free.",
-    "urgencyPercentage": 59,
-    "whyNeeded": "Without X-rays, your new dentist will retake them at your cost."
   },
   {
     "taskId": "MANAGE_VET",
@@ -279,169 +137,9 @@
     "desc": "Update your address if staying. If switching, request vaccination records, lab results, and any chronic-care notes for your new vet.",
     "estHours": 2,
     "estPeezy": "1 min",
-    "tips": "Get the rabies certificate separately \u2014 boarding facilities require it on-site.",
+    "tips": "Get the rabies certificate separately — boarding facilities require it on-site.",
     "urgencyPercentage": 63,
     "whyNeeded": "Without records, boarding kennels and ER vets may turn you away."
-  },
-  {
-    "taskId": "MANAGE_GYM",
-    "title": "Handle your gym membership",
-    "actionCategory": "manage-service",
-    "category": "fitness",
-    "actionType": "workflow",
-    "taskType": "survey",
-    "workflowId": "manage_gym",
-    "conditions": {
-      "fitnessWellness": [
-        "Gym / CrossFit"
-      ]
-    },
-    "desc": "Most contracts let you cancel free if your new home is 25+ miles away. Bring written proof: lease, utility bill, or new license.",
-    "estHours": 1,
-    "estPeezy": "1 min",
-    "tips": "Send cancellation by certified mail \u2014 verbal requests get 'lost.'",
-    "urgencyPercentage": 86,
-    "whyNeeded": "Otherwise, billing continues monthly until you formally cancel."
-  },
-  {
-    "taskId": "MANAGE_YOGA",
-    "title": "Handle your yoga membership",
-    "actionCategory": "manage-service",
-    "category": "fitness",
-    "actionType": "workflow",
-    "taskType": "survey",
-    "workflowId": "manage_yoga",
-    "conditions": {
-      "fitnessWellness": [
-        "Yoga / Pilates"
-      ]
-    },
-    "desc": "Most studios require 30-day written cancellation. Some chains transfer to a sister studio free if you stay in their network.",
-    "estHours": 1,
-    "estPeezy": "1 min",
-    "tips": "Ask for written cancellation confirmation \u2014 'requested' isn't 'confirmed.'",
-    "urgencyPercentage": 87,
-    "whyNeeded": "Skip this and auto-renewal bills you for two more months."
-  },
-  {
-    "taskId": "MANAGE_SPIN",
-    "title": "Handle your cycling membership",
-    "actionCategory": "manage-service",
-    "category": "fitness",
-    "actionType": "workflow",
-    "taskType": "survey",
-    "workflowId": "manage_spin",
-    "conditions": {
-      "fitnessWellness": [
-        "Spin / Cycling"
-      ]
-    },
-    "desc": "Most studios require 30-day written cancellation. SoulCycle and similar chains may transfer free to any in-network location.",
-    "estHours": 1,
-    "estPeezy": "1 min",
-    "tips": "Cancel by email so you have a timestamped paper trail.",
-    "urgencyPercentage": 82,
-    "whyNeeded": "Otherwise, billing continues monthly until you formally cancel."
-  },
-  {
-    "taskId": "MANAGE_MASSAGE",
-    "title": "Handle your spa membership",
-    "actionCategory": "manage-service",
-    "category": "fitness",
-    "actionType": "workflow",
-    "taskType": "survey",
-    "workflowId": "manage_massage",
-    "conditions": {
-      "fitnessWellness": [
-        "Massage / Spa"
-      ]
-    },
-    "desc": "Massage Envy and most chains transfer to any location free. Local studios usually require 30-day written cancellation with proof of move.",
-    "estHours": 1,
-    "estPeezy": "1 min",
-    "tips": "Use every banked session before canceling \u2014 most don't refund.",
-    "urgencyPercentage": 82,
-    "whyNeeded": "Banked sessions usually expire fast once billing stops."
-  },
-  {
-    "taskId": "MANAGE_GOLF",
-    "title": "Handle your club membership",
-    "actionCategory": "manage-service",
-    "category": "fitness",
-    "actionType": "workflow",
-    "taskType": "survey",
-    "workflowId": "manage_golf",
-    "conditions": {
-      "fitnessWellness": [
-        "Country Club / Golf"
-      ]
-    },
-    "desc": "Most clubs require formal resignation in writing with 30-90 days notice. Some refund equity, some don't \u2014 check your bylaws first.",
-    "estHours": 1,
-    "estPeezy": "1 min",
-    "tips": "Resign before the new fiscal year \u2014 dues bill upfront on day one.",
-    "urgencyPercentage": 85,
-    "whyNeeded": "Late resignation triggers full annual dues even after you've moved."
-  },
-  {
-    "taskId": "UPDATE_CREDIT_CARD",
-    "title": "Update credit card addresses",
-    "actionCategory": "update-notify",
-    "category": "finance",
-    "actionType": "workflow",
-    "taskType": "survey",
-    "conditions": {
-      "financialInstitutions": [
-        "Credit Card"
-      ]
-    },
-    "desc": "Log in and update billing addresses on every card. The address you file is what online checkout uses to authorize purchases.",
-    "estHours": 0.5,
-    "estPeezy": "30 secs",
-    "tips": "Set a temporary travel notice \u2014 out-of-state spending often triggers freezes.",
-    "urgencyPercentage": 62,
-    "whyNeeded": "Mismatched addresses get cards declined at checkout \u2014 even your own.",
-    "workflowId": "update_credit_card"
-  },
-  {
-    "taskId": "UPDATE_INVESTMENT",
-    "title": "Update investment accounts",
-    "actionCategory": "update-notify",
-    "category": "finance",
-    "actionType": "workflow",
-    "taskType": "survey",
-    "conditions": {
-      "financialInstitutions": [
-        "Investment Account"
-      ]
-    },
-    "desc": "Update your address with every brokerage. Tax forms (1099s, K-1s) ship in January \u2014 wrong address means a delayed return.",
-    "estHours": 1,
-    "estPeezy": "1 min",
-    "tips": "Switch statements to e-delivery \u2014 eliminates the address risk entirely.",
-    "urgencyPercentage": 61,
-    "whyNeeded": "Missing 1099s force tax-filing delays and IRS extension headaches.",
-    "workflowId": "update_investment"
-  },
-  {
-    "taskId": "UPDATE_STUDENT_LOANS",
-    "title": "Update student loan accounts",
-    "actionCategory": "update-notify",
-    "category": "finance",
-    "actionType": "workflow",
-    "taskType": "survey",
-    "conditions": {
-      "financialInstitutions": [
-        "Student Loans"
-      ]
-    },
-    "desc": "Update your address with every loan servicer. They mail repayment notices and 1098-E interest statements throughout the year.",
-    "estHours": 0.5,
-    "estPeezy": "1 min",
-    "tips": "Switch to paperless billing \u2014 eliminates address-based delivery failures.",
-    "urgencyPercentage": 60,
-    "whyNeeded": "A missed servicer notice can put you into delinquency status.",
-    "workflowId": "update_student_loans"
   },
   {
     "taskId": "FORWARD_MAIL_USPS",
@@ -454,9 +152,9 @@
     "desc": "File a USPS change of address ($1.10 verification fee). First-class mail forwards free for 12 months from your start date.",
     "estHours": 0.5,
     "estPeezy": "30 secs",
-    "tips": "Marketing mail and magazines don't forward \u2014 update senders directly.",
+    "tips": "Marketing mail and magazines don't forward — update senders directly.",
     "urgencyPercentage": 79,
-    "whyNeeded": "Anything sent to your old address \u2014 bills, tax docs, checks \u2014 vanishes.",
+    "whyNeeded": "Anything sent to your old address — bills, tax docs, checks — vanishes.",
     "workflowId": "forward_mail_usps"
   },
   {
@@ -471,7 +169,7 @@
     "desc": "Request 2-3 days minimum: one for packing, moving day, and one to recover. Submit at least four weeks ahead.",
     "estHours": 1.5,
     "estPeezy": "30 secs",
-    "tips": "Block the day after move day \u2014 unpacking always runs longer than expected.",
+    "tips": "Block the day after move day — unpacking always runs longer than expected.",
     "urgencyPercentage": 92,
     "whyNeeded": "Without time off, you'll be answering Slack with a couch on your back."
   },
@@ -484,115 +182,12 @@
     "taskType": "provide_info",
     "selfServiceOnly": true,
     "conditions": {},
-    "desc": "Update your home address with HR. If you crossed state lines, also update your work-state W-4 \u2014 addresses and taxes are tracked separately.",
+    "desc": "Update your home address with HR. If you crossed state lines, also update your work-state W-4 — addresses and taxes are tracked separately.",
     "estHours": 1.5,
     "estPeezy": "30 secs",
-    "tips": "Confirm payroll updated 'work state for taxes' \u2014 addresses don't sync.",
+    "tips": "Confirm payroll updated 'work state for taxes' — addresses don't sync.",
     "urgencyPercentage": 68,
     "whyNeeded": "Wrong state withholding turns next April into a W-2 nightmare."
-  },
-  {
-    "taskId": "UPDATE_DRIVERS_LICENSE",
-    "title": "Update your license address",
-    "actionCategory": "update-notify",
-    "category": "administrative",
-    "actionType": "off-app",
-    "taskType": "provide_info",
-    "selfServiceOnly": true,
-    "conditions": {
-      "isInterstate": [
-        "No"
-      ]
-    },
-    "desc": "Bring your current license and two proofs of new address to the DMV. Most states require updates within 30 days.",
-    "estHours": 3,
-    "estPeezy": "30 secs",
-    "tips": "Check your state \u2014 many let you update online without an appointment.",
-    "urgencyPercentage": 84,
-    "whyNeeded": "An outdated address can void traffic ticket service and jury duty notices."
-  },
-  {
-    "taskId": "NEW_DRIVERS_LICENSE",
-    "title": "Get your new state license",
-    "actionCategory": "update-notify",
-    "category": "administrative",
-    "actionType": "off-app",
-    "taskType": "provide_info",
-    "selfServiceOnly": true,
-    "conditions": {
-      "isInterstate": [
-        "Yes"
-      ]
-    },
-    "desc": "Surrender your old license at the new state's DMV. Bring proof of residency, your current license, and Social Security card.",
-    "estHours": 3,
-    "estPeezy": "30 secs",
-    "tips": "Request REAL ID \u2014 TSA needs a new one in your new state.",
-    "urgencyPercentage": 84,
-    "whyNeeded": "Driving past the deadline on an out-of-state license is a moving violation."
-  },
-  {
-    "taskId": "REGISTER_VEHICLE",
-    "title": "Register your vehicles",
-    "actionCategory": "update-notify",
-    "category": "administrative",
-    "actionType": "off-app",
-    "taskType": "provide_info",
-    "selfServiceOnly": true,
-    "conditions": {
-      "isInterstate": [
-        "Yes"
-      ],
-      "hasVehicles": [
-        "Yes"
-      ]
-    },
-    "desc": "Most states require registration within 30 days of moving. You'll need a new auto insurance policy that meets state minimums first.",
-    "estHours": 3,
-    "estPeezy": "30 secs",
-    "tips": "Update auto insurance first \u2014 DMV won't register without it.",
-    "urgencyPercentage": 82,
-    "whyNeeded": "Outdated tags risk tickets, towing, and insurance denial in a crash."
-  },
-  {
-    "taskId": "PHOTOGRAPH_RENTAL_CONDITION",
-    "title": "Document the empty unit",
-    "actionCategory": "document-record",
-    "category": "administrative",
-    "actionType": "off-app",
-    "taskType": "provide_info",
-    "selfServiceOnly": true,
-    "conditions": {
-      "currentRentOrOwn": [
-        "Rent"
-      ]
-    },
-    "desc": "After cleaning, take time-stamped photos and video of every wall, floor, fixture, and appliance \u2014 inside and out, every angle.",
-    "estHours": 0.75,
-    "estPeezy": "30 secs",
-    "tips": "Film a slow walkthrough video \u2014 judges weigh it heavier than photos.",
-    "urgencyPercentage": 4,
-    "whyNeeded": "Without photos, the landlord's word is the only evidence in deposit disputes."
-  },
-  {
-    "taskId": "RETURN_KEY_FOBS_REMOTES",
-    "title": "Return all access devices",
-    "actionCategory": "finalize-closeout",
-    "category": "administrative",
-    "actionType": "off-app",
-    "taskType": "provide_info",
-    "selfServiceOnly": true,
-    "conditions": {
-      "currentRentOrOwn": [
-        "Rent"
-      ]
-    },
-    "desc": "Hand-deliver every key, fob, garage remote, mailbox key, and parking tag \u2014 and get a written receipt listing exactly what you returned.",
-    "estHours": 1,
-    "estPeezy": "30 secs",
-    "tips": "Photograph everything you're returning the moment you hand it over.",
-    "urgencyPercentage": 1,
-    "whyNeeded": "A missing $5 fob can cost $200 in lock-change charges."
   },
   {
     "taskId": "CANCEL_UTILITIES",
@@ -609,7 +204,7 @@
     "desc": "Schedule shutoffs for electric, gas, water, sewer, and trash. Set the date for the day after you move out, not the day of.",
     "estHours": 1.25,
     "estPeezy": "1 min",
-    "tips": "Give them your forwarding address \u2014 credit refunds arrive by mail.",
+    "tips": "Give them your forwarding address — credit refunds arrive by mail.",
     "urgencyPercentage": 75,
     "whyNeeded": "Utilities running in your name after move-out keep billing you.",
     "workflowId": "cancel_utilities"
@@ -626,10 +221,10 @@
         "Long Distance"
       ]
     },
-    "desc": "Call electric, gas, water, and trash providers 2-3 weeks ahead. Schedule activation the day before you arrive \u2014 overlap beats outage.",
+    "desc": "Call electric, gas, water, and trash providers 2-3 weeks ahead. Schedule activation the day before you arrive — overlap beats outage.",
     "estHours": 2.5,
     "estPeezy": "1 min",
-    "tips": "Get a 'letter of credit' from your old utility \u2014 waives the deposit.",
+    "tips": "Get a 'letter of credit' from your old utility — waives the deposit.",
     "urgencyPercentage": 80,
     "whyNeeded": "Arriving at a dark, waterless house ruins your first night.",
     "workflowId": "setup_utilities"
@@ -655,52 +250,6 @@
     "workflowId": "transfer_utilities"
   },
   {
-    "taskId": "BEGIN_SCHOOL_TRANSFER",
-    "title": "Notify the current school",
-    "actionCategory": "update-notify",
-    "category": "children",
-    "actionType": "workflow",
-    "taskType": "survey",
-    "conditions": {
-      "childrenInSchool": [
-        "Yes"
-      ],
-      "moveDistance": [
-        "Long Distance"
-      ]
-    },
-    "desc": "Tell the school office in writing once your move is confirmed. Request transcripts, immunization records, and any IEP or 504 plans.",
-    "estHours": 1,
-    "estPeezy": "30 secs",
-    "tips": "Get records emailed to you, not just the new school \u2014 backup matters.",
-    "urgencyPercentage": 82,
-    "whyNeeded": "Without records in hand, the new school may delay enrollment for weeks.",
-    "workflowId": "begin_school_transfer"
-  },
-  {
-    "taskId": "NEW_SCHOOL_ENROLLMENT",
-    "title": "Enroll in the new school",
-    "actionCategory": "book-schedule",
-    "category": "children",
-    "actionType": "workflow",
-    "taskType": "survey",
-    "conditions": {
-      "childrenInSchool": [
-        "Yes"
-      ],
-      "moveDistance": [
-        "Long Distance"
-      ]
-    },
-    "desc": "Bring birth certificate, immunization records, last report card, and proof of residency. Most districts allow 30-day provisional enrollment if records are pending.",
-    "estHours": 4,
-    "estPeezy": "30 secs",
-    "tips": "Request provisional enrollment if vaccine records are slow \u2014 schools must allow it.",
-    "urgencyPercentage": 90,
-    "whyNeeded": "One missing document can stall enrollment by weeks.",
-    "workflowId": "new_school_enrollment"
-  },
-  {
     "taskId": "COA_SCHOOLS",
     "title": "Update your child's school",
     "actionCategory": "update-notify",
@@ -718,7 +267,7 @@
     "desc": "Submit your new address with proof of residency. Update emergency contacts, transportation requests, and pickup authorizations the same day.",
     "estHours": 1,
     "estPeezy": "30 secs",
-    "tips": "Bus zones change at the address level \u2014 confirm yours immediately.",
+    "tips": "Bus zones change at the address level — confirm yours immediately.",
     "urgencyPercentage": 90,
     "whyNeeded": "An old address can drop your kid from the bus route overnight.",
     "workflowId": "coa_schools"
@@ -738,10 +287,10 @@
         "Long Distance"
       ]
     },
-    "desc": "Get on multiple waitlists immediately \u2014 infant care can take 12-24 months. Tour in person and ask about ratios, licensing, and turnover.",
+    "desc": "Get on multiple waitlists immediately — infant care can take 12-24 months. Tour in person and ask about ratios, licensing, and turnover.",
     "estHours": 2.5,
     "estPeezy": "1 min",
-    "tips": "Send a handwritten thank-you after touring \u2014 directors remember you.",
+    "tips": "Send a handwritten thank-you after touring — directors remember you.",
     "urgencyPercentage": 88,
     "whyNeeded": "Waitlists can outlast your move date by a full year.",
     "workflowId": "setup_daycare"
@@ -764,7 +313,7 @@
     "desc": "Email the director with your new address, updated emergency contacts, and any drop-off or pickup time changes.",
     "estHours": 0.5,
     "estPeezy": "1 min",
-    "tips": "Update authorized pickup list in writing \u2014 verbal changes don't stick.",
+    "tips": "Update authorized pickup list in writing — verbal changes don't stick.",
     "urgencyPercentage": 75,
     "whyNeeded": "Outdated emergency contacts can block pickup if your child gets hurt.",
     "workflowId": "transfer_daycare"
@@ -784,36 +333,13 @@
         "Long Distance"
       ]
     },
-    "desc": "Call the new pharmacy with your old pharmacy's name and number \u2014 they handle the transfer in minutes for chain stores.",
+    "desc": "Call the new pharmacy with your old pharmacy's name and number — they handle the transfer in minutes for chain stores.",
     "estHours": 1.5,
     "estPeezy": "1 min",
-    "tips": "Controlled prescriptions don't transfer \u2014 get a new one from your doctor.",
+    "tips": "Controlled prescriptions don't transfer — get a new one from your doctor.",
     "urgencyPercentage": 75,
     "whyNeeded": "Running out mid-move means an urgent care visit just to refill.",
     "workflowId": "transfer_pharmacy_records"
-  },
-  {
-    "taskId": "TRANSFER_SPECIALISTS_RECORDS",
-    "title": "Transfer specialist records",
-    "actionCategory": "transfer-records",
-    "category": "health",
-    "actionType": "workflow",
-    "taskType": "survey",
-    "conditions": {
-      "healthcareProviders": [
-        "Specialists"
-      ],
-      "moveDistance": [
-        "Long Distance"
-      ]
-    },
-    "desc": "List every specialist (cardiologist, derm, OB, etc.) and request records via the patient portal at least three weeks before moving.",
-    "estHours": 2,
-    "estPeezy": "1 min",
-    "tips": "Have records emailed to you \u2014 fastest format, free, and you keep a copy.",
-    "urgencyPercentage": 69,
-    "whyNeeded": "Without specialist history, your new doctors restart workups from zero.",
-    "workflowId": "transfer_specialists_records"
   },
   {
     "taskId": "UPDATE_AUTO_INSURANCE",
@@ -827,10 +353,10 @@
         "Yes"
       ]
     },
-    "desc": "Notify your insurer with the new address before move day. Premiums shift by ZIP code \u2014 sometimes by hundreds per year.",
+    "desc": "Notify your insurer with the new address before move day. Premiums shift by ZIP code — sometimes by hundreds per year.",
     "estHours": 1.5,
     "estPeezy": "1 min",
-    "tips": "Get three new quotes the same day \u2014 ZIP changes are perfect leverage.",
+    "tips": "Get three new quotes the same day — ZIP changes are perfect leverage.",
     "urgencyPercentage": 82,
     "whyNeeded": "Wrong address on file can void your coverage in a claim.",
     "workflowId": "update_auto_insurance"
@@ -854,7 +380,7 @@
     "desc": "Call your insurer with your move-out date. Schedule cancellation for the day after closing or possession transfer to avoid coverage gaps.",
     "estHours": 1.5,
     "estPeezy": "1 min",
-    "tips": "Ask for a prorated refund \u2014 most insurers owe you for unused months.",
+    "tips": "Ask for a prorated refund — most insurers owe you for unused months.",
     "urgencyPercentage": 76,
     "whyNeeded": "Cancel too early and a last-day flood becomes your problem alone.",
     "workflowId": "cancel_condo_insurance"
@@ -874,10 +400,10 @@
         "Rent"
       ]
     },
-    "desc": "Call your insurer to cancel \u2014 most do it online in 5 minutes. Schedule the end date for the day you hand back keys.",
+    "desc": "Call your insurer to cancel — most do it online in 5 minutes. Schedule the end date for the day you hand back keys.",
     "estHours": 1,
     "estPeezy": "1 min",
-    "tips": "Ask for the unused premium back \u2014 you're owed a prorated refund.",
+    "tips": "Ask for the unused premium back — you're owed a prorated refund.",
     "urgencyPercentage": 77,
     "whyNeeded": "Canceling before key return leaves your stuff uninsured during the last load.",
     "workflowId": "cancel_renters_insurance"
@@ -898,10 +424,10 @@
         "House"
       ]
     },
-    "desc": "Get an HO6 policy effective on closing day. Read the HOA master policy first \u2014 it determines whether you need walls-in or full coverage.",
+    "desc": "Get an HO6 policy effective on closing day. Read the HOA master policy first — it determines whether you need walls-in or full coverage.",
     "estHours": 1.5,
     "estPeezy": "1 min",
-    "tips": "Ask the HOA which master policy type \u2014 bare walls, walls-in, or all-in.",
+    "tips": "Ask the HOA which master policy type — bare walls, walls-in, or all-in.",
     "urgencyPercentage": 76,
     "whyNeeded": "The wrong HO6 leaves your floors and cabinets unprotected after a leak.",
     "workflowId": "setup_condo_insurance"
@@ -924,7 +450,7 @@
     "desc": "Lock in coverage 2-3 weeks before closing. Lenders require a paid first year and proof of binder before they'll fund the loan.",
     "estHours": 1.5,
     "estPeezy": "1 min",
-    "tips": "Quote at least three insurers \u2014 premiums vary 30%+ for identical coverage.",
+    "tips": "Quote at least three insurers — premiums vary 30%+ for identical coverage.",
     "urgencyPercentage": 77,
     "whyNeeded": "Without an active binder at closing, the deal stalls and your move with it.",
     "workflowId": "setup_homeowners_insurance"
@@ -947,7 +473,7 @@
     "desc": "Quote online with Lemonade, State Farm, or your auto insurer. Most policies run $15-30/month and bind in under ten minutes.",
     "estHours": 1,
     "estPeezy": "1 min",
-    "tips": "Bundle with auto insurance \u2014 usually saves 5-15% on both.",
+    "tips": "Bundle with auto insurance — usually saves 5-15% on both.",
     "urgencyPercentage": 77,
     "whyNeeded": "One pipe burst can wipe out your belongings without coverage.",
     "workflowId": "setup_renters_insurance"
@@ -967,10 +493,10 @@
         "Condo"
       ]
     },
-    "desc": "Call your insurer 2-3 weeks ahead with the new address. Verify the new HOA master policy type \u2014 coverage needs may shift.",
+    "desc": "Call your insurer 2-3 weeks ahead with the new address. Verify the new HOA master policy type — coverage needs may shift.",
     "estHours": 2,
     "estPeezy": "1 min",
-    "tips": "Different HOAs = different coverage needs \u2014 re-quote, don't just transfer.",
+    "tips": "Different HOAs = different coverage needs — re-quote, don't just transfer.",
     "urgencyPercentage": 76,
     "whyNeeded": "An assumed transfer can leave gaps your old policy covered automatically.",
     "workflowId": "transfer_condo_insurance"
@@ -996,10 +522,10 @@
         "House"
       ]
     },
-    "desc": "Call your insurer 3-4 weeks before closing. Premiums shift with location, age, square footage, and roof \u2014 get a new quote either way.",
+    "desc": "Call your insurer 3-4 weeks before closing. Premiums shift with location, age, square footage, and roof — get a new quote either way.",
     "estHours": 2,
     "estPeezy": "1 min",
-    "tips": "Re-quote three insurers \u2014 transfers rarely beat fresh-quote pricing.",
+    "tips": "Re-quote three insurers — transfers rarely beat fresh-quote pricing.",
     "urgencyPercentage": 77,
     "whyNeeded": "A 'transfer' often hides a premium increase you'd catch by shopping.",
     "workflowId": "transfer_homeowners_insurance"
@@ -1022,7 +548,7 @@
     "desc": "Call your insurer with the new address 1-2 weeks ahead. Transferring keeps your claims-free discount and skips the new policy fee.",
     "estHours": 1,
     "estPeezy": "1 min",
-    "tips": "Ask for the multi-year loyalty discount \u2014 most insurers don't volunteer it.",
+    "tips": "Ask for the multi-year loyalty discount — most insurers don't volunteer it.",
     "urgencyPercentage": 77,
     "whyNeeded": "Restarting fresh resets discounts you've spent years earning.",
     "workflowId": "transfer_renters_insurance"
@@ -1039,29 +565,9 @@
     "desc": "A one-bedroom needs roughly 30 small, 40 medium, and 20 large boxes, plus tape, paper, and markers. Budget $100-200 total.",
     "estHours": 1.5,
     "estPeezy": "30 secs",
-    "tips": "Liquor stores give away sturdy small boxes \u2014 perfect for books.",
+    "tips": "Liquor stores give away sturdy small boxes — perfect for books.",
     "urgencyPercentage": 85,
     "whyNeeded": "Running out mid-pack means a last-minute store run during peak chaos."
-  },
-  {
-    "taskId": "BUY_CLEANING_SUPPLIES",
-    "title": "Buy cleaning supplies",
-    "actionCategory": "purchase-get",
-    "category": "services",
-    "actionType": "off-app",
-    "taskType": "provide_info",
-    "selfServiceOnly": true,
-    "conditions": {
-      "hireCleaners": [
-        "No"
-      ]
-    },
-    "desc": "Pick up degreaser, glass cleaner, magic erasers, mop, broom, gloves, and microfiber cloths 3-5 days before move-out.",
-    "estHours": 1,
-    "estPeezy": "30 secs",
-    "tips": "Pack a 'last bag' with cleaning supplies \u2014 load it onto the truck last.",
-    "urgencyPercentage": 10,
-    "whyNeeded": "Once boxes are sealed, finding a sponge becomes a 30-minute hunt."
   },
   {
     "taskId": "SCAN_INVENTORY",
@@ -1076,7 +582,7 @@
     "desc": "Pan your camera slowly across each room. Peezy's AI identifies furniture, appliances, and large items in about 20 seconds per room.",
     "estHours": 0.25,
     "estPeezy": "90 secs",
-    "tips": "Open closets and cabinets \u2014 Peezy catches what you'd forget to mention.",
+    "tips": "Open closets and cabinets — Peezy catches what you'd forget to mention.",
     "urgencyPercentage": 99,
     "whyNeeded": "An accurate inventory unlocks precise quotes and protects you against damage claims."
   },
@@ -1094,7 +600,7 @@
     "estPeezy": "30 secs",
     "tips": "After moving, let it sit upright for 4 hours before plugging back in.",
     "urgencyPercentage": 8,
-    "whyNeeded": "Movers won't load a wet or leaking fridge \u2014 full stop."
+    "whyNeeded": "Movers won't load a wet or leaking fridge — full stop."
   },
   {
     "taskId": "DIY_DEEP_CLEANING",
@@ -1109,10 +615,10 @@
         "No"
       ]
     },
-    "desc": "Plan 6+ hours with two people. Hit appliances, baseboards, walls, windows, vents, and cabinets \u2014 landlords inspect every one.",
+    "desc": "Plan 6+ hours with two people. Hit appliances, baseboards, walls, windows, vents, and cabinets — landlords inspect every one.",
     "estHours": 6,
     "estPeezy": "30 secs",
-    "tips": "Clean inside the oven and fridge first \u2014 they're the top deduction trigger.",
+    "tips": "Clean inside the oven and fridge first — they're the top deduction trigger.",
     "urgencyPercentage": 5,
     "whyNeeded": "One missed area can cost you hundreds in deposit deductions."
   },
@@ -1132,7 +638,7 @@
     "desc": "After everything is out, walk every room, closet, and cabinet. Wipe baseboards, sweep floors, and confirm nothing is left behind.",
     "estHours": 2,
     "estPeezy": "30 secs",
-    "tips": "Bring a flashlight \u2014 corners and closets hide more than you think.",
+    "tips": "Bring a flashlight — corners and closets hide more than you think.",
     "urgencyPercentage": 2,
     "whyNeeded": "A forgotten item or dusty corner is exactly what landlords cite."
   },
@@ -1155,12 +661,374 @@
         "Condo"
       ]
     },
-    "desc": "Call your insurer once the sale closes. Set the cancellation date for the day after closing \u2014 never before.",
+    "desc": "Call your insurer once the sale closes. Set the cancellation date for the day after closing — never before.",
     "estHours": 1,
     "estPeezy": "1 min",
-    "tips": "Ask for the prepaid premium refund \u2014 most owe you for unused months.",
+    "tips": "Ask for the prepaid premium refund — most owe you for unused months.",
     "urgencyPercentage": 76,
     "whyNeeded": "Canceling early voids coverage during the final walkthrough and key transfer.",
     "workflowId": "cancel_homeowners_insurance"
+  },
+  {
+    "taskId": "HANDLE_DMV_LOCAL",
+    "title": "Update your license address",
+    "actionCategory": "update-notify",
+    "category": "administrative",
+    "actionType": "off-app",
+    "taskType": "provide_info",
+    "selfServiceOnly": true,
+    "conditions": {
+      "isInterstate": [
+        "No"
+      ]
+    },
+    "desc": "Bring your current license and two proofs of new address to the DMV. Most states require updates within 30 days.",
+    "estHours": 3,
+    "estPeezy": "30 secs",
+    "tips": "Check your state — many let you update online without an appointment.",
+    "urgencyPercentage": 84,
+    "whyNeeded": "An outdated address can void traffic ticket service and jury duty notices."
+  },
+  {
+    "taskId": "HANDLE_DMV_INTERSTATE",
+    "title": "Handle the new-state DMV",
+    "actionCategory": "update-notify",
+    "category": "administrative",
+    "actionType": "off-app",
+    "taskType": "provide_info",
+    "selfServiceOnly": true,
+    "conditions": {
+      "isInterstate": [
+        "Yes"
+      ]
+    },
+    "desc": "One DMV trip covers it: new license, and vehicle registration if you drive. Most states give you 30 days after the move.",
+    "estHours": 3,
+    "estPeezy": "30 secs",
+    "tips": "Request REAL ID — TSA needs a new one in your new state.",
+    "urgencyPercentage": 84,
+    "whyNeeded": "Driving past the deadline on an out-of-state license is a moving violation.",
+    "rowGeneration": {
+      "source": "hasVehicles",
+      "mode": "flag",
+      "rowId": "registration"
+    }
+  },
+  {
+    "taskId": "RESERVE_ACCESS_OLD",
+    "title": "Reserve move-out access",
+    "actionCategory": "book-schedule",
+    "category": "moving-day",
+    "actionType": "workflow",
+    "taskType": "survey",
+    "workflowId": "reserve_access_old",
+    "conditions": {
+      "currentDwellingType": [
+        "Apartment",
+        "Condo"
+      ]
+    },
+    "desc": "Lock in truck parking — and the service elevator if your building has one — before move day.",
+    "estHours": 1,
+    "estPeezy": "1 min",
+    "tips": "Reserve two adjacent spots — trucks need ramp clearance too.",
+    "urgencyPercentage": 73,
+    "whyNeeded": "No reserved access means movers burn paid hours hunting for parking.",
+    "rowGeneration": {
+      "source": "rowsFromConditions",
+      "mode": "accessRows",
+      "always": [
+        "parking"
+      ],
+      "conditional": [
+        {
+          "rowId": "elevator",
+          "key": "currentFloorAccess",
+          "equals": "Reserved Elevator"
+        }
+      ]
+    }
+  },
+  {
+    "taskId": "RESERVE_ACCESS_NEW",
+    "title": "Reserve move-in access",
+    "actionCategory": "book-schedule",
+    "category": "moving-day",
+    "actionType": "workflow",
+    "taskType": "survey",
+    "workflowId": "reserve_access_new",
+    "conditions": {
+      "newDwellingType": [
+        "Apartment",
+        "Condo"
+      ]
+    },
+    "desc": "Lock in truck parking at the new building — and the service elevator if there is one — before the truck arrives.",
+    "estHours": 1,
+    "estPeezy": "1 min",
+    "tips": "Ask the building to cone off the spot the night before.",
+    "urgencyPercentage": 72,
+    "whyNeeded": "An unreserved elevator is the #1 cause of movers' overtime charges.",
+    "rowGeneration": {
+      "source": "rowsFromConditions",
+      "mode": "accessRows",
+      "always": [
+        "parking"
+      ],
+      "conditional": [
+        {
+          "rowId": "elevator",
+          "key": "newFloorAccess",
+          "equals": "Reserved Elevator"
+        }
+      ]
+    }
+  },
+  {
+    "taskId": "PROTECT_DEPOSIT",
+    "title": "Protect your deposit",
+    "actionCategory": "prepare-plan",
+    "category": "administrative",
+    "actionType": "off-app",
+    "taskType": "provide_info",
+    "selfServiceOnly": true,
+    "conditions": {
+      "currentRentOrOwn": [
+        "Rent"
+      ]
+    },
+    "desc": "Photograph the empty unit, return every key and fob, and keep the record — your deposit's evidence file.",
+    "estHours": 1.5,
+    "estPeezy": "30 secs",
+    "tips": "Shoot video too — it captures context photos miss.",
+    "urgencyPercentage": 4,
+    "whyNeeded": "Without proof, deductions are your word against theirs."
+  },
+  {
+    "taskId": "SCHOOL_TRANSFER",
+    "title": "Handle the school transfer",
+    "actionCategory": "transfer-records",
+    "category": "family",
+    "actionType": "workflow",
+    "taskType": "survey",
+    "workflowId": "school_transfer",
+    "conditions": {
+      "childrenInSchool": [
+        "Yes"
+      ],
+      "moveDistance": [
+        "Long Distance"
+      ]
+    },
+    "desc": "Notify the current school, request records, and start enrollment at the new district — one parental job, one card.",
+    "estHours": 4,
+    "estPeezy": "1 min",
+    "tips": "Many districts let you start enrollment paperwork online before you arrive.",
+    "urgencyPercentage": 90,
+    "whyNeeded": "Enrollment gaps cost kids school days."
+  },
+  {
+    "taskId": "MEDICAL_RECORDS",
+    "title": "Move your medical records",
+    "actionCategory": "transfer-records",
+    "category": "health",
+    "actionType": "workflow",
+    "taskType": "survey",
+    "workflowId": "medical_records",
+    "conditions": {
+      "healthcareProviders": [
+        "Doctor",
+        "Dentist",
+        "Specialists"
+      ]
+    },
+    "desc": "One pass across your providers — records requested, addresses updated, transfers started.",
+    "estHours": 2,
+    "estPeezy": "1 min",
+    "tips": "Call the front desk — most offices send records electronically in days.",
+    "urgencyPercentage": 69,
+    "whyNeeded": "New providers can't treat you safely without your history.",
+    "rowGeneration": {
+      "source": "healthcareProviderCounts",
+      "selectionKey": "healthcareProviders",
+      "mode": "counts",
+      "categories": [
+        "Doctor",
+        "Dentist",
+        "Specialists"
+      ]
+    }
+  },
+  {
+    "taskId": "FINANCIAL_ACCOUNTS",
+    "title": "Handle your money accounts",
+    "actionCategory": "update-notify",
+    "category": "finance",
+    "actionType": "workflow",
+    "taskType": "survey",
+    "workflowId": "financial_accounts",
+    "conditions": {
+      "financialInstitutions": [
+        "Bank / Credit Union",
+        "Credit Card",
+        "Investment Account",
+        "Student Loans"
+      ]
+    },
+    "desc": "Banks, cards, brokerages, loans — one pass updates every address so autopay and statements never miss.",
+    "estHours": 2,
+    "estPeezy": "1 min",
+    "tips": "Update before your next statement closes — mismatches trigger fraud alerts.",
+    "urgencyPercentage": 84,
+    "whyNeeded": "Outdated info triggers fraud alerts and frozen cards on day one.",
+    "rowGeneration": {
+      "source": "financialInstitutionCounts",
+      "selectionKey": "financialInstitutions",
+      "mode": "counts",
+      "categories": [
+        "Bank / Credit Union",
+        "Credit Card",
+        "Investment Account",
+        "Student Loans"
+      ]
+    }
+  },
+  {
+    "taskId": "MEMBERSHIPS",
+    "title": "Handle your memberships",
+    "actionCategory": "manage-service",
+    "category": "fitness",
+    "actionType": "workflow",
+    "taskType": "survey",
+    "workflowId": "memberships",
+    "conditions": {
+      "fitnessWellness": [
+        "Gym / CrossFit",
+        "Yoga / Pilates",
+        "Spin / Cycling",
+        "Massage / Spa",
+        "Country Club / Golf"
+      ]
+    },
+    "desc": "Gyms, studios, spas, clubs — cancellations and transfers need 30-day notices. One pass, all of them.",
+    "estHours": 2,
+    "estPeezy": "1 min",
+    "tips": "Check your membership terms — some require 30 days written notice.",
+    "urgencyPercentage": 86,
+    "whyNeeded": "Miss a notice window and you pay for a gym you can't visit.",
+    "rowGeneration": {
+      "source": "fitnessWellnessCounts",
+      "selectionKey": "fitnessWellness",
+      "mode": "counts",
+      "categories": [
+        "Gym / CrossFit",
+        "Yoga / Pilates",
+        "Spin / Cycling",
+        "Massage / Spa",
+        "Country Club / Golf"
+      ]
+    }
+  },
+  {
+    "taskId": "STORAGE_UNIT",
+    "title": "Line up your storage unit",
+    "actionCategory": "book-schedule",
+    "category": "services",
+    "actionType": "workflow",
+    "taskType": "survey",
+    "workflowId": "storage_unit",
+    "conditions": {
+      "storageNeeded": [
+        "Yes"
+      ]
+    },
+    "desc": "We'll find units near your new place with real availability and move-in specials before move day.",
+    "estHours": 2,
+    "estPeezy": "1 min",
+    "tips": "Book two weeks out — first-month-free deals go to early reservations.",
+    "urgencyPercentage": 65,
+    "whyNeeded": "Sold-out units near the new place mean storing across town."
+  },
+  {
+    "taskId": "ADD_NEW_ADDRESS",
+    "title": "Add your new address",
+    "actionCategory": "provide-info",
+    "category": "administrative",
+    "actionType": "in-app",
+    "taskType": "provide_info",
+    "selfServiceOnly": true,
+    "conditions": {
+      "newAddressPending": [
+        "Yes"
+      ]
+    },
+    "desc": "Your plan is waiting on the destination. Add it and everything downstream unlocks.",
+    "estHours": 0.1,
+    "estPeezy": "30 secs",
+    "tips": "A street address beats a city — distance and deadlines get exact.",
+    "urgencyPercentage": 95,
+    "whyNeeded": "Distance, deadlines, and half your tasks depend on where you're headed."
+  },
+  {
+    "taskId": "CONFIRM_MOVE_DATE",
+    "title": "Lock in your move date",
+    "actionCategory": "provide-info",
+    "category": "administrative",
+    "actionType": "in-app",
+    "taskType": "provide_info",
+    "selfServiceOnly": true,
+    "conditions": {
+      "moveDatePending": [
+        "Yes"
+      ]
+    },
+    "desc": "You marked the date flexible. Lock it in — or confirm the estimate — so the plan paces itself right.",
+    "estHours": 0.1,
+    "estPeezy": "30 secs",
+    "tips": "Mid-month weekdays book cheaper movers than month-end weekends.",
+    "urgencyPercentage": 93,
+    "whyNeeded": "Every deadline on your plan counts backward from this date."
+  },
+  {
+    "taskId": "DECLUTTER_INTENT",
+    "title": "Lighten the load?",
+    "actionCategory": "provide-info",
+    "category": "packing",
+    "actionType": "in-app",
+    "taskType": "provide_info",
+    "selfServiceOnly": true,
+    "conditions": {
+      "hasDeclutter": [
+        "nil",
+        ""
+      ]
+    },
+    "desc": "One tap: planning to sell or donate before the move? We'll line up the right help.",
+    "estHours": 0.1,
+    "estPeezy": "10 secs",
+    "tips": "Every unsold item becomes a box you pay to move.",
+    "urgencyPercentage": 88,
+    "whyNeeded": "Selling and donating both need lead time — the earlier we know, the more it pays."
+  },
+  {
+    "taskId": "STORAGE_NEED",
+    "title": "Need a storage unit?",
+    "actionCategory": "provide-info",
+    "category": "services",
+    "actionType": "in-app",
+    "taskType": "provide_info",
+    "selfServiceOnly": true,
+    "conditions": {
+      "storageNeeded": [
+        "nil",
+        ""
+      ]
+    },
+    "desc": "Will everything fit — or might you need a unit? One tap and we'll handle the rest.",
+    "estHours": 0.1,
+    "estPeezy": "10 secs",
+    "tips": "Units near new builds sell out first — early answers get options.",
+    "urgencyPercentage": 87,
+    "whyNeeded": "Storage found on move day costs double and sits across town."
   }
 ]

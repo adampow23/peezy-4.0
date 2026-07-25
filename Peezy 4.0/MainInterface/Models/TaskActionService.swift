@@ -26,9 +26,11 @@ struct TaskActionService {
     func writeFlowProgress(taskId: String, path: [String], answerKey: String? = nil, values: [String]? = nil) async {
         guard let userId = Auth.auth().currentUser?.uid, !taskId.isEmpty else { return }
         let db = Firestore.firestore()
-        var update: [String: Any] = ["flowPath": path]
+        var update: [AnyHashable: Any] = ["flowPath": path]
         if let answerKey, let values {
-            update["flowAnswers.\(answerKey)"] = values
+            // FieldPath keeps row-instance keys ("bank_credit_union_1.provider")
+            // as ONE map key — a dotted string literal would nest them.
+            update[FieldPath(["flowAnswers", answerKey])] = values
         }
         do {
             try await db.collection("users").document(userId).collection("tasks")

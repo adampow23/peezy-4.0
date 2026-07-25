@@ -53,6 +53,10 @@ struct FlowEngineView: View {
     /// Answers keyed by step id. Persisted as flowAnswers. Back-navigation
     /// keeps recorded answers (the old screens never removed keys).
     @State private var answers: [String: [String]] = [:]
+    /// Rows stamped on the task doc by generation (flowRows) and the
+    /// definition's steps specialized to them (Spec 04 Phase B).
+    @State private var rows: [FlowRow] = []
+    @State private var resolvedSteps: [FlowStep] = []
     @State private var isSubmitting = false
     @State private var isRestoring = true
 
@@ -86,9 +90,13 @@ struct FlowEngineView: View {
 
     // MARK: - Current Step
 
+    private func resolvedStep(withId id: String) -> FlowStep? {
+        resolvedSteps.first { $0.id == id }
+    }
+
     private var currentStep: FlowStep? {
         guard let id = path.last else { return nil }
-        return definition.step(withId: id)
+        return resolvedStep(withId: id)
     }
 
     private var canGoBack: Bool { path.count > 1 }
@@ -100,7 +108,7 @@ struct FlowEngineView: View {
         var count = 0
         var cursor = path.last
         var guardRail = 0
-        while let id = cursor, let step = definition.step(withId: id), guardRail < definition.steps.count {
+        while let id = cursor, let step = resolvedStep(withId: id), guardRail < resolvedSteps.count {
             count += 1
             guardRail += 1
             if let answer = answers[step.id]?.first, let branch = matchingBranch(for: step, value: answer) {
@@ -235,14 +243,22 @@ struct FlowEngineView: View {
 
     /// First bodyVariant whose `when` pairs all match recorded answers,
     /// else the step's default body — the ManageBank-family dynamic
-    /// find-summary text, generalized.
+    /// find-summary text, generalized. "{rowsList}" resolves to the task's
+    /// stamped row labels (access flows: "a truck-sized loading spot and
+    /// the service elevator window").
     private func summaryBody(for step: FlowStep) -> String {
+        var body = step.body ?? ""
         if let variants = step.bodyVariants {
             for variant in variants where conditionsSatisfied(variant.when) {
-                return variant.body
+                body = variant.body
+                break
             }
         }
-        return step.body ?? ""
+        if body.contains("{rowsList}") {
+            let labels = rows.compactMap { step.rowLabels?[$0.id] }
+            body = body.replacingOccurrences(of: "{rowsList}", with: labels.joined(separator: " and "))
+        }
+        return body
     }
 
     private func conditionsSatisfied(_ when: [String: String]) -> Bool {
@@ -264,7 +280,7 @@ struct FlowEngineView: View {
         } else {
             nextId = step.next
         }
-        guard let nextId, let nextStep = definition.step(withId: nextId) else { return }
+        guard let nextId, let nextStep = resolvedStep(withId: nextId) else { return }
 
         path.append(nextId)
         persistProgress(answerKey: nil, values: nil)
@@ -310,10 +326,10 @@ struct FlowEngineView: View {
     private func restoreState() async {
         defer { isRestoring = false }
 
-        let entry = definition.steps.first?.id ?? ""
-
         guard !taskId.isEmpty, !userId.isEmpty else {
-            path = [entry]
+            rows = []
+            resolvedSteps = definition.resolvedSteps(rows: [])
+            path = [resolvedSteps.first?.id ?? ""]
             return
         }
 
@@ -322,12 +338,17 @@ struct FlowEngineView: View {
             .collection("tasks").document(taskId).getDocument()
         let data = doc?.data()
 
+        rows = (data?["flowRows"] as? [[String: Any]])?
+            .compactMap(FlowRow.init(firestoreData:)) ?? []
+        resolvedSteps = definition.resolvedSteps(rows: rows)
+        let entry = resolvedSteps.first?.id ?? ""
+
         let savedPath = data?["flowPath"] as? [String] ?? []
         let savedAnswers = (data?["flowAnswers"] as? [String: Any])?
             .compactMapValues { $0 as? [String] } ?? [:]
 
         // A reseed can rename steps; a trail referencing unknown ids restarts.
-        let pathIsValid = !savedPath.isEmpty && savedPath.allSatisfy { definition.step(withId: $0) != nil }
+        let pathIsValid = !savedPath.isEmpty && savedPath.allSatisfy { resolvedStep(withId: $0) != nil }
 
         if pathIsValid {
             path = savedPath

@@ -24,13 +24,29 @@ const getWorkflowQualifying = onCall(
   { timeoutSeconds: 10, memory: '256MiB' },
   async (request) => {
     const { workflowId } = request.data;
-    
+
     if (!workflowId) {
       throw new HttpsError('invalid-argument', 'workflowId is required');
     }
-    
+
     console.log(`Getting workflow: ${workflowId}`);
-    
+
+    // Firestore-first (Spec 04): the flowDefinitions collection is the
+    // definition source for the config-driven FlowEngine. Served through
+    // this callable because deployed rules grant no direct client read.
+    // Adding a vertical stays a Firestore write.
+    try {
+      const definitionDoc = await admin.firestore()
+        .collection('flowDefinitions')
+        .doc(workflowId)
+        .get();
+      if (definitionDoc.exists) {
+        return { flowDefinition: definitionDoc.data() };
+      }
+    } catch (err) {
+      console.error(`flowDefinitions lookup failed for ${workflowId}:`, err.message);
+    }
+
     // Check vendor workflows first
     if (WORKFLOW_QUALIFYING[workflowId]) {
       return WORKFLOW_QUALIFYING[workflowId];

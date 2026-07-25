@@ -1,22 +1,20 @@
-# Spec 04 Phase A — FlowDefinition + FlowEngine (CORE)
+# Spec 04 Phase B — Catalog v2 + row-generation (CORE)
 # EDIT SITES
 tasks/todo.md
+functions/taskCatalogData.json
+functions/flowDefinitionsData.json
+functions/seedTaskCatalog.js
+functions/getWorkflowQualifying.js
 Peezy 4.0/Tasks/FlowEngine/FlowDefinition.swift
 Peezy 4.0/Tasks/FlowEngine/FlowEngineView.swift
-Peezy 4.0/Tasks/FlowEngine/FlowEngineHarness.swift
-Peezy 4.0/MainInterface/Views/AppRootView.swift
+Peezy 4.0/Tasks/FlowEngine/InAppTaskFlows.swift
+Peezy 4.0/Assessment/AssessmentModels/TaskGenerationService.swift
 Peezy 4.0/MainInterface/Models/TaskActionService.swift
-functions/flowDefinitionsData.json
 # READ SITES (audited, not edited)
-# Peezy 4.0/Tasks/Task Card Components/* — all 18 kit files read in full (renderer APIs)
-# Peezy 4.0/Tasks/Task Cards/* — 4 template bases read in full + all 34 siblings diffed
-# Peezy 4.0/MainInterface/Models/TaskFlowRouter.swift — 47-case switch, flow signatures
-# Peezy 4.0/MainInterface/Models/PeezyHomeViewModel.swift — newFlowIds + flow presentation contract
-# Peezy 4.0/MainInterface/Views/PeezyHomeView.swift — fullScreenCover presentation site :129-149
-# Peezy 4.0/MainInterface/Models/PeezyCard.swift — stage/payload fields, TaskStatus
-# Peezy 4.0/MainInterface/Models/TaskStage.swift — spine stages
-# Peezy 4.0/MainInterface/Models/WorkflowService.swift + WorkflowCardModels.swift — submission contract
-# Peezy 4.0/Tasks/Store/TasksStore.swift — listener + inventory special-case
-# functions/workflowQualifying.js + miniAssessmentWorkflows.js + getWorkflowQualifying.js — orphaned system
-# functions/taskCatalogData.json — workflowId census
-# firestore.rules (local) + deployed ruleset via Rules REST API — flowDefinitions read gap
+# functions/workflowQualifying.js + miniAssessmentWorkflows.js — merged-flow question seeds
+# Peezy 4.0/Assessment/AssessmentModels/AssessmentDataManager.swift — key census, saveAssessment paths
+# Peezy 4.0/Assessment/AssessmentModels/TaskConditionerParser.swift — Bool/nil/multi-select semantics
+# Peezy 4.0/Menu/PeezySettingsView.swift — EditAddressSheet/EditMoveDateSheet components + save patterns
+# Peezy 4.0/MainInterface/Models/IdentityService.swift — identity update + geocodedDistance
+# Peezy 4.0/Tasks/Store/PeezyCardFirestoreMapper.swift — single decode path (untouched)
+# Peezy 4.0/MainInterface/Models/UserState.swift — currentFullAddress/newFullAddress/moveDate
