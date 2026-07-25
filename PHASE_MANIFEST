@@ -1,11 +1,10 @@
-# Spec 03 Phase C — PeezyHomeViewModel split (DailyDoseEngine + TaskActionService + thin VM)
+# Spec 03 Phase D — Dose counter + completion feel + done-for-today
 # EDIT SITES
 tasks/todo.md
+Peezy 4.0/MainInterface/Views/PeezyHomeView.swift
 Peezy 4.0/MainInterface/Models/PeezyHomeViewModel.swift
-Peezy 4.0/MainInterface/Models/DailyDoseEngine.swift
-Peezy 4.0/MainInterface/Models/TaskActionService.swift
 # READ SITES (audited, not edited)
-# Peezy 4.0/MainInterface/Views/PeezyHomeView.swift — VM consumer, API surface must stay compatible
-# Peezy 4.0/MainInterface/Models/PeezyCard.swift — card model (unchanged)
-# Peezy 4.0/MainInterface/Models/TaskStage.swift — unchanged
-# Peezy 4.0/Tasks/Store/TasksStore.swift — unrelated write path, untouched by the split
+# Peezy 4.0/Assessment/PeezyTheme/peezyHaptics.swift — PeezyHaptics.taskComplete()/success() (existing, reused)
+# Peezy 4.0/MainInterface/Models/DailyDoseEngine.swift — counter source via vm.dailyTarget
+# Peezy 4.0/Tasks/Store/TasksStore.swift — Tasks-tab pressure valve untouched
+# Peezy 4.0/MainInterface/Models/UserState.swift — moveDate for the done-for-today copy

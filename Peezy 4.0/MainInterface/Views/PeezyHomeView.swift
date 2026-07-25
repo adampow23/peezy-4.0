@@ -62,22 +62,32 @@ struct PeezyHomeView: View {
             VStack {
                 Spacer()
 
-                switch viewModel.state {
-                case .loading:
-                    LoadingView()
-                case .firstTimeWelcome:
-                    firstTimeWelcomeCard
-                case .dailyGreeting:
-                    dailyGreetingCard
-                case .returningMidDay:
-                    returningMidDayCard
-                case .activeTask:
-                    activeTaskContent
-                case .dailyComplete:
-                    dailyCompleteCard
-                case .allComplete:
-                    allCompleteCard
+                Group {
+                    switch viewModel.state {
+                    case .loading:
+                        LoadingView()
+                    case .firstTimeWelcome:
+                        firstTimeWelcomeCard
+                    case .dailyGreeting:
+                        dailyGreetingCard
+                    case .returningMidDay:
+                        returningMidDayCard
+                    case .activeTask:
+                        activeTaskContent
+                    case .dailyComplete:
+                        dailyCompleteCard
+                    case .allComplete:
+                        allCompleteCard
+                    }
                 }
+                // Card-exit feel (Spec 03 Phase D): completed card slides out,
+                // next state fades in. Existing transitions only — no new deps.
+                .id(viewModel.state)
+                .transition(reduceMotion ? .opacity : .asymmetric(
+                    insertion: .opacity.combined(with: .scale(scale: 0.97)),
+                    removal: .move(edge: .leading).combined(with: .opacity)
+                ))
+                .animation(reduceMotion ? .easeOut(duration: 0.15) : .spring(response: 0.35, dampingFraction: 0.85), value: viewModel.state)
 
                 Spacer()
             }
@@ -251,6 +261,11 @@ struct PeezyHomeView: View {
                     Text(viewModel.dailyGreetingSubtitle)
                         .font(.system(size: 16, weight: .medium))
                         .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.6))
+
+                    if viewModel.dailyTarget > 0 {
+                        doseBadge("\(viewModel.dailyTarget) for today")
+                            .accessibilityIdentifier("home.dose_counter")
+                    }
                 }
                 .padding(.horizontal, 24)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -311,6 +326,12 @@ struct PeezyHomeView: View {
     @ViewBuilder
     private var activeTaskContent: some View {
         VStack(spacing: 20) {
+            if viewModel.dailyTarget > 0 {
+                doseBadge("\(min(viewModel.doseCompletedToday + 1, viewModel.dailyTarget)) of \(viewModel.dailyTarget)")
+                    .contentTransition(.numericText())
+                    .animation(reduceMotion ? nil : .snappy, value: viewModel.doseCompletedToday)
+                    .accessibilityIdentifier("home.card_position")
+            }
             ProgressView()
                 .scaleEffect(1.5)
                 .tint(PeezyTheme.Colors.deepInk)
@@ -332,7 +353,8 @@ struct PeezyHomeView: View {
                         .font(.system(size: 56))
                         .foregroundStyle(Color(uiColor: .systemGreen))
 
-                    Text("You're all done\nfor today!")
+                    // Copy LOCKED (Spec 03 Phase D): "That's today. You're on pace for [move date]."
+                    Text("That's today.")
                         .font(.system(size: 34, weight: .heavy))
                         .foregroundStyle(PeezyTheme.Colors.deepInk)
                         .lineLimit(3)
@@ -342,11 +364,12 @@ struct PeezyHomeView: View {
                         .fill(Color.primary.opacity(0.15))
                         .frame(width: 50, height: 2)
 
-                    Text(viewModel.celebrationSubtext)
+                    Text(viewModel.onPaceText)
                         .font(.system(size: 16, weight: .medium))
                         .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.6))
                         .lineLimit(3)
                         .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("home.done_today_pace")
                 }
                 .padding(.horizontal, 24)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -409,6 +432,18 @@ struct PeezyHomeView: View {
     private func glassCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
         content()
             .peezyCardChrome()
+    }
+
+    // MARK: - Dose Badge (Spec 03 Phase D counter chip)
+
+    private func doseBadge(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.7))
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(PeezyTheme.Colors.deepInk.opacity(0.08))
+            .clipShape(Capsule())
     }
 }
 

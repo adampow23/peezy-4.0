@@ -210,16 +210,16 @@ final class PeezyHomeViewModel {
         return "Today: \(done) of \(dailyTarget) done"
     }
 
-    var celebrationSubtext: String {
-        if gettingAhead {
-            let extraCompleted = completedThisSession - dailyTarget
-            if extraCompleted > 0 {
-                let unit = extraCompleted == 1 ? "task" : "tasks"
-                return "Still going! You're \(extraCompleted) \(unit) ahead of schedule."
-            }
-        }
-        if daysUntilMoveValue <= bufferDays + 2 { return "You're in great shape for move day." }
-        return "Right on schedule. Enjoy the rest of your day."
+    /// Today's completed-dose count for the Home counter (Spec 03 Phase D).
+    var doseCompletedToday: Int { dailyDoseCompletedCount }
+
+    /// Done-for-today closing line. Copy LOCKED (Spec 03 Phase D):
+    /// "That's today. You're on pace for [move date]."
+    var onPaceText: String {
+        guard let moveDate = userState?.moveDate else { return "You're on pace." }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMMM d"
+        return "You're on pace for \(formatter.string(from: moveDate))."
     }
 
     var allCompleteSubtext: String {
@@ -358,6 +358,7 @@ final class PeezyHomeViewModel {
     func completeCurrentTask() {
         guard let task = currentTask else { return }
         Task { await actionService.markTaskCompleted(task) }
+        PeezyHaptics.taskComplete()
         completedThisSession += 1
         dailyDoseCompletedCount += 1
         totalCompletedCount += 1
@@ -449,6 +450,7 @@ final class PeezyHomeViewModel {
             else { await actionService.markTaskInProgress(task) }
         }
 
+        PeezyHaptics.taskComplete()
         completedThisSession += 1
         dailyDoseCompletedCount += 1
         totalCompletedCount += 1
@@ -480,6 +482,7 @@ final class PeezyHomeViewModel {
 
         Task { await actionService.markTaskCompleted(task) }
 
+        PeezyHaptics.taskComplete()
         completedThisSession += 1
         dailyDoseCompletedCount += 1
         totalCompletedCount += 1
