@@ -149,21 +149,25 @@ struct PeezySettingsView: View {
             EditMoveDateSheet(currentDate: moveDetailDate) { newDate in
                 moveDetailDate = newDate
                 userState?.moveDate = newDate
+                // Assessment doc keeps receiving the date (backend compatibility);
+                // the identity doc is updated alongside so the next launch's
+                // identity overlay doesn't resurrect the old date.
                 saveMoveDetailField("moveDate", value: Timestamp(date: newDate))
+                saveIdentityMoveDate(newDate)
                 toastMessage = "Move date updated"
             }
         }
         .sheet(isPresented: $showEditCurrentAddress) {
             EditAddressSheet(title: "Current Address", currentValue: moveDetailCurrentAddress) { newValue in
                 moveDetailCurrentAddress = newValue
-                saveMoveDetailField("currentAddress", value: newValue)
+                saveAddressEdit(.current, raw: newValue)
                 toastMessage = "Current address updated"
             }
         }
         .sheet(isPresented: $showEditNewAddress) {
             EditAddressSheet(title: "New Address", currentValue: moveDetailNewAddress) { newValue in
                 moveDetailNewAddress = newValue
-                saveMoveDetailField("newAddress", value: newValue)
+                saveAddressEdit(.new, raw: newValue)
                 toastMessage = "New address updated"
             }
         }
@@ -743,33 +747,66 @@ struct PeezySettingsView: View {
     private func loadMoveDetails() {
         guard !moveDetailsLoaded else { return }
         guard let uid = Auth.auth().currentUser?.uid else { return }
-        let db = Firestore.firestore()
 
         Task {
+            guard let identity = await IdentityService.shared.loadOrMigrate(userId: uid) else {
+                return // no identity and no assessment — fields stay at defaults
+            }
+            await MainActor.run {
+                moveDetailCurrentAddress = identity.currentAddress?.raw ?? ""
+                moveDetailNewAddress = identity.newAddress?.raw ?? ""
+                if let date = identity.moveDate {
+                    moveDetailDate = date
+                } else if let existingDate = userState?.moveDate {
+                    moveDetailDate = existingDate
+                }
+                moveDetailsLoaded = true
+            }
+        }
+    }
+
+    private enum EditedAddressKind { case current, new }
+
+    /// Writes an address edit to the identity doc (killing the old
+    /// `.limit(to:1)` assessment-doc write) and recomputes move distance via
+    /// the shared IdentityService geocoding path.
+    private func saveAddressEdit(_ kind: EditedAddressKind, raw: String) {
+        guard let uid = Auth.auth().currentUser?.uid else { return }
+        Task {
             do {
-                let snapshot = try await db.collection("users").document(uid)
-                    .collection("user_assessments")
-                    .limit(to: 1)
-                    .getDocuments()
-
-                guard let doc = snapshot.documents.first else { return }
-                let data = doc.data()
-
+                var identity = await IdentityService.shared.loadOrMigrate(userId: uid)
+                    ?? PeezyIdentity(
+                        name: userState?.name ?? "",
+                        email: Auth.auth().currentUser?.email ?? ""
+                    )
+                let parsed = PeezyAddress.parse(addressString: raw)
+                switch kind {
+                case .current: identity.currentAddress = parsed
+                case .new: identity.newAddress = parsed
+                }
+                if let current = identity.currentAddress?.raw,
+                   let new = identity.newAddress?.raw,
+                   let result = await IdentityService.shared.geocodedDistance(from: current, to: new) {
+                    identity.moveDistanceMiles = result.miles
+                    identity.isInterstate = result.isInterstate
+                }
+                try await IdentityService.shared.save(identity, userId: uid)
+                let updated = identity
                 await MainActor.run {
-                    moveDetailCurrentAddress = data["currentAddress"] as? String ?? ""
-                    moveDetailNewAddress = data["newAddress"] as? String ?? ""
-                    if let timestamp = data["moveDate"] as? Timestamp {
-                        moveDetailDate = timestamp.dateValue()
-                    } else if let dateValue = data["moveDate"] as? Date {
-                        moveDetailDate = dateValue
-                    } else if let existingDate = userState?.moveDate {
-                        moveDetailDate = existingDate
-                    }
-                    moveDetailsLoaded = true
+                    userState?.apply(updated)
                 }
             } catch {
-                // Silently fail — fields stay at defaults
+                await MainActor.run {
+                    toastMessage = "Failed to save: \(error.localizedDescription)"
+                }
             }
+        }
+    }
+
+    private func saveIdentityMoveDate(_ date: Date) {
+        guard let uid = Auth.auth().currentUser?.uid else { return }
+        Task {
+            try? await IdentityService.shared.update(userId: uid) { $0.moveDate = date }
         }
     }
 
@@ -1098,23 +1135,17 @@ struct EditNameEmailSheet: View {
         isSaving = true
         error = nil
 
-        let db = Firestore.firestore()
         let trimmedName = name.trimmingCharacters(in: .whitespaces)
         let trimmedEmail = email.trimmingCharacters(in: .whitespaces)
 
         Task {
             do {
-                // Update name in Firestore
-                let snapshot = try await db.collection("users").document(uid)
-                    .collection("user_assessments")
-                    .limit(to: 1)
-                    .getDocuments()
-
-                if let doc = snapshot.documents.first {
-                    try await doc.reference.updateData(["userName": trimmedName])
+                // Update name on the identity doc (replaces the old
+                // .limit(to:1) assessment-doc write and the userKnowledge
+                // write, which never succeeded under deployed rules)
+                try await IdentityService.shared.update(userId: uid) {
+                    $0.name = trimmedName
                 }
-                try? await db.collection("userKnowledge").document(uid)
-                    .updateData(["userName": trimmedName])
 
                 // Update email in Firebase Auth if changed
                 let currentEmail = Auth.auth().currentUser?.email ?? ""
