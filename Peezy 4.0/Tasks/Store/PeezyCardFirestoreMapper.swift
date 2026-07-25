@@ -62,7 +62,9 @@ enum PeezyCardFirestoreMapper {
             tips: data["tips"] as? String,
             whyNeeded: data["whyNeeded"] as? String,
             estPeezy: data["estPeezy"] as? String,
-            estHours: (data["estHours"] as? NSNumber)?.doubleValue
+            estHours: (data["estHours"] as? NSNumber)?.doubleValue,
+            // Nil-tolerant: absent/unknown stage = nil (notStarted for workflow tasks)
+            stage: (data["stage"] as? String).flatMap(TaskStage.init(rawValue:))
         )
     }
 

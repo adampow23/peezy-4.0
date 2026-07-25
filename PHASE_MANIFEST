@@ -1,20 +1,10 @@
-# Spec 03 Phase A — PeezyCard rewrite + single decoding path
+# Spec 03 Phase B — TaskStage persisted (model + decode + write path, no UI)
 # EDIT SITES
 tasks/todo.md
-Peezy 4.0/MainInterface/Models/PeezyCard.swift
-Peezy 4.0/MainInterface/Models/TaskStage.swift
 Peezy 4.0/Tasks/Store/PeezyCardFirestoreMapper.swift
-Peezy 4.0/MainInterface/Models/PeezyHomeViewModel.swift
-Peezy 4.0/Tasks/Store/TaskGrouping.swift
-Peezy 4.0/Tasks/Views/TaskRowHeader.swift
-# READ SITES (audited this session, not edited; listed per CORE-tier read-site rule)
-# Peezy 4.0/Tasks/Store/TasksStore.swift — mapper consumer, no decode change needed
-# Peezy 4.0/Tasks/Views/TasksTabView.swift — onChange(of: store.tasks) Equatable audit
-# Peezy 4.0/Tasks/Views/TasksList.swift — .id(rowIdentity) Equatable workaround audit
-# Peezy 4.0/Tasks/Views/TaskRow.swift — preview construction sites
-# Peezy 4.0/MainInterface/Views/PeezyHomeView.swift — onChange(of: focusedTask) audit
-# Peezy 4.0/MainInterface/Views/PeezyMainContainer.swift — focusedTask plumbing, StackVM dead check
-# Peezy 4.0/MainInterface/Models/PeezyStackViewModel.swift — DEAD, zero instantiation
-# Peezy 4.0/MainInterface/Models/PeezyResponse.swift — card construction w/o matchingInProgress
-# Peezy 4.0/MainInterface/Views/TaskFlow/PreviewData.swift — preview constructions
-# Preview Content/PreviewHelpers.swift — preview constructions
+Peezy 4.0/MainInterface/Models/TaskActionService.swift
+# READ SITES (audited, not edited)
+# Peezy 4.0/MainInterface/Models/TaskStage.swift — enum created Phase A, unchanged
+# Peezy 4.0/MainInterface/Models/PeezyCard.swift — stage field created Phase A
+# Peezy 4.0/MainInterface/Models/PeezyHomeViewModel.swift — write-pattern reference (markTaskCompleted et al.)
+# Peezy 4.0/Tasks/Store/TasksStore.swift — listener path exercising the decode
