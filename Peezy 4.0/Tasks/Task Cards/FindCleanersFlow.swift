@@ -35,6 +35,8 @@ struct FindCleanersFlow: View {
     @State private var currentIndex = 0
     @State private var answers: [String: Set<String>] = [:]
     @State private var isSubmitting = false
+    // Hard paywall gate at BOOK (option (c), Spec 04 Phase D)
+    @State private var showPaywallGate = false
 
     // MARK: - Card Indices
 
@@ -80,6 +82,12 @@ struct FindCleanersFlow: View {
                 cardContent
             }
 
+        }
+        .fullScreenCover(isPresented: $showPaywallGate) {
+            PaywallGateSheet { subscribed in
+                showPaywallGate = false
+                if subscribed { submitAndComplete() }
+            }
         }
     }
 
@@ -209,6 +217,11 @@ struct FindCleanersFlow: View {
 
     private func submitAndComplete() {
         guard !isSubmitting else { return }
+        // Vendor booking is the BOOK-stage hard gate (Peezy+).
+        guard PaywallPolicy.allows(.vendorBooking) else {
+            showPaywallGate = true
+            return
+        }
         isSubmitting = true
 
         var workflowAnswers = WorkflowAnswers(workflowId: workflowId)

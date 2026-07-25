@@ -1,72 +1,14 @@
-# Spec 04 Phase C — Router replacement (CORE)
+# Spec 04 Phase D — Paywall gate (c) (PERIPHERY)
 # EDIT SITES
 tasks/todo.md
-Peezy 4.0/MainInterface/Models/TaskFlowRouter.swift
-Peezy 4.0/MainInterface/Models/PeezyHomeViewModel.swift
-Peezy 4.0/MainInterface/Models/PeezyCard.swift
+Peezy 4.0/MainInterface/Models/PaywallPolicy.swift
 Peezy 4.0/Tasks/FlowEngine/FlowEngineView.swift
-Peezy 4.0/Tasks/FlowEngine/FlowEngineHarness.swift
-Peezy 4.0/Tasks/FlowEngine/InAppTaskFlows.swift
-Peezy 4.0/Tasks/FlowEngine/CaptureRegistry.swift
-Peezy 4.0/Tasks/Views/TasksList.swift
-Peezy 4.0/Tasks/Store/TaskGrouping.swift
-Peezy 4.0/Tasks/Views/TaskRowHeader.swift
-Peezy 4.0/Tasks/Task Card Components/QuoteSelectionFlow.swift
-Peezy 4.0/Tasks/Task Card Components/AdminMemoFlow.swift
-Peezy 4.0/Tasks/Task Cards/ScanInventoryFlow.swift
-Peezy 4.0/Tasks/Task Cards/RentTruckFlow.swift
 Peezy 4.0/Tasks/Task Cards/FindMoversFlow.swift
 Peezy 4.0/Tasks/Task Cards/FindCleanersFlow.swift
-Peezy 4.0/Tasks/Task Cards/SetupInternetFlow.swift
-Peezy 4.0/Tasks/Task Cards/SellItemsFlow.swift
-Peezy 4.0/Tasks/Task Cards/RemoveItemsFlow.swift
-Peezy 4.0/Tasks/Task Cards/HandleAutoInsuranceFlow.swift
-Peezy 4.0/Tasks/Task Cards/HandleHomeInsuranceFlow.swift
-functions/index.js
-# DELETIONS (38 superseded templated screens + inert dismiss shim)
-Peezy 4.0/Tasks/Task Card Components/TaskFlowDismissButton.swift
-Peezy 4.0/Tasks/Task Cards/ArrangeParkingNewFlow.swift
-Peezy 4.0/Tasks/Task Cards/ArrangeParkingOldFlow.swift
-Peezy 4.0/Tasks/Task Cards/BuyCleaningSuppliesFlow.swift
-Peezy 4.0/Tasks/Task Cards/BuyPackingSuppliesFlow.swift
-Peezy 4.0/Tasks/Task Cards/CancelUtilitiesFlow.swift
-Peezy 4.0/Tasks/Task Cards/DefrostFreezerFlow.swift
-Peezy 4.0/Tasks/Task Cards/DiyDeepCleaningFlow.swift
-Peezy 4.0/Tasks/Task Cards/DiyFinalCleaningFlow.swift
-Peezy 4.0/Tasks/Task Cards/EnrollNewSchoolFlow.swift
-Peezy 4.0/Tasks/Task Cards/FindNewDaycareFlow.swift
-Peezy 4.0/Tasks/Task Cards/ForwardMailFlow.swift
-Peezy 4.0/Tasks/Task Cards/ManageBankFlow.swift
-Peezy 4.0/Tasks/Task Cards/ManageDentistFlow.swift
-Peezy 4.0/Tasks/Task Cards/ManageDoctorFlow.swift
-Peezy 4.0/Tasks/Task Cards/ManageGymFlow.swift
-Peezy 4.0/Tasks/Task Cards/ManageMassageFlow.swift
-Peezy 4.0/Tasks/Task Cards/ManageSpinFlow.swift
-Peezy 4.0/Tasks/Task Cards/ManageVetFlow.swift
-Peezy 4.0/Tasks/Task Cards/ManageYogaFlow.swift
-Peezy 4.0/Tasks/Task Cards/NewDriversLicenseFlow.swift
-Peezy 4.0/Tasks/Task Cards/NotifySchoolFlow.swift
-Peezy 4.0/Tasks/Task Cards/PhotographRentalFlow.swift
-Peezy 4.0/Tasks/Task Cards/RegisterVehicleFlow.swift
-Peezy 4.0/Tasks/Task Cards/ReserveElevatorsNewFlow.swift
-Peezy 4.0/Tasks/Task Cards/ReserveElevatorsOldFlow.swift
-Peezy 4.0/Tasks/Task Cards/ReturnKeysFlow.swift
-Peezy 4.0/Tasks/Task Cards/ScheduleTimeOffFlow.swift
-Peezy 4.0/Tasks/Task Cards/SetupUtilitiesFlow.swift
-Peezy 4.0/Tasks/Task Cards/TransferPharmacyFlow.swift
-Peezy 4.0/Tasks/Task Cards/TransferSpecialistsFlow.swift
-Peezy 4.0/Tasks/Task Cards/TransferUtilitiesFlow.swift
-Peezy 4.0/Tasks/Task Cards/UpdateCreditCardsFlow.swift
-Peezy 4.0/Tasks/Task Cards/UpdateDaycareFlow.swift
-Peezy 4.0/Tasks/Task Cards/UpdateDriversLicenseFlow.swift
-Peezy 4.0/Tasks/Task Cards/UpdateEmployerRecordsFlow.swift
-Peezy 4.0/Tasks/Task Cards/UpdateInvestmentFlow.swift
-Peezy 4.0/Tasks/Task Cards/UpdateSchoolFlow.swift
-Peezy 4.0/Tasks/Task Cards/UpdateStudentLoansFlow.swift
-# READ SITES (audited, not edited)
-# Peezy 4.0/MainInterface/Views/PeezyHomeView.swift — cover site :129-149 unchanged; spinner
-#   path (activeTaskContent) becomes unreachable via universal routing (cited in report)
-# Peezy 4.0/Tasks/Store/TasksStore.swift — isScanInventory consumer (shim keeps the API)
-# Peezy 4.0/Tasks/Views/TaskRowButtons.swift — isScanInventory consumer (shim keeps the API)
-# Peezy 4.0/Tasks/Store/PeezyCardFirestoreMapper.swift — status decode via TaskStatus rawValue
-# functions/getWorkflowQualifying.js — status writes cited for the index.js query fix
+# SANCTIONED SECOND PaywallGateView CALL SITE (presentation code untouched):
+# PaywallPolicy.swift hosts the single new PaywallGateView instantiation
+# (PaywallGateSheet); engine + SPINE flows present it through that one site.
+# READ SITES (audited, not edited — COMPLIANCE)
+# Peezy 4.0/MainInterface/Views/Paywall/PaywallGateView.swift — init(onDismiss:), env SubscriptionManager
+# Peezy 4.0/MainInterface/Models/SubscriptionManager.swift — .shared.isSubscribed
+# Peezy 4.0/Assessment/AssessmentViews/Onboarding/CompletionFlowView.swift — soft gate untouched
