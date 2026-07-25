@@ -442,8 +442,8 @@ final class PeezyHomeViewModel {
                     let moveDateStr: String
                     if let date = userState?.moveDate { moveDateStr = ISO8601DateFormatter().string(from: date) }
                     else { moveDateStr = "" }
-                    let currentAddr = [userState?.originCity, userState?.originState].compactMap { $0 }.joined(separator: ", ")
-                    let newAddr = [userState?.destinationCity, userState?.destinationState].compactMap { $0 }.joined(separator: ", ")
+                    let currentAddr = userState?.currentFullAddress ?? ""
+                    let newAddr = userState?.newFullAddress ?? ""
                     let payload: [String: Any] = [
                         "taskId": task.taskId ?? task.id, "taskTitle": task.title,
                         "taskCategory": task.taskCategory ?? "", "userId": userState?.userId ?? "",

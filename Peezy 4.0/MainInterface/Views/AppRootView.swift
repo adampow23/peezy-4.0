@@ -138,12 +138,14 @@ struct AppRootView: View {
                         #if DEBUG
                         print("✅ User has completed assessment")
                         #endif
-                        
-                        // Build UserState from assessment data
+
+                        // Build UserState from assessment data + identity doc
+                        // (migrating the identity doc on first launch if absent)
                         let assessmentData = document.data()
-                        self.userState = UserState(userId: userId, from: assessmentData)
-                        
-                        appState = .hasAssessment
+                        Task { @MainActor in
+                            self.userState = await UserState.load(userId: userId, assessment: assessmentData)
+                            self.appState = .hasAssessment
+                        }
                     } else {
                         #if DEBUG
                         print("📝 User needs to complete assessment")

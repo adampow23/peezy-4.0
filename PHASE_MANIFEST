@@ -8,3 +8,10 @@ Peezy 4.0/Assessment/AssessmentModels/AssessmentDataManager.swift
 Peezy 4.0/Menu/PeezySettingsView.swift
 Peezy 4.0/MainInterface/Views/AppRootView.swift
 firestore.rules
+# NEEDS-CLARIFICATION addition (disclosed in phase report): spec 2c requires
+# the seven Type-3 flows + requestConcierge to send full street addresses;
+# their address composition lives at TaskFlowRouter:101-113 and
+# PeezyHomeViewModel:445-446 (lines the spec cites), which the spec's manifest
+# list omits. Only those composition lines change.
+Peezy 4.0/MainInterface/Models/TaskFlowRouter.swift
+Peezy 4.0/MainInterface/Models/PeezyHomeViewModel.swift

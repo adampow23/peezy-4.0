@@ -11,10 +11,31 @@ struct UserState: Codable {
     // MARK: - Move Details
     var moveDate: Date?
     var moveDistance: MoveDistance?
+
+    /// Full address structs from the identity doc (or parsed from assessment
+    /// strings as fallback). Source of truth; the city/state fields below are
+    /// derived from these for existing consumers.
+    var currentAddress: PeezyAddress?
+    var newAddress: PeezyAddress?
+
     var originCity: String?
     var originState: String?
     var destinationCity: String?
     var destinationState: String?
+
+    /// Single-line full street address for flow payloads and concierge
+    /// requests; falls back to "City, ST" when no street is known.
+    var currentFullAddress: String? {
+        if let line = currentAddress?.displayLine, !line.isEmpty { return line }
+        let composed = [originCity, originState].compactMap { $0 }.joined(separator: ", ")
+        return composed.isEmpty ? nil : composed
+    }
+
+    var newFullAddress: String? {
+        if let line = newAddress?.displayLine, !line.isEmpty { return line }
+        let composed = [destinationCity, destinationState].compactMap { $0 }.joined(separator: ", ")
+        return composed.isEmpty ? nil : composed
+    }
     
     // MARK: - Property Info
     var originPropertyType: PropertyType?
@@ -164,17 +185,26 @@ struct UserState: Codable {
             self.moveDistance = MoveDistance(rawValue: normalized)
         }
 
-        // City/state — parsed from the single address strings the assessment
-        // persists ("currentAddress"/"newAddress"); no per-component keys exist
-        if let current = assessment["currentAddress"] as? String {
-            let parsed = Self.cityAndState(fromAddress: current)
-            self.originCity = parsed.city
-            self.originState = parsed.state
+        // Full addresses — parsed from the single address strings the
+        // assessment persists ("currentAddress"/"newAddress"). Overridden by
+        // the identity doc when apply(_:) runs after load.
+        if let current = assessment["currentAddress"] as? String, !current.isEmpty {
+            var parsed = PeezyAddress.parse(addressString: current)
+            if let unit = assessment["currentUnitNumber"] as? String, !unit.isEmpty {
+                parsed.unit = unit
+            }
+            self.currentAddress = parsed
+            self.originCity = parsed.city.isEmpty ? nil : parsed.city
+            self.originState = parsed.state.isEmpty ? nil : parsed.state
         }
-        if let new = assessment["newAddress"] as? String {
-            let parsed = Self.cityAndState(fromAddress: new)
-            self.destinationCity = parsed.city
-            self.destinationState = parsed.state
+        if let new = assessment["newAddress"] as? String, !new.isEmpty {
+            var parsed = PeezyAddress.parse(addressString: new)
+            if let unit = assessment["newUnitNumber"] as? String, !unit.isEmpty {
+                parsed.unit = unit
+            }
+            self.newAddress = parsed
+            self.destinationCity = parsed.city.isEmpty ? nil : parsed.city
+            self.destinationState = parsed.state.isEmpty ? nil : parsed.state
         }
 
         // Property info - AssessmentDataManager saves as "currentDwellingType" and "newDwellingType"
@@ -235,33 +265,34 @@ struct UserState: Codable {
         }
     }
     
-    // MARK: - Address Parsing
+    // MARK: - Identity Overlay
 
-    /// Extracts (city, state) from the comma-separated US address strings the
-    /// assessment stores: "170 Main St, Los Altos, CA, 94022" (canonical
-    /// AddressSearchManager.formatAddress output) or the completer fallback
-    /// "170 Main St, Los Altos, CA 94022, United States". The state is the
-    /// last two-letter uppercase token optionally followed by a zip; the city
-    /// is the component before it. Returns nils when no state is found.
-    private static func cityAndState(fromAddress address: String) -> (city: String?, state: String?) {
-        let parts = address
-            .components(separatedBy: ",")
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-
-        for (index, part) in parts.enumerated().reversed() {
-            let tokens = part.split(separator: " ")
-            guard let state = tokens.first,
-                  state.count == 2,
-                  state.allSatisfy({ $0.isLetter && $0.isUppercase }),
-                  tokens.dropFirst().allSatisfy({ token in
-                      token.allSatisfy { $0.isNumber || $0 == "-" }
-                  })
-            else { continue }
-
-            let city = index > 0 && !parts[index - 1].isEmpty ? parts[index - 1] : nil
-            return (city, String(state))
+    /// Loads the user's state: assessment-derived fields from the assessment
+    /// dict, identity fields (name, moveDate, full addresses) overlaid from
+    /// the identity doc via IdentityService (migrating it when absent).
+    static func load(userId: String, assessment: [String: Any]) async -> UserState {
+        var state = UserState(userId: userId, from: assessment)
+        if let identity = await IdentityService.shared.loadOrMigrate(userId: userId) {
+            state.apply(identity)
         }
-        return (nil, nil)
+        return state
+    }
+
+    /// Overlays identity-doc fields onto this state. Identity wins wherever it
+    /// has a value; assessment-derived values remain as fallback.
+    mutating func apply(_ identity: PeezyIdentity) {
+        if !identity.name.isEmpty { name = identity.name }
+        if let date = identity.moveDate { moveDate = date }
+        if let current = identity.currentAddress {
+            currentAddress = current
+            originCity = current.city.isEmpty ? nil : current.city
+            originState = current.state.isEmpty ? nil : current.state
+        }
+        if let new = identity.newAddress {
+            newAddress = new
+            destinationCity = new.city.isEmpty ? nil : new.city
+            destinationState = new.state.isEmpty ? nil : new.state
+        }
     }
 
     // MARK: - Convert to Dictionary for Firebase

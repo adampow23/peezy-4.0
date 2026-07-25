@@ -98,19 +98,19 @@ struct TaskFlowRouter {
         // ── Type 3: Decision Only ──
 
         case "arrange_parking_new":
-            ArrangeParkingNewFlow(userId: userId, currentAddress: [userState?.destinationCity, userState?.destinationState].compactMap { $0 }.joined(separator: ", "), moveDate: userState?.moveDate ?? Date(), onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
+            ArrangeParkingNewFlow(userId: userId, currentAddress: userState?.newFullAddress ?? "", moveDate: userState?.moveDate ?? Date(), onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
         case "arrange_parking_old":
-            ArrangeParkingOldFlow(userId: userId, currentAddress: [userState?.originCity, userState?.originState].compactMap { $0 }.joined(separator: ", "), moveDate: userState?.moveDate ?? Date(), onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
+            ArrangeParkingOldFlow(userId: userId, currentAddress: userState?.currentFullAddress ?? "", moveDate: userState?.moveDate ?? Date(), onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
         case "reserve_elevators_new":
-            ReserveElevatorsNewFlow(userId: userId, currentAddress: [userState?.destinationCity, userState?.destinationState].compactMap { $0 }.joined(separator: ", "), moveDate: userState?.moveDate ?? Date(), onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
+            ReserveElevatorsNewFlow(userId: userId, currentAddress: userState?.newFullAddress ?? "", moveDate: userState?.moveDate ?? Date(), onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
         case "reserve_elevators_old":
-            ReserveElevatorsOldFlow(userId: userId, currentAddress: [userState?.originCity, userState?.originState].compactMap { $0 }.joined(separator: ", "), moveDate: userState?.moveDate ?? Date(), onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
+            ReserveElevatorsOldFlow(userId: userId, currentAddress: userState?.currentFullAddress ?? "", moveDate: userState?.moveDate ?? Date(), onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
         case "setup_utilities":
-            SetupUtilitiesFlow(userId: userId, currentAddress: [userState?.destinationCity, userState?.destinationState].compactMap { $0 }.joined(separator: ", "), moveDate: userState?.moveDate ?? Date(), onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
+            SetupUtilitiesFlow(userId: userId, currentAddress: userState?.newFullAddress ?? "", moveDate: userState?.moveDate ?? Date(), onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
         case "cancel_utilities":
-            CancelUtilitiesFlow(userId: userId, currentAddress: [userState?.originCity, userState?.originState].compactMap { $0 }.joined(separator: ", "), moveDate: userState?.moveDate ?? Date(), onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
+            CancelUtilitiesFlow(userId: userId, currentAddress: userState?.currentFullAddress ?? "", moveDate: userState?.moveDate ?? Date(), onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
         case "transfer_utilities":
-            TransferUtilitiesFlow(userId: userId, currentAddress: [userState?.destinationCity, userState?.destinationState].compactMap { $0 }.joined(separator: ", "), moveDate: userState?.moveDate ?? Date(), onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
+            TransferUtilitiesFlow(userId: userId, currentAddress: userState?.newFullAddress ?? "", moveDate: userState?.moveDate ?? Date(), onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
 
         // ── Type 4: Insurance ──
 
