@@ -23,6 +23,7 @@ struct AppRootView: View {
     @State private var appState: AppState = .loading
     @State private var showAssessment = false
     @State private var userState: UserState?  // Holds user context for Peezy
+    @State private var explainerSeen = UserDefaults.standard.bool(forKey: "peezy.explainer.seen")
     
     var body: some View {
         Group {
@@ -35,8 +36,14 @@ struct AppRootView: View {
                     .environmentObject(authViewModel)
                 
             case .needsAssessment:
-                if showAssessment {
-                    AssessmentFlowView(showAssessment: $showAssessment)                } else {
+                if !explainerSeen {
+                    ExplainerView(onFinished: {
+                        explainerSeen = true
+                        showAssessment = true
+                    })
+                } else if showAssessment {
+                    AssessmentFlowView(showAssessment: $showAssessment)
+                } else {
                     AssessmentIntroView(showAssessment: $showAssessment)
                 }
                 

@@ -1,6 +1,5 @@
-# Spec 01 — Phase 0 manifest. The PreToolUse hook denies Write/Edit on any
+# Spec 01 — Phase 1 manifest. The PreToolUse hook denies Write/Edit on any
 # repo path not listed here. One path or fnmatch pattern per line.
 PHASE_MANIFEST
-CLAUDE.md
-.claude/hooks/*
-.claude/settings.json
+Peezy 4.0/MainInterface/Views/Onboarding/ExplainerView.swift
+Peezy 4.0/MainInterface/Views/AppRootView.swift
