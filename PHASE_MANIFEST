@@ -1,5 +1,10 @@
-# Spec 01 — Phase 1 manifest. The PreToolUse hook denies Write/Edit on any
+# Spec 01 — Phase 2 manifest. The PreToolUse hook denies Write/Edit on any
 # repo path not listed here. One path or fnmatch pattern per line.
 PHASE_MANIFEST
-Peezy 4.0/MainInterface/Views/Onboarding/ExplainerView.swift
+Peezy 4.0/MainInterface/Models/PeezyIdentity.swift
+Peezy 4.0/MainInterface/Models/IdentityService.swift
+Peezy 4.0/MainInterface/Models/UserState.swift
+Peezy 4.0/Assessment/AssessmentModels/AssessmentDataManager.swift
+Peezy 4.0/Menu/PeezySettingsView.swift
 Peezy 4.0/MainInterface/Views/AppRootView.swift
+firestore.rules
