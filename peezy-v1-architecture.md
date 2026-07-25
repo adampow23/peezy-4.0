@@ -95,6 +95,14 @@ PeezyIdentity {
 
 Five tap-through cards before question 1: (1) name the pain, (2) directed action promise, (3) boring-on-purpose declared as respect, (4) the wedge — "we do the parts you hate," (5) why the questions earn their length. Copy through peezy-copywriter voice. This ships first — it is self-contained and reframes everything behind it.
 
+## 9b. Assessment tiers — LOCKED (interim → target)
+
+Current state (post-Spec 02): ~24 steps, all keys persisting, all conditions honest. This is a deliberate interim: correctness before length. Migration to the tiered target:
+- **Tier 1 (stays upfront, permanent):** identity, addresses (with pending escape hatch), date + flexibility, who's moving, kids branch, pets, hasVehicles, renter/owner, hiring intent — everything gating a deadline task or the dose denominator.
+- **Tier 2 (→ early dose cards, Spec 04):** wantToSell/declutter intent; storage-need signal (vertical trigger, distinct from storage-as-estimate).
+- **Tier 3 (→ capture-time, Spec 05):** storage trio + bedrooms (estimate inputs per Adam — asked at mover capture, with sqft views returning there); floorAccess detail beyond the elevator condition.
+Rule preserved: any question gating a deadline-sensitive task never leaves Tier 1. Target lands ~15 experienced questions for a typical renter.
+
 ## 10. Paywall timing — LOCKED: option (c)
 
 Soft, dismissible offer post-assessment (current PaywallGateView presentation, unchanged — it is Review #3-approved) + hard gate at first vendor booking. Free tier: assessment, daily dose, self-service tasks, inventory scan, packing plan. Peezy+ gates: vendor booking (BOOK stage), supplies kit one-tap order, concierge execution. Rationale: monetize at the moment of maximal demonstrated value; the paid line matches the concierge wedge exactly — everything a checklist can do is free, everything only Peezy can do is Peezy+. Implementation: one gating function `requiresSubscription(for:)` consulted at stage transitions; the gate itself reuses PaywallGateView (COMPLIANCE — presentation code untouched, only a second call site). The three-task trigger is retired from all docs.
