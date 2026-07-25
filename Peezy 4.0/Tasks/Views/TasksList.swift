@@ -62,6 +62,9 @@ struct TasksList: View {
     }
 
     private func row(task: PeezyCard, section: TaskSection) -> some View {
+        // The .id(rowIdentity) workaround for the old id-only PeezyCard
+        // Equatable is gone (Spec 04 Phase C) — memberwise == (Spec 03 Phase A)
+        // repaints rows on field changes without forced re-identity.
         TaskRow(
             task: task,
             section: section,
@@ -69,11 +72,6 @@ struct TasksList: View {
             onExpandToggle: { toggle(task.id) },
             onAction: onAction
         )
-        .id(rowIdentity(task: task, section: section))
-    }
-
-    private func rowIdentity(task: PeezyCard, section: TaskSection) -> String {
-        "\(task.id)-\(String(describing: section))-\(String(describing: task.status))"
     }
 
     private func toggle(_ id: String) {

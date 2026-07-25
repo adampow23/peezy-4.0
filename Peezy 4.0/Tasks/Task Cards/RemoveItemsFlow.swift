@@ -45,7 +45,6 @@ struct RemoveItemsFlow: View {
                 cardContent
             }
 
-            TaskFlowDismissButton(onDismiss: onDismiss)
         }
     }
 

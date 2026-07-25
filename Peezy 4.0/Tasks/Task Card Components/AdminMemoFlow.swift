@@ -67,7 +67,6 @@ struct AdminMemoFlow: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
 
-            TaskFlowDismissButton(onDismiss: onDismiss)
         }
         .task {
             await loadMemoData()

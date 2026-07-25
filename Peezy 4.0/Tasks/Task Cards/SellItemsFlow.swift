@@ -44,7 +44,6 @@ struct SellItemsFlow: View {
                 cardContent
             }
 
-            TaskFlowDismissButton(onDismiss: onDismiss)
         }
     }
 

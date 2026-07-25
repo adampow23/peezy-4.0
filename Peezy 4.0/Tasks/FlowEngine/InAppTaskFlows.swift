@@ -115,7 +115,6 @@ struct AddNewAddressFlow: View {
                 .accessibilityIdentifier("inapp.add_new_address")
             }
 
-            TaskFlowDismissButton(onDismiss: onDismiss)
         }
         .sheet(isPresented: $showSheet) {
             EditAddressSheet(title: "New Address", currentValue: "") { newValue in
@@ -196,7 +195,6 @@ struct ConfirmMoveDateFlow: View {
                 .accessibilityIdentifier("inapp.confirm_move_date")
             }
 
-            TaskFlowDismissButton(onDismiss: onDismiss)
         }
     }
 
@@ -265,7 +263,6 @@ struct DeclutterIntentFlow: View {
                 .accessibilityIdentifier("inapp.declutter_intent")
             }
 
-            TaskFlowDismissButton(onDismiss: onDismiss)
         }
     }
 
@@ -330,7 +327,6 @@ struct StorageNeedFlow: View {
                 .accessibilityIdentifier("inapp.storage_need")
             }
 
-            TaskFlowDismissButton(onDismiss: onDismiss)
         }
     }
 

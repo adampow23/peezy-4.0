@@ -71,7 +71,6 @@ struct QuoteSelectionFlow: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
 
-            TaskFlowDismissButton(onDismiss: onDismiss)
         }
         .task {
             await loadQuoteData()

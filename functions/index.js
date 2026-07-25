@@ -215,14 +215,18 @@ async function generateInitialLoadResponse(data) {
     try {
       const db = admin.firestore();
       
-      // First try: query tasks with active status values
-      // iOS writes "Upcoming", workflows use "pending" variants
-      // Include "Snoozed" to match TimelineService - iOS will filter based on snoozedUntil
+      // First try: query tasks with active status values.
+      // Statuses actually written to task docs (Spec 04 Phase C audit):
+      // iOS writes Upcoming/InProgress/UserInProgress/Snoozed; index.js task
+      // creation writes 'pending'; submitWorkflowAnswers writes
+      // 'matching_in_progress' (getWorkflowQualifying.js). 'pending_matching'
+      // exists only on workflowSubmissions docs — it never lands on a task
+      // doc, so it was dead weight in this filter and is removed.
       let tasksSnapshot = await db
         .collection('users')
         .doc(userId)
         .collection('tasks')
-        .where('status', 'in', ['Upcoming', 'InProgress', 'pending', 'pending_matching', 'matching_in_progress', 'Snoozed'])
+        .where('status', 'in', ['Upcoming', 'InProgress', 'pending', 'matching_in_progress', 'Snoozed'])
         .get();
 
       // Fallback: if no results, get all tasks and filter out completed

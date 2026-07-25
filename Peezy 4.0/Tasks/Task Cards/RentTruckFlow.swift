@@ -25,7 +25,6 @@ struct RentTruckFlow: View {
             TaskFlowStack(cardsRemaining: totalCards - currentIndex, currentIndex: currentIndex) {
                 cardContent
             }
-            TaskFlowDismissButton(onDismiss: onDismiss)
         }
     }
 

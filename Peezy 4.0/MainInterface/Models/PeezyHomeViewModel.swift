@@ -81,44 +81,13 @@ final class PeezyHomeViewModel {
         }
     }
 
-    private static let newFlowIds: Set<String> = [
-        // Type 1: Self-Service
-        "return_key_fobs_remotes", "schedule_time_off_work", "update_employer_records",
-        "update_drivers_license", "new_drivers_license", "register_vehicle",
-        "photograph_rental_condition", "buy_packing_supplies", "buy_cleaning_supplies",
-        "defrost_freezer", "diy_deep_cleaning", "diy_final_cleaning",
-        "forward_mail_usps", "coa_schools", "transfer_daycare",
-        "update_credit_card", "update_student_loans", "begin_school_transfer",
-        "new_school_enrollment", "setup_daycare", "scan_inventory",
-        // Type 2: Manage-Provider
-        "manage_gym", "manage_doctor", "manage_dentist", "manage_vet",
-        "transfer_pharmacy_records", "transfer_specialists_records",
-        "manage_yoga", "manage_spin", "manage_massage", "manage_bank", "update_investment",
-        // Type 3: Decision Only
-        "arrange_parking_new", "arrange_parking_old",
-        "reserve_elevators_new", "reserve_elevators_old",
-        "setup_utilities", "cancel_utilities", "transfer_utilities",
-        // Type 4: Insurance
-        "handle_auto_insurance", "update_auto_insurance",
-        "handle_home_insurance",
-        "cancel_renters_insurance", "setup_renters_insurance", "transfer_renters_insurance",
-        "cancel_condo_insurance", "setup_condo_insurance", "transfer_condo_insurance",
-        "cancel_homeowners_insurance", "setup_homeowners_insurance", "transfer_homeowners_insurance",
-        // Type 5: Survey + Submit
-        "rent_truck",
-        // Type 6: Complex-Vendor
-        "book_movers", "book_cleaners", "setup_internet", "sell_items", "remove_items",
-        // Type 7: Admin-Pushed
-        "quote_selection", "admin_memo"
-    ]
-
-    private func newFlowId(for card: PeezyCard) -> String? {
-        if let wid = card.workflowId, Self.newFlowIds.contains(wid) { return wid }
-        if let tid = card.taskId {
-            let lowered = tid.lowercased()
-            if Self.newFlowIds.contains(lowered) { return lowered }
-        }
-        return nil
+    /// Data-driven routing (Spec 04 Phase C — the newFlowIds allowlist is
+    /// gone): every card resolves to a flow id — workflowId when present,
+    /// else the lowercased taskId (the off-app convention). The router
+    /// resolves it against the explicit map or flowDefinitions; unknown ids
+    /// render the coming-right-up card, never a dead end.
+    private func flowId(for card: PeezyCard) -> String {
+        card.workflowId ?? (card.taskId ?? card.id).lowercased()
     }
 
     // MARK: - Computed Properties
@@ -255,7 +224,7 @@ final class PeezyHomeViewModel {
             let snapshot = try await db.collection("users")
                 .document(userId)
                 .collection("tasks")
-                .whereField("status", in: ["Upcoming", "pending", "Snoozed", "InProgress", "UserInProgress"])
+                .whereField("status", in: ["Upcoming", "pending", "matching_in_progress", "Snoozed", "InProgress", "UserInProgress"])
                 .getDocuments()
 
             var cards: [PeezyCard] = []
@@ -271,8 +240,8 @@ final class PeezyHomeViewModel {
 
                 if let snoozedUntil = card.snoozedUntil, snoozedUntil > now { continue }
 
-                if card.status == .inProgress || card.status == .pending {
-                    // pending = server matching in progress — waiting, not actionable
+                if card.status == .inProgress || card.status == .pending || card.status == .matchingInProgress {
+                    // pending / matching_in_progress = server working — waiting, not actionable
                     inProgressBuffer.append(card)
                 } else if card.status == .userInProgress {
                     if let returnDate = card.userInProgressReturnDate, returnDate <= now {
@@ -318,13 +287,8 @@ final class PeezyHomeViewModel {
         let task = taskQueue.removeFirst()
         currentTask = task
 
-        if let flowId = newFlowId(for: task) {
-            taskFlowWorkflowId = flowId
-            showTaskFlow = true
-            state = .activeTask
-            return
-        }
-
+        taskFlowWorkflowId = flowId(for: task)
+        showTaskFlow = true
         state = .activeTask
     }
 
@@ -426,13 +390,8 @@ final class PeezyHomeViewModel {
         currentTask = task
         isFocusedTask = true
 
-        if let flowId = newFlowId(for: task) {
-            taskFlowWorkflowId = flowId
-            showTaskFlow = true
-            state = .activeTask
-            return
-        }
-
+        taskFlowWorkflowId = flowId(for: task)
+        showTaskFlow = true
         state = .activeTask
     }
 
@@ -536,20 +495,6 @@ final class PeezyHomeViewModel {
         } else {
             state = .allComplete
         }
-    }
-
-    // MARK: - Skip Current Task
-
-    func skipCurrentTask() {
-        if let task = currentTask {
-            let snoozedUntil = Calendar.current.date(byAdding: .day, value: 1, to: Date()) ?? Date()
-            Task { await actionService.writeSnooze(task, snoozedUntil: snoozedUntil) }
-            allActiveTasks.removeAll { $0.id == task.id }
-        }
-        dailyDoseCompletedCount += 1
-        currentTask = nil
-        isFocusedTask = false
-        advanceAfterTask()
     }
 
     // MARK: - State Determination

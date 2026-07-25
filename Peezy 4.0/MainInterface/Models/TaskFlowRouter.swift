@@ -2,6 +2,16 @@
 //  TaskFlowRouter.swift
 //  Peezy 4.0
 //
+//  Thin resolver (Spec 04 Phase C — replaces the closed 47-case switch).
+//  Resolution order:
+//  1. Capture registry (scan_inventory keeps its bespoke path)
+//  2. Admin-pushed flows (quote_selection / admin_memo)
+//  3. Catalog-v2 in-app tasks (explicit, no server definitions)
+//  4. Swift custom flows (die in Specs 05–06 as the verticals rebuild
+//     on the spine)
+//  5. Everything else: flowDefinitions lookup → FlowEngineView; unresolvable
+//     ids render the coming-right-up card (the permanent spinner is dead).
+//
 
 import SwiftUI
 
@@ -23,112 +33,34 @@ struct TaskFlowRouter {
         onDismiss: @escaping () -> Void,
         onStatusAction: @escaping (TaskFlowStatusAction) -> Void
     ) -> some View {
-        switch flowId {
-
-        // ── Type 1: Self-Service ──
-
-        case "return_key_fobs_remotes":
-            ReturnKeysFlow(userId: userId, onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
-        case "schedule_time_off_work":
-            ScheduleTimeOffFlow(userId: userId, onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
-        case "update_employer_records":
-            UpdateEmployerRecordsFlow(userId: userId, onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
-        case "update_drivers_license":
-            UpdateDriversLicenseFlow(userId: userId, onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
-        case "new_drivers_license":
-            NewDriversLicenseFlow(userId: userId, onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
-        case "register_vehicle":
-            RegisterVehicleFlow(userId: userId, onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
-        case "photograph_rental_condition":
-            PhotographRentalFlow(userId: userId, onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
-        case "buy_packing_supplies":
-            BuyPackingSuppliesFlow(userId: userId, onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
-        case "buy_cleaning_supplies":
-            BuyCleaningSuppliesFlow(userId: userId, onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
-        case "defrost_freezer":
-            DefrostFreezerFlow(userId: userId, onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
-        case "diy_deep_cleaning":
-            DiyDeepCleaningFlow(userId: userId, onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
-        case "diy_final_cleaning":
-            DiyFinalCleaningFlow(userId: userId, onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
-        case "scan_inventory":
+        // ── Capture registry (bespoke path; parameterization in Spec 05) ──
+        if CaptureRegistry.registration(flowId: flowId)?.kind == .videoInventory {
             ScanInventoryFlow(userId: userId, onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
-        case "forward_mail_usps":
-            ForwardMailFlow(userId: userId, onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
-        case "coa_schools":
-            UpdateSchoolFlow(userId: userId, onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
-        case "transfer_daycare":
-            UpdateDaycareFlow(userId: userId, onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
-        case "update_credit_card":
-            UpdateCreditCardsFlow(userId: userId, onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
-        case "update_student_loans":
-            UpdateStudentLoansFlow(userId: userId, onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
-        case "begin_school_transfer":
-            NotifySchoolFlow(userId: userId, onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
-        case "new_school_enrollment":
-            EnrollNewSchoolFlow(userId: userId, onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
-        case "setup_daycare":
-            FindNewDaycareFlow(userId: userId, onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
+        } else {
+            switch flowId {
 
-        // ── Type 2: Manage-Provider ──
+        // ── Admin-pushed ──
 
-        case "manage_gym":
-            ManageGymFlow(userId: userId, onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
-        case "manage_doctor":
-            ManageDoctorFlow(userId: userId, onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
-        case "manage_dentist":
-            ManageDentistFlow(userId: userId, onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
-        case "manage_vet":
-            ManageVetFlow(userId: userId, onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
-        case "transfer_pharmacy_records":
-            TransferPharmacyFlow(userId: userId, onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
-        case "transfer_specialists_records":
-            TransferSpecialistsFlow(userId: userId, onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
-        case "manage_yoga":
-            ManageYogaFlow(userId: userId, onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
-        case "manage_spin":
-            ManageSpinFlow(userId: userId, onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
-        case "manage_massage":
-            ManageMassageFlow(userId: userId, onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
-        case "manage_bank":
-            ManageBankFlow(userId: userId, onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
-        case "update_investment":
-            UpdateInvestmentFlow(userId: userId, onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
+        case "quote_selection":
+            QuoteSelectionFlow(taskId: taskId ?? "", userId: userId, onComplete: onComplete, onDismiss: onDismiss)
+        case "admin_memo":
+            AdminMemoFlow(taskId: taskId ?? "", userId: userId, onComplete: onComplete, onDismiss: onDismiss)
 
-        // ── Type 3: Decision Only ──
+        // ── Catalog-v2 in-app tasks ──
 
-        case "arrange_parking_new":
-            ArrangeParkingNewFlow(userId: userId, currentAddress: userState?.newFullAddress ?? "", moveDate: userState?.moveDate ?? Date(), onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
-        case "arrange_parking_old":
-            ArrangeParkingOldFlow(userId: userId, currentAddress: userState?.currentFullAddress ?? "", moveDate: userState?.moveDate ?? Date(), onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
-        case "reserve_elevators_new":
-            ReserveElevatorsNewFlow(userId: userId, currentAddress: userState?.newFullAddress ?? "", moveDate: userState?.moveDate ?? Date(), onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
-        case "reserve_elevators_old":
-            ReserveElevatorsOldFlow(userId: userId, currentAddress: userState?.currentFullAddress ?? "", moveDate: userState?.moveDate ?? Date(), onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
-        case "setup_utilities":
-            SetupUtilitiesFlow(userId: userId, currentAddress: userState?.newFullAddress ?? "", moveDate: userState?.moveDate ?? Date(), onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
-        case "cancel_utilities":
-            CancelUtilitiesFlow(userId: userId, currentAddress: userState?.currentFullAddress ?? "", moveDate: userState?.moveDate ?? Date(), onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
-        case "transfer_utilities":
-            TransferUtilitiesFlow(userId: userId, currentAddress: userState?.newFullAddress ?? "", moveDate: userState?.moveDate ?? Date(), onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
+        case "add_new_address":
+            AddNewAddressFlow(userId: userId, onComplete: onComplete, onDismiss: onDismiss)
+        case "confirm_move_date":
+            ConfirmMoveDateFlow(userId: userId, currentDate: userState?.moveDate ?? Date(), onComplete: onComplete, onDismiss: onDismiss)
+        case "declutter_intent":
+            DeclutterIntentFlow(userId: userId, onComplete: onComplete, onDismiss: onDismiss)
+        case "storage_need":
+            StorageNeedFlow(userId: userId, onComplete: onComplete, onDismiss: onDismiss)
 
-        // ── Type 4: Insurance ──
-
-        case "handle_auto_insurance", "update_auto_insurance":
-            HandleAutoInsuranceFlow(userId: userId, onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
-        case "handle_home_insurance",
-             "cancel_renters_insurance", "setup_renters_insurance", "transfer_renters_insurance",
-             "cancel_condo_insurance", "setup_condo_insurance", "transfer_condo_insurance",
-             "cancel_homeowners_insurance", "setup_homeowners_insurance", "transfer_homeowners_insurance":
-            HandleHomeInsuranceFlow(userId: userId, onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
-
-        // ── Type 5: Survey + Submit ──
+        // ── Swift custom flows (Types 4–6; superseded in Specs 05–06) ──
 
         case "rent_truck":
             RentTruckFlow(userId: userId, onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
-
-        // ── Type 6: Complex-Vendor ──
-
         case "book_movers":
             FindMoversFlow(userId: userId, onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
         case "book_cleaners":
@@ -139,19 +71,31 @@ struct TaskFlowRouter {
             SellItemsFlow(userId: userId, onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
         case "remove_items":
             RemoveItemsFlow(userId: userId, onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
+        case "handle_auto_insurance", "update_auto_insurance":
+            HandleAutoInsuranceFlow(userId: userId, onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
+        case "handle_home_insurance",
+             "cancel_renters_insurance", "setup_renters_insurance", "transfer_renters_insurance",
+             "cancel_condo_insurance", "setup_condo_insurance", "transfer_condo_insurance",
+             "cancel_homeowners_insurance", "setup_homeowners_insurance", "transfer_homeowners_insurance":
+            HandleHomeInsuranceFlow(userId: userId, onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
 
-        // ── Type 7: Quote Selection (admin-pushed) ──
-
-        case "quote_selection":
-            QuoteSelectionFlow(taskId: taskId ?? "", userId: userId, onComplete: onComplete, onDismiss: onDismiss)
-
-        // ── Type 8: Admin Memo (admin-pushed) ──
-
-        case "admin_memo":
-            AdminMemoFlow(taskId: taskId ?? "", userId: userId, onComplete: onComplete, onDismiss: onDismiss)
+        // ── Data-driven: flowDefinitions → FlowEngineView ──
 
         default:
-            EmptyView()
+            FlowEngineLoaderView(
+                workflowId: flowId,
+                userId: userId,
+                taskId: taskId ?? "",
+                inputs: FlowInputs(
+                    currentAddress: userState?.currentFullAddress ?? "",
+                    newAddress: userState?.newFullAddress ?? "",
+                    moveDate: userState?.moveDate ?? Date()
+                ),
+                onComplete: onComplete,
+                onDismiss: onDismiss,
+                onStatusAction: onStatusAction
+            )
+            }
         }
     }
 }

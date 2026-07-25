@@ -10,6 +10,12 @@ enum TaskStatus: String, Codable {
     // waiting — same treatment the removed MatchingInProgress case had (nothing ever
     // wrote that CamelCase string; verified Spec 03 Phase A).
     case pending = "pending"
+    // submitWorkflowAnswers writes this snake-case string onto the task doc after a
+    // vendor submission (functions/getWorkflowQualifying.js:~254). Same waiting
+    // treatment as .pending. (Spec 04 named the workflowSubmissions-only string
+    // "pending_matching" here — that one never lands on task docs; this is the
+    // string that does. Cited in the Phase C report.)
+    case matchingInProgress = "matching_in_progress"
     case userInProgress = "UserInProgress"
     case completed = "Completed"
     case snoozed = "Snoozed"
@@ -185,9 +191,17 @@ struct PeezyCard: Identifiable, Equatable, Codable {
         return snoozedUntil > DateProvider.shared.now
     }
 
-    /// True if this card represents the scan-inventory task.
+    /// Capture modality for this card, if it opens a capture path
+    /// (CaptureRegistry — Spec 04 Phase C shim).
+    var captureRegistration: CaptureRegistration? {
+        CaptureRegistry.registration(taskId: taskId)
+    }
+
+    /// True if this card represents the video-inventory capture task.
+    /// Resolved through the capture registry so the next vertical attaches
+    /// without touching TasksStore/TaskRowButtons.
     var isScanInventory: Bool {
-        taskId == "SCAN_INVENTORY"
+        captureRegistration?.kind == .videoInventory
     }
 
     /// Whether this card should be shown in the stack
@@ -196,9 +210,9 @@ struct PeezyCard: Identifiable, Equatable, Codable {
         if isSnoozed {
             return false
         }
-        // Don't show completed, skipped, in-progress, pending (server matching), or
-        // user-in-progress tasks — none are actionable from the stack
-        if status == .completed || status == .skipped || status == .inProgress || status == .userInProgress || status == .pending {
+        // Don't show completed, skipped, in-progress, pending / matching (server
+        // working), or user-in-progress tasks — none are actionable from the stack
+        if status == .completed || status == .skipped || status == .inProgress || status == .userInProgress || status == .pending || status == .matchingInProgress {
             return false
         }
         return true

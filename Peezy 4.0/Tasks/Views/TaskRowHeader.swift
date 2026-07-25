@@ -13,7 +13,7 @@ struct TaskRowHeader: View {
     }
 
     private var isMatchingVendors: Bool {
-        task.status == .pending
+        task.status == .pending || task.status == .matchingInProgress
     }
 
     var body: some View {

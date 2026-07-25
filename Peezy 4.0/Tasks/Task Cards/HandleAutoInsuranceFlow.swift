@@ -154,7 +154,6 @@ struct HandleAutoInsuranceFlow: View {
                 cardContent
             }
 
-            TaskFlowDismissButton(onDismiss: onDismiss)
         }
     }
 

@@ -79,7 +79,6 @@ struct FindMoversFlow: View {
                 cardContent
             }
 
-            TaskFlowDismissButton(onDismiss: onDismiss)
         }
     }
 

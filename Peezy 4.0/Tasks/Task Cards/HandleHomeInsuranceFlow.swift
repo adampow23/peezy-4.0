@@ -153,7 +153,6 @@ struct HandleHomeInsuranceFlow: View {
                 cardContent
             }
 
-            TaskFlowDismissButton(onDismiss: onDismiss)
         }
     }
 

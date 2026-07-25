@@ -44,7 +44,6 @@ struct SetupInternetFlow: View {
                 cardContent
             }
 
-            TaskFlowDismissButton(onDismiss: onDismiss)
         }
     }
 

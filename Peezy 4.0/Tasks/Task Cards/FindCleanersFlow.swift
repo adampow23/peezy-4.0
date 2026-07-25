@@ -80,7 +80,6 @@ struct FindCleanersFlow: View {
                 cardContent
             }
 
-            TaskFlowDismissButton(onDismiss: onDismiss)
         }
     }
 

@@ -80,8 +80,6 @@ struct FlowEngineView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .accessibilityIdentifier("flow.\(definition.workflowId).loading")
             }
-
-            TaskFlowDismissButton(onDismiss: onDismiss)
         }
         .task {
             await restoreState()
@@ -389,6 +387,119 @@ struct FlowEngineView: View {
                     isSubmitting = false
                     onComplete()
                 }
+            }
+        }
+    }
+}
+
+// MARK: - Flow Engine Loader
+
+/// Router terminal for data-driven flows (Spec 04 Phase C): fetches the
+/// definition (cache → getWorkflowQualifying callable) and hands off to the
+/// engine. Ids with no definition render the coming-right-up card — the
+/// permanent-spinner dead end (old PeezyHomeView behavior) is gone.
+struct FlowEngineLoaderView: View {
+    let workflowId: String
+    let userId: String
+    let taskId: String
+    let inputs: FlowInputs
+    let onComplete: () -> Void
+    let onDismiss: () -> Void
+    let onStatusAction: (TaskFlowStatusAction) -> Void
+
+    private enum LoadState {
+        case loading
+        case loaded(FlowDefinition)
+        case unavailable
+    }
+
+    @State private var state: LoadState = .loading
+
+    var body: some View {
+        switch state {
+        case .loading:
+            ZStack {
+                InteractiveBackground()
+                    .ignoresSafeArea()
+                ProgressView()
+                    .tint(PeezyTheme.Colors.deepInk)
+            }
+            .accessibilityIdentifier("flow.loader.\(workflowId)")
+            .task {
+                if let definition = await FlowDefinitionStore.shared.definition(for: workflowId) {
+                    state = .loaded(definition)
+                } else {
+                    print("⚠️ No flow definition for '\(workflowId)' — rendering coming-right-up")
+                    state = .unavailable
+                }
+            }
+
+        case .loaded(let definition):
+            FlowEngineView(
+                definition: definition,
+                userId: userId,
+                taskId: taskId,
+                inputs: inputs,
+                onComplete: onComplete,
+                onDismiss: onDismiss,
+                onStatusAction: onStatusAction
+            )
+
+        case .unavailable:
+            ComingRightUpCard(onClose: onDismiss)
+        }
+    }
+}
+
+// MARK: - Coming Right Up
+
+/// Graceful terminal for a task the app can't route yet. Closing returns the
+/// task to the front of today's queue untouched.
+struct ComingRightUpCard: View {
+    let onClose: () -> Void
+
+    var body: some View {
+        ZStack {
+            InteractiveBackground()
+                .ignoresSafeArea()
+
+            TaskFlowStack(cardsRemaining: 1, currentIndex: 0) {
+                VStack(spacing: 0) {
+                    Spacer()
+
+                    VStack(alignment: .center, spacing: 20) {
+                        ZStack {
+                            Circle()
+                                .fill(PeezyTheme.Colors.deepInk.opacity(0.08))
+                            Image(systemName: "sparkles")
+                                .font(.system(size: 28, weight: .bold))
+                                .foregroundStyle(PeezyTheme.Colors.deepInk)
+                        }
+                        .frame(width: 64, height: 64)
+
+                        Text("Coming right up")
+                            .font(.system(size: 34, weight: .heavy))
+                            .foregroundStyle(PeezyTheme.Colors.deepInk)
+                            .multilineTextAlignment(.center)
+
+                        Text("This one isn't quite ready in the app — we're on it. It'll stay on your list.")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.6))
+                            .multilineTextAlignment(.center)
+                            .lineSpacing(4)
+                    }
+                    .padding(.horizontal, 32)
+
+                    Spacer()
+                    Spacer()
+
+                    PeezyAssessmentButton("Got it") {
+                        onClose()
+                    }
+                    .padding(.horizontal, 24)
+                    .padding(.bottom, 24)
+                }
+                .accessibilityIdentifier("flow.coming_right_up")
             }
         }
     }
