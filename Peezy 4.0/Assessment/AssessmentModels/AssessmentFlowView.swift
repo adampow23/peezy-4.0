@@ -124,24 +124,33 @@ struct AssessmentFlowView: View {
         case .currentDwellingType:   CurrentDwellingType()
         case .currentAddress:        CurrentAddress()
         case .currentFloorAccess:    CurrentFloorAccess()
+        case .currentBedrooms:       CurrentBedrooms()
 
         // --- Section 3: New Home ---
         case .newRentOrOwn:          NewRentOrOwn()
         case .newDwellingType:       NewDwellingType()
         case .newAddress:            NewAddress()
         case .newFloorAccess:        NewFloorAccess()
+        case .newBedrooms:           NewBedrooms()
+
+        // --- Storage (with home details) ---
+        case .hasStorage:            HasStorage()
+        case .storageSize:           StorageSize()
+        case .storageFullness:       StorageFullness()
 
         // --- Section 4: People ---
         case .anyKids:               AnyKids()
         case .childrenInSchool:      ChildrenInSchool()
         case .childrenInDaycare:     ChildrenInDaycare()
         case .hasVet:                HasVet()
+        case .hasVehicles:           HasVehicles()
 
         // --- Section 5: Services ---
         case .servicesIntro:         ServicesIntro()
         case .hireMovers:            HireMovers()
         case .truckRental:           TruckRental()
         case .hasDeclutter:          HasDeclutter()
+        case .wantToSell:            WantToSell()
         case .hireCleaners:          HireCleaners()
 
         // --- Section 6: Accounts ---

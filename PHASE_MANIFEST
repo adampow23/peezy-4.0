@@ -1,17 +1,22 @@
-# Spec 01 — Phase 2 manifest. The PreToolUse hook denies Write/Edit on any
-# repo path not listed here. One path or fnmatch pattern per line.
-PHASE_MANIFEST
-Peezy 4.0/MainInterface/Models/PeezyIdentity.swift
-Peezy 4.0/MainInterface/Models/IdentityService.swift
-Peezy 4.0/MainInterface/Models/UserState.swift
+# Spec 02 — Phase A manifest (persistence repairs).
+# The PreToolUse hook denies Write/Edit on any repo path not listed here.
+#
+# Read-site files this phase (per Spec 01 lesson):
+#   Peezy 4.0/Assessment/AssessmentModels/AssessmentDataManager.swift (full)
+#   Peezy 4.0/Assessment/AssessmentModels/AssessmentCoordinator.swift (full)
+#   Peezy 4.0/Assessment/AssessmentModels/AssessmentFlowView.swift (full)
+#   Peezy 4.0/Assessment/AssessmentViews/Questions/{HasVet,HasDeclutter,FinancialInstitutions,HealthcareProviders,FitnessWellness}.swift
+#   Peezy 4.0/Assessment/AssessmentViews/Components/{Singleselecttemplate,Gridselecttemplate}.swift
+#   functions/taskCatalogData.json (conditions verification, read-only this phase)
+#   git history: eab4193 (deleted question views + prior coordinator wiring)
+tasks/todo.md
 Peezy 4.0/Assessment/AssessmentModels/AssessmentDataManager.swift
-Peezy 4.0/Menu/PeezySettingsView.swift
-Peezy 4.0/MainInterface/Views/AppRootView.swift
-firestore.rules
-# NEEDS-CLARIFICATION addition (disclosed in phase report): spec 2c requires
-# the seven Type-3 flows + requestConcierge to send full street addresses;
-# their address composition lives at TaskFlowRouter:101-113 and
-# PeezyHomeViewModel:445-446 (lines the spec cites), which the spec's manifest
-# list omits. Only those composition lines change.
-Peezy 4.0/MainInterface/Models/TaskFlowRouter.swift
-Peezy 4.0/MainInterface/Models/PeezyHomeViewModel.swift
+Peezy 4.0/Assessment/AssessmentModels/AssessmentCoordinator.swift
+Peezy 4.0/Assessment/AssessmentModels/AssessmentFlowView.swift
+Peezy 4.0/Assessment/AssessmentViews/Questions/HasVehicles.swift
+Peezy 4.0/Assessment/AssessmentViews/Questions/WantToSell.swift
+Peezy 4.0/Assessment/AssessmentViews/Questions/HasStorage.swift
+Peezy 4.0/Assessment/AssessmentViews/Questions/StorageSize.swift
+Peezy 4.0/Assessment/AssessmentViews/Questions/StorageFullness.swift
+Peezy 4.0/Assessment/AssessmentViews/Questions/CurrentBedrooms.swift
+Peezy 4.0/Assessment/AssessmentViews/Questions/NewBedrooms.swift

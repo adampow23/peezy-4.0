@@ -30,6 +30,7 @@ enum AssessmentInputStep: String, Hashable {
     case currentAddress
     // Apartment/Condo branch
     case currentFloorAccess
+    case currentBedrooms
     // Apartment/Condo
     case currentSquareFootage
     // House/Townhouse
@@ -41,22 +42,30 @@ enum AssessmentInputStep: String, Hashable {
     case newAddress
     // Apartment/Condo branch
     case newFloorAccess
+    case newBedrooms
     // Apartment/Condo
     case newSquareFootage
     // House/Townhouse
     case newFinishedSqFt
+
+    // Storage (with home details)
+    case hasStorage
+    case storageSize
+    case storageFullness
 
     // Section 4: People
     case anyKids
     case childrenInSchool
     case childrenInDaycare
     case hasVet
+    case hasVehicles
 
     // Section 5: Services
     case servicesIntro
     case hireMovers
     case truckRental
     case hasDeclutter
+    case wantToSell
     case hireCleaners
 
     // Section 6: Accounts
@@ -258,6 +267,7 @@ class AssessmentCoordinator: ObservableObject {
         if currentDwelling == "apartment" || currentDwelling == "condo" {
             addStep(.currentFloorAccess)
         }
+        addStep(.currentBedrooms)
 
         // Section 3: New Home
         addStep(.newRentOrOwn)
@@ -269,6 +279,14 @@ class AssessmentCoordinator: ObservableObject {
         if newDwelling == "apartment" || newDwelling == "condo" {
             addStep(.newFloorAccess)
         }
+        addStep(.newBedrooms)
+
+        // Storage — belongs with home details
+        addStep(.hasStorage)
+        if dataManager.hasStorage.lowercased() == "yes" {
+            addStep(.storageSize)
+            addStep(.storageFullness)
+        }
 
         // Section 4: People
         addStep(.anyKids)
@@ -278,6 +296,7 @@ class AssessmentCoordinator: ObservableObject {
         }
 
         addStep(.hasVet)
+        addStep(.hasVehicles)
 
         // Section 5: Services
         addStep(.servicesIntro)
@@ -286,6 +305,9 @@ class AssessmentCoordinator: ObservableObject {
             addStep(.truckRental)
         }
         addStep(.hasDeclutter)
+        if dataManager.hasDeclutter.lowercased() == "yes" {
+            addStep(.wantToSell)
+        }
         addStep(.hireCleaners)
 
         // Section 6: Accounts
@@ -309,7 +331,8 @@ class AssessmentCoordinator: ObservableObject {
     /// Steps that affect branching — trigger a sequence rebuild when answered.
     private func isBranchingStep(_ step: AssessmentInputStep) -> Bool {
         switch step {
-        case .currentDwellingType, .newDwellingType, .hireMovers, .anyKids:
+        case .currentDwellingType, .newDwellingType, .hireMovers, .anyKids,
+             .hasStorage, .hasDeclutter:
             return true
         default:
             return false
@@ -369,7 +392,13 @@ class AssessmentCoordinator: ObservableObject {
                 header: "What's access like?",
                 subheader: nil
             )
-            
+
+        case .currentBedrooms:
+            return InputContext(
+                header: "How many bedrooms at your current place?",
+                subheader: nil
+            )
+
         case .currentSquareFootage:
             return InputContext(
                 header: "Roughly how big is the place?",
@@ -407,7 +436,31 @@ class AssessmentCoordinator: ObservableObject {
                 header: "What's access like?",
                 subheader: nil
             )
-            
+
+        case .newBedrooms:
+            return InputContext(
+                header: "How many bedrooms at the new place?",
+                subheader: nil
+            )
+
+        case .hasStorage:
+            return InputContext(
+                header: "Are there any items in storage that will be making the move as well?",
+                subheader: nil
+            )
+
+        case .storageSize:
+            return InputContext(
+                header: "How big is the unit?",
+                subheader: nil
+            )
+
+        case .storageFullness:
+            return InputContext(
+                header: "How full is it?",
+                subheader: nil
+            )
+
         case .newSquareFootage:
             return InputContext(
                 header: "Roughly how big is the new place?",
@@ -446,6 +499,12 @@ class AssessmentCoordinator: ObservableObject {
                 subheader: nil
             )
 
+        case .hasVehicles:
+            return InputContext(
+                header: "Will any vehicles be moving with you?",
+                subheader: nil
+            )
+
         // --- SECTION 5: SERVICES ---
 
         case .servicesIntro:
@@ -470,6 +529,12 @@ class AssessmentCoordinator: ObservableObject {
             return InputContext(
                 header: "Any items you're planning to part with before the move?",
                 subheader: "Clothes, furniture, electronics — anything you don't want making the trip."
+            )
+
+        case .wantToSell:
+            return InputContext(
+                header: "Are you planning to sell any of those items?",
+                subheader: "We can assist with that process as well as plan b if they don't sell."
             )
 
         case .hireCleaners:

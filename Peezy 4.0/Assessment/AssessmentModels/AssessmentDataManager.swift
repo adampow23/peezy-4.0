@@ -188,6 +188,12 @@ class AssessmentDataManager: ObservableObject {
         data["healthcareProviders"] = healthcareProviders
         data["fitnessWellness"] = fitnessWellness
 
+        // Account tap counts (category → count; consumed by Spec 04 row
+        // generation — the UI's "each tap adds a task" promise)
+        data["financialInstitutionCounts"] = financialCounts
+        data["healthcareProviderCounts"] = healthcareCounts
+        data["fitnessWellnessCounts"] = fitnessCounts
+
         // Account details (category → business name, for personalization only)
         data["financialDetails"] = financialDetails
         data["healthcareDetails"] = healthcareDetails
