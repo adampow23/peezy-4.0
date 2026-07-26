@@ -62,7 +62,13 @@ struct TaskFlowRouter {
         case "rent_truck":
             RentTruckFlow(userId: userId, onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
         case "book_movers":
-            FindMoversFlow(userId: userId, onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
+            FindMoversFlow(
+                userId: userId,
+                taskId: taskId ?? "",
+                onComplete: onComplete,
+                onDismiss: onDismiss,
+                onStatusAction: onStatusAction
+            )
         case "book_cleaners":
             FindCleanersFlow(userId: userId, onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
         case "setup_internet":

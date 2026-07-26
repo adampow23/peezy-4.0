@@ -1,0 +1,69 @@
+import Foundation
+import Testing
+@testable import Peezy_4_0
+
+struct MoversBookingPayloadTests {
+    @Test func payloadContainsEveryBookingContractSection() throws {
+        let identity = PeezyIdentity(
+            name: "Test User",
+            email: "test@example.com",
+            phone: "555-0100",
+            currentAddress: PeezyAddress(
+                street: "100 Main St", unit: nil, city: "Kansas City",
+                state: "MO", zip: "64106", raw: "100 Main St, Kansas City, MO 64106"
+            ),
+            newAddress: PeezyAddress(
+                street: "200 Oak St", unit: "2", city: "Kansas City",
+                state: "MO", zip: "64108", raw: "200 Oak St, Kansas City, MO 64108"
+            ),
+            moveDate: Date(timeIntervalSince1970: 1_800_000_000),
+            moveDistanceMiles: 8,
+            isInterstate: false
+        )
+        let scope = MoveScope(
+            cubicFeet: 900, driveMinutes: 24,
+            originAccess: MoveAccess(route: .stairs, elevatorReserved: false, longCarry: false),
+            destAccess: .ground, packedStatus: .packed,
+            storageStop: StorageStop(size: "Medium", fullness: "1/2"),
+            cubeSource: .inventoryScan
+        )
+        let tier = VendorValuationTier(
+            id: "standard", label: "Standard valuation",
+            coveragePerPound: 0.6, additionalCost: 0
+        )
+        let vendor = Vendor(
+            vendorId: "test_mover_a", name: "Test Mover A", vertical: .movers,
+            serviceRadius: VendorServiceRadius(center: "Kansas City, MO", miles: 35),
+            rateCard: VendorRateCard(
+                hourlyByCrew: CrewHourlyRates(two: 145, three: 185, four: 220),
+                tripChargeModel: VendorTripCharge(kind: .flat, amount: 129),
+                minimumHours: 2, clockPolicy: "portal_to_portal",
+                materials: VendorMaterials(included: false, boxBundle: 42, packingPaperBundle: 24),
+                valuationTiers: [tier],
+                surcharges: VendorSurcharges(weekend: 0.1, monthEnd: 0.08, peakSeason: 0.12),
+                blackoutDates: []
+            ),
+            accountability: VendorAccountability(standardsVersion: "v1", strikes: 0),
+            active: true
+        )
+        let estimate = PriceEstimate(
+            range: PriceRange(low: 700, high: 900), typicalHours: 4.5, crew: 3,
+            disclosures: ["Unpacked boxes"], why: "3 movers costs less."
+        )
+        let payload = MoversBookingPayload(
+            identity: identity, scope: scope,
+            quote: MoversVendorQuote(vendor: vendor, estimate: estimate, valuationTier: tier),
+            requestedArrivalWindow: "TEST RUN — 8–10 AM",
+            notes: "TEST RUN isolated account"
+        ).workflowAnswers()
+
+        #expect(Set(payload.keys) == Set(["identity", "scope", "estimate", "chosen_vendor", "requested_window", "notes"]))
+        #expect(payload["requested_window"] == ["TEST RUN — 8–10 AM"])
+
+        for key in ["identity", "scope", "estimate", "chosen_vendor"] {
+            let json = try #require(payload[key]?.first)
+            let object = try #require(JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any])
+            #expect(!object.isEmpty)
+        }
+    }
+}
