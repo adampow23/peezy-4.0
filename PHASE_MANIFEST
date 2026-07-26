@@ -1,24 +1,27 @@
-# Spec 05 Phase D — Tier-3 assessment migration (PERIPHERY)
+# Spec 05 Phase E - Doc sync (PERIPHERY)
 # EDIT SITES
 PHASE_MANIFEST
-Peezy 4.0/Assessment/AssessmentModels/AssessmentCoordinator.swift
-Peezy 4.0Tests/AssessmentTier3MigrationTests.swift
+CLAUDE.md
+peezy-conventions-v2.md
+tasks/todo.md
+peezy-build-spec-05.md
 # READ SITES
-# peezy-conventions-v2.md — frozen-region and validation constraints
-# peezy-v1-architecture.md — §9b tier-3 migration boundary
-# peezy-execution-protocol.md — PERIPHERY validation protocol
-# peezy-v1-catalog-sheet.md — catalog condition context
-# peezy-build-spec-05.md — Phase D acceptance criteria
-# CLAUDE.md — repository instructions and build command
-# Peezy 4.0/Assessment/AssessmentModels/AssessmentFlowView.swift — question-view routing remains available
-# Peezy 4.0/Assessment/AssessmentModels/AssessmentDataManager.swift — tier-3 values remain persisted for mover-flow use
-# Peezy 4.0/Assessment/AssessmentViews/Questions/CurrentBedrooms.swift — view remains unchanged
-# Peezy 4.0/Assessment/AssessmentViews/Questions/NewBedrooms.swift — view remains unchanged
-# Peezy 4.0/Assessment/AssessmentViews/Questions/HasStorage.swift — view remains unchanged
-# Peezy 4.0/Assessment/AssessmentViews/Questions/StorageSize.swift — view remains unchanged
-# Peezy 4.0/Assessment/AssessmentViews/Questions/StorageFullness.swift — view remains unchanged
-# Peezy 4.0/Tasks/Task Cards/MoveRefinementView.swift — Phase C mover-flow collection proof
-# Peezy 4.0/MainInterface/Models/MoversFlowViewModel.swift — Phase C refinement persistence/scope proof
-# functions/taskCatalogData.json — read-only condition-key audit
-# functions/seedTaskCatalog.js — read-only generated-catalog audit
-# functions/flowDefinitionsData.json — read-only flow-condition audit
+# peezy-execution-protocol.md - protocol section 6 closeout requirements
+# peezy-build-spec-05.md - Phase E acceptance scope and phase history
+# peezy-conventions-v2.md - repository ground-truth corrections and open items
+# CLAUDE.md - compact repository facts used by future agents
+# tasks/todo.md - existing spec review and SESSION_NOTES ledger
+# firestore.rules - direct flowDefinitions and vendor read contracts
+# functions/getWorkflowQualifying.js - workflow submission and webhook behavior
+# functions/vendorsData.json - placeholder vendor dataset
+# Peezy 4.0/Tasks/FlowEngine/FlowDefinition.swift - direct-read/fallback transport
+# Peezy 4.0/MainInterface/Models/Vendor.swift - vendor schema and active filtering
+# Peezy 4.0/MainInterface/Models/PricingEngine.swift - pricing contract
+# Peezy 4.0/MainInterface/Models/PricingConstants.swift - calibration constants
+# Peezy 4.0/MainInterface/Models/MoversFlowViewModel.swift - mover spine orchestration
+# Peezy 4.0/MainInterface/Models/MoversBookingPayload.swift - submission envelope
+# Peezy 4.0/Tasks/Task Cards/FindMoversFlow.swift - mover flow presentation
+# Peezy 4.0/Assessment/AssessmentModels/AssessmentCoordinator.swift - tier-3 migration
+# Tests/PricingEngineTests.swift - pricing validation contract
+# Peezy 4.0Tests/MoversBookingPayloadTests.swift - payload validation contract
+# Peezy 4.0Tests/AssessmentTier3MigrationTests.swift - assessment migration contract

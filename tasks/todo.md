@@ -221,3 +221,112 @@ Proposed doc edits: all applied this session (CLAUDE.md corrected facts §3–5,
 conventions "Corrections from Spec 04 run" + open items). Decisions for Adam surfaced in
 open items: orphaned resetInventory deletion; rules reconciliation (deployed text captured);
 Xcode-side subscribed-path verification before submission.
+
+# Spec 05 Close - Pricing Engine + Movers Vertical
+
+## Review
+
+Phases were committed independently under the execution protocol:
+
+- Phase 0 `5b06b5a`: rules/flow-definition transport and housekeeping batch.
+- Phase A `51f6932`: vendor schema, placeholder mover rate cards, and seed path.
+- Phase B `e790088`: pure pricing engine, centralized calibration constants, scope factory,
+  standalone tests, and the five-scenario DEBUG harness.
+- Phase C `feabc58`: generic comparison card plus the complete mover capture/refinement/
+  comparison/paywall/submission/confirmation spine.
+- Phase D `6bf364c`: storage and bedroom tier-3 inputs removed from the assessment sequence.
+
+Phase C terminal evidence is the Firestore workflowSubmissions document plus the function log
+`NOTIFICATION_WEBHOOK_URL not configured — vendor submission not notified`. The accepted
+submission contains all six booking sections (`identity`, `scope`, `estimate`, `chosen_vendor`,
+`requested_window`, `notes`); `MoversBookingPayloadTests` passed, and the app build succeeded.
+Webhook delivery was deliberately not exercised because the fulfillment target is being
+reselected.
+
+Phase D validation passed `AssessmentTier3MigrationTests`. Its maximal branch profile contains
+26 steps, excludes current/new bedrooms plus the storage trio, retains current/new floor access,
+hasVehicles, and moveDateType, and leaves the generated task set unchanged for the control
+profile. A read-only catalog audit found zero condition keys among the five migrated keys.
+
+### Pricing calibration output
+
+Generated from `PricingCalibrationHarness.report()` during Phase E:
+
+```text
+SCENARIO 1: 1BR local walkup
+  scope: 480 cu ft | 18 min drive | inventoryScan | packed
+  2-crew: load 4.1h, total 4.4h, billable 4.4h, $767
+  3-crew: load 2.9h, total 3.2h, billable 3.2h, $721
+  4-crew: load 2.3h, total 2.6h, billable 2.6h, $701
+  selected: 4-crew, 2.6h, $617–$785
+  why: 4 movers finishes 0.6h sooner and costs less.
+  disclosures: none
+
+SCENARIO 2: 2BR local elevator, unreserved
+  scope: 900 cu ft | 28 min drive | inventoryScan | unpacked
+  2-crew: load 8.3h, total 8.8h, billable 8.8h, $1827
+  3-crew: load 5.6h, total 6.1h, billable 6.1h, $1635
+  4-crew: load 4.2h, total 4.7h, billable 4.7h, $1512
+  selected: 4-crew, 4.7h, $1331–$1693
+  why: 4 movers finishes 1.4h sooner and costs less.
+  disclosures: Unpacked boxes; Unreserved elevator at origin
+
+SCENARIO 3: 3BR scan with storage and piano
+  scope: 1420 cu ft | 42 min drive | inventoryScan | packed
+  2-crew: load 12.6h, total 13.3h, billable 13.3h, $2675
+  3-crew: load 9.0h, total 9.7h, billable 9.7h, $2501
+  4-crew: load 7.3h, total 8.0h, billable 8.0h, $2456
+  selected: 4-crew, 8.0h, $2161–$2751
+  why: 4 movers finishes 1.7h sooner and costs less.
+  disclosures: Long carry at destination
+
+SCENARIO 4: 3BR bedrooms fallback, access unknown
+  scope: 1275 cu ft | 35 min drive | bedroomsFallback | unknown
+  2-crew: load 10.4h, total 11.0h, billable 11.0h, $1896
+  3-crew: load 6.8h, total 7.4h, billable 7.4h, $1648
+  4-crew: load 5.1h, total 5.7h, billable 5.7h, $1521
+  selected: 4-crew, 5.7h, $882–$2160
+  why: 4 movers finishes 1.7h sooner and costs less.
+  disclosures: Undisclosed stairs or access
+
+SCENARIO 5: 4BR interstate
+  scope: 2100 cu ft | 540 min drive | inventoryScan | packed
+  2-crew: load 18.4h, total 27.4h, billable 27.4h, $5333
+  3-crew: load 13.0h, total 22.0h, billable 22.0h, $5459
+  4-crew: load 10.4h, total 19.4h, billable 19.4h, $5716
+  selected: 2-crew, 27.4h, $4693–$5973
+  why: 2 movers is the lowest total; 4 movers finishes 8.0h sooner but costs more.
+  disclosures: Long carry at origin
+```
+
+The values above are generated from the current LOCKED-pending-calibration constants. They are
+the field-calibration handoff for Adam's review.
+
+## SESSION_NOTES (protocol §6)
+
+What the spec got wrong or underspecified:
+
+1. Phase C required a live webhook, but no notification target is configured while fulfillment
+   infrastructure is being reselected. The accepted terminal evidence is the durable Firestore
+   submission, complete payload, and explicit unconfigured-webhook log.
+2. WorkflowService's answer contract is `[String: [String]]`; the mover serializer therefore
+   expresses each of the six booking sections through string-valued maps and JSON strings where
+   nested values are required.
+3. The Phase D count is branch-dependent. The maximal all-branches profile is 26 steps after the
+   five migrated inputs are removed; there is no single fixed count for every assessment path.
+4. Phase 0's remote resetInventory deletion could not be independently rechecked at closeout:
+   `firebase functions:list` failed because the local Firebase credentials require reauthentication.
+
+What surprised us:
+
+- The submission path preserves a complete Firestore audit record before notification delivery,
+  so an absent webhook target is visible as a distinct terminal log state rather than payload loss.
+- The control catalog has no conditions on any of the five tier-3 mover refinement keys, making
+  the Phase D generation-parity result directly auditable from taskCatalogData.json.
+
+Doc edits applied in Phase E: CLAUDE.md now records direct flow-definition reads, vendor/pricing/
+mover-spine ownership, and the current submission contract; peezy-conventions-v2.md records the
+Spec 05 corrections, Phase C evidence boundary, Phase D migration facts, and current open items.
+
+Open launch item: `NOTIFICATION_WEBHOOK_URL` must be configured and one live submission verified
+before launch.

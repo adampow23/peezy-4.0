@@ -1,5 +1,5 @@
 # CLAUDE.md — Peezy iOS App
-Generated from peezy-conventions-v2.md (audit @ f7e47ad + cleanup through da1916e). Every fact below is code-verified. Read peezy-conventions-v2.md and peezy-v1-architecture.md before spec work.
+Generated from peezy-conventions-v2.md (audit @ f7e47ad + implementation through Spec 05 Phase D, 6bf364c). Every fact below is code-verified unless explicitly labeled as remote evidence. Read peezy-conventions-v2.md and peezy-v1-architecture.md before spec work.
 
 ## What This Is
 
@@ -19,7 +19,8 @@ iOS moving concierge app. Swift/SwiftUI client + Firebase backend (Cloud Functio
 2. **Four tabs:** Home / Tasks / Chat / Settings. Chat = SupportChatView (live, Firestore-backed support chat). The AI chat was removed; support chat was not.
 3. **Catalog v2 is 46 tasks (Spec 04).** actionType: workflow=32, off-app=9, in-app=4, in-app-inventory=1. taskType: survey=32, provide_info=14. 33 rows carry a workflowId (incl. scan_inventory). The 56-task catalog is history: 24 rows removed by the approved merges, 9 merge targets + 5 in-app adds landed. Flow content lives in the Firestore `flowDefinitions` collection (25 docs) seeded from functions/flowDefinitionsData.json — adding a vertical is a Firestore write.
 4. **WorkflowManager.swift does not exist.** TimelineService is deleted. The live task-loading paths are exactly the two below.
-5. **Flow rendering is config-driven (Spec 04).** FlowEngineView renders flowDefinitions through the untouched component kit; TaskFlowRouter is a thin resolver (capture registry → admin-pushed → in-app map → 8 Swift customs → flowDefinitions lookup → coming-right-up card). The 38 templated screens and the newFlowIds allowlist are deleted. Definitions reach the client THROUGH the getWorkflowQualifying callable — deployed rules grant no direct read on flowDefinitions (rules deploys are Adam-gated).
+5. **Flow rendering is config-driven (Spec 04/05).** FlowEngineView renders flowDefinitions through the untouched component kit; TaskFlowRouter is a thin resolver (capture registry → admin-pushed → in-app map → Swift customs → flowDefinitions lookup → coming-right-up card). The 38 templated screens and the newFlowIds allowlist are deleted. Signed-in clients read definitions directly from Firestore; getWorkflowQualifying remains the one-release fallback.
+6. **Movers is the first full SPINE vertical (Spec 05).** BOOK_MOVERS runs inventory capture/reuse → scope → refinement → active in-radius vendor comparison → paywall → booking submission → confirmation. Current/new bedrooms and the storage trio no longer appear in the assessment sequence; the mover refinement view collects those values.
 
 ## Live Data Paths (the only two)
 
@@ -41,12 +42,16 @@ Parity rule: these two loaders must stay field-identical except `completedAt` (M
 | Router | MainInterface/Models/TaskFlowRouter.swift | Thin resolver (Spec 04); unknown ids → ComingRightUpCard |
 | Flow engine | Tasks/FlowEngine/ | FlowDefinition (+row resolution), FlowEngineView (+loader/coming-right-up), InAppTaskFlows, CaptureRegistry, FlowEngineHarness (DEBUG, env-gated) |
 | Card model | MainInterface/Models/PeezyCard.swift | Memberwise Equatable; stage/payload fields; TaskStatus incl. pending + matching_in_progress |
+| Vendor data | MainInterface/Models/Vendor.swift + functions/vendorsData.json | Backend-owned vendor/rate-card schema; three placeholder movers; active filter gates downstream visibility |
+| Pricing | MainInterface/Models/PricingEngine.swift + PricingConstants.swift + MoveScopeFactory.swift | Pure rate-card math, centralized LOCKED-pending-calibration constants, inventory/assessment scope adapter |
+| Movers spine | MainInterface/Models/MoversFlowViewModel.swift + Tasks/Task Cards/FindMoversFlow.swift | Capture/reuse → scope → refinement → comparison → paywall → submission → confirmation |
+| Comparison UI | MainInterface/Views/ComparisonCardView.swift | Vertical-neutral vendor quote card |
 | Paywall policy | MainInterface/Models/PaywallPolicy.swift | requiresSubscription(for:) + PaywallGateSheet — the ONE sanctioned second PaywallGateView call site |
 | Identity | MainInterface/Models/UserState.swift | Address parse fixed 8413f2d (city/state only); full rebuild in v1 |
 | StoreKit | MainInterface/Models/SubscriptionManager.swift | COMPLIANCE — port verbatim, never touch |
 | Paywall | MainInterface/Views/Paywall/PaywallGateView.swift | COMPLIANCE — Review #3 fix lives here |
 | Flow kit | Tasks/Task Card Components/ (17 hubs) | Renderer library for the engine — PORT VERBATIM (TaskFlowDismissButton deleted Spec 04) |
-| Flow screens | Tasks/Task Cards/ (9 structs) | 8 Swift customs (die Specs 05–06) + ScanInventoryFlow (capture registry) |
+| Flow screens | Tasks/Task Cards/ | Remaining Swift customs, capture flow, and mover stage views |
 | Submission | MainInterface/Models/WorkflowService.swift | Callable pattern (LE-029); 27 consumers |
 | Parser | TaskConditionerParser.swift | AND keys / OR values / strict-cast fail-false :69-74 |
 | Generation | TaskGenerationService | NSNumber cast canonical at :73 |
@@ -66,13 +71,13 @@ Parity rule: these two loaders must stay field-identical except `completedAt` (M
 
 ## Contract Facts a New Client Must Honor
 
-- Zero client-side webhook URLs. Callable → Firestore audit → server-side webhook + Twilio (LE-029)
+- Zero client-side webhook URLs. Callable → Firestore workflowSubmissions audit → optional server-side webhook + Twilio path (LE-029). Without `NOTIFICATION_WEBHOOK_URL`, the durable submission still lands and the function logs that vendor notification was not sent
 - Server task-doc statuses: "pending" (creation) and "matching_in_progress" (post-vendor-submission) — both have TaskStatus cases with waiting treatment (Spec 03/04). "pending_matching" exists ONLY on workflowSubmissions docs, never on task docs
 - Merged flows carry per-user rows: catalog rowGeneration → TaskGenerationService stamps flowRows on the task doc → engine expands (forEachRow/requiresRow). 2 bank taps = 2 bank rows inside FINANCIAL_ACCOUNTS
 - submitWorkflowAnswers response omits submissionId/message/estimatedResponseTime; client defaults mask it
-- userKnowledge/{uid}: rules gap patched locally (861f7e2, NOT deployed — reconcile waitlist rule first). Backend contextBuilder.js:40-47 expects {entries:{...}}; collection has never had a successful write → schema is greenfield, designed in v1
+- userKnowledge/{uid}: rules permit the client-owned document. Backend contextBuilder.js:40-47 expects {entries:{...}}; collection has never had a successful write → schema is greenfield, designed in v1
 - Firestore numbers: NSNumber cast pattern everywhere; no unguarded `as? Int`
-- Client-owned paths: taskCatalog (r), users/{uid}/tasks, user_assessments, userKnowledge, inventory, inventorySessions, supportChat. Everything else backend-only
+- Client-owned paths include taskCatalog (r), flowDefinitions (r), vendors (r), users/{uid}/tasks, user_assessments, userKnowledge, inventory, inventorySessions, and supportChat. Vendor and definition writes remain backend-only
 - Conditions are `[String: [String]]` maps of category values ("Bank Account", not "Chase"); task IDs are UPPER_SNAKE_CASE
 
 ## Accessibility Convention (non-negotiable)
@@ -91,7 +96,7 @@ Every new view element that a user can tap, read as a result, or that represents
 - Xcode 26.6: iOS platform + Metal toolchain must be installed (xcodebuild -downloadPlatform iOS / -downloadComponent MetalToolchain)
 - Build: `xcodebuild -project "Peezy 4.0.xcodeproj" -scheme "Peezy 4.0" -sdk iphonesimulator -destination "platform=iOS Simulator,name=iPhone 17 Pro" build` (no iPhone 16 sim exists)
 - Seed catalog: `cd functions && node seedTaskCatalog.js`. Deploy: `cd functions && firebase deploy --only functions --project peezy-1ecrdl`
-- Deployed Firestore rules are NOT readable via firebase-tools 15.6.0; use the Rules REST API with functions/serviceAccountKey.json (read-only). Local firestore.rules drifts from deployed — deployed has a live waitlist rule the local file lacks
+- Deployed Firestore rules are not readable via firebase-tools 15.6.0; use the Rules REST API with functions/serviceAccountKey.json (read-only). Spec 05 Phase 0 reconciled the waitlist rule and added authenticated reads for flowDefinitions and vendors
 - Test creds: peezy-test-bot@test.peezyapp.com / PeezyTest2026!
 - Code style: Swift 5.9+/iOS 17+, SwiftUI only, async/await, @Observable for new types (exceptions listed in Frozen Regions)
 
