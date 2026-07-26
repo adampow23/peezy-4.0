@@ -11,7 +11,8 @@ import Foundation
 struct MoversBookingPayload {
     let identity: PeezyIdentity
     let scope: MoveScope
-    let quote: MoversVendorQuote
+    let quote: MoversVendorQuote?
+    let quoteRequest: Bool
     let requestedArrivalWindow: String
     let notes: String
 
@@ -22,7 +23,8 @@ struct MoversBookingPayload {
             "estimate": [Self.jsonString(estimateObject)],
             "chosen_vendor": [Self.jsonString(vendorObject)],
             "requested_window": [requestedArrivalWindow],
-            "notes": [notes]
+            "notes": [notes],
+            "quoteRequest": [quoteRequest ? "true" : "false"]
         ]
     }
 
@@ -65,7 +67,8 @@ struct MoversBookingPayload {
     }
 
     private var estimateObject: [String: Any] {
-        [
+        guard let quote else { return [:] }
+        return [
             "low": quote.estimate.range.low,
             "high": quote.estimate.range.high,
             "typicalHours": quote.estimate.typicalHours,
@@ -74,12 +77,14 @@ struct MoversBookingPayload {
             "why": quote.estimate.why,
             "insuranceTierId": quote.valuationTier.id,
             "insuranceTier": quote.valuationTier.label,
-            "insuranceAdditionalCost": quote.valuationTier.additionalCost
+            "insuranceAdditionalCost": quote.valuationTier.additionalCost,
+            "specialtyHandlingNotes": quote.estimate.specialtyHandlingNotes
         ]
     }
 
     private var vendorObject: [String: Any] {
-        [
+        guard let quote else { return [:] }
+        return [
             "vendorId": quote.vendor.vendorId,
             "name": quote.vendor.name,
             "vertical": quote.vendor.vertical.rawValue,
@@ -95,7 +100,8 @@ struct MoversBookingPayload {
                 ],
                 "tripCharge": quote.vendor.rateCard.tripChargeModel.amount,
                 "minimumHours": quote.vendor.rateCard.minimumHours,
-                "clockPolicy": quote.vendor.rateCard.clockPolicy
+                "clockPolicy": quote.vendor.rateCard.clockPolicy,
+                "specialtyFees": quote.vendor.rateCard.specialtyFees
             ],
             "accountability": [
                 "standardsVersion": quote.vendor.accountability.standardsVersion,

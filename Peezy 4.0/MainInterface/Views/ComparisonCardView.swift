@@ -47,6 +47,13 @@ struct ComparisonCardView: View {
                     .foregroundStyle(PeezyTheme.Colors.deepInk)
                     .fixedSize(horizontal: false, vertical: true)
 
+                ForEach(model.detailNotes, id: \.self) { note in
+                    Label(note, systemImage: "shippingbox.fill")
+                        .font(.subheadline)
+                        .bold()
+                        .foregroundStyle(PeezyTheme.Colors.deepInk)
+                }
+
                 Text("Price basis: \(model.priceBasis)")
                     .font(.footnote)
                     .bold()
@@ -67,7 +74,10 @@ struct ComparisonCardView: View {
             }
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("\(model.providerName), \(model.priceRange), \(model.durationAndTeam), \(model.arrivalWindow), \(model.insuranceTier)")
+        .accessibilityLabel(
+            ([model.providerName, model.priceRange, model.durationAndTeam, model.arrivalWindow, model.insuranceTier]
+                + model.detailNotes).joined(separator: ", ")
+        )
         .accessibilityHint("Select this option")
         .accessibilityAddTraits(isSelected ? .isSelected : [])
         .accessibilityIdentifier("comparison.\(model.id)")

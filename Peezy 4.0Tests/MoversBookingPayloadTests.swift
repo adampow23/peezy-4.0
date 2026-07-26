@@ -41,6 +41,7 @@ struct MoversBookingPayloadTests {
                 materials: VendorMaterials(included: false, boxBundle: 42, packingPaperBundle: 24),
                 valuationTiers: [tier],
                 surcharges: VendorSurcharges(weekend: 0.1, monthEnd: 0.08, peakSeason: 0.12),
+                specialtyFees: ["piano": 240],
                 blackoutDates: []
             ),
             accountability: VendorAccountability(standardsVersion: "v1", strikes: 0),
@@ -53,17 +54,44 @@ struct MoversBookingPayloadTests {
         let payload = MoversBookingPayload(
             identity: identity, scope: scope,
             quote: MoversVendorQuote(vendor: vendor, estimate: estimate, valuationTier: tier),
+            quoteRequest: false,
             requestedArrivalWindow: "TEST RUN — 8–10 AM",
             notes: "TEST RUN isolated account"
         ).workflowAnswers()
 
-        #expect(Set(payload.keys) == Set(["identity", "scope", "estimate", "chosen_vendor", "requested_window", "notes"]))
+        #expect(Set(payload.keys) == Set(["identity", "scope", "estimate", "chosen_vendor", "requested_window", "notes", "quoteRequest"]))
         #expect(payload["requested_window"] == ["TEST RUN — 8–10 AM"])
+        #expect(payload["quoteRequest"] == ["false"])
 
         for key in ["identity", "scope", "estimate", "chosen_vendor"] {
             let json = try #require(payload[key]?.first)
             let object = try #require(JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any])
             #expect(!object.isEmpty)
+        }
+
+        let quoteRequest = MoversBookingPayload(
+            identity: identity,
+            scope: scope,
+            quote: nil,
+            quoteRequest: true,
+            requestedArrivalWindow: "TEST RUN — flexible",
+            notes: "TEST RUN isolated account"
+        ).workflowAnswers()
+
+        #expect(Set(quoteRequest.keys) == Set(payload.keys))
+        #expect(quoteRequest["quoteRequest"] == ["true"])
+        #expect(quoteRequest["requested_window"] == ["TEST RUN — flexible"])
+
+        for key in ["identity", "scope"] {
+            let json = try #require(quoteRequest[key]?.first)
+            let object = try #require(JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any])
+            #expect(!object.isEmpty)
+        }
+
+        for key in ["estimate", "chosen_vendor"] {
+            let json = try #require(quoteRequest[key]?.first)
+            let object = try #require(JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any])
+            #expect(object.isEmpty)
         }
     }
 }

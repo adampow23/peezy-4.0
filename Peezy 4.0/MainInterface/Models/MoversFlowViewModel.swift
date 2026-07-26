@@ -19,6 +19,7 @@ final class MoversFlowViewModel {
     private(set) var errorMessage: String?
     private(set) var isSubmitting = false
     private(set) var hasInventory = false
+    private(set) var isQuoteRequest = false
 
     var bedroomsAnswer = "1 Bedroom"
     var destinationBedroomsAnswer = "1 Bedroom"
@@ -139,6 +140,16 @@ final class MoversFlowViewModel {
             try await rebuildScope()
             guard let scope, let identity else { throw FlowError.missingScope }
 
+            if PricingEngine.quoteRoute(moveDistanceMiles: identity.moveDistanceMiles) == .conciergeQuote {
+                isQuoteRequest = true
+                quotes = []
+                selectedQuote = nil
+                transition(to: .comparison)
+                return
+            }
+
+            isQuoteRequest = false
+
             let activeVendors = try await VendorStore().activeVendors(for: .movers)
             let eligibleVendors = try await vendorsWithinRadius(activeVendors, identity: identity)
             let prepared = eligibleVendors.compactMap { vendor -> MoversVendorQuote? in
@@ -186,6 +197,7 @@ final class MoversFlowViewModel {
             identity: identity,
             scope: scope,
             quote: selectedQuote,
+            quoteRequest: false,
             requestedArrivalWindow: requestedArrivalWindow.trimmingCharacters(in: .whitespacesAndNewlines),
             notes: notes.trimmingCharacters(in: .whitespacesAndNewlines)
         )
@@ -202,6 +214,41 @@ final class MoversFlowViewModel {
             transition(to: .confirmation)
         } catch {
             errorMessage = "We couldn't send the booking request. Nothing was booked—please try again. \(error.localizedDescription)"
+        }
+    }
+
+    func submitQuoteRequest() async {
+        guard !isSubmitting,
+              isQuoteRequest,
+              let identity,
+              let scope
+        else { return }
+
+        isSubmitting = true
+        errorMessage = nil
+        defer { isSubmitting = false }
+
+        let payload = MoversBookingPayload(
+            identity: identity,
+            scope: scope,
+            quote: nil,
+            quoteRequest: true,
+            requestedArrivalWindow: requestedArrivalWindow.trimmingCharacters(in: .whitespacesAndNewlines),
+            notes: notes.trimmingCharacters(in: .whitespacesAndNewlines)
+        )
+        var workflowAnswers = WorkflowAnswers(workflowId: "book_movers")
+        workflowAnswers.answers = payload.workflowAnswers()
+
+        do {
+            let response = try await WorkflowService().submitAnswers(
+                workflowId: "book_movers",
+                answers: workflowAnswers,
+                userId: userId
+            )
+            guard response.success else { throw FlowError.submissionRejected }
+            transition(to: .confirmation)
+        } catch {
+            errorMessage = "We couldn't send the quote request. Nothing was submitted—please try again. \(error.localizedDescription)"
         }
     }
 

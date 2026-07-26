@@ -328,5 +328,30 @@ Doc edits applied in Phase E: CLAUDE.md now records direct flow-definition reads
 mover-spine ownership, and the current submission contract; peezy-conventions-v2.md records the
 Spec 05 corrections, Phase C evidence boundary, Phase D migration facts, and current open items.
 
-Open launch item: `NOTIFICATION_WEBHOOK_URL` must be configured and one live submission verified
-before launch.
+# Pricing Calibration Chip — 2026-07-26
+
+## SESSION_NOTES (protocol §6)
+
+What the chip got wrong or underspecified:
+
+1. `AGENTS.md` is absent from the repository. Adam acknowledged the absence and directed this
+   session to use `CLAUDE.md` as the equivalent repository instruction source.
+2. The chip named `functions/index.js` as the submitWorkflowAnswers implementation site. That
+   file only imports and exports the callable; the implementation is in
+   `functions/getWorkflowQualifying.js`, so the direct Twilio replacement belongs there.
+3. The chip said inventory categories already carry specialty flags. `InventoryItem.category`
+   remains generic; `MoveScopeFactory` currently derives specialty flags from normalized item
+   names. The starter mappings were extended for treadmill and marble tops without changing the
+   frozen Inventory/Camera area.
+4. The initial quote-request SMS wording inherited booking vendor/estimate fields even though a
+   concierge request has neither. Adam resolved it to
+   `PEEZY QUOTE REQ: {name}, {originCity}→{destCity}, {date}.` Booking wording is unchanged.
+
+Environment/evidence decisions:
+
+- `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, and `TWILIO_FROM_NUMBER` are present in the
+  read-only functions/.env; `ADAM_NOTIFY_NUMBER` is absent. Per the confirmed terminal-evidence
+  path, the single isolated test submission must prove Firestore payload completeness and the
+  deployed function log `SMS notify not configured`.
+- Open launch item: configure `ADAM_NOTIFY_NUMBER`, then verify one live booking or quote-request
+  SMS before launch.

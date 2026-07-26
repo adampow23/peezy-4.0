@@ -1,5 +1,5 @@
 # Peezy Conventions v2 — Ground Truth
-Supersedes peezy-conventions.md. Source: V1_ARCHITECTURE_MAP.md (audit @ f7e47ad, 2026-07-23) + implementation through Spec 05 Phase D (6bf364c). Every fact below is code-verified unless explicitly labeled as remote evidence.
+Supersedes peezy-conventions.md. Source: V1_ARCHITECTURE_MAP.md (audit @ f7e47ad, 2026-07-23) + implementation through the 2026-07-26 pricing-calibration chip. Every fact below is code-verified unless explicitly labeled as remote evidence.
 
 ## Corrections to prior docs — READ FIRST
 
@@ -56,7 +56,7 @@ Parity rule (LE-025/LE-031, updated): these two loaders must stay field-identica
 
 ## Contract facts a new client must honor
 
-- Zero client-side webhook URLs. Callable → Firestore workflowSubmissions audit → optional server-side webhook + Twilio path (LE-029). If `NOTIFICATION_WEBHOOK_URL` is absent, the durable submission remains and the function logs that vendor notification was not sent
+- Zero client-side webhook URLs. Mover booking and quote-request payloads first land in the Firestore workflowSubmissions audit, then submitWorkflowAnswers attempts a direct best-effort Twilio SMS. Booking notify = direct Twilio SMS; env vars in functions/.env (Adam-owned). A missing Twilio value logs `SMS notify not configured` without failing the submission
 - Server task-doc statuses `pending` and `matching_in_progress` both have TaskStatus cases. `pending_matching` exists only on workflowSubmissions docs
 - submitWorkflowAnswers response omits submissionId/message/estimatedResponseTime; client defaults mask it
 - userKnowledge/{uid}: rules permit the client-owned document. Backend contextBuilder.js:40-47 expects {entries:{...}}; client writes flat dict; collection has never had a successful write → schema is greenfield, designed in v1
@@ -81,11 +81,11 @@ Parity rule (LE-025/LE-031, updated): these two loaders must stay field-identica
 
 - **Flow definitions now load directly.** Signed-in clients read `flowDefinitions` from Firestore first; the getWorkflowQualifying callable is retained as a one-release fallback.
 - **Vendors are backend-owned rate-card documents.** VendorStore queries `vertical == "movers"` and `active == true`, then defensively filters active records. The seed has Test Mover A/B/C and marks all three as placeholder data.
-- **Pricing is a pure domain module.** PricingEngine evaluates 2/3/4-person crews, minimum hours, access/packing/specialty labor, drive time, date surcharges, and confidence ranges. PricingConstants is the single LOCKED-pending-calibration source.
-- **BOOK_MOVERS is the first full spine.** The custom flow captures or reuses inventory, shows scope, gathers mover refinements, loads active in-radius vendors, sorts distinct estimates by low price, gates booking on subscription, submits the booking envelope, and shows confirmation.
-- **The booking envelope has six top-level sections.** `identity`, `scope`, `estimate`, `chosen_vendor`, `requested_window`, and `notes` are serialized into WorkflowService's `[String: [String]]` answer contract.
+- **Pricing is a pure domain module.** PricingEngine evaluates 2/3/4-person crews, minimum hours, access/packing/specialty labor plus vendor flat fees, drive time, date surcharges, and confidence ranges. The smallest crew whose physical load/unload estimate is at most six hours is selected; drive time is excluded from that ceiling. PricingConstants is the single LOCKED-pending-calibration source.
+- **BOOK_MOVERS is the first full spine.** The custom flow captures or reuses inventory, shows scope, gathers mover refinements, and gates moves over 100 miles (or missing mileage) to the concierge quote card. Local moves load active in-radius vendors, sort distinct estimates by low price, gate booking on subscription, submit the booking envelope, and show confirmation.
+- **The mover envelope has seven top-level sections.** `identity`, `scope`, `estimate`, `chosen_vendor`, `requested_window`, `notes`, and `quoteRequest` are serialized into WorkflowService's `[String: [String]]` answer contract. Concierge requests keep the same shape with empty estimate/vendor objects and `quoteRequest: true`.
 - **Tier-3 assessment migration is sequence-only.** currentBedrooms, newBedrooms, hasStorage, storageSize, and storageFullness remain modeled/persisted and render in the mover flow, but no longer appear in AssessmentCoordinator's sequence. No task-catalog condition references those five keys; the control-profile task set is unchanged with them removed.
-- **Phase C terminal evidence is Firestore plus the unconfigured-webhook log.** A complete workflowSubmissions payload landed; getWorkflowQualifying logged `NOTIFICATION_WEBHOOK_URL not configured — vendor submission not notified`. Live notification delivery remains a launch item.
+- **Mover notification is direct Twilio.** submitWorkflowAnswers no longer consults NOTIFICATION_WEBHOOK_URL for mover submissions. It sends only first name, origin/destination cities, move date, and the approved booking or quote summary; full identity and scope stay in Firestore.
 - **Phase E remote inventory check was unavailable.** `firebase functions:list --project peezy-1ecrdl` failed because the local Firebase CLI credentials require reauthentication; the Phase 0 resetInventory deletion was not independently rechecked during closeout.
 
 ## Corrections from Spec 04 run (2026-07-25)
@@ -136,7 +136,7 @@ Parity rule (LE-025/LE-031, updated): these two loaders must stay field-identica
 
 - Remove the getWorkflowQualifying flow-definition fallback after the one-release compatibility window
 - Reauthenticate Firebase CLI and verify the Phase 0 resetInventory deletion before the next full functions deploy
-- `NOTIFICATION_WEBHOOK_URL` must be configured and one live submission verified before launch
+- `ADAM_NOTIFY_NUMBER` must be configured and one live booking/quote SMS verified before launch
 - markCurrentTaskPeezyHandling + PeezyHomeView's legacy activeTask card path remain present and unreachable post-universal-routing
 - seedTaskCatalog.js never writes estPeezy to Firestore though the JSON carries it (pre-existing) — reconcile on next catalog-field change
 - Paywall subscribed-pass-through is environment-limited under simctl (StoreKit test config needs an Xcode scheme launch) — verify from Xcode before submission

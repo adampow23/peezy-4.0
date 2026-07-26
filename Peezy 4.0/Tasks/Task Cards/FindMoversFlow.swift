@@ -91,14 +91,18 @@ struct FindMoversFlow: View {
             )
 
         case .comparison:
-            MoversComparisonView(
-                quotes: model.quotes,
-                selectedId: model.selectedQuote?.id,
-                arrivalWindow: model.requestedArrivalWindow,
-                priceBasis: model.priceBasis,
-                onSelect: selectQuote,
-                onBack: model.goBack
-            )
+            if model.isQuoteRequest {
+                conciergeQuoteCard
+            } else {
+                MoversComparisonView(
+                    quotes: model.quotes,
+                    selectedId: model.selectedQuote?.id,
+                    arrivalWindow: model.requestedArrivalWindow,
+                    priceBasis: model.priceBasis,
+                    onSelect: selectQuote,
+                    onBack: model.goBack
+                )
+            }
 
         case .booking:
             if let selectedQuote = model.selectedQuote {
@@ -111,13 +115,14 @@ struct FindMoversFlow: View {
             }
 
         case .confirmation:
-            MoversConfirmationView(
-                vendorName: model.selectedQuote?.vendor.name ?? "your selected company",
-                onDone: {
-                    model.markComplete()
-                    onComplete()
-                }
-            )
+            if model.isQuoteRequest {
+                conciergeConfirmationCard
+            } else {
+                MoversConfirmationView(
+                    vendorName: model.selectedQuote?.vendor.name ?? "your selected company",
+                    onDone: completeFlow
+                )
+            }
 
         case .failure:
             MoversFlowErrorView(
@@ -135,6 +140,87 @@ struct FindMoversFlow: View {
         } else {
             showPaywallGate = true
         }
+    }
+
+    private var conciergeQuoteCard: some View {
+        VStack(spacing: 0) {
+            TaskFlowHeader(taskTitle: "Request a mover quote", showBack: true, onBack: model.goBack)
+
+            Spacer()
+
+            VStack(alignment: .leading, spacing: PeezyTheme.Layout.itemSpacing) {
+                Image(systemName: "map.fill")
+                    .font(.largeTitle)
+                    .foregroundStyle(PeezyTheme.Colors.deepInk)
+                    .accessibilityHidden(true)
+
+                Text("A custom quote for the long haul")
+                    .font(.title2)
+                    .bold()
+                    .foregroundStyle(PeezyTheme.Colors.deepInk)
+
+                Text("Long-distance moves get a hand-built quote from us — you'll have it within a day.")
+                    .font(.body)
+                    .foregroundStyle(PeezyTheme.Colors.deepInk)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                TextField("Anything we should know?", text: $model.notes, axis: .vertical)
+                    .lineLimit(3...6)
+                    .padding(PeezyTheme.Layout.cardPaddingSmall)
+                    .background(Color.white.opacity(0.65), in: .rect(cornerRadius: PeezyTheme.Layout.cornerRadiusSmall))
+                    .accessibilityIdentifier("movers.quote.notes")
+
+                if let errorMessage = model.errorMessage {
+                    Text(errorMessage)
+                        .font(.footnote)
+                        .foregroundStyle(PeezyTheme.Colors.emotionalRed)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("movers.quote.error")
+                }
+
+                PeezyAssessmentButton(
+                    model.isSubmitting ? "Sending…" : "Request my quote",
+                    disabled: model.isSubmitting,
+                    action: { Task { await model.submitQuoteRequest() } }
+                )
+                .accessibilityIdentifier("movers.quote.submit")
+            }
+            .padding(PeezyTheme.Layout.cardPadding)
+            .background(Color.white.opacity(0.68), in: .rect(cornerRadius: PeezyTheme.Layout.cornerRadius))
+            .overlay {
+                RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadius)
+                    .stroke(PeezyTheme.Colors.deepInk.opacity(0.12))
+            }
+            .padding(.horizontal, 24)
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("movers.quote.concierge")
+
+            Spacer()
+        }
+    }
+
+    private var conciergeConfirmationCard: some View {
+        VStack(spacing: PeezyTheme.Layout.itemSpacing) {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 52))
+                .foregroundStyle(PeezyTheme.Colors.successGreen)
+                .accessibilityHidden(true)
+            Text("Your quote request is in")
+                .font(.title2)
+                .bold()
+                .foregroundStyle(PeezyTheme.Colors.deepInk)
+            Text("We'll follow up with your hand-built mover quote within a day.")
+                .multilineTextAlignment(.center)
+                .foregroundStyle(PeezyTheme.Colors.deepInk)
+            PeezyAssessmentButton("Done", action: completeFlow)
+        }
+        .padding(PeezyTheme.Layout.cardPadding)
+        .accessibilityIdentifier("movers.quote.confirmation")
+    }
+
+    private func completeFlow() {
+        model.markComplete()
+        onComplete()
     }
 }
 

@@ -15,4 +15,5 @@ struct ComparisonCardModel: Identifiable, Equatable {
     let insuranceTier: String
     let why: String
     let priceBasis: String
+    let detailNotes: [String]
 }

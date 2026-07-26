@@ -8,9 +8,9 @@
 
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
+const twilio = require('twilio');
 const { WORKFLOW_QUALIFYING } = require('./workflowQualifying');
 const { MINI_ASSESSMENT_WORKFLOWS } = require('./miniAssessmentWorkflows');
-const { notifyAdmin } = require('./notifyAdmin');
 
 // Initialize Firebase Admin if not already
 if (!admin.apps.length) {
@@ -275,33 +275,10 @@ const submitWorkflowAnswers = onCall(
           console.warn(`Could not update task status for ${workflowId} (task may not exist):`, updateErr.message);
         }
         
-        // Send booking notification (non-blocking)
-        const webhookUrl = process.env.NOTIFICATION_WEBHOOK_URL;
-        if (webhookUrl) {
-          fetch(webhookUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              type: 'vendor_workflow_submitted',
-              userId,
-              workflowId,
-              answers,
-              submittedAt: new Date().toISOString(),
-              status: 'pending_matching'
-            })
-          }).catch(err => console.error('Notification webhook failed:', err.message));
-        } else {
-          console.warn('NOTIFICATION_WEBHOOK_URL not configured — vendor submission not notified');
-        }
-
-        // Notify admin via SMS + backup log
-        notifyAdmin({
-          type: 'vendor_workflow',
-          userId,
-          title: `Vendor: ${workflowId}`,
-          summary: formatWorkflowSummary(workflowId, answers),
-          details: { workflowId, answers }
-        }).catch(err => console.error('notifyAdmin failed:', err.message));
+        // Mover notifications are direct, best-effort Twilio SMS. The full
+        // submission remains in Firestore; only first name, cities, date, and
+        // booking summary are sent by text.
+        await notifyMoverSubmission(workflowId, answers);
 
         return {
           success: true,
@@ -331,20 +308,86 @@ const getMiniAssessmentTypes = onCall(
   }
 );
 
-function formatWorkflowSummary(workflowId, answers) {
-  const lines = [];
-  if (answers && typeof answers === 'object') {
-    for (const [key, value] of Object.entries(answers)) {
-      const vals = Array.isArray(value) ? value.join(', ') : String(value);
-      const label = key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-      lines.push(`${label}: ${vals}`);
-    }
+async function notifyMoverSubmission(workflowId, answers) {
+  if (workflowId !== 'book_movers') return;
+
+  const accountSid = process.env.TWILIO_ACCOUNT_SID;
+  const authToken = process.env.TWILIO_AUTH_TOKEN;
+  const fromNumber = process.env.TWILIO_FROM_NUMBER;
+  const notifyNumber = process.env.ADAM_NOTIFY_NUMBER;
+
+  if (!accountSid || !authToken || !fromNumber || !notifyNumber ||
+      accountSid === 'placeholder_will_set_later') {
+    console.warn('SMS notify not configured');
+    return;
   }
-  return lines.join('\n') || 'See dashboard for details';
+
+  try {
+    const client = twilio(accountSid, authToken);
+    await client.messages.create({
+      body: buildMoverNotificationBody(answers),
+      from: fromNumber,
+      to: notifyNumber
+    });
+    console.log('Mover submission SMS sent');
+  } catch (err) {
+    console.error('SMS notify failed:', err.message);
+  }
+}
+
+function buildMoverNotificationBody(answers) {
+  const identity = parsedAnswerObject(answers, 'identity');
+  const estimate = parsedAnswerObject(answers, 'estimate');
+  const vendor = parsedAnswerObject(answers, 'chosen_vendor');
+  const firstName = String(identity.name || 'Customer').trim().split(/\s+/)[0];
+  const originCity = String(identity.currentAddress?.city || 'Origin');
+  const destCity = String(identity.newAddress?.city || 'Destination');
+  const date = normalizedMoveDate(identity.moveDate);
+
+  if (firstAnswer(answers, 'quoteRequest') === 'true') {
+    return `PEEZY QUOTE REQ: ${firstName}, ${originCity}→${destCity}, ${date}.`;
+  }
+
+  const vendorName = String(vendor.name || 'Vendor pending');
+  const low = normalizedMoney(estimate.low);
+  const high = normalizedMoney(estimate.high);
+  return `PEEZY BOOKING: ${firstName}, ${originCity}→${destCity}, ${date}, ${vendorName}, est $${low}–$${high}.`;
+}
+
+function answerMap(answers) {
+  if (answers?.answers && typeof answers.answers === 'object') return answers.answers;
+  return answers && typeof answers === 'object' ? answers : {};
+}
+
+function firstAnswer(answers, key) {
+  const value = answerMap(answers)[key];
+  if (Array.isArray(value)) return String(value[0] ?? '');
+  return String(value ?? '');
+}
+
+function parsedAnswerObject(answers, key) {
+  try {
+    const parsed = JSON.parse(firstAnswer(answers, key));
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch (_) {
+    return {};
+  }
+}
+
+function normalizedMoveDate(value) {
+  const raw = String(value || '').trim();
+  const isoDay = raw.match(/^\d{4}-\d{2}-\d{2}/)?.[0];
+  return isoDay || 'date pending';
+}
+
+function normalizedMoney(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.round(number).toString() : 'pending';
 }
 
 module.exports = {
   getWorkflowQualifying,
   submitWorkflowAnswers,
-  getMiniAssessmentTypes
+  getMiniAssessmentTypes,
+  buildMoverNotificationBody
 };

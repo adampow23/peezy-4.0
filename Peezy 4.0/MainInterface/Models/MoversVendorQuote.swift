@@ -21,7 +21,8 @@ struct MoversVendorQuote: Identifiable, Equatable {
             arrivalWindow: arrivalWindow,
             insuranceTier: valuationTier.label,
             why: estimate.why,
-            priceBasis: priceBasis
+            priceBasis: priceBasis,
+            detailNotes: estimate.specialtyHandlingNotes
         )
     }
 }
