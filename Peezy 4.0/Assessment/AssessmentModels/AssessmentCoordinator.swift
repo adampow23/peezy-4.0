@@ -269,7 +269,6 @@ class AssessmentCoordinator: ObservableObject {
         if currentDwelling == "apartment" || currentDwelling == "condo" {
             addStep(.currentFloorAccess)
         }
-        addStep(.currentBedrooms)
 
         // Section 3: New Home
         addStep(.newRentOrOwn)
@@ -280,14 +279,6 @@ class AssessmentCoordinator: ObservableObject {
         let newDwelling = dataManager.newDwellingType.lowercased()
         if newDwelling == "apartment" || newDwelling == "condo" {
             addStep(.newFloorAccess)
-        }
-        addStep(.newBedrooms)
-
-        // Storage — belongs with home details
-        addStep(.hasStorage)
-        if dataManager.hasStorage.lowercased() == "yes" {
-            addStep(.storageSize)
-            addStep(.storageFullness)
         }
 
         // Section 4: People
@@ -334,7 +325,7 @@ class AssessmentCoordinator: ObservableObject {
     private func isBranchingStep(_ step: AssessmentInputStep) -> Bool {
         switch step {
         case .currentDwellingType, .newDwellingType, .hireMovers, .anyKids,
-             .hasStorage, .hasDeclutter:
+             .hasDeclutter:
             return true
         default:
             return false

@@ -1,55 +1,24 @@
-# Spec 05 Phase C — Comparison card + booked mover flow (PERIPHERY)
+# Spec 05 Phase D — Tier-3 assessment migration (PERIPHERY)
 # EDIT SITES
 PHASE_MANIFEST
-Peezy 4.0/MainInterface/Views/ComparisonCardView.swift
-Peezy 4.0/MainInterface/Models/ComparisonCardModel.swift
-Peezy 4.0/MainInterface/Models/MoversBookingPayload.swift
-Peezy 4.0/MainInterface/Models/MoversFlowStage.swift
-Peezy 4.0/MainInterface/Models/MoversFlowViewModel.swift
-Peezy 4.0/MainInterface/Models/MoversVendorQuote.swift
-Peezy 4.0/MainInterface/Models/VendorRateCard+Pricing.swift
-Peezy 4.0/MainInterface/Models/TaskFlowRouter.swift
-Peezy 4.0/Tasks/Task Cards/FindMoversFlow.swift
-Peezy 4.0/Tasks/Task Cards/MoversCaptureCard.swift
-Peezy 4.0/Tasks/Task Cards/MoveScopeSummaryView.swift
-Peezy 4.0/Tasks/Task Cards/MoveRefinementView.swift
-Peezy 4.0/Tasks/Task Cards/MoversComparisonView.swift
-Peezy 4.0/Tasks/Task Cards/MoversBookingReviewView.swift
-Peezy 4.0/Tasks/Task Cards/MoversConfirmationView.swift
-Peezy 4.0/Tasks/Task Cards/MoversFlowErrorView.swift
-Peezy 4.0Tests/MoversBookingPayloadTests.swift
+Peezy 4.0/Assessment/AssessmentModels/AssessmentCoordinator.swift
+Peezy 4.0Tests/AssessmentTier3MigrationTests.swift
 # READ SITES
 # peezy-conventions-v2.md — frozen-region and validation constraints
-# peezy-v1-architecture.md — §1 workflow spine, §6 pricing, §9b migration boundary
+# peezy-v1-architecture.md — §9b tier-3 migration boundary
 # peezy-execution-protocol.md — PERIPHERY validation protocol
-# peezy-v1-catalog-sheet.md — BOOK_MOVERS catalog and mover scope context
-# peezy-build-spec-05.md — Phase C acceptance criteria
+# peezy-v1-catalog-sheet.md — catalog condition context
+# peezy-build-spec-05.md — Phase D acceptance criteria
 # CLAUDE.md — repository instructions and build command
-# Peezy 4.0/MainInterface/Models/Vendor.swift — Phase A vendor contract
-# Peezy 4.0/MainInterface/Models/PricingEngine.swift — Phase B price/scope contract
-# Peezy 4.0/MainInterface/Models/MoveScopeFactory.swift — Phase B scope assembly contract
-# Peezy 4.0/MainInterface/Models/PeezyIdentity.swift — booking identity data
-# Peezy 4.0/Inventory/Models/InventorySessionManager.swift — capture availability
-# Peezy 4.0/Inventory/Views/InventoryFlowView.swift — existing capture flow, invoked unchanged
-# Peezy 4.0/MainInterface/Models/WorkflowService.swift — concierge submission transport
-# Peezy 4.0/MainInterface/Models/SubscriptionManager.swift — read-only paywall contract
-# Peezy 4.0/MainInterface/Views/Paywall/PaywallGateView.swift — read-only paywall view
-# Peezy 4.0/Tasks/Task Card Components/ — read-only component-kit patterns
-# Peezy 4.0/MainInterface/Models/WorkflowCardModels.swift — submission envelope
-# functions/getWorkflowQualifying.js — deployed callable/webhook payload contract
-# functions/index.js — read-only callable export wiring
-# functions/seedTaskCatalog.js — read-only proof BOOK_MOVERS stays custom; never run
-# functions/flowDefinitionsData.json — read-only proof no BOOK_MOVERS definition; never edit
-# Peezy 4.0/MainInterface/Views/AppRootView.swift — read-only DEBUG harness routing check
-# Peezy 4.0/Tasks/FlowEngine/FlowEngineHarness.swift — read-only harness capability check
-# functions/testProfile/seedTestUser.js — read-only isolated-account fixture review; never run in Phase C
-# Peezy 4.0UITests/E2ETestBase.swift — read-only isolated-account credentials/reference
-# Peezy 4.0/Documents/peezy_e2e_build.sh — read-only fixture workflow provenance
-# Peezy 4.0/MainInterface/Views/PeezyHomeView.swift — read-only real task-card route
-# Peezy 4.0/MainInterface/Models/PeezyHomeViewModel.swift — read-only user-task decode/launch contract
-# Peezy 4.0/MainInterface/Models/PeezyCard.swift — read-only user-task Firestore schema
-# Peezy 4.0/Tasks/Store/PeezyCardFirestoreMapper.swift — read-only user-task decoder
-# Peezy 4.0/MainInterface/Models/TaskActionService.swift — read-only task-stage persistence contract
-# Peezy 4.0/Auth/AuthView.swift — read-only isolated-account sign-in accessibility contract
-# Peezy 4.0.xcodeproj/xcshareddata/xcschemes/Peezy 4.0.xcscheme — read-only StoreKit launch configuration
-# Configuration.storekit — read-only product identity check; protected, never edit
+# Peezy 4.0/Assessment/AssessmentModels/AssessmentFlowView.swift — question-view routing remains available
+# Peezy 4.0/Assessment/AssessmentModels/AssessmentDataManager.swift — tier-3 values remain persisted for mover-flow use
+# Peezy 4.0/Assessment/AssessmentViews/Questions/CurrentBedrooms.swift — view remains unchanged
+# Peezy 4.0/Assessment/AssessmentViews/Questions/NewBedrooms.swift — view remains unchanged
+# Peezy 4.0/Assessment/AssessmentViews/Questions/HasStorage.swift — view remains unchanged
+# Peezy 4.0/Assessment/AssessmentViews/Questions/StorageSize.swift — view remains unchanged
+# Peezy 4.0/Assessment/AssessmentViews/Questions/StorageFullness.swift — view remains unchanged
+# Peezy 4.0/Tasks/Task Cards/MoveRefinementView.swift — Phase C mover-flow collection proof
+# Peezy 4.0/MainInterface/Models/MoversFlowViewModel.swift — Phase C refinement persistence/scope proof
+# functions/taskCatalogData.json — read-only condition-key audit
+# functions/seedTaskCatalog.js — read-only generated-catalog audit
+# functions/flowDefinitionsData.json — read-only flow-condition audit
