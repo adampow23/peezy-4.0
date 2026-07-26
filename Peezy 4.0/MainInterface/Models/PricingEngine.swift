@@ -24,6 +24,24 @@ enum SpecialtyItem: String, CaseIterable, Equatable {
     case safe
     case poolTable
     case oversizedAppliance
+    case treadmill
+    case marbleTops
+
+    var handlingLabel: String {
+        switch self {
+        case .piano: "piano"
+        case .safe: "safe"
+        case .poolTable: "pool table"
+        case .oversizedAppliance: "oversized appliance"
+        case .treadmill: "treadmill"
+        case .marbleTops: "marble tops"
+        }
+    }
+}
+
+enum MoverQuoteRoute: Equatable {
+    case instantComparison
+    case conciergeQuote
 }
 
 struct StorageStop: Equatable {
@@ -112,6 +130,7 @@ struct PricingRateCard: Equatable {
     let weekendSurcharge: Double
     let monthEndSurcharge: Double
     let peakSeasonSurcharge: Double
+    let specialtyFees: [SpecialtyItem: Double]
 
     init(
         hourlyByCrew: [Int: Double],
@@ -119,7 +138,8 @@ struct PricingRateCard: Equatable {
         minimumHours: Double,
         weekendSurcharge: Double = 0,
         monthEndSurcharge: Double = 0,
-        peakSeasonSurcharge: Double = 0
+        peakSeasonSurcharge: Double = 0,
+        specialtyFees: [SpecialtyItem: Double] = [:]
     ) {
         self.hourlyByCrew = hourlyByCrew
         self.tripCharge = tripCharge
@@ -127,6 +147,7 @@ struct PricingRateCard: Equatable {
         self.weekendSurcharge = weekendSurcharge
         self.monthEndSurcharge = monthEndSurcharge
         self.peakSeasonSurcharge = peakSeasonSurcharge
+        self.specialtyFees = specialtyFees
     }
 }
 
@@ -140,6 +161,7 @@ struct CrewQuote: Equatable {
     let loadHours: Double
     let totalHours: Double
     let billableHours: Double
+    let specialtyFee: Double
     let price: Double
 }
 
@@ -149,10 +171,38 @@ struct PriceEstimate: Equatable {
     let crew: Int
     let disclosures: [String]
     let why: String
+    let specialtyHandlingNotes: [String]
+
+    init(
+        range: PriceRange,
+        typicalHours: Double,
+        crew: Int,
+        disclosures: [String],
+        why: String,
+        specialtyHandlingNotes: [String] = []
+    ) {
+        self.range = range
+        self.typicalHours = typicalHours
+        self.crew = crew
+        self.disclosures = disclosures
+        self.why = why
+        self.specialtyHandlingNotes = specialtyHandlingNotes
+    }
 }
 
 enum PricingEngine {
+    static func quoteRoute(moveDistanceMiles: Double?) -> MoverQuoteRoute {
+        guard let moveDistanceMiles, moveDistanceMiles <= 100 else {
+            return .conciergeQuote
+        }
+        return .instantComparison
+    }
+
     static func loadHours(for scope: MoveScope, crew: Int) -> Double {
+        roundedHours(rawLoadHours(for: scope, crew: crew))
+    }
+
+    private static func rawLoadHours(for scope: MoveScope, crew: Int) -> Double {
         guard let cubePerHour = PricingConstants.cubicFeetPerCrewHour[crew], cubePerHour > 0 else {
             return 0
         }
@@ -169,7 +219,7 @@ enum PricingEngine {
         let specialtyHours = scope.specialtyItems.reduce(0) {
             $0 + (PricingConstants.specialtyItemHours[$1] ?? 0)
         }
-        return roundedHours(baseHours + accessHours + specialtyHours)
+        return baseHours + accessHours + specialtyHours
     }
 
     static func crewQuotes(for scope: MoveScope, rateCard: PricingRateCard) -> [CrewQuote] {
@@ -179,12 +229,19 @@ enum PricingEngine {
             let total = roundedHours(load + scope.driveMinutes / 60)
             let billable = max(total, rateCard.minimumHours)
             let subtotal = billable * hourlyRate + rateCard.tripCharge
-            let totalPrice = roundMoney(subtotal * (1 + surchargeFraction(for: scope.serviceDate, rateCard: rateCard)))
+            let specialtyFee = scope.specialtyItems.reduce(0) {
+                $0 + (rateCard.specialtyFees[$1] ?? 0)
+            }
+            let totalPrice = roundMoney(
+                subtotal * (1 + surchargeFraction(for: scope.serviceDate, rateCard: rateCard))
+                    + specialtyFee
+            )
             return CrewQuote(
                 crew: crew,
                 loadHours: load,
                 totalHours: total,
                 billableHours: billable,
+                specialtyFee: specialtyFee,
                 price: totalPrice
             )
         }
@@ -192,11 +249,12 @@ enum PricingEngine {
 
     static func estimate(scope: MoveScope, rateCard: PricingRateCard) -> PriceEstimate? {
         let quotes = crewQuotes(for: scope, rateCard: rateCard)
-        guard let selected = quotes.min(by: { lhs, rhs in
-            if lhs.price != rhs.price { return lhs.price < rhs.price }
-            if lhs.totalHours != rhs.totalHours { return lhs.totalHours < rhs.totalHours }
-            return lhs.crew < rhs.crew
-        }) else { return nil }
+        // Request the minimum viable crew every company can staff. Vendors
+        // cannot be forced into larger crews, so selection starts at two and
+        // increases only when physical load/unload work exceeds six hours.
+        guard let selected = quotes.first(where: {
+            rawLoadHours(for: scope, crew: $0.crew) <= PricingConstants.physicalHoursCeiling
+        }) ?? quotes.last else { return nil }
 
         let rangeWidth = confidenceRangeWidth(for: scope)
         let range = PriceRange(
@@ -208,7 +266,8 @@ enum PricingEngine {
             typicalHours: selected.totalHours,
             crew: selected.crew,
             disclosures: disclosures(for: scope),
-            why: why(selected: selected, alternatives: quotes)
+            why: "Sized so your move wraps in one solid morning — not a marathon.",
+            specialtyHandlingNotes: specialtyHandlingNotes(for: scope, rateCard: rateCard)
         )
     }
 
@@ -260,27 +319,17 @@ enum PricingEngine {
         return result
     }
 
-    private static func why(selected: CrewQuote, alternatives: [CrewQuote]) -> String {
-        let fasterAlternative = alternatives
-            .filter { $0.crew > selected.crew && $0.price >= selected.price && $0.totalHours < selected.totalHours }
-            .sorted { $0.totalHours < $1.totalHours }
-            .first
-
-        if let fasterAlternative {
-            let savedHours = fasterAlternative.totalHours - selected.totalHours
-            return "\(selected.crew) movers is the lowest total; \(fasterAlternative.crew) movers finishes \(formatHours(-savedHours)) sooner but costs more."
+    private static func specialtyHandlingNotes(
+        for scope: MoveScope,
+        rateCard: PricingRateCard
+    ) -> [String] {
+        var seen: Set<String> = []
+        return scope.specialtyItems.compactMap { item in
+            guard (rateCard.specialtyFees[item] ?? 0) > 0,
+                  seen.insert(item.rawValue).inserted
+            else { return nil }
+            return "Includes \(item.handlingLabel) handling"
         }
-
-        let slowerAlternative = alternatives
-            .filter { $0.crew < selected.crew && $0.price > selected.price && $0.totalHours > selected.totalHours }
-            .sorted { $0.crew > $1.crew }
-            .first
-        if let slowerAlternative {
-            let savedHours = slowerAlternative.totalHours - selected.totalHours
-            return "\(selected.crew) movers finishes \(formatHours(savedHours)) sooner and costs less."
-        }
-
-        return "\(selected.crew) movers is the lowest total for this scope."
     }
 
     private static func roundedHours(_ value: Double) -> Double {
@@ -291,7 +340,4 @@ enum PricingEngine {
         value.rounded()
     }
 
-    private static func formatHours(_ hours: Double) -> String {
-        String(format: "%.1fh", abs(hours))
-    }
 }

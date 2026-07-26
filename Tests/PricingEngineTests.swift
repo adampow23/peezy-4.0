@@ -12,11 +12,17 @@ struct PricingEngineTests {
             minimumHours: 2,
             weekendSurcharge: 0.10,
             monthEndSurcharge: 0.08,
-            peakSeasonSurcharge: 0.12
+            peakSeasonSurcharge: 0.12,
+            specialtyFees: [
+                .piano: 100, .safe: 80, .poolTable: 90,
+                .oversizedAppliance: 50, .treadmill: 60, .marbleTops: 70
+            ]
         )
 
         var failures: [String] = []
+        var checksRun = 0
         func check(_ condition: @autoclosure () -> Bool, _ name: String) {
+            checksRun += 1
             if condition() {
                 print("PASS  \(name)")
             } else {
@@ -100,12 +106,71 @@ struct PricingEngineTests {
         )
         let largeEstimate = PricingEngine.estimate(scope: largeScope, rateCard: rateCard)!
         check(smallEstimate.crew == 2, "small move selects two-person crew")
-        check(largeEstimate.crew == 3, "larger move flips to three-person crew when lower total")
+        check(largeEstimate.crew == 3, "larger move selects the smallest crew under six physical hours")
         let tiedPriceRateCard = PricingRateCard(
             hourlyByCrew: [2: 100, 3: 100], tripCharge: 0, minimumHours: 2
         )
         let tiedPriceEstimate = PricingEngine.estimate(scope: minimumScope, rateCard: tiedPriceRateCard)!
-        check(tiedPriceEstimate.crew == 3, "price tie selects the crew with fewer total hours")
+        check(tiedPriceEstimate.crew == 2, "price does not override the minimum viable crew")
+
+        let belowCeiling = MoveScope(
+            cubicFeet: 796.5, driveMinutes: 240,
+            originAccess: .ground, destAccess: .ground,
+            packedStatus: .packed, cubeSource: .inventoryScan
+        )
+        let aboveCeiling = MoveScope(
+            cubicFeet: 823.5, driveMinutes: 0,
+            originAccess: .ground, destAccess: .ground,
+            packedStatus: .packed, cubeSource: .inventoryScan
+        )
+        check(PricingEngine.loadHours(for: belowCeiling, crew: 2) == 5.9, "ceiling fixture models 5.9 physical hours")
+        check(PricingEngine.estimate(scope: belowCeiling, rateCard: rateCard)?.crew == 2, "5.9 physical hours stays at two movers despite long drive")
+        check(PricingEngine.loadHours(for: aboveCeiling, crew: 2) == 6.1, "ceiling fixture models 6.1 physical hours")
+        check(PricingEngine.estimate(scope: aboveCeiling, rateCard: rateCard)?.crew == 3, "6.1 physical hours adds a mover")
+        let justAboveCeiling = MoveScope(
+            cubicFeet: 811.35, driveMinutes: 0,
+            originAccess: .ground, destAccess: .ground,
+            packedStatus: .packed, cubeSource: .inventoryScan
+        )
+        check(
+            PricingEngine.estimate(scope: justAboveCeiling, rateCard: rateCard)?.crew == 3,
+            "unrounded 6.01 physical hours adds a mover even when display hours round to 6.0"
+        )
+
+        check(PricingEngine.quoteRoute(moveDistanceMiles: 100) == .instantComparison, "100-mile boundary stays instant")
+        check(PricingEngine.quoteRoute(moveDistanceMiles: 100.1) == .conciergeQuote, "over 100 miles routes to concierge")
+        check(PricingEngine.quoteRoute(moveDistanceMiles: nil) == .conciergeQuote, "pending distance routes to concierge")
+
+        let pianoFlipBase = MoveScope(
+            cubicFeet: 620, driveMinutes: 15,
+            originAccess: .ground, destAccess: .ground,
+            packedStatus: .packed, cubeSource: .inventoryScan
+        )
+        let pianoFlip = MoveScope(
+            cubicFeet: 620, driveMinutes: 15,
+            originAccess: .ground, destAccess: .ground,
+            packedStatus: .packed, specialtyItems: [.piano], cubeSource: .inventoryScan
+        )
+        check(PricingEngine.estimate(scope: pianoFlipBase, rateCard: rateCard)?.crew == 2, "base scope stays at two movers")
+        check(PricingEngine.loadHours(for: pianoFlip, crew: 2) == 6.1, "piano hours are added before crew selection")
+        check(PricingEngine.estimate(scope: pianoFlip, rateCard: rateCard)?.crew == 3, "piano physical hours trigger the extra mover")
+
+        let higherPianoFeeCard = PricingRateCard(
+            hourlyByCrew: rateCard.hourlyByCrew,
+            tripCharge: rateCard.tripCharge,
+            minimumHours: rateCard.minimumHours,
+            specialtyFees: [.piano: 250]
+        )
+        let standardPianoQuote = PricingEngine.crewQuotes(for: pianoFlip, rateCard: rateCard)
+            .first { $0.crew == 3 }!
+        let higherPianoQuote = PricingEngine.crewQuotes(for: pianoFlip, rateCard: higherPianoFeeCard)
+            .first { $0.crew == 3 }!
+        check(higherPianoQuote.price - standardPianoQuote.price == 150, "vendor specialty fees create card-price divergence")
+        check(
+            PricingEngine.estimate(scope: pianoFlip, rateCard: rateCard)?.specialtyHandlingNotes
+                == ["Includes piano handling"],
+            "priced specialty emits the locked comparison note"
+        )
 
         let fallbackScope = MoveScope(
             cubicFeet: 600, driveMinutes: 0, originAccess: .ground, destAccess: .ground,
@@ -150,11 +215,43 @@ struct PricingEngineTests {
         )
         check(surcharge == 0.30, "weekend, month-end, and peak-season surcharges combine")
 
+        let calibrationRateCard = PricingRateCard(
+            hourlyByCrew: [2: 145, 3: 185, 4: 220],
+            tripCharge: 129,
+            minimumHours: 2,
+            specialtyFees: [.piano: 240]
+        )
+        let similarityFixtures = [
+            MoveScope(cubicFeet: 480, driveMinutes: 18,
+                      originAccess: MoveAccess(route: .stairs, elevatorReserved: false, longCarry: false),
+                      destAccess: .ground, packedStatus: .packed, cubeSource: .inventoryScan),
+            MoveScope(cubicFeet: 900, driveMinutes: 28,
+                      originAccess: MoveAccess(route: .elevator, elevatorReserved: false, longCarry: false),
+                      destAccess: .ground, packedStatus: .unpacked, cubeSource: .inventoryScan),
+            MoveScope(cubicFeet: 1_420, driveMinutes: 42,
+                      originAccess: .ground,
+                      destAccess: MoveAccess(route: .elevator, elevatorReserved: true, longCarry: true),
+                      packedStatus: .packed, specialtyItems: [.piano], cubeSource: .inventoryScan),
+            MoveScope(cubicFeet: 1_275, driveMinutes: 35,
+                      originAccess: .defaulted, destAccess: .defaulted,
+                      packedStatus: .unknown, cubeSource: .bedroomsFallback)
+        ]
+        for (fixtureIndex, fixture) in similarityFixtures.enumerated() {
+            let prices = PricingEngine.crewQuotes(for: fixture, rateCard: calibrationRateCard).map(\.price)
+            check(adjacentPricesAreSimilar(prices), "fixture \(fixtureIndex + 1) adjacent crew totals stay within 10%")
+        }
+
         if failures.isEmpty {
-            print("\nPricingEngineTests: PASS (24 assertions)")
+            print("\nPricingEngineTests: PASS (\(checksRun) assertions)")
         } else {
             print("\nPricingEngineTests: FAIL (\(failures.count) failures)")
             exit(1)
+        }
+    }
+
+    private static func adjacentPricesAreSimilar(_ prices: [Double]) -> Bool {
+        zip(prices, prices.dropFirst()).allSatisfy { left, right in
+            abs(left - right) / min(left, right) <= 0.10
         }
     }
 

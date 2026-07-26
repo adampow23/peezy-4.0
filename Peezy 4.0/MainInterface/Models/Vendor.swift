@@ -32,6 +32,7 @@ struct VendorRateCard: Codable, Equatable {
     let materials: VendorMaterials
     let valuationTiers: [VendorValuationTier]
     let surcharges: VendorSurcharges
+    let specialtyFees: [String: Double]
     let blackoutDates: [String]
 }
 

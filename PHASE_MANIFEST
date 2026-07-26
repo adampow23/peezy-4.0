@@ -1,27 +1,63 @@
-# Spec 05 Phase E - Doc sync (PERIPHERY)
+# Pricing Calibration Chip - single session (CORE PricingEngine + PERIPHERY)
+# RESOLVED: AGENTS.md is absent; user approved CLAUDE.md as its replacement.
 # EDIT SITES
 PHASE_MANIFEST
-CLAUDE.md
+Peezy 4.0/MainInterface/Models/PricingEngine.swift
+Peezy 4.0/MainInterface/Models/PricingConstants.swift
+Peezy 4.0/MainInterface/Models/MoveScopeFactory.swift
+Peezy 4.0/MainInterface/Models/PricingCalibrationHarness.swift
+Peezy 4.0/MainInterface/Models/Vendor.swift
+Peezy 4.0/MainInterface/Models/VendorRateCard+Pricing.swift
+Peezy 4.0/MainInterface/Models/MoversBookingPayload.swift
+Peezy 4.0/MainInterface/Models/MoversFlowViewModel.swift
+Peezy 4.0/MainInterface/Models/MoversVendorQuote.swift
+Peezy 4.0/MainInterface/Models/ComparisonCardModel.swift
+Peezy 4.0/MainInterface/Views/ComparisonCardView.swift
+Peezy 4.0/Tasks/Task Cards/FindMoversFlow.swift
+Peezy 4.0/Tasks/Task Cards/MoversComparisonView.swift
+Peezy 4.0/Tasks/Task Cards/MoversBookingReviewView.swift
+Tests/PricingEngineTests.swift
+Tests/PricingCalibrationRunner.swift
+Peezy 4.0Tests/VendorTests.swift
+Peezy 4.0Tests/MoversBookingPayloadTests.swift
+functions/vendorsData.json
+functions/index.js
+functions/getWorkflowQualifying.js
 peezy-conventions-v2.md
 tasks/todo.md
-peezy-build-spec-05.md
 # READ SITES
-# peezy-execution-protocol.md - protocol section 6 closeout requirements
-# peezy-build-spec-05.md - Phase E acceptance scope and phase history
-# peezy-conventions-v2.md - repository ground-truth corrections and open items
-# CLAUDE.md - compact repository facts used by future agents
-# tasks/todo.md - existing spec review and SESSION_NOTES ledger
-# firestore.rules - direct flowDefinitions and vendor read contracts
-# functions/getWorkflowQualifying.js - workflow submission and webhook behavior
-# functions/vendorsData.json - placeholder vendor dataset
-# Peezy 4.0/Tasks/FlowEngine/FlowDefinition.swift - direct-read/fallback transport
-# Peezy 4.0/MainInterface/Models/Vendor.swift - vendor schema and active filtering
-# Peezy 4.0/MainInterface/Models/PricingEngine.swift - pricing contract
-# Peezy 4.0/MainInterface/Models/PricingConstants.swift - calibration constants
-# Peezy 4.0/MainInterface/Models/MoversFlowViewModel.swift - mover spine orchestration
-# Peezy 4.0/MainInterface/Models/MoversBookingPayload.swift - submission envelope
-# Peezy 4.0/Tasks/Task Cards/FindMoversFlow.swift - mover flow presentation
-# Peezy 4.0/Assessment/AssessmentModels/AssessmentCoordinator.swift - tier-3 migration
-# Tests/PricingEngineTests.swift - pricing validation contract
-# Peezy 4.0Tests/MoversBookingPayloadTests.swift - payload validation contract
-# Peezy 4.0Tests/AssessmentTier3MigrationTests.swift - assessment migration contract
+# peezy-chip-pricing-calibration.md - chip requirements and acceptance contract
+# peezy-execution-protocol.md - validator and session-close rules
+# peezy-conventions-v2.md - repository contracts and documentation target
+# AGENTS.md - requested instruction site; absent at session start
+# CLAUDE.md - repository facts cross-check; no edit anticipated
+# functions/.env - read-only presence check for Twilio variable names; NEVER WRITE
+# functions/package.json - callable runtime/dependency audit
+# functions/package-lock.json - callable dependency audit
+# functions/seedVendors.js - sanctioned vendor reseed implementation
+# functions/notifyAdmin.js - existing Twilio helper and notification contract audit
+# firebase.json - sanctioned deployment target configuration
+# .firebaserc - Firebase project selection
+# functions/serviceAccountKey.json - read-only Admin validation credential if required
+# Peezy 4.0/MainInterface/Models/WorkflowService.swift - existing concierge submission transport
+# Peezy 4.0/MainInterface/Models/WorkflowCardModels.swift - callable answer-envelope shape
+# Peezy 4.0/MainInterface/Models/PeezyIdentity.swift - identity distance/address contract
+# Peezy 4.0/MainInterface/Models/IdentityService.swift - identity document load contract
+# Peezy 4.0/MainInterface/Models/UserState.swift - identity consumer cross-check
+# Peezy 4.0/MainInterface/Models/TaskFlowRouter.swift - BOOK_MOVERS custom-route contract
+# Peezy 4.0/Menu/PeezySettingsView.swift - identity consumer cross-check
+# Peezy 4.0/Tasks/Task Cards/MoversCaptureCard.swift - capture entry contract
+# Peezy 4.0/Tasks/Task Cards/MoveRefinementView.swift - local comparison entry contract
+# Peezy 4.0/Tasks/Task Cards/MoversConfirmationView.swift - terminal confirmation contract
+# Peezy 4.0/Tasks/Task Cards/ScanInventoryFlow.swift - inventory metadata read contract
+# Peezy 4.0/Tasks/FlowEngine/InAppTaskFlows.swift - identity consumer cross-check
+# Peezy 4.0/Inventory/Models/InventoryModels.swift - read-only specialty-category mapping contract
+# Peezy 4.0/Inventory/Models/InventorySessionManager.swift - isolated acceptance-fixture read path
+# Peezy 4.0/Inventory/Services/InventoryStorageService.swift - inventory decode contract
+# Peezy 4.0/Inventory/ViewModels/InventoryReviewViewModel.swift - cube aggregation cross-check
+# Peezy 4.0/Inventory/Views/InventoryFlowView.swift - existing-inventory load entry
+# Peezy 4.0/Inventory/Views/InventoryItemConfirmView.swift - inventory fixture shape cross-check
+# Peezy 4.0/Inventory/Views/InventoryLockedView.swift - inventory fixture shape cross-check
+# Peezy 4.0/Inventory/Views/InventoryRoomHubView.swift - inventory fixture shape cross-check
+# Peezy 4.0/Inventory/Views/InventoryRoomReviewView.swift - inventory fixture shape cross-check
+# firestore.rules - workflow submission/vendor ownership check; NEVER DEPLOY IN THIS CHIP

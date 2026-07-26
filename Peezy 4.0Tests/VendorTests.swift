@@ -21,6 +21,7 @@ struct VendorTests {
               { "id": "standard", "label": "Standard valuation", "coveragePerPound": 0.6, "additionalCost": 0 }
             ],
             "surcharges": { "weekend": 0.1, "monthEnd": 0.08, "peakSeason": 0.12 },
+            "specialtyFees": { "piano": 240, "safe": 175, "treadmill": 85, "marbleTops": 140 },
             "blackoutDates": ["2026-12-25"]
           },
           "accountability": { "standardsVersion": "v1", "strikes": 0 },
@@ -36,6 +37,7 @@ struct VendorTests {
         #expect(vendor.rateCard.minimumHours == 2)
         #expect(vendor.rateCard.tripChargeModel == VendorTripCharge(kind: .flat, amount: 129))
         #expect(vendor.rateCard.surcharges.peakSeason == 0.12)
+        #expect(vendor.rateCard.specialtyFees["piano"] == 240)
     }
 
     @Test func inactiveVendorNeverSurfacesFromStoreFilter() {
@@ -61,6 +63,7 @@ struct VendorTests {
                 materials: VendorMaterials(included: false, boxBundle: 42, packingPaperBundle: 24),
                 valuationTiers: [],
                 surcharges: VendorSurcharges(weekend: 0.1, monthEnd: 0.08, peakSeason: 0.12),
+                specialtyFees: ["piano": 240],
                 blackoutDates: []
             ),
             accountability: VendorAccountability(standardsVersion: "v1", strikes: 0),

@@ -80,9 +80,13 @@ enum PricingConstants {
     /// LOCKED-pending-calibration cubic feet handled per crew hour.
     static let cubicFeetPerCrewHour: [Int: Double] = [
         2: 135,
-        3: 205,
-        4: 275
+        3: 172,
+        4: 205
     ]
+
+    /// A crew is increased only when modeled physical work exceeds this
+    /// ceiling. Drive time is deliberately excluded from the decision.
+    static let physicalHoursCeiling: Double = 6
 
     /// LOCKED-pending-calibration labor multipliers and additions.
     static let unpackedBoxesMultiplier: Double = 1.20
@@ -95,7 +99,9 @@ enum PricingConstants {
         .piano: 1.50,
         .safe: 1.25,
         .poolTable: 1.25,
-        .oversizedAppliance: 0.50
+        .oversizedAppliance: 0.50,
+        .treadmill: 0.75,
+        .marbleTops: 1.00
     ]
 
     // MARK: Confidence constants

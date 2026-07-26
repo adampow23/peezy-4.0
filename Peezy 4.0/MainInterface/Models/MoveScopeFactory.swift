@@ -99,6 +99,8 @@ enum MoveScopeFactory {
                 if name.contains("piano") { return [.piano] }
                 if name.contains("safe") { return [.safe] }
                 if name.contains("pool table") { return [.poolTable] }
+                if name.contains("treadmill") { return [.treadmill] }
+                if name.contains("marble top") { return [.marbleTops] }
                 if name.contains("washer") || name.contains("dryer") || name.contains("refrigerator") {
                     return [.oversizedAppliance]
                 }

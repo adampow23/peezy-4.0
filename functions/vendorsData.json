@@ -45,6 +45,14 @@
           "monthEnd": 0.08,
           "peakSeason": 0.12
         },
+        "specialtyFees": {
+          "piano": 240,
+          "safe": 175,
+          "poolTable": 200,
+          "oversizedAppliance": 75,
+          "treadmill": 85,
+          "marbleTops": 140
+        },
         "blackoutDates": [
           "2026-12-25",
           "2027-01-01"
@@ -99,6 +107,14 @@
           "weekend": 0.12,
           "monthEnd": 0.1,
           "peakSeason": 0.15
+        },
+        "specialtyFees": {
+          "piano": 275,
+          "safe": 190,
+          "poolTable": 225,
+          "oversizedAppliance": 85,
+          "treadmill": 95,
+          "marbleTops": 155
         },
         "blackoutDates": [
           "2026-11-26",
@@ -155,6 +171,14 @@
           "weekend": 0.08,
           "monthEnd": 0.06,
           "peakSeason": 0.1
+        },
+        "specialtyFees": {
+          "piano": 225,
+          "safe": 160,
+          "poolTable": 190,
+          "oversizedAppliance": 70,
+          "treadmill": 80,
+          "marbleTops": 130
         },
         "blackoutDates": [
           "2026-12-25",

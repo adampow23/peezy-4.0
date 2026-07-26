@@ -17,7 +17,11 @@ extension PricingRateCard {
             minimumHours: vendorRateCard.minimumHours,
             weekendSurcharge: vendorRateCard.surcharges.weekend,
             monthEndSurcharge: vendorRateCard.surcharges.monthEnd,
-            peakSeasonSurcharge: vendorRateCard.surcharges.peakSeason
+            peakSeasonSurcharge: vendorRateCard.surcharges.peakSeason,
+            specialtyFees: vendorRateCard.specialtyFees.reduce(into: [:]) { result, entry in
+                guard let item = SpecialtyItem(rawValue: entry.key) else { return }
+                result[item] = entry.value
+            }
         )
     }
 }
