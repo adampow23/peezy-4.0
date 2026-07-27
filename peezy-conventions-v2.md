@@ -1,5 +1,5 @@
 # Peezy Conventions v2 — Ground Truth
-Supersedes peezy-conventions.md. Source: V1_ARCHITECTURE_MAP.md (audit @ f7e47ad, 2026-07-23) + implementation through Spec 08 Phase D (2026-07-27). Every fact below is code-verified unless explicitly labeled as remote evidence.
+Supersedes peezy-conventions.md. Source: V1_ARCHITECTURE_MAP.md (audit @ f7e47ad, 2026-07-23) + implementation through the Measurement chip (2026-07-27). Every fact below is code-verified unless explicitly labeled as remote evidence.
 
 ## Corrections to prior docs — READ FIRST
 
@@ -53,6 +53,32 @@ Firestore→PeezyCard decoder.
 | Parser | TaskConditionerParser.swift | AND keys / OR values / strict-cast fail-false :69-74 |
 | Generation | TaskGenerationService | NSNumber cast canonical at :73 |
 | Inventory | Inventory/ + functions/processInventory.js | Pipeline frozen regions below |
+
+## Analytics
+
+`MainInterface/Models/AnalyticsEvents.swift` is the single custom-event gateway.
+The launch event vocabulary is exactly:
+
+1. `explainer_complete`
+2. `assessment_start`
+3. `assessment_complete`
+4. `dose_first_complete`
+5. `dose_day_complete`
+6. `scan_complete`
+7. `packing_plan_created`
+8. `paywall_view`
+9. `paywall_convert`
+10. `booking_submit`
+11. `kit_offer_view`
+12. `kit_order`
+13. `checkin_complete`
+
+Analytics parameters must never contain PII: no names, addresses, email
+addresses, phone numbers, free text, or stable user identifiers. The only custom
+user property is `has_subscription`. New surfaces add events at the same
+service-layer state-change boundary as the durable action whenever possible;
+presentation-only events must use an explicit once guard and never fire from a
+SwiftUI rendering expression.
 
 ## Frozen regions (never modify)
 

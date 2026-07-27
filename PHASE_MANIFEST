@@ -1,73 +1,41 @@
-# Chip Measurement — Phase B: Funnel events (CORE)
+# Chip Measurement — Phase C: Documentation sync (PERIPHERY)
 #
-# ACCEPTANCE CONTRACT (written before Phase B implementation edits)
-# B1 GIVEN Firebase Analytics is linked, WHEN the analytics facade is inspected,
-#    THEN `AnalyticsEvents.swift` is the only custom-event definition site and
-#    contains exactly the 13 specified event names; the only custom user property
-#    is `has_subscription`.
-# B2 GIVEN one onboarding/assessment session, WHEN the explainer finishes, the
-#    assessment first appears, and completion begins, THEN `explainer_complete`,
-#    `assessment_start`, and `assessment_complete(questionCount)` each log once at
-#    their guarded state transitions, never from a rendering expression.
-# B3 GIVEN the persisted dose counters, WHEN a user completes their first-ever task
-#    and later crosses today's frozen dose target, THEN `dose_first_complete` logs
-#    only for the zero-to-one lifetime completion and `dose_day_complete(dayNumber)`
-#    logs only for the incomplete-to-complete daily crossing across every task exit.
-# B4 GIVEN a draft inventory and no prior packing plan, WHEN final submission and
-#    plan persistence succeed, THEN `scan_complete(itemCount,cubicFeet)` and
-#    `packing_plan_created` each log once; regeneration never re-logs plan creation.
-# B5 GIVEN the four paywall triggers and downstream service successes, WHEN a gate
-#    opens, a new StoreKit purchase completes, booking/quote submission succeeds, a
-#    kit offer loads/orders, or check-in succeeds, THEN the matching paywall,
-#    booking, kit, and check-in events each log once with only the specified params.
-# B6 GIVEN a temporary DEBUG-only acceptance journey, WHEN the simulator runs it,
-#    THEN the `[PeezyAnalytics]` dump lists every specified event exactly once; the
-#    hook is removed, grep finds no PII parameter keys, the exact iPhone 17 Pro build
-#    passes, and a fresh-context validator grades B1-B6. No deployment occurs and
-#    project.pbxproj remains unchanged from bf3af26.
-#
-# NEEDS-CLARIFICATION (bounded, reversible interpretations)
-# - `itemCount` uses the inventory manager's existing record count; `cubicFeet`
-#   uses the same move-eligible per-item estimate and quantity calculation as move
-#   scope pricing, so the analytics value matches the product's displayed scope.
-# - `itemTotal` means the sum of all nine kit-unit quantities, not cents or dollars.
-# - A successful historical Restore Purchases is not a new `paywall_convert`.
-#   Conversion requires a verified auto-renewable transaction purchased after the
-#   current paywall presentation and records only its product identifier.
-# - `booking_submit.vertical` is derived from the non-PII workflow id: `movers` for
-#   `book_movers`, `cleaners` for `book_cleaners`; cleaners is a quote request.
+# ACCEPTANCE CONTRACT (written before Phase C implementation edits)
+# C1 GIVEN the measurement layer is implemented, WHEN conventions are read,
+#    THEN one Analytics section lists exactly the 13 custom events, states that
+#    analytics parameters contain no PII, and requires new surfaces to log at
+#    the same service-layer state-change boundary where possible.
+# C2 GIVEN the canonical launch ledger, WHEN measurement readiness is checked,
+#    THEN a VERIFIED measurement row records Crashlytics receipt, the 13-event
+#    logged journey, the clean iPhone 17 Pro build, and the no-deployment scope.
+# C3 GIVEN PrivacyInfo.xcprivacy and launch rows L11/L12, WHEN Firebase manifests
+#    are cross-checked, THEN the app manifest is changed only if the approved
+#    data-use matrix requires it. SDK-provided Crashlytics declarations are noted,
+#    while app-wide analytics/privacy-label declarations remain gated on L11 and
+#    must not be guessed; L11/L12 therefore do not close with this chip.
+# C4 GIVEN the Phase C diff, WHEN documentation checks run, THEN the conventions
+#    event list exactly matches AnalyticsEvents.swift, the checklist status is
+#    internally consistent, PrivacyInfo.xcprivacy remains valid, git diff check
+#    passes, and project.pbxproj remains byte-diff clean from HEAD.
+# C5 GIVEN C1-C4 evidence, WHEN a fresh-context validator runs the Phase C
+#    acceptance list, THEN it reports PASS before the phase is committed. Nothing
+#    deploys and no remote state is mutated.
 #
 # EDIT SITES
 # PHASE_MANIFEST
-# Peezy 4.0/MainInterface/Models/AnalyticsEvents.swift
-# Peezy 4.0/MainInterface/Models/PeezyV1App.swift
-# Peezy 4.0/MainInterface/Views/Onboarding/ExplainerView.swift
-# Peezy 4.0/Assessment/AssessmentModels/AssessmentFlowView.swift
-# Peezy 4.0/Assessment/AssessmentModels/AssessmentCoordinator.swift
-# Peezy 4.0/MainInterface/Models/PeezyHomeViewModel.swift
-# Peezy 4.0/Inventory/Models/InventorySessionManager.swift
-# Peezy 4.0/MainInterface/Models/TaskActionService.swift
-# Peezy 4.0/MainInterface/Models/WorkflowService.swift
-# Peezy 4.0/Assessment/AssessmentViews/Onboarding/CompletionFlowView.swift
-# Peezy 4.0/MainInterface/Models/PaywallPolicy.swift
-# Peezy 4.0/Tasks/Task Cards/FindCleanersFlow.swift
-# Peezy 4.0/Tasks/Task Cards/FindMoversFlow.swift
-# Peezy 4.0/Tasks/FlowEngine/FlowEngineView.swift
-# Peezy 4.0/Tasks/Task Cards/SuppliesKitView.swift
-# Peezy 4.0/MainInterface/Models/CheckInService.swift
-# Peezy 4.0/Documents/measurement-analytics-event-dump.txt
+# peezy-conventions-v2.md
+# LAUNCH_CHECKLIST.md
+# SESSION_NOTES.md (session's final file write)
+#
+# CONDITIONAL EDIT SITE
+# Peezy 4.0/PrivacyInfo.xcprivacy (only with an approved collected-data matrix)
 #
 # READ SITES
-# peezy-conventions-v2.md
-# peezy-execution-protocol.md
 # peezy-chip-measurement.md
+# peezy-execution-protocol.md
 # CLAUDE.md
+# Peezy 4.0/MainInterface/Models/AnalyticsEvents.swift
+# Peezy 4.0/PrivacyInfo.xcprivacy
+# Firebase 12.7.0 Crashlytics/Resources/PrivacyInfo.xcprivacy
+# LAUNCH_CHECKLIST.md rows L11/L12
 # Peezy 4.0.xcodeproj/project.pbxproj (read-only; protected)
-# Peezy 4.0/MainInterface/Models/SubscriptionManager.swift (read-only; frozen)
-# Peezy 4.0/MainInterface/Views/Paywall/PaywallGateView.swift (read-only; frozen)
-# Peezy 4.0/MainInterface/Views/AppRootView.swift
-# Peezy 4.0/Assessment/AssessmentViews/Onboarding/AssessmentIntroView.swift
-# Peezy 4.0/MainInterface/Models/MoversFlowViewModel.swift
-# Peezy 4.0/MainInterface/Models/MoveScopeFactory.swift
-# Peezy 4.0/MainInterface/Models/KitEstimator.swift
-# Peezy 4.0/Inventory/Models/InventoryModels.swift

@@ -203,3 +203,66 @@ All remaining launch and maintenance work is tracked only in
   deployment, remote mutation, Phase B work, Phase C doc sync, or launch-checklist
   status change occurred. Adam must add the two Firebase products and Crashlytics
   Xcode configuration before execution resumes.
+
+## Measurement chip — completed after scoped project authorization (2026-07-27)
+
+### What the spec got wrong or left ambiguous
+
+- “Firebase's own modules (already in the project)” conflated a resolved Swift
+  package with products linked to the app target. Both measurement products,
+  the Crashlytics run phase, `-ObjC`, and Debug dSYM output required a protected
+  `project.pbxproj` change before Phase A could compile.
+- The original protected-file stop condition had no machine close path. Adam's
+  retry supplied the missing contract: a clean tracked tree, recorded revert
+  point, Ruby `xcodeproj` mutation, isolated commit, full build, and immediate
+  rollback on any failure.
+- “Update PrivacyInfo.xcprivacy if analytics collection requires a declaration”
+  did not distinguish SDK privacy manifests, the app's collected-data manifest,
+  and App Store privacy answers. The existing L11/L12 gate forbids guessing the
+  complete data-use matrix, so this chip does not close those rows.
+
+### What surprised us
+
+- Xcode/File Provider coordination could deadlock the workspace after the
+  external Xcode-project update even though the project was valid. Builds from a
+  physical mirror containing the exact committed project and current source were
+  reliable and used the same scheme, destination, and DerivedData output.
+- Crashlytics acknowledged the forced outside-debugger simulator crash as one
+  unprocessed crash before console symbol processing completed. The local dSYM
+  UUID and Firebase receipt UUID matched, and the relaunch emitted the upload POST.
+- Firebase 12.7.0's Crashlytics resource already declares crash data and other
+  diagnostic data with tracking disabled. That supports leaving Peezy's own
+  manifest unchanged until Adam approves the broader L11 collection matrix.
+
+### Missing or misleading conventions
+
+- No ground-truth section defined the custom event vocabulary, allowed property,
+  PII boundary, or service-boundary placement rule.
+- The protected-project convention did not explain that existing-package product
+  linkage is still an Xcode project mutation requiring an explicit exception.
+- The launch checklist had privacy rows but no measurement-readiness row, so a
+  shipped Crashlytics/Analytics layer could not be marked independently complete.
+
+### Concrete documentation edits made
+
+- Added the exact 13-event Analytics vocabulary to conventions, prohibited PII
+  and stable identifiers, limited custom properties to `has_subscription`, and
+  required guarded service/state-change boundary logging.
+- Added VERIFIED launch row L15 with the Crashlytics console receipt, logged
+  13-event journey, exact build proof, and explicit no-deployment scope.
+- Kept L11 OPEN and L12 BLOCKED; `PrivacyInfo.xcprivacy` remains valid and
+  unchanged because the approved app-wide collected-data matrix is still absent.
+
+### Validation and commit ledger
+
+- Initial tracked tree was clean and the recorded revert point was
+  `6f17b857cf3d6a21e39468892a135a7981c5a293`.
+- Project prerequisite commit `bf3af26` contains only the Xcode project wiring;
+  its required full build passed, so rollback was not needed.
+- Phase A commit `9123df2` passed fresh validation A1-A6, including the received
+  forced-crash receipt and hook-free final build.
+- Phase B commit `3425abc` passed fresh validation B1-B6; its DEBUG journey dump
+  contains all 13 custom events exactly once with no PII parameter keys.
+- Phase C documentation checks matched conventions to the source event list and
+  validated the unchanged app privacy manifest. No backend or production
+  deployment occurred anywhere in the chip.
