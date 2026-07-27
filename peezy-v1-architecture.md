@@ -58,7 +58,7 @@ PeezyIdentity {
 - Written once at assessment completion (parsing the AddressSearchManager string formats — parser from commit 8413f2d is the seed), updated via Settings edits that write THIS doc (kills the `.limit(to:1)` nondeterminism) and recompute distance on address change.
 - `UserState` remains the app-side struct (21 consumers keep their @Binding) but is rebuilt to load from the identity doc; the city/state-only stopgap fields are replaced by full address structs.
 - Contract rot purge: the ~15 always-empty assessment keys (bedrooms, sq-ft, storage, hasVehiclesDetail, hirePackers, wantToSell, moveConcerns, referral/promo, *Details maps) are removed from `getAllAssessmentData()` and the catalog conditions that reference them are corrected or retired in the same pass. hasVehicles-always-"No" and default autoRoomList are known-wrong signals — no task may condition on them until re-collected.
-- `userKnowledge/{uid}` (greenfield — zero successful writes ever): becomes the assistant-context store, schema `{entries: {key: {value, source, updatedAt}}}` matching contextBuilder.js. Client adopts this shape; rule deploys after waitlist reconciliation.
+- `userKnowledge/{uid}` is the assistant-context store. The client and `contextBuilder.js` now share `{entries: {key: {value, source, updatedAt}}}`; assessment, Settings, and in-app task writes merge individual entries without erasing other sources.
 
 ## 5. Capture architecture
 
@@ -86,9 +86,9 @@ PeezyIdentity {
 ## 8. Non-service tasks (tiered execution)
 
 - Tier 1 (v1.1): detection — Gmail metadata on-device, Plaid recurring charges.
-- Tier 2 (v1): deep-link directory — maintained Firestore collection of provider address-change URLs, opened with identity pre-fill. Seeded with top ~40 providers.
+- Tier 2 (v1): the backend-owned Firestore `providerDirectory` seed defines 46 providers and supports exact name/alias plus category matching. Seeded link rows and resolver results can expose an HTTPS URL only when the identical URL is present in citations. Directory misses use `resolveProvider` web search; only high-confidence cited link/call results are returned and cached as `source: resolved`, `verified: false`. Medium/low, malformed, timeout, and failure paths fall through to concierge. An admin must review `source: resolved` entries before promoting them to verified seed data.
 - Tier 3 (v1): concierge — n8n path via requestConcierge, now carrying the full identity payload. Signed authorization copy in the flow.
-- ISP (v1): curated KC provider/plan cards through the comparison component + Impact/CJ attributed handoff, identity pre-filled. Serviceability API swaps in at v1.1 without UI change. U-Haul: assessment-conditioned task card + deep link now; affiliate API later.
+- ISP (v1): the seed defines five curated KC-area plans in backend-owned Firestore `ispPlans`; `SETUP_INTERNET` reads and orders the available plan documents, shows the canonical destination city/state/ZIP, and hands off in `SFSafariViewController`. All five seeded affiliate fields are `#AFFILIATE_PENDING`, so the app logs the open item and opens the official provider URL instead. The coverage copy explicitly avoids address-level availability claims; a serviceability API can replace the curated feed in v1.1 without changing the card UI. U-Haul remains an assessment-conditioned deep link; its affiliate API is later.
 - The daily dose sequences all of this on the real deadline graph (insurance before move day, DMV window, USPS lead time) — cards surface one at a time in dependency order.
 
 ## 9. Onboarding explainer

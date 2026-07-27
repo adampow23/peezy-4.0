@@ -1,55 +1,53 @@
-# Spec 07 Phase C — ISP curated cards (PERIPHERY)
+# Spec 07 Phase D — documentation sync (PERIPHERY)
 #
 # ACCEPTANCE CONTRACT (written before edits)
-# C1 GIVEN functions/ispPlansData.json, WHEN its validator loads the seed, THEN
-#    Google Fiber, AT&T Fiber, Xfinity, Spectrum, and T-Mobile Home Internet each
-#    have a unique real plan with speed, price, promo, contract, provider URL,
-#    one why-line, research date, and an official source recorded in the file.
-# C2 GIVEN Adam's CJ/Impact links are absent, WHEN a plan uses the literal
-#    #AFFILIATE_PENDING placeholder, THEN the client logs the open item and opens
-#    the HTTPS provider URL in-app; the placeholder is never parsed as a URL.
-# C3 GIVEN an authenticated user opens SETUP_INTERNET, WHEN the flow loads, THEN
-#    it reads ispPlans from Firestore, loads the user's canonical new address,
-#    shows "Plans for {city/zip}", and renders ordered reusable comparison cards
-#    with provider, speed, price, promo, contract, and one why-line.
-# C4 GIVEN a rendered plan card, WHEN the user taps it, THEN SFSafariViewController
-#    opens the affiliate URL when present or the provider URL otherwise, and the
-#    user can mark the task complete after the handoff.
-# C5 GIVEN Firestore or identity loading fails, WHEN the flow renders, THEN it
-#    provides an accessible retry/fallback state without changing the catalog or
-#    claiming address-level serviceability; all new controls have stable ids and
-#    44-point targets and the simulator build succeeds.
-# C6 GIVEN the completed Phase C implementation and seed validator, WHEN a fresh-
-#    context validator runs, THEN C1-C5 receive evidence-backed PASS/FAIL before
-#    the sanctioned ispPlans seed runs; after seeding, round-trip plus authenticated
-#    read-back provide live evidence before Phase C closes.
+# D1 GIVEN the completed Spec 07 implementation and live evidence, WHEN the v1
+#    architecture is read, THEN section 8 describes the 46-entry seeded provider
+#    directory, exact-citation resolver invariant, high-confidence write-through
+#    cache/admin-review boundary, and the five Firestore-backed ISP cards with
+#    pending-affiliate provider fallback and no address-level serviceability claim.
+# D2 GIVEN the 45-row catalog remains unchanged, WHEN the catalog sheet is read,
+#    THEN its source count and SETUP_INTERNET row reflect the shipped Spec 07 flow
+#    without implying that affiliate URLs or a serviceability API are live.
+# D3 GIVEN the approved deployed rules and scoped operations, WHEN conventions and
+#    CLAUDE.md are read, THEN they record entries-shaped userKnowledge, authenticated
+#    read/backend-only providerDirectory and ispPlans, the URL-citation invariant,
+#    exact seed counts, sanctioned deploy scope, and current accessibility counts.
+# D4 GIVEN protocol section 6, WHEN SESSION_NOTES is read, THEN an append-only Spec
+#    07 block records spec gaps, surprises, missing/misleading guidance, concrete
+#    doc edits, and open ownership for affiliate URLs (Adam) plus admin review of
+#    source:resolved directory entries.
+# D5 GIVEN the Phase D diff, WHEN a fresh-context validator and final local checks
+#    run, THEN D1-D4 receive evidence-backed PASS/FAIL, markdown changes pass
+#    git diff --check, all three data/resolver validators pass, and the exact iPhone
+#    17 Pro simulator build succeeds without any additional deploy or seed.
 #
 # NEEDS-CLARIFICATION (bounded, reversible interpretations)
-# - No CJ/Impact ISP links exist in the repository, so every plan stores
-#   affiliateURL:"#AFFILIATE_PENDING" and a separate official providerURL. This
-#   is the spec's explicit graceful-degradation path and remains an open item.
-# - No serviceability API is permitted in v1. Curated cards are KC-area candidates,
-#   never address-qualified claims; every provider handoff performs its own check.
-# - The shared ComparisonCardView is mover-worded internally. Reuse its model/view
-#   while supplying ISP-specific field labels through a small optional label
-#   adapter so existing mover call sites remain byte-for-byte behavior compatible.
+# - The catalog sheet is a planning artifact but its 56-task source header is now
+#   objectively stale; update the header/net-result note to the verified 45-row
+#   post-Spec-06 catalog while leaving functions/taskCatalogData.json untouched.
+# - "Last action" in protocol section 6 is treated as the final repository edit:
+#   append SESSION_NOTES after the other doc edits, then validate and commit it so
+#   the required artifact is independently checked and retained in history.
 #
 # EDIT SITES
 # PHASE_MANIFEST
-# functions/ispPlansData.json
-# functions/seedIspPlans.js
-# Peezy 4.0/MainInterface/Models/ISPPlanService.swift
-# Peezy 4.0/MainInterface/Models/ComparisonCardModel.swift
-# Peezy 4.0/MainInterface/Views/ComparisonCardView.swift
-# Peezy 4.0/Tasks/Task Cards/SetupInternetFlow.swift
+# peezy-v1-architecture.md
+# peezy-v1-catalog-sheet.md
+# peezy-conventions-v2.md
+# CLAUDE.md
+# SESSION_NOTES.md
 #
 # READ SITES
-# peezy-build-spec-07.md Phase C
-# peezy-v1-architecture.md §8
-# peezy-v1-catalog-sheet.md SETUP_INTERNET
-# firestore.rules ispPlans block (already deployed in the Phase B gate)
-# functions/seedVendors.js and functions/seedProviderDirectory.js
-# Peezy 4.0/MainInterface/Views/ComparisonCardView.swift
-# Peezy 4.0/MainInterface/Models/ComparisonCardModel.swift
-# Peezy 4.0/MainInterface/Models/IdentityService.swift
+# peezy-build-spec-07.md Phase D and Files Summary
+# peezy-execution-protocol.md section 6
+# functions/providerDirectoryData.json
+# functions/seedProviderDirectory.js
+# functions/resolveProvider.js
+# functions/ispPlansData.json
+# functions/seedIspPlans.js
+# firestore.rules
+# Peezy 4.0/MainInterface/Models/UserKnowledgeService.swift
+# Peezy 4.0/MainInterface/Models/ProviderDirectoryService.swift
+# Peezy 4.0/MainInterface/Models/ISPPlanService.swift
 # Peezy 4.0/Tasks/Task Cards/SetupInternetFlow.swift

@@ -1,5 +1,5 @@
 # Peezy Conventions v2 — Ground Truth
-Supersedes peezy-conventions.md. Source: V1_ARCHITECTURE_MAP.md (audit @ f7e47ad, 2026-07-23) + implementation through Spec 06 Phase C (d2fdf36). Every fact below is code-verified unless explicitly labeled as remote evidence.
+Supersedes peezy-conventions.md. Source: V1_ARCHITECTURE_MAP.md (audit @ f7e47ad, 2026-07-23) + implementation through Spec 07 Phase D (2026-07-27). Every fact below is code-verified unless explicitly labeled as remote evidence.
 
 ## Corrections to prior docs — READ FIRST
 
@@ -36,6 +36,9 @@ Parity rule (LE-025/LE-031, updated): these two loaders must stay field-identica
 | Packing persistence | MainInterface/Models/TaskActionService.swift | `packingPlan/current`, generated session/kit/gate tasks, `readiness/current`, and completion writes |
 | Supplies kit | MainInterface/Models/KitEstimator.swift + Tasks/Task Cards/SuppliesKitView.swift | 12% box headroom, placeholder bundle pricing, one customization sheet, and concierge order |
 | Readiness gate | MainInterface/Models/ReadinessGate.swift + Tasks/Task Cards/PackingReadinessView.swift | T−1 evidence checklist with reserve-access prefill and nonblocking consequence copy |
+| User knowledge | MainInterface/Models/UserKnowledgeService.swift + functions/contextBuilder.js | Merge-only `{entries:{key:{value,source,updatedAt}}}` writer and assistant-context flattening |
+| Provider resolver | MainInterface/Models/ProviderDirectoryService.swift + functions/resolveProvider.js + providerDirectoryData.json | 46-entry backend-owned directory; exact-citation URL boundary; web-search fallback and resolved cache |
+| ISP plans | MainInterface/Models/ISPPlanService.swift + Tasks/Task Cards/SetupInternetFlow.swift + functions/ispPlansData.json | Five curated Firestore cards; pending-affiliate provider fallback; no address-level serviceability claim |
 | Identity | MainInterface/Models/UserState.swift | Address parse fixed 8413f2d (city/state only); full rebuild in v1 |
 | StoreKit | MainInterface/Models/SubscriptionManager.swift | COMPLIANCE — port verbatim, never touch |
 | Paywall | MainInterface/Views/Paywall/PaywallGateView.swift | COMPLIANCE — Review #3 fix lives here |
@@ -66,9 +69,11 @@ Parity rule (LE-025/LE-031, updated): these two loaders must stay field-identica
 - Packing plans persist at `users/{uid}/packingPlan/current`. `PACKING_SESSION_n`, `PACKING_SUPPLIES_KIT`, and `PACKING_READINESS_GATE` are engine-generated user task docs, not catalog rows; readiness evidence persists at `users/{uid}/readiness/current`
 - Inventory or move-date changes regenerate packing work while preserving completed source groups. Overdue reflow leaves the stable readiness gate at moveDate−1. The frozen daily dose admits at most one packing session and, on T−1, places readiness after packing
 - Until a supplier signs, `supplies_kit` uses the existing concierge submission: complete kit + identity payload, `matching_in_progress` task status, and `PEEZY KIT ORDER: ...` SMS or the exact `SMS notify not configured` fallback log
-- userKnowledge/{uid}: rules permit the client-owned document. Backend contextBuilder.js:40-47 expects {entries:{...}}; client writes flat dict; collection has never had a successful write → schema is greenfield, designed in v1
+- `userKnowledge/{uid}` is client-owned. Assessment, Settings, and in-app task writes merge `{entries:{key:{value,source,updatedAt}}}` through `UserKnowledgeService`; `contextBuilder.js` flattens that same shape. Empty-value calls are not a supported write contract
+- `providerDirectory` and `ispPlans` are backend-owned collections: authenticated clients may read them and may not write them. `resolveProvider` is authenticated and is the only runtime writer to resolved directory entries
+- No resolver payload may contain `url` unless its exact normalized HTTPS URL appears in the same payload's citations. Only high-confidence cited results are cached as `source: resolved`, `verified: false`; all other resolver outcomes are URL-free concierge
 - Firestore numbers: NSNumber cast pattern everywhere; no unguarded `as? Int`
-- Client-owned paths include taskCatalog (r), flowDefinitions (r), vendors (r), users/{uid}/tasks, user_assessments, identity, packingPlan, readiness, workflowResponses, userKnowledge, inventory, inventorySessions, and supportChat. Vendor and definition writes remain backend-only
+- Client-readable/backend-owned paths include taskCatalog, flowDefinitions, vendors, providerDirectory, and ispPlans. Client-owned paths include users/{uid}/tasks, user_assessments, identity, packingPlan, readiness, workflowResponses, userKnowledge, inventory, inventorySessions, and supportChat. Vendor, definition, provider-directory, and ISP-plan writes remain backend-only
 
 ## Lessons that map to nothing (do not re-apply)
 
@@ -80,9 +85,19 @@ Parity rule (LE-025/LE-031, updated): these two loaders must stay field-identica
 - Root: ~/Desktop/Peezy 4.0/ (source in nested "Peezy 4.0/"); never run from Documents/ (LE-001)
 - `unset CLAUDECODE` if nesting sessions (LE-002); macOS bash is 3.2 (LE-018)
 - Xcode 26.6: iOS platform + Metal toolchain must be installed (xcodebuild -downloadPlatform iOS / -downloadComponent MetalToolchain)
-- Deployed Firestore rules are not readable via firebase-tools 15.6.0; use the Rules REST API with functions/serviceAccountKey.json (read-only). Spec 05 Phase 0 reconciled the live waitlist rule and added authenticated reads for flowDefinitions and vendors
+- Deployed Firestore rules are not readable via firebase-tools 15.6.0; use the Rules REST API with functions/serviceAccountKey.json (read-only). **Remote evidence (Spec 07 Phase B acceptance):** the one approved rules deploy retained the reconciled waitlist rule and added authenticated read/no-client-write blocks for providerDirectory and ispPlans
 - Test creds: peezy-test-bot@test.peezyapp.com / PeezyTest2026!
-- Accessibility ids: 176 usages in 41 Swift files at Spec 06 close. **All new views require .accessibilityIdentifier() — mandatory convention**
+- Accessibility ids: 197 usages in 43 Swift files at Spec 07 close. **All new views require .accessibilityIdentifier() — mandatory convention**
+
+## Corrections from Spec 07 run (2026-07-27)
+
+- **userKnowledge now matches the backend contract.** All four client write paths use `UserKnowledgeService` to merge entry envelopes with a source and server timestamp; `contextBuilder` reads the same shape. The old “client writes flat dict / greenfield” note is retired.
+- **The provider directory contains 46 seeded providers.** Its current mix is 28 cited links, one cited call, and 17 concierge records. Name/alias matching is category-constrained so an identically named provider in the wrong vertical cannot escape the resolver boundary.
+- **Citation safety is enforced in one outbound sanitizer.** `resolveProvider` never returns a URL unless the exact HTTPS URL is present in its cleaned citations. High-confidence cited results write through as unverified `source: resolved` records; medium/low, fake, malformed, timeout, and failure results return URL-free concierge.
+- **The resolver's original default model had retired.** **Remote evidence (Spec 07 Phase B acceptance):** the sanctioned function target was corrected to the current pinned `claude-sonnet-4-6`; live unseeded resolution then returned a cited path and cached it successfully. Future callable work must verify configured model availability before deployment.
+- **ISP cards are curated candidates, not serviceability results.** Five backend-owned `ispPlans` documents drive `SETUP_INTERNET`. Every current affiliate value is `#AFFILIATE_PENDING`; the client logs this and opens the HTTPS provider URL. Exact-address qualification remains v1.1.
+- **Spec 07 deployment scope stayed bounded.** **Remote evidence (Spec 07 Phase B/C acceptance):** mutations were limited to the single approved rules diff, the `resolveProvider` function target, the 46-provider seed, and the five-plan ISP seed. No broad functions deploy, catalog seed, or other rules deploy occurred.
+- **Live simulator verification requires installing the newly built app.** **Remote evidence (Spec 07 Phase C acceptance):** the booted simulator initially held an older binary; after installing the current build, the ISP cards, canonical address heading, accessibility tree, Safari handoff, and completion enablement matched the acceptance contract.
 
 ## Corrections from Spec 06 run (2026-07-26)
 
@@ -152,6 +167,8 @@ Parity rule (LE-025/LE-031, updated): these two loaders must stay field-identica
 ## Open items (tracked, not forgotten)
 
 - kit supplier: replace concierge fulfillment with local supplier handoff when signed.
+- ISP affiliate URLs (Adam): replace all five `#AFFILIATE_PENDING` values with approved CJ/Impact HTTPS links.
+- Provider directory operations: review `source: resolved` entries and promote vetted records into the seeded, verified set.
 - Remove the getWorkflowQualifying flow-definition fallback after the one-release compatibility window
 - Reauthenticate Firebase CLI and verify the Phase 0 resetInventory deletion before the next full functions deploy
 - `ADAM_NOTIFY_NUMBER` must be configured and one live booking/quote SMS verified before launch

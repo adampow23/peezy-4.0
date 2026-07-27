@@ -1,5 +1,5 @@
 # CLAUDE.md — Peezy iOS App
-Generated from peezy-conventions-v2.md (audit @ f7e47ad + implementation through Spec 06 Phase C, d2fdf36). Every fact below is code-verified unless explicitly labeled as remote evidence. Read peezy-conventions-v2.md and peezy-v1-architecture.md before spec work.
+Generated from peezy-conventions-v2.md (audit @ f7e47ad + implementation through Spec 07 Phase D, 2026-07-27). Every fact below is code-verified unless explicitly labeled as remote evidence. Read peezy-conventions-v2.md and peezy-v1-architecture.md before spec work.
 
 ## What This Is
 
@@ -22,6 +22,7 @@ iOS moving concierge app. Swift/SwiftUI client + Firebase backend (Cloud Functio
 5. **Flow rendering is config-driven (Spec 04/05).** FlowEngineView renders flowDefinitions through the untouched component kit; TaskFlowRouter is a thin resolver (capture registry → admin-pushed → in-app map → Swift customs → flowDefinitions lookup → coming-right-up card). The 38 templated screens and the newFlowIds allowlist are deleted. Signed-in clients read definitions directly from Firestore; getWorkflowQualifying remains the one-release fallback.
 6. **Movers is the first full SPINE vertical (Spec 05).** BOOK_MOVERS runs inventory capture/reuse → scope → refinement → active in-radius vendor comparison → paywall → booking submission → confirmation. Current/new bedrooms and the storage trio no longer appear in the assessment sequence; the mover refinement view collects those values.
 7. **Packing is inventory-driven (Spec 06).** Inventory review creates a reverse-scheduled plan, one due packing session can join the frozen daily dose, incomplete sessions silently reflow, the one-bundle supplies kit uses the concierge callable until a supplier signs, and a stable readiness gate joins after packing on T−1.
+8. **Provider self-service is citation-gated (Spec 07).** The backend-owned directory has 46 seeded providers. `resolveProvider` may return a URL only when that exact HTTPS URL appears in its citations; high-confidence cited misses cache as `source: resolved`, `verified: false`, while every weaker/failure path is URL-free concierge. Five backend-owned ISP plans drive `SETUP_INTERNET`; all affiliate URLs remain pending and therefore fall back to official provider URLs.
 
 ## Live Data Paths (the only two)
 
@@ -50,6 +51,9 @@ Parity rule: these two loaders must stay field-identical except `completedAt` (M
 | Packing persistence | MainInterface/Models/TaskActionService.swift | Owns `packingPlan/current`, generated session/kit/gate task docs, `readiness/current`, and atomic completion writes |
 | Supplies kit | MainInterface/Models/KitEstimator.swift + Tasks/Task Cards/SuppliesKitView.swift | Pure 12%-headroom estimate, placeholder pricing, customize/dismiss, paywall, and `supplies_kit` concierge submission |
 | Readiness gate | MainInterface/Models/ReadinessGate.swift + Tasks/Task Cards/PackingReadinessView.swift | T−1 five-item evidence checklist with reserve-access prefill and nonblocking consequence copy |
+| User knowledge | MainInterface/Models/UserKnowledgeService.swift + functions/contextBuilder.js | Merge-only entry-envelope writes and assistant-context flattening |
+| Provider resolver | MainInterface/Models/ProviderDirectoryService.swift + functions/resolveProvider.js + providerDirectoryData.json | 46-entry directory, exact-citation URL boundary, web-search fallback, unverified resolved cache |
+| ISP plans | MainInterface/Models/ISPPlanService.swift + Tasks/Task Cards/SetupInternetFlow.swift + functions/ispPlansData.json | Five curated Firestore cards, canonical destination heading, pending-affiliate provider fallback |
 | Comparison UI | MainInterface/Views/ComparisonCardView.swift | Vertical-neutral vendor quote card |
 | Paywall policy | MainInterface/Models/PaywallPolicy.swift | requiresSubscription(for:) + PaywallGateSheet — the ONE sanctioned second PaywallGateView call site |
 | Identity | MainInterface/Models/UserState.swift | Address parse fixed 8413f2d (city/state only); full rebuild in v1 |
@@ -83,9 +87,10 @@ Parity rule: these two loaders must stay field-identical except `completedAt` (M
 - Inventory or move-date changes regenerate the plan while preserving completed source groups. Ordinary overdue reflow never changes the readiness due date. The daily dose admits at most one due packing session and places due readiness after it on T−1
 - `supplies_kit` remains concierge fulfillment: the callable saves the complete kit/identity envelope, marks `PACKING_SUPPLIES_KIT` `matching_in_progress`, and sends the `PEEZY KIT ORDER: ...` SMS family or logs `SMS notify not configured`
 - submitWorkflowAnswers response omits submissionId/message/estimatedResponseTime; client defaults mask it
-- userKnowledge/{uid}: rules permit the client-owned document. Backend contextBuilder.js:40-47 expects {entries:{...}}; collection has never had a successful write → schema is greenfield, designed in v1
+- `userKnowledge/{uid}` is client-owned and merge-written as `{entries:{key:{value,source,updatedAt}}}` by assessment, Settings, and in-app tasks; `contextBuilder.js` consumes that same shape
+- `providerDirectory` and `ispPlans` are authenticated-read/backend-write-only. The resolver is authenticated; no returned `url` is valid unless the identical cleaned HTTPS URL appears in the same payload's citations
 - Firestore numbers: NSNumber cast pattern everywhere; no unguarded `as? Int`
-- Client-owned paths include taskCatalog (r), flowDefinitions (r), vendors (r), users/{uid}/tasks, user_assessments, identity, packingPlan, readiness, workflowResponses, userKnowledge, inventory, inventorySessions, and supportChat. Vendor and definition writes remain backend-only
+- Client-readable/backend-owned paths include taskCatalog, flowDefinitions, vendors, providerDirectory, and ispPlans. Client-owned paths include users/{uid}/tasks, user_assessments, identity, packingPlan, readiness, workflowResponses, userKnowledge, inventory, inventorySessions, and supportChat
 - Conditions are `[String: [String]]` maps of category values ("Bank Account", not "Chase"); task IDs are UPPER_SNAKE_CASE
 
 ## Accessibility Convention (non-negotiable)
@@ -103,8 +108,8 @@ Every new view element that a user can tap, read as a result, or that represents
 - `unset CLAUDECODE` if nesting sessions (LE-002); macOS bash is 3.2 (LE-018)
 - Xcode 26.6: iOS platform + Metal toolchain must be installed (xcodebuild -downloadPlatform iOS / -downloadComponent MetalToolchain)
 - Build: `xcodebuild -project "Peezy 4.0.xcodeproj" -scheme "Peezy 4.0" -sdk iphonesimulator -destination "platform=iOS Simulator,name=iPhone 17 Pro" build` (no iPhone 16 sim exists)
-- Seed catalog: `cd functions && node seedTaskCatalog.js`. Spec 06 callable deploy: from repo root, `firebase deploy --only functions:submitWorkflowAnswers --project peezy-1ecrdl`. Do not widen a spec-scoped deploy without explicit authorization
-- Deployed Firestore rules are not readable via firebase-tools 15.6.0; use the Rules REST API with functions/serviceAccountKey.json (read-only). Spec 05 Phase 0 reconciled the waitlist rule and added authenticated reads for flowDefinitions and vendors
+- Seed catalog: `cd functions && node seedTaskCatalog.js`. Deploy only targets a spec explicitly sanctions. **Remote evidence (Spec 07 Phase B/C acceptance):** the complete run scope was one approved rules diff, `functions:resolveProvider`, `node functions/seedProviderDirectory.js`, and `node functions/seedIspPlans.js`
+- Deployed Firestore rules are not readable via firebase-tools 15.6.0; use the Rules REST API with functions/serviceAccountKey.json (read-only). The checked-in rules define authenticated read/no-client-write blocks for flowDefinitions, vendors, providerDirectory, and ispPlans; **remote evidence (Spec 07 Phase B acceptance)** confirmed those provider/ISP read and denial behaviors live
 - Test creds: peezy-test-bot@test.peezyapp.com / PeezyTest2026!
 - Code style: Swift 5.9+/iOS 17+, SwiftUI only, async/await, @Observable for new types (exceptions listed in Frozen Regions)
 
@@ -119,3 +124,5 @@ Every new view element that a user can tap, read as a result, or that represents
 ## Open Items
 
 - kit supplier: replace concierge fulfillment with local supplier handoff when signed.
+- ISP affiliate URLs (Adam): replace the five `#AFFILIATE_PENDING` values with approved CJ/Impact HTTPS links.
+- Review `providerDirectory` records with `source: resolved`; promote vetted entries into the seeded, verified set.

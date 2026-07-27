@@ -1,5 +1,5 @@
 # Peezy v1 Catalog Sheet — for Adam's row-by-row review
-Source: taskCatalogData.json (56 tasks, verified = deployed count). Mark any row you disagree with; everything unmarked locks into Spec 02.
+Source: taskCatalogData.json (45 live catalog rows in the locally validated source). This sheet preserves the original review verdicts, with later implementation state called out explicitly.
 
 Execution models: **SPINE** (vendor workflow: capture→compare→book) · **RESOLVER** (universal provider flow — user names company, LLM resolves the path, confidence-tiered, concierge floor) · **DRAFT** (Peezy pre-writes the letter/email/form; tap = approve/send) · **LINK** (deep-link + identity prefill) · **PHYSICAL** (honest off-app work; completion moves the readiness picture) · **CONCIERGE** (n8n human execution)
 
@@ -11,7 +11,7 @@ Execution models: **SPINE** (vendor workflow: capture→compare→book) · **RES
 |---|---|---|---|---|
 | SCAN_INVENTORY (99) | CORE | in-app | Full | The root. Unchanged |
 | BOOK_MOVERS (94) | CORE | SPINE | Full | Vertical #1. Pricing engine + rate cards |
-| SETUP_INTERNET (81) | CORE | SPINE-lite | Full | Curated KC plan cards + affiliate handoff. Revenue day one |
+| SETUP_INTERNET (81) | CORE | SPINE-lite | Full | Five Firestore-backed KC-area plan cards; pending affiliate links fall back to official provider URLs. Address-level serviceability remains v1.1 |
 | RENT_TRUCK (91) | KEEP | LINK | Thin | U-Haul deep link + prefill; affiliate API v1.1 |
 | BOOK_CLEANERS (25) | KEEP | SPINE | Full when vendors sign | **Urgency 25 is wrong** — cleaning happens late but *booking* needs lead time. Reweight to ~55 |
 | REMOVE_ITEMS (70) ⚠ | KEEP | SPINE | Full when vendors sign | Dead: wantToSell always empty. Fix key + recondition to hasDeclutter=Yes (donation/junk path regardless of sell intent) |
@@ -69,7 +69,7 @@ Execution models: **SPINE** (vendor workflow: capture→compare→book) · **RES
 The urgency scale doubles as reverse chronology (high = do early, low = do near move day) — RETURN_KEYS at 1 and DEFROST at 8 prove it's deliberate and correct. Only two reweights: BOOK_CLEANERS 25→~55, TRANSFER_PHARMACY 55→~75.
 
 ## Net result
-56 tasks → **~40 catalog rows** (after 17 merge into 6, 1 transform, 7 adds), zero capability lost, 4 production-dead tasks resurrected. Every row has an execution model; RESOLVER covers the entire long tail with one engine.
+Original Spec 02 projection: 56 tasks → **~40 catalog rows** after consolidation. Current implementation: **45 live catalog rows** after Spec 06; engine-generated packing work remains catalog-external. RESOLVER now covers provider rows with a cited self-service path or concierge floor.
 
 ## Spec 02 consequences (locked once you sign off)
 1. Persistence fixes now include hasVehicles + wantToSell/hasDeclutter + hasStorage (4 dead tasks + 1 missing vertical hang on them)
