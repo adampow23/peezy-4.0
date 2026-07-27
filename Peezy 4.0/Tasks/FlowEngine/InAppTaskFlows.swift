@@ -16,8 +16,8 @@
 //
 //  All four are routed by the explicit in-app map (Phase C), complete via
 //  onComplete → PeezyHomeViewModel.completeTaskFlow (selfServiceOnly →
-//  Completed). Assessment-key writes mirror the Settings pattern:
-//  users/{uid}/user_assessments first doc + best-effort userKnowledge.
+//  Completed). Assessment-key writes update users/{uid}/user_assessments first,
+//  then best-effort mirror into the entries-shaped userKnowledge document.
 //
 
 import SwiftUI
@@ -29,8 +29,7 @@ import FirebaseFirestore
 enum InAppTaskWrites {
 
     /// Updates the assessment doc (first doc — Settings' saveMoveDetailField
-    /// pattern) and mirrors to userKnowledge best-effort (that write fails
-    /// under currently deployed rules; try? matches Settings).
+    /// pattern) and mirrors to userKnowledge best-effort.
     /// Returns the merged assessment data for downstream generation.
     @discardableResult
     static func updateAssessmentKeys(_ keys: [String: Any], userId: String) async throws -> [String: Any] {
@@ -45,7 +44,11 @@ enum InAppTaskWrites {
             try await doc.reference.updateData(keys)
             merged = doc.data()
         }
-        try? await db.collection("userKnowledge").document(userId).updateData(keys)
+        try? await UserKnowledgeService.merge(
+            keys,
+            source: .assessment,
+            userId: userId
+        )
 
         for (key, value) in keys { merged[key] = value }
         return merged

@@ -1,43 +1,39 @@
-# Spec 06 Phase D — Documentation sync (PERIPHERY)
+# Spec 07 Phase A — userKnowledge schema adoption (PERIPHERY)
 #
 # ACCEPTANCE CONTRACT (written before edits)
-# D1 GIVEN committed Spec 06 code and live catalog verification, WHEN conventions
-#    are synchronized, THEN catalog facts read 45 total (workflow 32, off-app 8,
-#    in-app 4, in-app-inventory 1; survey 32, provide_info 13; workflowId 33).
-# D2 GIVEN Phases A-C, WHEN conventions and CLAUDE.md are read, THEN they describe
-#    the packing plan, one-session dose/reflow contract, generated task IDs, supplies
-#    kit/concierge order, readiness/current evidence, and the exact sanctioned deploys.
-# D3 GIVEN no supplier is signed, WHEN open items are read, THEN both ground-truth
-#    documents carry exactly: "kit supplier: replace concierge fulfillment with local
-#    supplier handoff when signed."
-# D4 GIVEN protocol section 6, WHEN Phase D closes, THEN SESSION_NOTES.md records what
-#    the spec got wrong, surprises, missing/misleading conventions, and concrete edits.
-# D5 GIVEN the documentation diff, WHEN a fresh-context validator compares it with
-#    commits 0b7eb08/f2a3e16/d2fdf36 and repository data, THEN D1-D4 each receive
-#    PASS/FAIL evidence and no implementation/deploy work occurs.
+# A1 GIVEN an assessment save, WHEN userKnowledge/{uid} is read back, THEN every
+#    stored answer is nested at entries.<key> with value, source:"assessment",
+#    and updatedAt, and the write uses merge semantics.
+# A2 GIVEN any Settings move-detail edit (date/current/new address), WHEN its
+#    userKnowledge mirror completes, THEN only the edited entry is merged with
+#    source:"settings" and unrelated assessment entries remain present.
+# A3 GIVEN an in-app assessment-key update, WHEN its best-effort mirror runs,
+#    THEN it uses the entries schema with source:"assessment".
+# A4 GIVEN a test-bot entries-shaped document, WHEN contextBuilder flattens it,
+#    THEN the harness returns non-empty mapped values from those entries.
+# A5 GIVEN the complete Phase A diff, WHEN a fresh-context validator receives
+#    this contract, the spec, diff, and build/harness evidence, THEN A1-A4 each
+#    receive an evidence-backed PASS or FAIL; the writer does not self-grade.
 #
-# NEEDS-CLARIFICATION (bounded, reversible interpretations)
-# - The protocol requests a SESSION_NOTES "block" but no SESSION_NOTES file exists.
-#   Create root SESSION_NOTES.md as an append-only closeout log rather than inventing
-#   a hidden tool format or modifying an unrelated historical document.
-# - The supplier open-item wording is copied verbatim, including its terminal period.
-# - Catalog totals are repository-derived after retiring BUY_PACKING_SUPPLIES; generated
-#   per-user PACKING_* tasks remain catalog-external and do not increase the 45 rows.
+# NEEDS-CLARIFICATION (bounded, reversible interpretation)
+# - The spec says four write sites: AssessmentDataManager + three Settings sites.
+#   Current code instead has one AssessmentDataManager writer, one shared Settings
+#   date writer, two identity-only Settings address edits, and one in-app writer.
+#   Migrate every actual writer and add schema mirrors for the three Settings move
+#   details (date/current/new address), preserving identity as the canonical store.
 #
 # EDIT SITES
 PHASE_MANIFEST
-peezy-conventions-v2.md
-CLAUDE.md
-SESSION_NOTES.md
+Peezy 4.0/MainInterface/Models/UserKnowledgeService.swift
+Peezy 4.0/Assessment/AssessmentModels/AssessmentDataManager.swift
+Peezy 4.0/Menu/PeezySettingsView.swift
+Peezy 4.0/Tasks/FlowEngine/InAppTaskFlows.swift
 
 # READ SITES
-# peezy-build-spec-06.md Phase D — required targets and exact open item
-# peezy-execution-protocol.md §6 — SESSION_NOTES improvement loop
-# peezy-v1-architecture.md §7 — intended packing vertical contract
-# functions/taskCatalogData.json — committed 45-row source of catalog counts
-# functions/getWorkflowQualifying.js — supplies_kit task/SMS behavior
-# Peezy 4.0/MainInterface/Models/PackingPlanEngine.swift — scheduling/reflow contract
-# Peezy 4.0/MainInterface/Models/TaskActionService.swift — persistence/task contracts
-# Peezy 4.0/MainInterface/Models/DailyDoseEngine.swift — packing/readiness dose order
-# Peezy 4.0/MainInterface/Models/KitEstimator.swift — kit/headroom/pricing constants
-# Peezy 4.0/MainInterface/Models/ReadinessGate.swift — evidence schema
+# peezy-build-spec-07.md Phase A
+# functions/contextBuilder.js:40-80
+# firestore.rules:27-31
+# Peezy 4.0/MainInterface/Models/IdentityService.swift
+# Peezy 4.0/Assessment/AssessmentModels/AssessmentDataManager.swift
+# Peezy 4.0/Menu/PeezySettingsView.swift
+# Peezy 4.0/Tasks/FlowEngine/InAppTaskFlows.swift

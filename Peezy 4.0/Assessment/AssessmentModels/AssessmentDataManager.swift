@@ -284,8 +284,7 @@ class AssessmentDataManager: ObservableObject {
             .addDocument(data: assessmentData)
 
         // Identity doc (v1 identity object) — additive; user_assessments keeps
-        // writing for backend compatibility this phase. Ordered before the
-        // userKnowledge write, which fails under currently deployed rules.
+        // writing for backend compatibility this phase.
         let identity = IdentityService.identity(
             fromAssessment: assessmentData,
             email: Auth.auth().currentUser?.email,
@@ -294,10 +293,12 @@ class AssessmentDataManager: ObservableObject {
         )
         try await IdentityService.shared.save(identity, userId: userId)
 
-        // Write to userKnowledge (keyed by uid — overwrites)
-        try await db.collection("userKnowledge")
-            .document(userId)
-            .setData(assessmentData, merge: true)
+        // Mirror assessment answers into the assistant-context schema.
+        try await UserKnowledgeService.merge(
+            assessmentData,
+            source: .assessment,
+            userId: userId
+        )
     }
     
     // MARK: - Reset

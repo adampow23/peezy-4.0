@@ -795,6 +795,12 @@ struct PeezySettingsView: View {
                     identity.isInterstate = result.isInterstate
                 }
                 try await IdentityService.shared.save(identity, userId: uid)
+                let knowledgeKey = kind == .current ? "currentAddress" : "newAddress"
+                try await UserKnowledgeService.merge(
+                    [knowledgeKey: raw],
+                    source: .settings,
+                    userId: uid
+                )
                 let updated = identity
                 await MainActor.run {
                     userState?.apply(updated)
@@ -828,7 +834,11 @@ struct PeezySettingsView: View {
                 guard let doc = snapshot.documents.first else { return }
 
                 try await doc.reference.updateData([key: value])
-                try? await db.collection("userKnowledge").document(uid).updateData([key: value])
+                try? await UserKnowledgeService.merge(
+                    [key: value],
+                    source: .settings,
+                    userId: uid
+                )
             } catch {
                 await MainActor.run {
                     toastMessage = "Failed to save: \(error.localizedDescription)"
