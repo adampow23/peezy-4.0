@@ -11,6 +11,7 @@
 import Foundation
 import CoreLocation
 import FirebaseAuth
+import FirebaseCrashlytics
 import FirebaseFirestore
 
 final class IdentityService {
@@ -88,7 +89,11 @@ final class IdentityService {
             displayName: user?.displayName,
             moveDistanceMiles: nil
         )
-        try? await save(identity, userId: userId)
+        do {
+            try await save(identity, userId: userId)
+        } catch {
+            Crashlytics.crashlytics().record(error: error)
+        }
         return identity
     }
 

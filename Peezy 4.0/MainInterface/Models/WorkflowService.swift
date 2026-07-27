@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import FirebaseCrashlytics
 import FirebaseFunctions
 
 @Observable
@@ -28,18 +29,23 @@ class WorkflowService {
             "userId": userId
         ]
 
-        let result = try await callable.call(payload)
+        do {
+            let result = try await callable.call(payload)
 
-        guard let data = result.data as? [String: Any] else {
-            throw WorkflowServiceError.invalidResponse
+            guard let data = result.data as? [String: Any] else {
+                throw WorkflowServiceError.invalidResponse
+            }
+
+            return WorkflowSubmissionResponse(
+                success: data["success"] as? Bool ?? false,
+                submissionId: data["submissionId"] as? String ?? "",
+                message: data["message"] as? String ?? "",
+                estimatedResponseTime: data["estimatedResponseTime"] as? String ?? "24-48 hours"
+            )
+        } catch {
+            Crashlytics.crashlytics().record(error: error)
+            throw error
         }
-
-        return WorkflowSubmissionResponse(
-            success: data["success"] as? Bool ?? false,
-            submissionId: data["submissionId"] as? String ?? "",
-            message: data["message"] as? String ?? "",
-            estimatedResponseTime: data["estimatedResponseTime"] as? String ?? "24-48 hours"
-        )
     }
 }
 

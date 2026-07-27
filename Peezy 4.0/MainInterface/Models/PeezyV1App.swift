@@ -8,6 +8,7 @@
 import SwiftUI
 import FirebaseCore
 import FirebaseAuth
+import FirebaseCrashlytics
 import GoogleSignIn
 
 @main
@@ -16,6 +17,7 @@ struct PeezyV1App: App {
     // This runs ONCE when the app launches, before any views appear
     init() {
         FirebaseApp.configure()
+        _ = Crashlytics.crashlytics()
         // Start StoreKit transaction listener early
         _ = SubscriptionManager.shared
     }

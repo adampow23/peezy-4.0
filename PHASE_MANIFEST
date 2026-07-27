@@ -1,39 +1,47 @@
 # Chip Measurement — Phase A: Crashlytics (PERIPHERY)
 #
 # ACCEPTANCE CONTRACT (written before Phase A implementation edits)
-# A1 GIVEN the existing firebase-ios-sdk package reference, WHEN the app target's
-#    package products are inspected, THEN FirebaseCrashlytics is available to the
-#    app without introducing a second Firebase package or editing project.pbxproj.
-# A2 GIVEN Firebase configuration succeeds, WHEN the app launches, THEN
-#    Crashlytics initializes alongside Firebase with no user-visible behavior change.
-# A3 GIVEN assessment save, identity save, or workflow submission fails at an
-#    existing caught-and-swallowed boundary, WHEN the error is handled, THEN the
-#    same behavior is preserved and Crashlytics records the non-fatal error.
-# A4 GIVEN a forced local test crash, WHEN the built app is run, THEN Crashlytics
-#    console evidence or an API read-back proves the crash report arrived.
-# A5 GIVEN the Phase A diff, WHEN the exact iPhone 17 Pro build, acceptance checks,
-#    fresh-context validator, and diff review run, THEN A1-A4 receive an
-#    evidence-backed PASS/FAIL; no deployment occurs and project.pbxproj is unchanged.
+# A1 GIVEN Firebase config succeeds and the separately committed app-target
+#    dependencies are present, WHEN the app launches, THEN Crashlytics initializes
+#    alongside Firebase without changing the visible launch flow.
+# A2 GIVEN assessment persistence fails, WHEN AssessmentCoordinator swallows the
+#    failure and continues task generation, THEN Crashlytics records the same error
+#    and the existing saveError/continuation behavior is unchanged.
+# A3 GIVEN identity migration persistence fails, WHEN IdentityService preserves its
+#    best-effort return behavior, THEN Crashlytics records the write failure and the
+#    built identity is still returned.
+# A4 GIVEN workflow submission fails, WHEN WorkflowService propagates the error to
+#    its existing caller behavior, THEN Crashlytics records the error exactly once at
+#    the shared service boundary and still throws the original error.
+# A5 GIVEN a temporary DEBUG-only forced-crash trigger, WHEN the installed simulator
+#    app crashes outside the debugger and relaunches, THEN Crashlytics console or API
+#    evidence proves receipt; the trigger is removed before commit.
+# A6 GIVEN the final Phase A diff, WHEN grep checks, the exact iPhone 17 Pro build,
+#    fresh-context validation, and diff review run, THEN A1-A5 receive an
+#    evidence-backed PASS/FAIL; no deployment occurs and project.pbxproj remains
+#    unchanged from prerequisite commit bf3af26.
 #
-# NEEDS-CLARIFICATION
-# - The app target currently has no FirebaseCrashlytics product dependency. The
-#   chip explicitly requires STOP if adding that module requires project.pbxproj;
-#   no source implementation proceeds unless read-only inspection proves otherwise.
+# NEEDS-CLARIFICATION (bounded, reversible interpretations)
+# - WorkflowService has no swallowed catch of its own. The shared service boundary
+#   records and rethrows so every caller retains its current behavior without editing
+#   multiple views or double-reporting a single submission failure.
+# - Identity migration's `try?` write is converted to do/catch solely to expose the
+#   same swallowed error to Crashlytics; its nil/success return contract is unchanged.
 #
-# EDIT SITES (only after A1 is unblocked)
+# EDIT SITES
 # PHASE_MANIFEST
-# SESSION_NOTES.md (blocked-session closeout only)
 # Peezy 4.0/MainInterface/Models/PeezyV1App.swift
 # Peezy 4.0/Assessment/AssessmentModels/AssessmentCoordinator.swift
 # Peezy 4.0/MainInterface/Models/IdentityService.swift
 # Peezy 4.0/MainInterface/Models/WorkflowService.swift
+# Peezy 4.0/Documents/measurement-crashlytics-receipt.png
 #
 # READ SITES
 # peezy-conventions-v2.md
 # peezy-execution-protocol.md
 # peezy-chip-measurement.md
 # CLAUDE.md
-# Peezy 4.0.xcodeproj/project.pbxproj (read-only; protected)
+# Peezy 4.0.xcodeproj/project.pbxproj (read-only; protected again)
 # Peezy 4.0.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
 # Peezy 4.0/MainInterface/Models/PeezyV1App.swift
 # Peezy 4.0/Assessment/AssessmentModels/AssessmentDataManager.swift

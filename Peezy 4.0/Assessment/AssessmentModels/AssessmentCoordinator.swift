@@ -15,6 +15,7 @@ import SwiftUI
 import UIKit
 import Combine
 import FirebaseAuth
+import FirebaseCrashlytics
 
 // MARK: - Assessment Input Steps
 
@@ -641,6 +642,7 @@ class AssessmentCoordinator: ObservableObject {
         do {
             try await dataManager.saveAssessment()
         } catch {
+            Crashlytics.crashlytics().record(error: error)
             #if DEBUG
             print("⚠️ Assessment save failed: \(error) — continuing with task generation")
             #endif
