@@ -37,6 +37,10 @@ function categoryFamily(value) {
   return normalize(category);
 }
 
+function providerMatchesCategory(provider, category) {
+  return categoryFamily(provider?.category) === categoryFamily(category);
+}
+
 function cleanText(value, maxLength) {
   return typeof value === "string" ? value.trim().slice(0, maxLength) : "";
 }
@@ -147,7 +151,7 @@ async function lookupDirectory(name, category) {
   return providers.find((provider) => {
     const nameMatches = [provider.name, ...(Array.isArray(provider.aliases) ? provider.aliases : [])]
       .some((candidate) => normalize(candidate) === key);
-    return nameMatches && categoryFamily(provider.category) === categoryFamily(category);
+    return nameMatches && providerMatchesCategory(provider, category);
   }) || null;
 }
 
@@ -324,6 +328,7 @@ module.exports = {
     directoryRecordPayload,
     normalize,
     parseSearchResponse,
+    providerMatchesCategory,
     resolvedDocument,
     resolveProviderRequest,
     safePayload,

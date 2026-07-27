@@ -23,6 +23,8 @@ async function run() {
   assert.equal(_test.categoryFamily("auto insurance"), "insurance");
   assert.equal(_test.categoryFamily("yoga studio"), "membership");
   assert.notEqual(_test.categoryFamily("veterinarian"), _test.categoryFamily("insurance"));
+  assert.equal(_test.providerMatchesCategory({ category: "subscription" }, "streaming"), true);
+  assert.equal(_test.providerMatchesCategory({ category: "subscription" }, "membership"), false);
 
   const poisonedSeed = _test.directoryRecordPayload({
     providerId: "poisoned",
