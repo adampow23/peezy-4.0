@@ -1,56 +1,43 @@
-# Spec 06 Phase C — T-1 readiness gate + pace consequence (PERIPHERY)
+# Spec 06 Phase D — Documentation sync (PERIPHERY)
 #
-# ACCEPTANCE CONTRACT (written before build)
-# C1 GIVEN a persisted packing plan, WHEN its task documents are generated or the
-#    move date regenerates, THEN exactly one PACKING_READINESS_GATE in-app task is
-#    scheduled for moveDate−1 and ordinary packing reflow never changes that date.
-# C2 GIVEN the T−1 calendar day, WHEN a new frozen dose is computed, THEN the gate
-#    joins after any due packing session; before T−1 it does not join, and an
-#    incomplete overdue gate remains eligible rather than being reflowed away.
-# C3 GIVEN existing reserve_access_old/new workflow responses, WHEN readiness first
-#    loads, THEN elevator/parking reserved is pre-filled true while the remaining
-#    checklist reflects packing completion or defaults false.
-# C4 GIVEN any checklist row, WHEN it is tapped, THEN all five item booleans persist
-#    to users/{uid}/readiness/current; completedAt exists iff all five are true, and
-#    a fresh read returns the same values.
-# C5 GIVEN an incomplete gate after the T−1 calendar day ends, WHEN the card renders,
-#    THEN it shows exactly one locked consequence line and does not block or loop.
-# C6 GIVEN reflow requiring >1.5 remaining sessions/day, WHEN the next packing card
-#    renders, THEN it shows the exact locked behind-pace nudge; an ordinary session
-#    does not show that line.
-# C7 GIVEN the Phase C diff, WHEN a fresh-context validator runs current-workspace
-#    tests plus live iPhone/Firestore acceptance, THEN C1–C6 each receive PASS/FAIL
-#    evidence and isolated fixture data is removed.
+# ACCEPTANCE CONTRACT (written before edits)
+# D1 GIVEN committed Spec 06 code and live catalog verification, WHEN conventions
+#    are synchronized, THEN catalog facts read 45 total (workflow 32, off-app 8,
+#    in-app 4, in-app-inventory 1; survey 32, provide_info 13; workflowId 33).
+# D2 GIVEN Phases A-C, WHEN conventions and CLAUDE.md are read, THEN they describe
+#    the packing plan, one-session dose/reflow contract, generated task IDs, supplies
+#    kit/concierge order, readiness/current evidence, and the exact sanctioned deploys.
+# D3 GIVEN no supplier is signed, WHEN open items are read, THEN both ground-truth
+#    documents carry exactly: "kit supplier: replace concierge fulfillment with local
+#    supplier handoff when signed."
+# D4 GIVEN protocol section 6, WHEN Phase D closes, THEN SESSION_NOTES.md records what
+#    the spec got wrong, surprises, missing/misleading conventions, and concrete edits.
+# D5 GIVEN the documentation diff, WHEN a fresh-context validator compares it with
+#    commits 0b7eb08/f2a3e16/d2fdf36 and repository data, THEN D1-D4 each receive
+#    PASS/FAIL evidence and no implementation/deploy work occurs.
 #
 # NEEDS-CLARIFICATION (bounded, reversible interpretations)
-# - The spec shorthand users/{uid}/readiness needs a concrete document id. Use
-#   users/{uid}/readiness/current, matching packingPlan/current and identity/identity.
-# - The single reservation checkbox represents every applicable RESERVE_ACCESS task:
-#   prefill true when every generated old/new access task has a nonempty corresponding
-#   workflow response; if task docs are absent but a response exists, response presence
-#   is the safe backward-compatible signal. No reservation vendor semantics are invented.
-# - "At day's end" means from the start of move day onward (the first instant after
-#   the moveDate−1 calendar day). The warning is display-only; the gate remains usable.
-# - Readiness is scheduled work in addition to the at-most-one packing-session rule.
-#   On T−1 it follows the packing session so the first-night bag can be completed first.
+# - The protocol requests a SESSION_NOTES "block" but no SESSION_NOTES file exists.
+#   Create root SESSION_NOTES.md as an append-only closeout log rather than inventing
+#   a hidden tool format or modifying an unrelated historical document.
+# - The supplier open-item wording is copied verbatim, including its terminal period.
+# - Catalog totals are repository-derived after retiring BUY_PACKING_SUPPLIES; generated
+#   per-user PACKING_* tasks remain catalog-external and do not increase the 45 rows.
 #
 # EDIT SITES
 PHASE_MANIFEST
-Peezy 4.0/MainInterface/Models/ReadinessGate.swift
-Peezy 4.0/MainInterface/Models/DailyDoseEngine.swift
-Peezy 4.0/MainInterface/Models/PeezyCard.swift
-Peezy 4.0/MainInterface/Models/TaskActionService.swift
-Peezy 4.0/MainInterface/Models/TaskFlowRouter.swift
-Peezy 4.0/Tasks/Task Cards/PackingSessionView.swift
-Peezy 4.0/Tasks/Task Cards/PackingReadinessView.swift
-Tests/ReadinessGateTests.swift
-Peezy 4.0Tests/PackingDoseTests.swift
+peezy-conventions-v2.md
+CLAUDE.md
+SESSION_NOTES.md
 
 # READ SITES
-# peezy-build-spec-06.md Phase C — exact checklist/copy and acceptance
-# peezy-v1-architecture.md §7 — T−1 evidence-layer contract
-# Peezy 4.0/MainInterface/Models/PackingPlanEngine.swift — reflow threshold + flag
-# Peezy 4.0/MainInterface/Models/MoveScopeFactory.swift — reserve-access task IDs
-# Peezy 4.0/Tasks/FlowEngine/FlowEngineView.swift — answer persistence envelope
-# functions/getWorkflowQualifying.js — workflowResponses answer shape
-# firestore.rules — recursive users/{uid}/{document=**} owner rule already covers path
+# peezy-build-spec-06.md Phase D — required targets and exact open item
+# peezy-execution-protocol.md §6 — SESSION_NOTES improvement loop
+# peezy-v1-architecture.md §7 — intended packing vertical contract
+# functions/taskCatalogData.json — committed 45-row source of catalog counts
+# functions/getWorkflowQualifying.js — supplies_kit task/SMS behavior
+# Peezy 4.0/MainInterface/Models/PackingPlanEngine.swift — scheduling/reflow contract
+# Peezy 4.0/MainInterface/Models/TaskActionService.swift — persistence/task contracts
+# Peezy 4.0/MainInterface/Models/DailyDoseEngine.swift — packing/readiness dose order
+# Peezy 4.0/MainInterface/Models/KitEstimator.swift — kit/headroom/pricing constants
+# Peezy 4.0/MainInterface/Models/ReadinessGate.swift — evidence schema

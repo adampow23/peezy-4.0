@@ -1,5 +1,5 @@
 # Peezy Conventions v2 — Ground Truth
-Supersedes peezy-conventions.md. Source: V1_ARCHITECTURE_MAP.md (audit @ f7e47ad, 2026-07-23) + implementation through the 2026-07-26 pricing-calibration chip. Every fact below is code-verified unless explicitly labeled as remote evidence.
+Supersedes peezy-conventions.md. Source: V1_ARCHITECTURE_MAP.md (audit @ f7e47ad, 2026-07-23) + implementation through Spec 06 Phase C (d2fdf36). Every fact below is code-verified unless explicitly labeled as remote evidence.
 
 ## Corrections to prior docs — READ FIRST
 
@@ -7,7 +7,7 @@ These four false premises appeared in peezy-conventions.md, the launch plan, and
 
 1. **Paywall gate is post-assessment, not "after three completed tasks."** The three-task trigger does not exist anywhere in code (exhaustive grep). Current behavior: hard gate at CompletionFlowView.swift:52-58, dismissible via X (PaywallGateView:31-41), so the app is reachable unsubscribed. This is the reviewed-and-approved Review #3 behavior. Changing it is a product decision, not a bug fix.
 2. **Four tabs, not three:** Home / Tasks / Chat / Settings. Chat = SupportChatView (live, T06-tested, Firestore-backed support chat). The *AI* chat was removed; support chat was not.
-3. **Catalog v2 is 46 tasks (Spec 04).** actionType: workflow=32, off-app=9, in-app=4, in-app-inventory=1. taskType: survey=32, provide_info=14. 33 rows carry a workflowId, including scan_inventory. Flow content lives in 25 Firestore `flowDefinitions` documents.
+3. **Catalog v2 is 45 tasks (Spec 06).** actionType: workflow=32, off-app=8, in-app=4, in-app-inventory=1. taskType: survey=32, provide_info=13. 33 rows carry a workflowId, including scan_inventory. `BUY_PACKING_SUPPLIES` is retired; the Spec 06 `PACKING_*` tasks are generated per-user and catalog-external. Flow content lives in 25 Firestore `flowDefinitions` documents.
 4. **WorkflowManager.swift does not exist.** TimelineService is dead (zero callers, deleted in cleanup). The live loading paths are exactly two: PeezyHomeViewModel.loadTasks() (Home, one-shot) and TasksStore listener → PeezyCardFirestoreMapper.card() (Tasks tab).
 
 ## Live data paths (the only two)
@@ -32,12 +32,16 @@ Parity rule (LE-025/LE-031, updated): these two loaders must stay field-identica
 | Vendor data | MainInterface/Models/Vendor.swift + functions/vendorsData.json | Backend-owned vendor/rate-card schema; active filter; three placeholder mover records |
 | Pricing | MainInterface/Models/PricingEngine.swift + PricingConstants.swift + MoveScopeFactory.swift | Pure rate-card math, centralized LOCKED-pending-calibration constants, scope adapter |
 | Movers spine | MainInterface/Models/MoversFlowViewModel.swift + Tasks/Task Cards/FindMoversFlow.swift | Capture/reuse through booking confirmation |
+| Packing plan | MainInterface/Models/PackingPlanEngine.swift + PackingConstants.swift | Pure locked-order reverse scheduler, completion preservation, overdue reflow, and pace compression flag |
+| Packing persistence | MainInterface/Models/TaskActionService.swift | `packingPlan/current`, generated session/kit/gate tasks, `readiness/current`, and completion writes |
+| Supplies kit | MainInterface/Models/KitEstimator.swift + Tasks/Task Cards/SuppliesKitView.swift | 12% box headroom, placeholder bundle pricing, one customization sheet, and concierge order |
+| Readiness gate | MainInterface/Models/ReadinessGate.swift + Tasks/Task Cards/PackingReadinessView.swift | T−1 evidence checklist with reserve-access prefill and nonblocking consequence copy |
 | Identity | MainInterface/Models/UserState.swift | Address parse fixed 8413f2d (city/state only); full rebuild in v1 |
 | StoreKit | MainInterface/Models/SubscriptionManager.swift | COMPLIANCE — port verbatim, never touch |
 | Paywall | MainInterface/Views/Paywall/PaywallGateView.swift | COMPLIANCE — Review #3 fix lives here |
 | Flow kit | Tasks/Task Card Components/ (17 hubs) | Renderer library for the config-driven engine |
 | Flow screens | Tasks/Task Cards/ | Remaining custom flows, capture flow, and mover stage views |
-| Submission | MainInterface/Models/WorkflowService.swift | LE-029 callable pattern; 27 consumers |
+| Submission | MainInterface/Models/WorkflowService.swift | LE-029 callable pattern; 11 live construction call sites across 10 Swift files |
 | Parser | TaskConditionerParser.swift | AND keys / OR values / strict-cast fail-false :69-74 |
 | Generation | TaskGenerationService | NSNumber cast canonical at :73 |
 | Inventory | Inventory/ + functions/processInventory.js | Pipeline frozen regions below |
@@ -59,9 +63,12 @@ Parity rule (LE-025/LE-031, updated): these two loaders must stay field-identica
 - Zero client-side webhook URLs. Mover booking and quote-request payloads first land in the Firestore workflowSubmissions audit, then submitWorkflowAnswers attempts a direct best-effort Twilio SMS. Booking notify = direct Twilio SMS; env vars in functions/.env (Adam-owned). A missing Twilio value logs `SMS notify not configured` without failing the submission
 - Server task-doc statuses `pending` and `matching_in_progress` both have TaskStatus cases. `pending_matching` exists only on workflowSubmissions docs
 - submitWorkflowAnswers response omits submissionId/message/estimatedResponseTime; client defaults mask it
+- Packing plans persist at `users/{uid}/packingPlan/current`. `PACKING_SESSION_n`, `PACKING_SUPPLIES_KIT`, and `PACKING_READINESS_GATE` are engine-generated user task docs, not catalog rows; readiness evidence persists at `users/{uid}/readiness/current`
+- Inventory or move-date changes regenerate packing work while preserving completed source groups. Overdue reflow leaves the stable readiness gate at moveDate−1. The frozen daily dose admits at most one packing session and, on T−1, places readiness after packing
+- Until a supplier signs, `supplies_kit` uses the existing concierge submission: complete kit + identity payload, `matching_in_progress` task status, and `PEEZY KIT ORDER: ...` SMS or the exact `SMS notify not configured` fallback log
 - userKnowledge/{uid}: rules permit the client-owned document. Backend contextBuilder.js:40-47 expects {entries:{...}}; client writes flat dict; collection has never had a successful write → schema is greenfield, designed in v1
 - Firestore numbers: NSNumber cast pattern everywhere; no unguarded `as? Int`
-- Client-owned paths include taskCatalog (r), flowDefinitions (r), vendors (r), users/{uid}/tasks, user_assessments, userKnowledge, inventory, inventorySessions, and supportChat. Vendor and definition writes remain backend-only
+- Client-owned paths include taskCatalog (r), flowDefinitions (r), vendors (r), users/{uid}/tasks, user_assessments, identity, packingPlan, readiness, workflowResponses, userKnowledge, inventory, inventorySessions, and supportChat. Vendor and definition writes remain backend-only
 
 ## Lessons that map to nothing (do not re-apply)
 
@@ -75,7 +82,17 @@ Parity rule (LE-025/LE-031, updated): these two loaders must stay field-identica
 - Xcode 26.6: iOS platform + Metal toolchain must be installed (xcodebuild -downloadPlatform iOS / -downloadComponent MetalToolchain)
 - Deployed Firestore rules are not readable via firebase-tools 15.6.0; use the Rules REST API with functions/serviceAccountKey.json (read-only). Spec 05 Phase 0 reconciled the live waitlist rule and added authenticated reads for flowDefinitions and vendors
 - Test creds: peezy-test-bot@test.peezyapp.com / PeezyTest2026!
-- Accessibility ids: 51 usages in 13 files, mapped to T01-T10 UITests. **All new views require .accessibilityIdentifier() — mandatory convention**
+- Accessibility ids: 176 usages in 41 Swift files at Spec 06 close. **All new views require .accessibilityIdentifier() — mandatory convention**
+
+## Corrections from Spec 06 run (2026-07-26)
+
+- **Packing work is generated, not catalog-seeded.** Inventory review writes `packingPlan/current` and materializes stable user task documents. The catalog dropped `BUY_PACKING_SUPPLIES`, leaving 45 live rows; reseed verification matched all 45 with no ghosts.
+- **The daily-dose rule is one packing session, not one packing-related card.** One due `PACKING_SESSION_n` can join the frozen dose; the single `PACKING_READINESS_GATE` additionally joins after it on T−1 and remains eligible when overdue.
+- **Completion preservation is source-key based.** Regeneration after inventory or move-date changes carries completed source groups forward. Ordinary date reflow redistributes incomplete sessions but never moves the readiness gate from moveDate−1.
+- **Kit estimates are placeholder supplier data.** Small/medium/large raw box demand receives 12% headroom before rounding; mattress bags and wardrobe/dish accessories remain exact-fit. Customize is the sole line-item escape hatch, while ordering uses the existing hard paywall and concierge submission.
+- **Readiness shorthand is concretized as `readiness/current`.** Its five booleans are persisted on every toggle; `completedAt` exists iff all five are true. Existing reserve-access response documents prefill the access checkbox.
+- **Spec 06 deployment scope was intentionally narrow.** The only remote mutations were `cd functions && node seedTaskCatalog.js` and, from repo root, `firebase deploy --only functions:submitWorkflowAnswers --project peezy-1ecrdl`. No rules or broad functions deploy occurred.
+- **SwiftPM build locking is shared across concurrent Xcode invocations.** A second writer build can wait indefinitely while a validator owns package resolution; serialize final Xcode runs or give them distinct derived/package caches.
 
 ## Corrections from Spec 05 run (2026-07-25)
 
@@ -134,6 +151,7 @@ Parity rule (LE-025/LE-031, updated): these two loaders must stay field-identica
 
 ## Open items (tracked, not forgotten)
 
+- kit supplier: replace concierge fulfillment with local supplier handoff when signed.
 - Remove the getWorkflowQualifying flow-definition fallback after the one-release compatibility window
 - Reauthenticate Firebase CLI and verify the Phase 0 resetInventory deletion before the next full functions deploy
 - `ADAM_NOTIFY_NUMBER` must be configured and one live booking/quote SMS verified before launch
