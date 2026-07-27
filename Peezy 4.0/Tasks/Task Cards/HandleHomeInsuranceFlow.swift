@@ -33,6 +33,9 @@ struct HandleHomeInsuranceFlow: View {
     @State private var currentIndex = 0
     @State private var answers: [String: Set<String>] = [:]
     @State private var isSubmitting = false
+    @State private var updateProviderResolution: ProviderResolution?
+    @State private var isResolvingUpdateProvider = false
+    @State private var providerResolveTask: Task<Void, Never>?
 
     // MARK: - Card Indices
 
@@ -154,6 +157,9 @@ struct HandleHomeInsuranceFlow: View {
             }
 
         }
+        .onDisappear {
+            providerResolveTask?.cancel()
+        }
     }
 
     // MARK: - Card Router
@@ -221,19 +227,34 @@ struct HandleHomeInsuranceFlow: View {
 
         // ── Card 4: Who's your provider? ──
         case updateSearchCard:
-            TaskFlowBusinessSearchCard(
-                taskTitle: taskTitle,
-                question: "Who's your current provider?",
-                placeholder: "Search for an insurance company...",
-                searchHint: "home insurance",
-                selectedBusiness: answers["provider_name"]?.first,
-                showBack: true,
-                onConfirm: { name in
-                    answers["provider_name"] = [name]
-                    advance()
-                },
-                onBack: { goBack() }
-            )
+            if isResolvingUpdateProvider {
+                ProviderResolutionLoadingCard(
+                    taskTitle: taskTitle,
+                    providerName: providerName,
+                    onBack: { cancelUpdateProviderResolution() }
+                )
+            } else if let updateProviderResolution {
+                ProviderActionCard(
+                    taskTitle: taskTitle,
+                    resolution: updateProviderResolution,
+                    actionKind: .addressChange,
+                    userId: userId,
+                    showBack: true,
+                    onDone: onComplete,
+                    onBack: { self.updateProviderResolution = nil }
+                )
+            } else {
+                TaskFlowBusinessSearchCard(
+                    taskTitle: taskTitle,
+                    question: "Who's your current provider?",
+                    placeholder: "Search for an insurance company...",
+                    searchHint: "home insurance",
+                    selectedBusiness: answers["provider_name"]?.first,
+                    showBack: true,
+                    onConfirm: { name in resolveUpdateProvider(named: name) },
+                    onBack: { goBack() }
+                )
+            }
 
         // ── Card 5: Update Summary ──
         case updateSummaryCard:
@@ -370,6 +391,32 @@ struct HandleHomeInsuranceFlow: View {
     private func selectSingle(_ key: String, id: String) {
         answers[key] = [id]
         advance()
+    }
+
+    private func resolveUpdateProvider(named name: String) {
+        answers["provider_name"] = [name]
+        providerResolveTask?.cancel()
+        isResolvingUpdateProvider = true
+        providerResolveTask = Task { @MainActor in
+            let resolution = await ProviderDirectoryService.shared.resolve(
+                name: name,
+                category: "insurance"
+            )
+            guard !Task.isCancelled, isResolvingUpdateProvider else { return }
+            isResolvingUpdateProvider = false
+            providerResolveTask = nil
+            if resolution.method == .concierge {
+                advance()
+            } else {
+                updateProviderResolution = resolution
+            }
+        }
+    }
+
+    private func cancelUpdateProviderResolution() {
+        providerResolveTask?.cancel()
+        providerResolveTask = nil
+        isResolvingUpdateProvider = false
     }
 
     // MARK: - Submission

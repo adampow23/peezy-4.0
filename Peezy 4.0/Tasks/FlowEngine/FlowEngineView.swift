@@ -35,6 +35,12 @@ struct FlowInputs {
     let moveDate: Date
 }
 
+private struct ActiveProviderAction {
+    let stepId: String
+    let resolution: ProviderResolution
+    let kind: ProviderActionKind
+}
+
 // MARK: - Flow Engine View
 
 struct FlowEngineView: View {
@@ -59,6 +65,9 @@ struct FlowEngineView: View {
     @State private var resolvedSteps: [FlowStep] = []
     @State private var isSubmitting = false
     @State private var isRestoring = true
+    @State private var resolvingProviderStepId: String?
+    @State private var activeProviderAction: ActiveProviderAction?
+    @State private var providerResolveTask: Task<Void, Never>?
     /// Hard paywall gate (option (c), Spec 04 Phase D): raised when an
     /// unsubscribed user reaches a gated submission.
     @State private var showPaywallGate = false
@@ -86,6 +95,9 @@ struct FlowEngineView: View {
         }
         .task {
             await restoreState()
+        }
+        .onDisappear {
+            providerResolveTask?.cancel()
         }
         .fullScreenCover(isPresented: $showPaywallGate) {
             PaywallGateSheet { subscribed in
@@ -184,19 +196,38 @@ struct FlowEngineView: View {
             )
 
         case .businessSearch:
-            TaskFlowBusinessSearchCard(
-                taskTitle: definition.taskTitle,
-                question: step.question ?? "",
-                placeholder: step.placeholder ?? "Search...",
-                searchHint: step.searchHint ?? "",
-                selectedBusiness: answers[step.id]?.first,
-                showBack: canGoBack,
-                onConfirm: { name in
-                    record(step.id, [name])
-                    advance(from: step, selected: name)
-                },
-                onBack: { goBack() }
-            )
+            if resolvingProviderStepId == step.id {
+                ProviderResolutionLoadingCard(
+                    taskTitle: definition.taskTitle,
+                    providerName: answers[step.id]?.first ?? "provider",
+                    onBack: { cancelProviderResolution() }
+                )
+            } else if let activeProviderAction, activeProviderAction.stepId == step.id {
+                ProviderActionCard(
+                    taskTitle: definition.taskTitle,
+                    resolution: activeProviderAction.resolution,
+                    actionKind: activeProviderAction.kind,
+                    userId: userId,
+                    showBack: true,
+                    onDone: { finishProviderAction(for: step) },
+                    onBack: {
+                        self.activeProviderAction = nil
+                    }
+                )
+            } else {
+                TaskFlowBusinessSearchCard(
+                    taskTitle: definition.taskTitle,
+                    question: step.question ?? "",
+                    placeholder: step.placeholder ?? "Search...",
+                    searchHint: step.searchHint ?? "",
+                    selectedBusiness: answers[step.id]?.first,
+                    showBack: canGoBack,
+                    onConfirm: { name in
+                        beginProviderResolution(name: name, step: step)
+                    },
+                    onBack: { goBack() }
+                )
+            }
 
         case .confirmAddress:
             TaskFlowConfirmAddressCard(
@@ -305,6 +336,93 @@ struct FlowEngineView: View {
         guard canGoBack else { return }
         path.removeLast()
         persistProgress(answerKey: nil, values: nil)
+    }
+
+    // MARK: - Provider Resolution
+
+    private func beginProviderResolution(name: String, step: FlowStep) {
+        record(step.id, [name])
+        guard supportsProviderResolution(step) else {
+            advance(from: step, selected: name)
+            return
+        }
+
+        providerResolveTask?.cancel()
+        resolvingProviderStepId = step.id
+        let category = providerCategory(for: step)
+        let kind = providerActionKind
+
+        providerResolveTask = Task { @MainActor in
+            let resolution = await ProviderDirectoryService.shared.resolve(
+                name: name,
+                category: category
+            )
+            guard !Task.isCancelled, resolvingProviderStepId == step.id else { return }
+            resolvingProviderStepId = nil
+            providerResolveTask = nil
+
+            let methodKey = providerMethodKey(for: step)
+            if resolution.method == .concierge {
+                record(methodKey, ["concierge"])
+                advance(from: step, selected: name)
+            } else {
+                record(methodKey, ["self_service"])
+                activeProviderAction = ActiveProviderAction(
+                    stepId: step.id,
+                    resolution: resolution,
+                    kind: kind
+                )
+            }
+        }
+    }
+
+    private func cancelProviderResolution() {
+        providerResolveTask?.cancel()
+        providerResolveTask = nil
+        resolvingProviderStepId = nil
+    }
+
+    private func finishProviderAction(for step: FlowStep) {
+        activeProviderAction = nil
+        let nextIsSummary = step.next
+            .flatMap { resolvedStep(withId: $0) }?
+            .kind == .summary
+        let hasConciergeRow = answers.contains { key, value in
+            key.hasSuffix(".__provider_method") && value.first == "concierge"
+        }
+
+        if nextIsSummary && !hasConciergeRow {
+            concludeFlow { onComplete() }
+        } else {
+            advance(from: step, selected: answers[step.id]?.first)
+        }
+    }
+
+    private func supportsProviderResolution(_ step: FlowStep) -> Bool {
+        switch definition.workflowId {
+        case "financial_accounts", "memberships":
+            return true
+        case "manage_vet", "transfer_pharmacy_records":
+            return step.id == "business_name"
+        default:
+            return false
+        }
+    }
+
+    private var providerActionKind: ProviderActionKind {
+        definition.workflowId == "memberships" ? .cancellation : .addressChange
+    }
+
+    private func providerCategory(for step: FlowStep) -> String {
+        switch definition.workflowId {
+        case "financial_accounts": "financial"
+        case "memberships": "membership"
+        default: step.searchHint ?? "account"
+        }
+    }
+
+    private func providerMethodKey(for step: FlowStep) -> String {
+        "\(step.id).__provider_method"
     }
 
     // MARK: - Answers + Persistence
