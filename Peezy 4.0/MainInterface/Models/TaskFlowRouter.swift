@@ -56,6 +56,14 @@ struct TaskFlowRouter {
             DeclutterIntentFlow(userId: userId, onComplete: onComplete, onDismiss: onDismiss)
         case "storage_need":
             StorageNeedFlow(userId: userId, onComplete: onComplete, onDismiss: onDismiss)
+        case "packing_session":
+            PackingSessionView(
+                userId: userId,
+                taskId: taskId ?? "",
+                onComplete: onComplete,
+                onDismiss: onDismiss,
+                onStatusAction: onStatusAction
+            )
 
         // ── Swift custom flows (Types 4–6; superseded in Specs 05–06) ──
 

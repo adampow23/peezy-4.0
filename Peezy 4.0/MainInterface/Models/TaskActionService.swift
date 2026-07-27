@@ -1,5 +1,6 @@
 import FirebaseAuth
 import FirebaseFirestore
+import Foundation
 
 /// Firestore write side of task actions (Spec 03 Phases B–C). Bodies of the
 /// status/snooze/complete writes are moved VERBATIM from PeezyHomeViewModel —
@@ -108,6 +109,325 @@ struct TaskActionService {
                 ])
         } catch {
             print("⚠️ Failed to snooze task: \(error.localizedDescription)")
+        }
+    }
+
+    // MARK: - Packing plan
+
+    /// Generates and atomically persists the plan plus its catalog-external
+    /// task documents. Stable source keys preserve completed sessions across
+    /// move-date and inventory regeneration.
+    @discardableResult
+    func generatePackingPlan(
+        userId: String,
+        rooms: [ScannedRoom],
+        moveDate: Date,
+        today: Date = Date()
+    ) async throws -> PackingPlan {
+        guard !userId.isEmpty else { throw PackingPlanPersistenceError.missingUser }
+        let previous = try await loadPackingPlan(userId: userId)
+        let inputs = rooms.map { room in
+            PackingRoomInput(
+                name: room.name,
+                items: room.items
+                    .filter(\.shouldMove)
+                    .map {
+                        PackingPlanItem(
+                            name: $0.name,
+                            category: $0.category,
+                            quantity: $0.quantity,
+                            cubicFeet: $0.cubicFeet,
+                            tier: $0.tier
+                        )
+                    }
+            )
+        }
+        let plan = PackingPlanEngine.generate(
+            rooms: inputs,
+            moveDate: moveDate,
+            today: today,
+            preserving: previous
+        )
+        try await persist(plan, userId: userId)
+        return plan
+    }
+
+    /// Move-date regeneration path used by IdentityService.update. A user can
+    /// have identity before inventory; no inventory means there is no plan yet.
+    @discardableResult
+    func regeneratePackingPlanFromStoredInventory(
+        userId: String,
+        moveDate: Date,
+        today: Date = Date()
+    ) async throws -> PackingPlan? {
+        let rooms = try await loadStoredInventory(userId: userId)
+        guard !rooms.isEmpty else { return nil }
+        return try await generatePackingPlan(
+            userId: userId,
+            rooms: rooms,
+            moveDate: moveDate,
+            today: today
+        )
+    }
+
+    /// Home-load reconciliation: regenerate if the authoritative move date
+    /// changed, otherwise silently reflow past-dated incomplete sessions.
+    func syncPackingPlanForLoad(
+        userId: String,
+        moveDate: Date,
+        today: Date = Date()
+    ) async throws {
+        guard let current = try await loadPackingPlan(userId: userId) else { return }
+        let calendar = Calendar.current
+        if calendar.startOfDay(for: current.moveDate) != calendar.startOfDay(for: moveDate) {
+            _ = try await regeneratePackingPlanFromStoredInventory(
+                userId: userId,
+                moveDate: moveDate,
+                today: today
+            )
+            return
+        }
+
+        let reflowed = PackingPlanEngine.reflowIfNeeded(current, today: today)
+        if reflowed != current {
+            try await persist(reflowed, userId: userId)
+        }
+    }
+
+    func loadPackingSession(userId: String, taskId: String) async throws -> PackingSession {
+        guard !userId.isEmpty, !taskId.isEmpty else { throw PackingPlanPersistenceError.sessionNotFound }
+        guard let session = try await loadPackingPlan(userId: userId)?.sessions.first(where: { $0.taskId == taskId }) else {
+            throw PackingPlanPersistenceError.sessionNotFound
+        }
+        return session
+    }
+
+    /// Plan and task completion land in one batch so regeneration never loses
+    /// a completion that the task row already showed.
+    func completePackingSession(
+        userId: String,
+        taskId: String,
+        completedAt: Date = Date()
+    ) async throws -> PackingCompletion {
+        guard !userId.isEmpty, !taskId.isEmpty else { throw PackingPlanPersistenceError.sessionNotFound }
+        guard let plan = try await loadPackingPlan(userId: userId),
+              let completion = PackingPlanEngine.completion(
+                afterCompleting: taskId,
+                in: plan,
+                at: completedAt
+              ) else { throw PackingPlanPersistenceError.sessionNotFound }
+
+        let db = Firestore.firestore()
+        let batch = db.batch()
+        batch.setData(
+            packingPlanData(completion.plan),
+            forDocument: packingPlanRef(db: db, userId: userId)
+        )
+        batch.updateData([
+            "status": "Completed",
+            "completedAt": Timestamp(date: completedAt),
+            "packingSession.completedAt": Timestamp(date: completedAt)
+        ], forDocument: db.collection("users").document(userId).collection("tasks").document(taskId))
+        try await batch.commit()
+        return completion.result
+    }
+
+    func loadPackingPlan(userId: String) async throws -> PackingPlan? {
+        guard !userId.isEmpty else { return nil }
+        let db = Firestore.firestore()
+        let snapshot = try await packingPlanRef(db: db, userId: userId).getDocument()
+        guard snapshot.exists, let data = snapshot.data() else { return nil }
+        return packingPlan(from: data)
+    }
+
+    func clearPackingPlan(userId: String) async throws {
+        guard !userId.isEmpty else { return }
+        let db = Firestore.firestore()
+        let tasks = try await db.collection("users").document(userId).collection("tasks")
+            .whereField("generatedBy", isEqualTo: "packingPlan")
+            .getDocuments()
+        let batch = db.batch()
+        batch.deleteDocument(packingPlanRef(db: db, userId: userId))
+        for task in tasks.documents { batch.deleteDocument(task.reference) }
+        try await batch.commit()
+    }
+
+    // MARK: Packing plan persistence helpers
+
+    private func persist(_ plan: PackingPlan, userId: String) async throws {
+        let db = Firestore.firestore()
+        let taskCollection = db.collection("users").document(userId).collection("tasks")
+        let existing = try await taskCollection
+            .whereField("generatedBy", isEqualTo: "packingPlan")
+            .getDocuments()
+        let existingById = Dictionary(uniqueKeysWithValues: existing.documents.map { ($0.documentID, $0.data()) })
+        let existingByKey = Dictionary(
+            uniqueKeysWithValues: existing.documents.compactMap { document -> (String, [String: Any])? in
+                guard let payload = document.data()["packingSession"] as? [String: Any],
+                      let key = payload["sessionKey"] as? String else { return nil }
+                return (key, document.data())
+            }
+        )
+
+        let batch = db.batch()
+        batch.setData(packingPlanData(plan), forDocument: packingPlanRef(db: db, userId: userId))
+
+        let newIds = Set(plan.sessions.map(\.taskId))
+        for old in existing.documents where !newIds.contains(old.documentID) {
+            batch.deleteDocument(old.reference)
+        }
+        for session in plan.sessions {
+            let previousData = existingById[session.taskId] ?? existingByKey[session.sessionKey]
+            batch.setData(
+                packingTaskData(session, previousData: previousData),
+                forDocument: taskCollection.document(session.taskId)
+            )
+        }
+        try await batch.commit()
+    }
+
+    private func loadStoredInventory(userId: String) async throws -> [ScannedRoom] {
+        let snapshot = try await Firestore.firestore()
+            .collection("users").document(userId)
+            .collection("inventory")
+            .getDocuments()
+
+        return snapshot.documents.compactMap { document in
+            guard document.documentID != "_metadata" else { return nil }
+            let data = document.data()
+            guard let name = data["name"] as? String ?? data["roomName"] as? String else { return nil }
+            let items = (data["items"] as? [[String: Any]] ?? []).compactMap(InventoryItem.from(dict:))
+            return ScannedRoom(
+                id: data["id"] as? String ?? document.documentID,
+                name: name,
+                items: items,
+                scannedAt: (data["scannedAt"] as? Timestamp)?.dateValue() ?? Date()
+            )
+        }
+    }
+
+    private func packingPlanRef(db: Firestore, userId: String) -> DocumentReference {
+        // NEEDS-CLARIFICATION: the spec's users/{uid}/packingPlan shorthand
+        // needs a concrete Firestore document id. This mirrors identity/identity.
+        db.collection("users").document(userId)
+            .collection("packingPlan").document("current")
+    }
+
+    private func packingPlanData(_ plan: PackingPlan) -> [String: Any] {
+        var data: [String: Any] = [
+            "moveDate": Timestamp(date: plan.moveDate),
+            "generatedAt": Timestamp(date: plan.generatedAt),
+            "sessions": plan.sessions.map(packingSessionData)
+        ]
+        if let reflowedAt = plan.reflowedAt {
+            data["reflowedAt"] = Timestamp(date: reflowedAt)
+        }
+        return data
+    }
+
+    private func packingSessionData(_ session: PackingSession) -> [String: Any] {
+        var data: [String: Any] = [
+            "taskId": session.taskId,
+            "sessionKey": session.sessionKey,
+            "sourceKeys": session.sourceKeys,
+            "rooms": session.rooms,
+            "roomLabel": session.roomLabel,
+            "estMinutes": session.estMinutes,
+            "scheduledDate": Timestamp(date: session.scheduledDate),
+            "itemSummary": session.itemSummary,
+            "isFirstNightBag": session.isFirstNightBag,
+            "isBehindPace": session.isBehindPace
+        ]
+        if let completedAt = session.completedAt {
+            data["completedAt"] = Timestamp(date: completedAt)
+        }
+        return data
+    }
+
+    private func packingTaskData(
+        _ session: PackingSession,
+        previousData: [String: Any]?
+    ) -> [String: Any] {
+        var data: [String: Any] = [
+            "id": session.taskId,
+            "taskId": session.taskId,
+            "workflowId": "packing_session",
+            "title": "Today: \(session.roomLabel). About \(session.estMinutes) minutes.",
+            "desc": "Here's what's in it: \(session.itemSummary.joined(separator: ", "))",
+            "category": "packing",
+            "actionCategory": "packing",
+            "actionType": "in-app",
+            "taskType": "provide_info",
+            "urgencyPercentage": 80,
+            "estHours": Double(session.estMinutes) / 60.0,
+            "tips": "Pack only this session. Peezy will reflow the rest if plans change.",
+            "whyNeeded": "One focused packing session keeps moving day on pace.",
+            "dueDate": Timestamp(date: session.scheduledDate),
+            "status": session.isCompleted ? "Completed" : "Upcoming",
+            "selfServiceOnly": true,
+            "generatedBy": "packingPlan",
+            "createdAt": previousData?["createdAt"] ?? FieldValue.serverTimestamp(),
+            "packingSession": packingSessionData(session)
+        ]
+
+        if let completedAt = session.completedAt {
+            data["completedAt"] = Timestamp(date: completedAt)
+        } else if let previousData,
+                  let status = previousData["status"] as? String,
+                  status == "Snoozed" || status == "UserInProgress" {
+            data["status"] = status
+            for key in ["snoozedUntil", "lastSnoozedAt", "userInProgressDate", "userInProgressReturnDate"] {
+                if let value = previousData[key] { data[key] = value }
+            }
+        }
+        return data
+    }
+
+    private func packingPlan(from data: [String: Any]) -> PackingPlan? {
+        guard let moveDate = data["moveDate"] as? Timestamp,
+              let generatedAt = data["generatedAt"] as? Timestamp,
+              let rawSessions = data["sessions"] as? [[String: Any]] else { return nil }
+        let sessions = rawSessions.compactMap(packingSession(from:))
+        guard sessions.count == rawSessions.count else { return nil }
+        return PackingPlan(
+            moveDate: moveDate.dateValue(),
+            generatedAt: generatedAt.dateValue(),
+            reflowedAt: (data["reflowedAt"] as? Timestamp)?.dateValue(),
+            sessions: sessions
+        )
+    }
+
+    private func packingSession(from data: [String: Any]) -> PackingSession? {
+        guard let taskId = data["taskId"] as? String,
+              let sessionKey = data["sessionKey"] as? String,
+              let roomLabel = data["roomLabel"] as? String,
+              let scheduledDate = data["scheduledDate"] as? Timestamp else { return nil }
+        return PackingSession(
+            taskId: taskId,
+            sessionKey: sessionKey,
+            sourceKeys: data["sourceKeys"] as? [String] ?? [sessionKey],
+            rooms: data["rooms"] as? [String] ?? [roomLabel],
+            roomLabel: roomLabel,
+            estMinutes: (data["estMinutes"] as? NSNumber)?.intValue ?? PackingConstants.targetSessionMinutes,
+            scheduledDate: scheduledDate.dateValue(),
+            itemSummary: data["itemSummary"] as? [String] ?? [],
+            isFirstNightBag: data["isFirstNightBag"] as? Bool ?? false,
+            completedAt: (data["completedAt"] as? Timestamp)?.dateValue(),
+            isBehindPace: data["isBehindPace"] as? Bool ?? false
+        )
+    }
+}
+
+enum PackingPlanPersistenceError: LocalizedError {
+    case missingUser
+    case missingMoveDate
+    case sessionNotFound
+
+    var errorDescription: String? {
+        switch self {
+        case .missingUser: return "A signed-in user is required to create a packing plan."
+        case .missingMoveDate: return "Add a move date before creating a packing plan."
+        case .sessionNotFound: return "That packing session is no longer available."
         }
     }
 }

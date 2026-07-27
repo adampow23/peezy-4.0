@@ -72,6 +72,41 @@ struct DailyDoseEngine {
         return max(Int(ceil(Double(activeTaskCount) / Double(workingDays(daysUntilMove: daysUntilMove)))), 1)
     }
 
+    /// Builds a new day's frozen ids. Packing work is scheduled-date-driven:
+    /// it does not inflate the regular task target, and at most one due packing
+    /// session joins (and is counted in) today's frozen dose.
+    func taskIdsForNewDose(
+        from sortedCards: [PeezyCard],
+        daysUntilMove: Int,
+        today: Date = Date(),
+        calendar: Calendar = .current
+    ) -> [String] {
+        let regularCards = sortedCards.filter { !$0.isPackingSession }
+        let regularTarget = dailyTarget(
+            activeTaskCount: regularCards.count,
+            daysUntilMove: daysUntilMove
+        )
+        let startToday = calendar.startOfDay(for: today)
+        let duePacking = sortedCards
+            .compactMap { card -> (PeezyCard, PackingSession)? in
+                guard let session = card.packingSession,
+                      calendar.startOfDay(for: session.scheduledDate) <= startToday else { return nil }
+                return (card, session)
+            }
+            .sorted {
+                if $0.1.scheduledDate != $1.1.scheduledDate {
+                    return $0.1.scheduledDate < $1.1.scheduledDate
+                }
+                return $0.1.taskId < $1.1.taskId
+            }
+            .first
+
+        let regularSlots = max(regularTarget - (duePacking == nil ? 0 : 1), 0)
+        var ids = regularCards.prefix(regularSlots).map(\.id)
+        if let duePacking { ids.append(duePacking.0.id) }
+        return ids
+    }
+
     /// Urgency-descending, title as tiebreak — the dose ordering.
     func urgencySorted(_ cards: [PeezyCard]) -> [PeezyCard] {
         cards.sorted { a, b in

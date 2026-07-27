@@ -1,63 +1,66 @@
-# Pricing Calibration Chip - single session (CORE PricingEngine + PERIPHERY)
-# RESOLVED: AGENTS.md is absent; user approved CLAUDE.md as its replacement.
+# Spec 06 Phase A — Packing plan engine + daily-dose integration (CORE)
+#
+# ACCEPTANCE CONTRACT (written before build)
+# A1 GIVEN inventory rooms with storage, general, guest, garage, secondary-bedroom,
+#    kitchen, primary-bedroom, and bathroom items, WHEN a plan is generated, THEN
+#    sessions follow the LOCKED category order and the first-night bag is last/standalone.
+# A2 GIVEN a move date and enough calendar days, WHEN the plan is generated, THEN
+#    sessions are reverse-scheduled through moveDate-1 with no dropped session.
+# A3 GIVEN fewer calendar days than sessions, WHEN the plan is generated, THEN the
+#    smallest adjacent non-first-night sessions merge until the timeline fits (except
+#    the documented one-day/standalone-bag edge) and no item summary is dropped.
+# A4 GIVEN past-dated incomplete sessions, WHEN the plan loads, THEN remaining work is
+#    silently re-spread from today through moveDate-1 and at most one due packing task
+#    is selected into a day's frozen dose.
+# A5 GIVEN a submitted inventory review, WHEN submitFinal succeeds, THEN
+#    users/{uid}/packingPlan/current exists and PACKING_SESSION_n task docs materialize.
+# A6 GIVEN a completed packing session, WHEN the user completes its view, THEN the task
+#    and plan session complete atomically, the locked consequence line renders, and the
+#    next incomplete session remains scheduled.
+# A7 GIVEN a move-date change or inventory resubmission, WHEN regeneration runs, THEN
+#    sessions matching stable session keys preserve completedAt.
+# A8 GIVEN the Phase A diff, WHEN unit tests and an iPhone 17 Pro simulator build/run are
+#    executed by a fresh-context validator, THEN every criterion receives PASS/FAIL with evidence.
+#
+# NEEDS-CLARIFICATION (bounded, reversible interpretations)
+# - Firestore shorthand users/{uid}/packingPlan has no document id; use
+#   users/{uid}/packingPlan/current, matching the identity single-doc pattern.
+# - The LOCKED taxonomy omits common room names; unmatched rooms use the early
+#   decor/books bucket. Kitchen inventory is split by centralized essential keywords.
+# - A one-day timeline cannot both keep first-night bag standalone and fit one session/day;
+#   keep the bag standalone and co-schedule the final two tasks without putting both in dose.
+#
 # EDIT SITES
 PHASE_MANIFEST
-Peezy 4.0/MainInterface/Models/PricingEngine.swift
-Peezy 4.0/MainInterface/Models/PricingConstants.swift
-Peezy 4.0/MainInterface/Models/MoveScopeFactory.swift
-Peezy 4.0/MainInterface/Models/PricingCalibrationHarness.swift
-Peezy 4.0/MainInterface/Models/Vendor.swift
-Peezy 4.0/MainInterface/Models/VendorRateCard+Pricing.swift
-Peezy 4.0/MainInterface/Models/MoversBookingPayload.swift
-Peezy 4.0/MainInterface/Models/MoversFlowViewModel.swift
-Peezy 4.0/MainInterface/Models/MoversVendorQuote.swift
-Peezy 4.0/MainInterface/Models/ComparisonCardModel.swift
-Peezy 4.0/MainInterface/Views/ComparisonCardView.swift
-Peezy 4.0/Tasks/Task Cards/FindMoversFlow.swift
-Peezy 4.0/Tasks/Task Cards/MoversComparisonView.swift
-Peezy 4.0/Tasks/Task Cards/MoversBookingReviewView.swift
-Tests/PricingEngineTests.swift
-Tests/PricingCalibrationRunner.swift
-Peezy 4.0Tests/VendorTests.swift
-Peezy 4.0Tests/MoversBookingPayloadTests.swift
-functions/vendorsData.json
-functions/index.js
-functions/getWorkflowQualifying.js
-peezy-conventions-v2.md
-tasks/todo.md
+Peezy 4.0/MainInterface/Models/PackingConstants.swift
+Peezy 4.0/MainInterface/Models/PackingPlanEngine.swift
+Peezy 4.0/MainInterface/Models/DailyDoseEngine.swift
+Peezy 4.0/MainInterface/Models/TaskActionService.swift
+Peezy 4.0/MainInterface/Models/PeezyCard.swift
+Peezy 4.0/MainInterface/Models/PeezyHomeViewModel.swift
+Peezy 4.0/MainInterface/Models/IdentityService.swift
+Peezy 4.0/Inventory/Models/InventorySessionManager.swift
+Peezy 4.0/Tasks/Store/PeezyCardFirestoreMapper.swift
+Peezy 4.0/MainInterface/Models/TaskFlowRouter.swift
+Peezy 4.0/Tasks/Task Cards/PackingSessionView.swift
+Tests/PackingPlanEngineTests.swift
+Peezy 4.0Tests/PackingDoseTests.swift
+
 # READ SITES
-# peezy-chip-pricing-calibration.md - chip requirements and acceptance contract
-# peezy-execution-protocol.md - validator and session-close rules
-# peezy-conventions-v2.md - repository contracts and documentation target
-# AGENTS.md - requested instruction site; absent at session start
-# CLAUDE.md - repository facts cross-check; no edit anticipated
-# functions/.env - read-only presence check for Twilio variable names; NEVER WRITE
-# functions/package.json - callable runtime/dependency audit
-# functions/package-lock.json - callable dependency audit
-# functions/seedVendors.js - sanctioned vendor reseed implementation
-# functions/notifyAdmin.js - existing Twilio helper and notification contract audit
-# firebase.json - sanctioned deployment target configuration
-# .firebaserc - Firebase project selection
-# functions/serviceAccountKey.json - read-only Admin validation credential if required
-# Peezy 4.0/MainInterface/Models/WorkflowService.swift - existing concierge submission transport
-# Peezy 4.0/MainInterface/Models/WorkflowCardModels.swift - callable answer-envelope shape
-# Peezy 4.0/MainInterface/Models/PeezyIdentity.swift - identity distance/address contract
-# Peezy 4.0/MainInterface/Models/IdentityService.swift - identity document load contract
-# Peezy 4.0/MainInterface/Models/UserState.swift - identity consumer cross-check
-# Peezy 4.0/MainInterface/Models/TaskFlowRouter.swift - BOOK_MOVERS custom-route contract
-# Peezy 4.0/Menu/PeezySettingsView.swift - identity consumer cross-check
-# Peezy 4.0/Tasks/Task Cards/MoversCaptureCard.swift - capture entry contract
-# Peezy 4.0/Tasks/Task Cards/MoveRefinementView.swift - local comparison entry contract
-# Peezy 4.0/Tasks/Task Cards/MoversConfirmationView.swift - terminal confirmation contract
-# Peezy 4.0/Tasks/Task Cards/ScanInventoryFlow.swift - inventory metadata read contract
-# Peezy 4.0/Tasks/FlowEngine/InAppTaskFlows.swift - identity consumer cross-check
-# Peezy 4.0/Inventory/Models/InventoryModels.swift - read-only specialty-category mapping contract
-# Peezy 4.0/Inventory/Models/InventorySessionManager.swift - isolated acceptance-fixture read path
-# Peezy 4.0/Inventory/Services/InventoryStorageService.swift - inventory decode contract
-# Peezy 4.0/Inventory/ViewModels/InventoryReviewViewModel.swift - cube aggregation cross-check
-# Peezy 4.0/Inventory/Views/InventoryFlowView.swift - existing-inventory load entry
-# Peezy 4.0/Inventory/Views/InventoryItemConfirmView.swift - inventory fixture shape cross-check
-# Peezy 4.0/Inventory/Views/InventoryLockedView.swift - inventory fixture shape cross-check
-# Peezy 4.0/Inventory/Views/InventoryRoomHubView.swift - inventory fixture shape cross-check
-# Peezy 4.0/Inventory/Views/InventoryRoomReviewView.swift - inventory fixture shape cross-check
-# firestore.rules - workflow submission/vendor ownership check; NEVER DEPLOY IN THIS CHIP
+# peezy-conventions-v2.md — ground truth/frozen regions
+# peezy-v1-architecture.md §7 — locked packing architecture
+# peezy-execution-protocol.md — acceptance/validator/commit rules
+# peezy-build-spec-06.md — phase contract
+# CLAUDE.md — repository hooks and build command
+# firestore.rules — owner-recursive access verified; no edit/deploy
+# Peezy 4.0/Assessment/AssessmentModels/TaskGenerationService.swift — task shape
+# Peezy 4.0/Inventory/Models/InventoryModels.swift — inventory item shape
+# Peezy 4.0/Inventory/Services/InventoryStorageService.swift — Firestore decoding pattern
+# Peezy 4.0/Inventory/ViewModels/InventoryReviewViewModel.swift — packable cube math
+# Peezy 4.0/Inventory/Views/InventoryFlowView.swift — review completion path
+# Peezy 4.0/Inventory/Views/InventoryRoomHubView.swift — submitFinal call site
+# Peezy 4.0/MainInterface/Models/PeezyIdentity.swift — authoritative move date
+# Peezy 4.0/MainInterface/Views/PeezyHomeView.swift — router callback contract
+# Peezy 4.0/Tasks/FlowEngine/InAppTaskFlows.swift — confirm-date IdentityService.update path
+# Peezy 4.0/Tasks/Store/TasksStore.swift — shared mapper consumer
+# Peezy 4.0/Tasks/Views/TaskRowButtons.swift — existing open/complete actions

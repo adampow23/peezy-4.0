@@ -410,6 +410,16 @@ final class InventorySessionManager {
 
         try await batch.commit()
 
+        guard let identity = await IdentityService.shared.loadOrMigrate(userId: userId),
+              let moveDate = identity.moveDate else {
+            throw PackingPlanPersistenceError.missingMoveDate
+        }
+        try await TaskActionService().generatePackingPlan(
+            userId: userId,
+            rooms: scannedRooms,
+            moveDate: moveDate
+        )
+
         self.submissionStatus = .submitted
     }
 
@@ -445,6 +455,8 @@ final class InventorySessionManager {
             }
             try await batch.commit()
         }
+
+        try await TaskActionService().clearPackingPlan(userId: userId)
 
         // Class is @MainActor so reset() runs main-isolated.
         self.reset()

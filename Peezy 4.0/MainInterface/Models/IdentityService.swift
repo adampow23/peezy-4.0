@@ -42,8 +42,16 @@ final class IdentityService {
     func update(userId: String, _ mutate: (inout PeezyIdentity) -> Void) async throws {
         var identity = await loadOrMigrate(userId: userId)
             ?? PeezyIdentity(name: "", email: "")
+        let previousMoveDate = identity.moveDate
         mutate(&identity)
         try await save(identity, userId: userId)
+
+        if previousMoveDate != identity.moveDate, let moveDate = identity.moveDate {
+            _ = try await TaskActionService().regeneratePackingPlanFromStoredInventory(
+                userId: userId,
+                moveDate: moveDate
+            )
+        }
     }
 
     // MARK: - Migration

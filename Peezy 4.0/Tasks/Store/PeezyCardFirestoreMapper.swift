@@ -34,6 +34,10 @@ enum PeezyCardFirestoreMapper {
         let categoryRaw = data["category"] as? String
         let isVendorTask = categoryRaw?.lowercased().contains("vendor") ?? false
         let cardType: PeezyCard.CardType = isVendorTask ? .vendor : .task
+        let taskId = data["taskId"] as? String ?? data["id"] as? String ?? document.documentID
+        let packingSession = packingSession(from: data, fallbackTaskId: taskId)
+        let workflowId = data["workflowId"] as? String
+            ?? (taskId.hasPrefix("PACKING_SESSION_") ? "packing_session" : nil)
 
         return PeezyCard(
             id: document.documentID,
@@ -41,8 +45,8 @@ enum PeezyCardFirestoreMapper {
             title: data["title"] as? String ?? "Untitled Task",
             subtitle: data["desc"] as? String ?? "",
             colorName: colorNameForPriority(priority),
-            taskId: data["id"] as? String ?? document.documentID,
-            workflowId: data["workflowId"] as? String,
+            taskId: taskId,
+            workflowId: workflowId,
             vendorCategory: isVendorTask ? categoryRaw : nil,
             vendorId: nil,
             priority: priority,
@@ -64,7 +68,32 @@ enum PeezyCardFirestoreMapper {
             estPeezy: data["estPeezy"] as? String,
             estHours: (data["estHours"] as? NSNumber)?.doubleValue,
             // Nil-tolerant: absent/unknown stage = nil (notStarted for workflow tasks)
-            stage: (data["stage"] as? String).flatMap(TaskStage.init(rawValue:))
+            stage: (data["stage"] as? String).flatMap(TaskStage.init(rawValue:)),
+            payload: packingSession.map(CardPayload.packing)
+        )
+    }
+
+    private static func packingSession(
+        from data: [String: Any],
+        fallbackTaskId: String
+    ) -> PackingSession? {
+        guard let payload = data["packingSession"] as? [String: Any],
+              let sessionKey = payload["sessionKey"] as? String,
+              let roomLabel = payload["roomLabel"] as? String,
+              let scheduledAt = payload["scheduledDate"] as? Timestamp else { return nil }
+
+        return PackingSession(
+            taskId: payload["taskId"] as? String ?? fallbackTaskId,
+            sessionKey: sessionKey,
+            sourceKeys: payload["sourceKeys"] as? [String] ?? [sessionKey],
+            rooms: payload["rooms"] as? [String] ?? [roomLabel],
+            roomLabel: roomLabel,
+            estMinutes: (payload["estMinutes"] as? NSNumber)?.intValue ?? PackingConstants.targetSessionMinutes,
+            scheduledDate: scheduledAt.dateValue(),
+            itemSummary: payload["itemSummary"] as? [String] ?? [],
+            isFirstNightBag: payload["isFirstNightBag"] as? Bool ?? false,
+            completedAt: (payload["completedAt"] as? Timestamp)?.dateValue(),
+            isBehindPace: payload["isBehindPace"] as? Bool ?? false
         )
     }
 

@@ -226,6 +226,19 @@ final class PeezyHomeViewModel {
         resetDailyCountIfNeeded()
 
         do {
+            if let moveDate = userState?.moveDate {
+                do {
+                    try await actionService.syncPackingPlanForLoad(
+                        userId: userId,
+                        moveDate: moveDate
+                    )
+                } catch {
+                    // Packing-plan reconciliation must not block the rest of
+                    // the user's daily work from loading.
+                    print("⚠️ Packing-plan sync failed: \(error.localizedDescription)")
+                }
+            }
+
             let db = Firestore.firestore()
             let snapshot = try await db.collection("users")
                 .document(userId)
@@ -271,13 +284,12 @@ final class PeezyHomeViewModel {
             let today = todayISOString()
             var frozen = await doseEngine.loadFrozenDose(userId: userId)
             if frozen?.date != today {
-                let target = doseEngine.dailyTarget(
-                    activeTaskCount: sorted.count,
-                    daysUntilMove: userState?.daysUntilMove ?? 30
-                )
                 let dose = DailyDoseEngine.FrozenDose(
                     date: today,
-                    taskIds: sorted.prefix(target).map { $0.id }
+                    taskIds: doseEngine.taskIdsForNewDose(
+                        from: sorted,
+                        daysUntilMove: userState?.daysUntilMove ?? 30
+                    )
                 )
                 await doseEngine.freeze(dose, userId: userId)
                 frozen = dose

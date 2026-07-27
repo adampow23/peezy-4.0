@@ -204,6 +204,17 @@ struct PeezyCard: Identifiable, Equatable, Codable {
         captureRegistration?.kind == .videoInventory
     }
 
+    /// Engine-generated packing tasks are catalog-external and carry their
+    /// complete session payload on the task doc.
+    var packingSession: PackingSession? {
+        guard case .packing(let session) = payload else { return nil }
+        return session
+    }
+
+    var isPackingSession: Bool {
+        packingSession != nil || (taskId ?? id).hasPrefix("PACKING_SESSION_")
+    }
+
     /// Whether this card should be shown in the stack
     var shouldShow: Bool {
         // If snoozed, only show if snooze date has passed
@@ -400,6 +411,7 @@ struct PeezyCard: Identifiable, Equatable, Codable {
 enum CardPayload: Codable, Equatable {
     case vendor(VendorRef)
     case capture(CaptureRef)
+    case packing(PackingSession)
 }
 
 /// Shell — vendor fields arrive with the vendor verticals (Spec 04).
