@@ -32,8 +32,15 @@
 #   route; do not invent or deploy an extra definition mutation in this run.
 # - Insurance businessSearch lives in two custom Swift flows, not row definitions.
 #   Integrate the update-address branch in those files; quote/switch stays concierge.
+# - Some businessSearch steps perform record transfers rather than address changes
+#   or cancellations. Resolving those to an address URL could falsely complete a
+#   different job, so only matching action semantics use self-service; the record-
+#   transfer branches retain their existing concierge route.
 # - Phase C requires ispPlans authenticated reads. firestore.rules has no reusable
 #   wildcard, so include its block now in the one Phase B-gated rules diff.
+# - The local Firestore emulator cannot start because Java is absent. Firebase's
+#   explicit --dry-run compiler validated the exact rules file successfully; this
+#   did not deploy it. The real rules deploy remains behind Adam's gate.
 #
 # EDIT SITES
 PHASE_MANIFEST
