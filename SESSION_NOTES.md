@@ -168,3 +168,38 @@
 
 All remaining launch and maintenance work is tracked only in
 `LAUNCH_CHECKLIST.md`; do not duplicate an open-item list here.
+
+## Measurement chip — blocked before Phase A implementation (2026-07-27)
+
+### What the spec got wrong or left ambiguous
+
+- The existing Firebase Swift package reference does not make all Firebase
+  products importable by the app target. `FirebaseCrashlytics` and
+  `FirebaseAnalytics` are separate products and neither is currently linked.
+- Crashlytics setup also requires an Xcode-managed symbol-upload build phase and
+  Debug dSYM generation; both changes persist in the protected project file.
+
+### What surprised us
+
+- The resolved Firebase 12.7.0 checkout already contains both requested products
+  and the Crashlytics scripts, but the target links only Auth, Firestore,
+  Functions, and Storage.
+- Release already emits dSYMs, while Debug uses plain DWARF. A Debug forced-crash
+  acceptance run therefore needs the Xcode Debug Information Format changed.
+
+### Missing or misleading conventions
+
+- “No new SDK beyond Firebase's own modules (already in the project)” should
+  distinguish a resolved package from products explicitly linked to a target.
+- Future measurement specs should list required Xcode product dependencies,
+  Crashlytics input files, and dSYM settings as a human prerequisite when
+  `project.pbxproj` remains protected.
+
+### Closeout
+
+- Wrote the Phase A acceptance contract in `PHASE_MANIFEST` before implementation.
+- A fresh-context validator confirmed A1 FAIL and A2-A5 BLOCKED.
+- Per the chip's explicit stop condition, no Swift implementation, build,
+  deployment, remote mutation, Phase B work, Phase C doc sync, or launch-checklist
+  status change occurred. Adam must add the two Firebase products and Crashlytics
+  Xcode configuration before execution resumes.

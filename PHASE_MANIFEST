@@ -1,73 +1,42 @@
-# Spec 08 Phase D — launch readiness audit (PERIPHERY)
+# Chip Measurement — Phase A: Crashlytics (PERIPHERY)
 #
-# ACCEPTANCE CONTRACT (written before Phase D implementation edits)
-# D1 GIVEN the conventions open-items, tasks/todo.md chips and unchecked boxes,
-#    repository launch/submission/shipping markers, and current live backend
-#    state, WHEN the audit is complete, THEN every actionable item is reconciled
-#    in LAUNCH_CHECKLIST.md and stale completed items are explicitly closed.
-# D2 GIVEN each checklist row, WHEN independently reviewed, THEN it names exactly
-#    one owner (Adam or machine), an evidence-backed status, and an exact command,
-#    repository path, or Firebase/Xcode/App Store Connect console path to close it.
-# D3 GIVEN the Spec 08 expected members, WHEN checked against local and live
-#    evidence, THEN Twilio/SMS, five affiliate URLs, source:resolved review, Test
-#    Mover replacement, kit supplier, Xcode StoreKit pass-through, privacy/auth
-#    legal work, and App Store asset/metadata refresh all appear without assuming
-#    they are complete.
-# D4 GIVEN the completed Spec 08 implementation, WHEN docs are synchronized, THEN
-#    CLAUDE.md, peezy-conventions-v2.md, peezy-v1-architecture.md, and
-#    peezy-v1-catalog-sheet.md record the 47-row catalog, verify layer,
-#    accountability and kit-calibration contracts, and LAUNCH_CHECKLIST.md as the
-#    single source of launch work.
-# D5 GIVEN the Phase D diff, WHEN documentation checks, the exact iPhone 17 Pro
-#    build, a fresh-context validator, and diff review run, THEN D1-D4 receive
-#    evidence-backed PASS/FAIL before a separate Phase D commit; no function,
-#    rules, catalog, vendor, provider, ISP, or workflow deployment occurs.
+# ACCEPTANCE CONTRACT (written before Phase A implementation edits)
+# A1 GIVEN the existing firebase-ios-sdk package reference, WHEN the app target's
+#    package products are inspected, THEN FirebaseCrashlytics is available to the
+#    app without introducing a second Firebase package or editing project.pbxproj.
+# A2 GIVEN Firebase configuration succeeds, WHEN the app launches, THEN
+#    Crashlytics initializes alongside Firebase with no user-visible behavior change.
+# A3 GIVEN assessment save, identity save, or workflow submission fails at an
+#    existing caught-and-swallowed boundary, WHEN the error is handled, THEN the
+#    same behavior is preserved and Crashlytics records the non-fatal error.
+# A4 GIVEN a forced local test crash, WHEN the built app is run, THEN Crashlytics
+#    console evidence or an API read-back proves the crash report arrived.
+# A5 GIVEN the Phase A diff, WHEN the exact iPhone 17 Pro build, acceptance checks,
+#    fresh-context validator, and diff review run, THEN A1-A4 receive an
+#    evidence-backed PASS/FAIL; no deployment occurs and project.pbxproj is unchanged.
 #
-# NEEDS-CLARIFICATION (bounded, reversible interpretations)
-# - "todo.md chips" includes the two explicitly spawned bug chips plus the six
-#   stale unchecked Spec 04 Phase A boxes. The historical execution log remains
-#   unchanged; LAUNCH_CHECKLIST reconciles each item with commit evidence.
-# - A checklist close-path may name a future mutation that requires separate
-#   authorization. This phase records that path but performs no launch mutation.
-# - External-partner and App Store decisions remain Adam-owned; code/test work is
-#   machine-owned. Mixed work is split into separate rows rather than assigning
-#   two owners to one item.
+# NEEDS-CLARIFICATION
+# - The app target currently has no FirebaseCrashlytics product dependency. The
+#   chip explicitly requires STOP if adding that module requires project.pbxproj;
+#   no source implementation proceeds unless read-only inspection proves otherwise.
 #
-# EDIT SITES
+# EDIT SITES (only after A1 is unblocked)
 # PHASE_MANIFEST
-# LAUNCH_CHECKLIST.md
-# CLAUDE.md
-# peezy-conventions-v2.md
-# peezy-v1-architecture.md
-# peezy-v1-catalog-sheet.md
-# SESSION_NOTES.md
+# SESSION_NOTES.md (blocked-session closeout only)
+# Peezy 4.0/MainInterface/Models/PeezyV1App.swift
+# Peezy 4.0/Assessment/AssessmentModels/AssessmentCoordinator.swift
+# Peezy 4.0/MainInterface/Models/IdentityService.swift
+# Peezy 4.0/MainInterface/Models/WorkflowService.swift
 #
 # READ SITES
-# peezy-build-spec-08.md Phase D and Files Summary
-# peezy-execution-protocol.md sections 1-6
-# tasks/todo.md
-# SESSION_NOTES.md
-# app-marketing-context.md
-# docs/APP_STORE_CONVERSION_PLAN.md
-# DEAD_CODE_REMOVAL_LIST.md
-# Tests/ConditionVerification.swift
-# Peezy 4.0/PrivacyInfo.xcprivacy
-# Peezy 4.0/Auth/AuthView.swift
-# Peezy 4.0/Auth/SignUpView.swift
-# Peezy 4.0/Menu/PeezySettingsView.swift
-# Peezy 4.0/MainInterface/Views/Paywall/PaywallGateView.swift
-# Peezy 4.0.xcodeproj/xcshareddata/xcschemes/Peezy 4.0.xcscheme
-# Configuration.storekit
-# functions/.env (presence-only; no values printed or edited)
-# functions/vendorsData.json
-# functions/seedVendors.js
-# functions/ispPlansData.json
-# functions/seedIspPlans.js
-# functions/providerDirectoryData.json
-# functions/seedProviderDirectory.js
-# functions/resolveProvider.js
-# functions/seedTaskCatalog.js
-# functions/submitCheckIn.js
-# firestore.rules
-# live Firestore providerDirectory/vendors/ispPlans (read-only)
-# live deployed-functions inventory (read-only)
+# peezy-conventions-v2.md
+# peezy-execution-protocol.md
+# peezy-chip-measurement.md
+# CLAUDE.md
+# Peezy 4.0.xcodeproj/project.pbxproj (read-only; protected)
+# Peezy 4.0.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+# Peezy 4.0/MainInterface/Models/PeezyV1App.swift
+# Peezy 4.0/Assessment/AssessmentModels/AssessmentDataManager.swift
+# Peezy 4.0/Assessment/AssessmentModels/AssessmentCoordinator.swift
+# Peezy 4.0/MainInterface/Models/IdentityService.swift
+# Peezy 4.0/MainInterface/Models/WorkflowService.swift
