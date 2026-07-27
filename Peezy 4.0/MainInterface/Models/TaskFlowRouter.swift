@@ -88,6 +88,12 @@ struct TaskFlowRouter {
                 onDismiss: onDismiss,
                 onStatusAction: onStatusAction
             )
+        case "box_return":
+            BoxReturnView(
+                userId: userId,
+                onDismiss: onDismiss,
+                onStatusAction: onStatusAction
+            )
 
         // ── Swift custom flows (Types 4–6; superseded in Specs 05–06) ──
 

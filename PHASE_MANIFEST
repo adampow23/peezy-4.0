@@ -1,60 +1,50 @@
-# Spec 08 Phase B — strike ladder and standards (CORE)
+# Spec 08 Phase C — kit calibration hook (PERIPHERY)
 #
 # ACCEPTANCE CONTRACT (written before implementation edits)
-# B1 GIVEN legacy vendors whose accountability.strikes is numeric and new vendors
-#    whose strikes are arrays, WHEN the iOS model decodes either shape, THEN live
-#    vendors remain comparable and new strikes preserve date, review source,
-#    severity, status, and note without a vendor reseed.
-# B2 GIVEN pending, dismissed, and confirmed strikes, WHEN the pure server
-#    ladderState function runs, THEN only confirmed strikes advance the ladder:
-#    zero = ok, one = conversation, two = warning, and three = removed; any
-#    confirmed dayOfPriceChange strike is removed immediately.
-# B3 GIVEN a vendor check-in with charged_more_than_quoted and/or damage flags,
-#    WHEN submitCheckIn commits the review, THEN it atomically appends one high,
-#    pendingReview strike per qualifying flag with the review id as source;
-#    late-arrival and unsteady-crew flags do not auto-create strikes.
-# B4 GIVEN a third confirmed strike or a confirmed dayOfPriceChange strike,
-#    WHEN the accountability transition is emulated, THEN active becomes false;
-#    WHEN that vendor reaches VendorStore.active, THEN it is absent from client
-#    comparison results.
-# B5 GIVEN the Phase B diff, WHEN ladder/Swift tests, syntax and diff checks, a
-#    fresh-context validator, and the exact iPhone 17 Pro build run, THEN B1-B4
-#    receive evidence-backed PASS/FAIL, docs/vendor-standards.md uses the required
-#    direct warm register, and only submitCheckIn is redeployed before the
-#    separate Phase B commit.
+# C1 GIVEN a durable supplies_kit workflow response containing the ordered kit,
+#    WHEN BOX_RETURN loads, THEN delivered equals the sum of small, medium,
+#    large, wardrobe, and dishPack counts from that exact submitted payload.
+# C2 GIVEN a nonnegative returned count, WHEN the user submits BOX_RETURN, THEN
+#    users/{uid} contains the exact map kitCalibration {delivered, returned};
+#    the client reads it back and only reports success when both values match.
+# C3 GIVEN the optional pickup toggle is on with returned > 0, WHEN the flow
+#    submits, THEN the existing requestConcierge callable creates one request
+#    for BOX_RETURN with the returned count in its title; WHEN the toggle is off,
+#    no concierge call is made.
+# C4 GIVEN the BOX_RETURN catalog workflow id, WHEN routed, THEN a numeric,
+#    nonnegative return control, optional pickup toggle, submit/error/success
+#    states, and stable accessibility identifiers render; no KitEstimator
+#    constant or estimation path changes.
+# C5 GIVEN the Phase C diff, WHEN focused Swift tests, diff checks, a
+#    fresh-context validator, and the exact iPhone 17 Pro build run, THEN C1-C4
+#    receive evidence-backed PASS/FAIL before a separate Phase C commit and no
+#    function, rules, catalog, vendor, or workflow deployment occurs.
 #
 # NEEDS-CLARIFICATION (bounded, reversible interpretations)
-# - Console writes cannot invoke server code without a new Firestore trigger,
-#   which is outside the sanctioned deploy list. For MVP, ladderState and the
-#   server transition are pure/tested; submitCheckIn reconciles confirmed state
-#   whenever it touches a vendor. Adam confirms/dismisses at:
-#   Firebase Console → project peezy-1ecrdl → Build → Firestore Database → Data
-#   → vendors → {vendorId} → accountability.strikes, and sets the sibling active
-#   field to false in that same vendor document edit when the computed state is
-#   removed. No unsanctioned trigger is introduced.
-# - "Day-of-price-change" is represented by the stable severity value
-#   dayOfPriceChange. The broader charged-more-than-quoted answer starts as high
-#   pendingReview; Adam may reclassify it only when the facts establish timing.
-# - Existing production placeholders use numeric strikes. The read model accepts
-#   both shapes, and submitCheckIn lazily migrates a touched vendor to the array
-#   schema; seedVendors is not run because vendor reseeding is not sanctioned.
+# - users/{uid}/kitCalibration ends at the existing user document, so
+#   kitCalibration is stored as a map field on users/{uid}, not as an invalid
+#   collection path without a document id.
+# - delivered comes from the durable supplies_kit workflow response's submitted
+#   kit JSON. That is the actual customized order and cannot drift when the
+#   packing estimator later regenerates its task payload.
+# - Pickup with zero returned boxes is disabled. The existing requestConcierge
+#   callable is reused unchanged with taskId BOX_RETURN and category packing;
+#   no backend deployment is required or permitted in this phase.
 #
 # EDIT SITES
 # PHASE_MANIFEST
-# Peezy 4.0/MainInterface/Models/Vendor.swift
-# Peezy 4.0/MainInterface/Models/MoversBookingPayload.swift
-# Peezy 4.0Tests/VendorTests.swift
-# Peezy 4.0Tests/MoversBookingPayloadTests.swift
-# functions/accountabilityLadder.js
-# functions/submitCheckIn.js
-# functions/tests/accountabilityLadder.test.js
-# functions/tests/submitCheckIn.test.js
-# functions/vendorsData.json
-# docs/vendor-standards.md
+# Peezy 4.0/MainInterface/Models/BoxReturnService.swift
+# Peezy 4.0/MainInterface/Models/TaskFlowRouter.swift
+# Peezy 4.0/Tasks/Task Cards/BoxReturnView.swift
+# Peezy 4.0Tests/BoxReturnTests.swift
 #
 # READ SITES
-# peezy-build-spec-08.md Phase B and Files Summary
+# peezy-build-spec-08.md Phase C and Files Summary
 # peezy-execution-protocol.md sections 1-4
-# functions/seedVendors.js
-# functions/index.js
-# Peezy 4.0/MainInterface/Models/MoversFlowViewModel.swift
+# Peezy 4.0/Tasks/Task Cards/SuppliesKitView.swift
+# Peezy 4.0/MainInterface/Models/KitEstimator.swift
+# Peezy 4.0/MainInterface/Models/TaskActionService.swift
+# Peezy 4.0/MainInterface/Models/WorkflowCardModels.swift
+# functions/getWorkflowQualifying.js submitWorkflowAnswers persistence shape
+# functions/index.js requestConcierge
+# firestore.rules
