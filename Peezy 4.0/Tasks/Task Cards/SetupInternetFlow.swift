@@ -2,17 +2,13 @@
 //  SetupInternetFlow.swift
 //  Peezy 4.0
 //
-//  Created by Adam Powell on 4/13/26.
+//  Curated KC-area internet comparison with an attributed-link-ready handoff.
+//  Address-level serviceability remains a v1.1 provider/API responsibility.
 //
 
 import SwiftUI
-
-// MARK: - Setup Internet Flow
-// Type 6: Complex-Vendor
-//
-// Card sequence (no skip logic):
-//   TitleCard → Multi5 (usage) → Select3 (household size)
-//   → Select4 (contract preference) → SummaryCard
+import SafariServices
+import OSLog
 
 struct SetupInternetFlow: View {
     let taskTitle = "Set up my internet"
@@ -23,17 +19,20 @@ struct SetupInternetFlow: View {
     let onDismiss: () -> Void
     let onStatusAction: (TaskFlowStatusAction) -> Void
 
-    // MARK: - State
-
     @State private var currentIndex = 0
-    @State private var answers: [String: Set<String>] = [:]
+    @State private var plans: [ISPPlan] = []
+    @State private var addressLabel = "Kansas City"
+    @State private var openedPlanID: String?
+    @State private var safariDestination: ISPPlanSafariDestination?
+    @State private var isLoading = true
     @State private var isSubmitting = false
+    @State private var errorMessage: String?
 
-    // MARK: - Card Indices
-
-    private let totalCards = 5
-
-    // MARK: - Body
+    private let logger = Logger(
+        subsystem: Bundle.main.bundleIdentifier ?? "Peezy",
+        category: "ISPPlans"
+    )
+    private let totalCards = 2
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -43,146 +42,204 @@ struct SetupInternetFlow: View {
             TaskFlowStack(cardsRemaining: totalCards - currentIndex, currentIndex: currentIndex) {
                 cardContent
             }
-
+        }
+        .task(id: userId) {
+            await loadPlansAndAddress()
+        }
+        .sheet(item: $safariDestination) { destination in
+            ISPPlanSafariView(url: destination.url)
+                .ignoresSafeArea()
         }
     }
-
-    // MARK: - Card Router
 
     @ViewBuilder
     private var cardContent: some View {
         switch currentIndex {
-
-        // ── Card 0: Title ──
         case 0:
             TaskFlowTitleCard(
                 taskTitle: taskTitle,
                 icon: "wifi",
-                onContinue: { advance() }
+                onContinue: { currentIndex = 1 }
             )
 
-        // ── Card 1: Internet usage (multi-select) ──
         case 1:
-            TaskFlowMulti5Card(
-                taskTitle: taskTitle,
-                question: "Who's using the internet?",
-                option1: FlowOption(id: "work_from_home", label: "Work from home", icon: "laptopcomputer"),
-                option2: FlowOption(id: "streaming", label: "Streaming", icon: "play.tv.fill"),
-                option3: FlowOption(id: "gaming", label: "Gaming", icon: "gamecontroller.fill"),
-                option4: FlowOption(id: "smart_home", label: "Smart home devices", icon: "homekit"),
-                option5: FlowOption(id: "basic", label: "Just browsing and email", icon: "globe"),
-                selectedIds: answers["internet_usage"] ?? [],
-                showBack: true,
-                onSelect: { id in toggleMulti("internet_usage", id: id) },
-                onContinue: { advance() },
-                onBack: { goBack() }
-            )
-
-        // ── Card 2: Household size ──
-        case 2:
-            TaskFlowSelect3Card(
-                taskTitle: taskTitle,
-                question: "How many people in the household?",
-                option1: FlowOption(id: "1_2", label: "1–2", icon: "person"),
-                option2: FlowOption(id: "3_5", label: "3–5", icon: "person.2"),
-                option3: FlowOption(id: "6_plus", label: "6+", icon: "person.3"),
-                selectedIds: answers["household_size"] ?? [],
-                showBack: true,
-                onSelect: { id in selectSingle("household_size", id: id) },
-                onBack: { goBack() }
-            )
-
-        // ── Card 3: Contract preference ──
-        case 3:
-            TaskFlowSelect4Card(
-                taskTitle: taskTitle,
-                question: "Contract preference?",
-                option1: FlowOption(id: "month_to_month", label: "Month-to-month", icon: "calendar"),
-                option2: FlowOption(id: "1_year", label: "1 year", icon: "calendar.badge.clock"),
-                option3: FlowOption(id: "2_year", label: "2 year", icon: "calendar.badge.checkmark"),
-                option4: FlowOption(id: "no_preference", label: "No preference", icon: "hand.thumbsup"),
-                selectedIds: answers["contract_preference"] ?? [],
-                showBack: true,
-                onSelect: { id in selectSingle("contract_preference", id: id) },
-                onBack: { goBack() }
-            )
-
-        // ── Card 4: Summary ──
-        case 4:
-            TaskFlowSummaryCard(
-                taskTitle: taskTitle,
-                bodyText: "We'll match you with providers in your area and get you options.",
-                subtext: "Response times are typically 24–48 hours.",
-                showBack: true,
-                onPrimary: { submitAndComplete() },
-                onBack: { goBack() }
-            )
+            comparisonCard
 
         default:
             EmptyView()
         }
     }
 
-    // MARK: - Navigation
+    private var comparisonCard: some View {
+        VStack(spacing: 0) {
+            TaskFlowHeader(
+                taskTitle: taskTitle,
+                showBack: true,
+                onBack: { currentIndex = 0 }
+            )
 
-    private func advance() {
-        guard currentIndex + 1 < totalCards else { return }
-        currentIndex += 1
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: PeezyTheme.Layout.itemSpacing) {
+                    Text("Plans for \(addressLabel)")
+                        .font(.title2.bold())
+                        .foregroundStyle(PeezyTheme.Colors.deepInk)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("internet.address")
+
+                    Text("Curated Kansas City-area options. Each provider confirms availability and final terms for your exact address.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("internet.coverage_note")
+
+                    if isLoading {
+                        ProgressView("Loading plans…")
+                            .frame(maxWidth: .infinity, minHeight: 88)
+                            .tint(PeezyTheme.Colors.deepInk)
+                            .accessibilityIdentifier("internet.loading")
+                    } else if let errorMessage {
+                        internetError(message: errorMessage)
+                    } else {
+                        ForEach(plans) { plan in
+                            ComparisonCardView(
+                                model: plan.comparisonModel,
+                                isSelected: openedPlanID == plan.id,
+                                labels: .internet,
+                                onSelect: { open(plan) }
+                            )
+                        }
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, PeezyTheme.Layout.verticalSpacing)
+            }
+            .scrollIndicators(.hidden)
+
+            if !plans.isEmpty {
+                PeezyAssessmentButton(
+                    isSubmitting ? "Saving…" : "I checked availability",
+                    disabled: openedPlanID == nil || isSubmitting,
+                    action: submitAndComplete
+                )
+                .accessibilityHint("Available after opening a provider plan")
+                .accessibilityIdentifier("internet.complete")
+                .padding(.horizontal, 24)
+                .padding(.bottom, 24)
+            }
+        }
+        .accessibilityIdentifier("internet.comparison")
     }
 
-    private func goBack() {
-        guard currentIndex > 0 else { return }
-        currentIndex -= 1
+    private func internetError(message: String) -> some View {
+        VStack(spacing: PeezyTheme.Layout.verticalSpacing) {
+            Image(systemName: "wifi.exclamationmark")
+                .font(.title)
+                .foregroundStyle(PeezyTheme.Colors.deepInk)
+                .accessibilityHidden(true)
+
+            Text(message)
+                .font(.body)
+                .foregroundStyle(PeezyTheme.Colors.deepInk)
+                .multilineTextAlignment(.center)
+                .accessibilityIdentifier("internet.error_message")
+
+            Button("Try again") {
+                Task { await loadPlansAndAddress() }
+            }
+            .font(.headline)
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .buttonStyle(.bordered)
+            .tint(PeezyTheme.Colors.deepInk)
+            .accessibilityIdentifier("internet.retry")
+        }
+        .padding(PeezyTheme.Layout.cardPadding)
+        .frame(maxWidth: .infinity)
+        .background(Color.white.opacity(0.62), in: .rect(cornerRadius: PeezyTheme.Layout.cornerRadius))
+        .accessibilityIdentifier("internet.error")
     }
 
-    // MARK: - Answer Handlers
-
-    private func selectSingle(_ key: String, id: String) {
-        answers[key] = [id]
-        advance()
-    }
-
-    private func toggleMulti(_ key: String, id: String) {
-        if answers[key] == nil { answers[key] = [] }
-        if answers[key]!.contains(id) {
-            answers[key]!.remove(id)
-        } else {
-            answers[key]!.insert(id)
+    @MainActor
+    private func loadPlansAndAddress() async {
+        isLoading = true
+        errorMessage = nil
+        do {
+            plans = try await ISPPlanService().fetchPlans()
+            if let address = await IdentityService.shared.loadOrMigrate(userId: userId)?.newAddress {
+                addressLabel = Self.cityAndZIP(from: address)
+            } else {
+                addressLabel = "Kansas City"
+            }
+            isLoading = false
+        } catch {
+            plans = []
+            errorMessage = "We couldn't load internet plans. Check your connection and try again."
+            isLoading = false
         }
     }
 
-    // MARK: - Submission
+    private func open(_ plan: ISPPlan) {
+        openedPlanID = plan.id
+        if plan.affiliateURL == ISPPlan.affiliatePending {
+            logger.notice("Open item: affiliate URL pending for \(plan.id, privacy: .public); using provider URL")
+        }
+        safariDestination = ISPPlanSafariDestination(url: plan.preferredURL)
+    }
 
     private func submitAndComplete() {
-        guard !isSubmitting else { return }
+        guard !isSubmitting,
+              let openedPlanID,
+              let selectedPlan = plans.first(where: { $0.id == openedPlanID }) else { return }
         isSubmitting = true
 
         var workflowAnswers = WorkflowAnswers(workflowId: workflowId)
-        workflowAnswers.answers = answers.mapValues { Array($0) }
+        workflowAnswers.answers = [
+            "isp_plan": [selectedPlan.id],
+            "isp_provider": [selectedPlan.provider]
+        ]
 
         Task {
-            do {
-                let service = WorkflowService()
-                let response = try await service.submitAnswers(
-                    workflowId: workflowId,
-                    answers: workflowAnswers,
-                    userId: userId
-                )
-                await MainActor.run {
-                    isSubmitting = false
-                    if response.success { onComplete() }
-                }
-            } catch {
-                await MainActor.run {
-                    isSubmitting = false
-                    onComplete()
-                }
+            _ = try? await WorkflowService().submitAnswers(
+                workflowId: workflowId,
+                answers: workflowAnswers,
+                userId: userId
+            )
+            await MainActor.run {
+                isSubmitting = false
+                onComplete()
             }
         }
     }
+
+    static func cityAndZIP(from address: PeezyAddress) -> String {
+        let locality = [address.city, address.state]
+            .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+            .joined(separator: ", ")
+        return [locality, address.zip]
+            .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+            .joined(separator: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .nilIfEmpty ?? "Kansas City"
+    }
 }
 
-// MARK: - Previews
+private struct ISPPlanSafariDestination: Identifiable {
+    let id = UUID()
+    let url: URL
+}
+
+private struct ISPPlanSafariView: UIViewControllerRepresentable {
+    let url: URL
+
+    func makeUIViewController(context: Context) -> SFSafariViewController {
+        SFSafariViewController(url: url)
+    }
+
+    func updateUIViewController(_ uiViewController: SFSafariViewController, context: Context) {}
+}
+
+private extension String {
+    var nilIfEmpty: String? { isEmpty ? nil : self }
+}
 
 #if DEBUG
 #Preview("Setup Internet Flow") {

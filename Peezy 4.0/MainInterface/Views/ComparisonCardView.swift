@@ -7,10 +7,50 @@
 
 import SwiftUI
 
+struct ComparisonCardLabels {
+    let firstIcon: String
+    let secondIcon: String
+    let thirdIcon: String
+    let detailIcon: String
+    let footerPrefix: String
+    let accessibilityHint: String
+
+    static let moving = ComparisonCardLabels(
+        firstIcon: "clock",
+        secondIcon: "calendar.badge.clock",
+        thirdIcon: "shield.checkered",
+        detailIcon: "shippingbox.fill",
+        footerPrefix: "Price basis",
+        accessibilityHint: "Select this option"
+    )
+
+    static let internet = ComparisonCardLabels(
+        firstIcon: "speedometer",
+        secondIcon: "tag.fill",
+        thirdIcon: "doc.text.fill",
+        detailIcon: "wifi",
+        footerPrefix: "Coverage",
+        accessibilityHint: "Open this provider's plan details in the app"
+    )
+}
+
 struct ComparisonCardView: View {
     let model: ComparisonCardModel
     let isSelected: Bool
+    let labels: ComparisonCardLabels
     let onSelect: () -> Void
+
+    init(
+        model: ComparisonCardModel,
+        isSelected: Bool,
+        labels: ComparisonCardLabels = .moving,
+        onSelect: @escaping () -> Void
+    ) {
+        self.model = model
+        self.isSelected = isSelected
+        self.labels = labels
+        self.onSelect = onSelect
+    }
 
     var body: some View {
         Button(action: onSelect) {
@@ -35,9 +75,9 @@ struct ComparisonCardView: View {
                     .foregroundStyle(PeezyTheme.Colors.deepInk)
 
                 VStack(alignment: .leading, spacing: PeezyTheme.Layout.verticalSpacingSmall) {
-                    Label(model.durationAndTeam, systemImage: "clock")
-                    Label(model.arrivalWindow, systemImage: "calendar.badge.clock")
-                    Label(model.insuranceTier, systemImage: "shield.checkered")
+                    Label(model.durationAndTeam, systemImage: labels.firstIcon)
+                    Label(model.arrivalWindow, systemImage: labels.secondIcon)
+                    Label(model.insuranceTier, systemImage: labels.thirdIcon)
                 }
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
@@ -48,13 +88,13 @@ struct ComparisonCardView: View {
                     .fixedSize(horizontal: false, vertical: true)
 
                 ForEach(model.detailNotes, id: \.self) { note in
-                    Label(note, systemImage: "shippingbox.fill")
+                    Label(note, systemImage: labels.detailIcon)
                         .font(.subheadline)
                         .bold()
                         .foregroundStyle(PeezyTheme.Colors.deepInk)
                 }
 
-                Text("Price basis: \(model.priceBasis)")
+                Text("\(labels.footerPrefix): \(model.priceBasis)")
                     .font(.footnote)
                     .bold()
                     .foregroundStyle(PeezyTheme.Colors.deepInk)
@@ -75,10 +115,18 @@ struct ComparisonCardView: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(
-            ([model.providerName, model.priceRange, model.durationAndTeam, model.arrivalWindow, model.insuranceTier]
+            ([
+                model.providerName,
+                model.priceRange,
+                model.durationAndTeam,
+                model.arrivalWindow,
+                model.insuranceTier,
+                model.why,
+                "\(labels.footerPrefix): \(model.priceBasis)"
+            ]
                 + model.detailNotes).joined(separator: ", ")
         )
-        .accessibilityHint("Select this option")
+        .accessibilityHint(labels.accessibilityHint)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
         .accessibilityIdentifier("comparison.\(model.id)")
     }

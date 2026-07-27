@@ -1,72 +1,55 @@
-# Spec 07 Phase B — provider directory + resolver (CORE)
+# Spec 07 Phase C — ISP curated cards (PERIPHERY)
 #
 # ACCEPTANCE CONTRACT (written before edits)
-# B1 GIVEN the provider seed, WHEN its validator loads every row, THEN roughly
-#    forty real providers have unique ids, required schema fields, valid methods,
-#    and verified:true appears only on link rows whose official action URL was
-#    confirmed live during this session.
-# B2 GIVEN the single gated rules diff, WHEN reviewed against HEAD, THEN its only
-#    access changes are authenticated read/no client write for providerDirectory
-#    and ispPlans (Phase C's required read folded into this one deploy); no rules
-#    deploy occurs until Adam explicitly approves the presented diff.
-# B3 GIVEN a seeded provider or alias, WHEN resolveProvider runs, THEN it returns
-#    the matching safe link/call/concierge payload without invoking Anthropic.
-# B4 GIVEN a directory miss, WHEN Anthropic web search returns a high-confidence
-#    result, THEN a URL is returned only when that exact URL occurs in a web-search
-#    citation, the payload includes citations, and the result caches with
-#    source:"resolved", verified:false; medium/low, malformed, timeout, failure,
-#    fake brand, or any uncited URL returns method:"concierge" with no URL.
-# B5 GIVEN a supported businessSearch row, WHEN a provider resolves, THEN link
-#    renders an in-app Safari action plus one-tap identity copy, call renders the
-#    phone and drafted call line, and concierge follows the existing submission;
-#    method/confidence are not exposed and every new UI state has an accessibility id.
-# B6 GIVEN the complete local Phase B implementation, WHEN the simulator builds
-#    and a fresh-context validator runs pre-deploy checks, THEN B1-B5 receive
-#    evidence-backed PASS/FAIL. After approval/deploy, seeded link open, unseeded
-#    real-brand citation+cache, gibberish concierge, and fake-brand no-URL receive
-#    live evidence before Phase B closes.
+# C1 GIVEN functions/ispPlansData.json, WHEN its validator loads the seed, THEN
+#    Google Fiber, AT&T Fiber, Xfinity, Spectrum, and T-Mobile Home Internet each
+#    have a unique real plan with speed, price, promo, contract, provider URL,
+#    one why-line, research date, and an official source recorded in the file.
+# C2 GIVEN Adam's CJ/Impact links are absent, WHEN a plan uses the literal
+#    #AFFILIATE_PENDING placeholder, THEN the client logs the open item and opens
+#    the HTTPS provider URL in-app; the placeholder is never parsed as a URL.
+# C3 GIVEN an authenticated user opens SETUP_INTERNET, WHEN the flow loads, THEN
+#    it reads ispPlans from Firestore, loads the user's canonical new address,
+#    shows "Plans for {city/zip}", and renders ordered reusable comparison cards
+#    with provider, speed, price, promo, contract, and one why-line.
+# C4 GIVEN a rendered plan card, WHEN the user taps it, THEN SFSafariViewController
+#    opens the affiliate URL when present or the provider URL otherwise, and the
+#    user can mark the task complete after the handoff.
+# C5 GIVEN Firestore or identity loading fails, WHEN the flow renders, THEN it
+#    provides an accessible retry/fallback state without changing the catalog or
+#    claiming address-level serviceability; all new controls have stable ids and
+#    44-point targets and the simulator build succeeds.
+# C6 GIVEN the completed Phase C implementation and seed validator, WHEN a fresh-
+#    context validator runs, THEN C1-C5 receive evidence-backed PASS/FAIL before
+#    the sanctioned ispPlans seed runs; after seeding, round-trip plus authenticated
+#    read-back provide live evidence before Phase C closes.
 #
 # NEEDS-CLARIFICATION (bounded, reversible interpretations)
-# - Current utility definitions contain no businessSearch/provider-name step, and
-#   deploying flowDefinitions is not sanctioned. Keep their existing concierge
-#   route; do not invent or deploy an extra definition mutation in this run.
-# - Insurance businessSearch lives in two custom Swift flows, not row definitions.
-#   Integrate the update-address branch in those files; quote/switch stays concierge.
-# - Some businessSearch steps perform record transfers rather than address changes
-#   or cancellations. Resolving those to an address URL could falsely complete a
-#   different job, so only matching action semantics use self-service; the record-
-#   transfer branches retain their existing concierge route.
-# - Phase C requires ispPlans authenticated reads. firestore.rules has no reusable
-#   wildcard, so include its block now in the one Phase B-gated rules diff.
-# - The local Firestore emulator cannot start because Java is absent. Firebase's
-#   explicit --dry-run compiler validated the exact rules file successfully; this
-#   did not deploy it. The real rules deploy remains behind Adam's gate.
+# - No CJ/Impact ISP links exist in the repository, so every plan stores
+#   affiliateURL:"#AFFILIATE_PENDING" and a separate official providerURL. This
+#   is the spec's explicit graceful-degradation path and remains an open item.
+# - No serviceability API is permitted in v1. Curated cards are KC-area candidates,
+#   never address-qualified claims; every provider handoff performs its own check.
+# - The shared ComparisonCardView is mover-worded internally. Reuse its model/view
+#   while supplying ISP-specific field labels through a small optional label
+#   adapter so existing mover call sites remain byte-for-byte behavior compatible.
 #
 # EDIT SITES
-PHASE_MANIFEST
-firestore.rules
-functions/providerDirectoryData.json
-functions/seedProviderDirectory.js
-functions/resolveProvider.js
-functions/index.js
-Peezy 4.0/MainInterface/Models/ProviderDirectoryService.swift
-Peezy 4.0/MainInterface/Views/ProviderActionCard.swift
-Peezy 4.0/Tasks/FlowEngine/FlowEngineView.swift
-Peezy 4.0/Tasks/Task Cards/HandleAutoInsuranceFlow.swift
-Peezy 4.0/Tasks/Task Cards/HandleHomeInsuranceFlow.swift
-
+# PHASE_MANIFEST
+# functions/ispPlansData.json
+# functions/seedIspPlans.js
+# Peezy 4.0/MainInterface/Models/ISPPlanService.swift
+# Peezy 4.0/MainInterface/Models/ComparisonCardModel.swift
+# Peezy 4.0/MainInterface/Views/ComparisonCardView.swift
+# Peezy 4.0/Tasks/Task Cards/SetupInternetFlow.swift
+#
 # READ SITES
-# peezy-build-spec-07.md Phase B + Phase C rules note
-# firestore.rules
-# functions/package.json
-# functions/processInventory.js (Anthropic initialization/call pattern)
-# functions/index.js (v2 callable/export pattern)
-# functions/seedVendors.js (backend-owned seed/round-trip pattern)
-# functions/flowDefinitionsData.json (businessSearch and row topology)
-# Peezy 4.0/Tasks/FlowEngine/FlowDefinition.swift
-# Peezy 4.0/Tasks/FlowEngine/FlowEngineView.swift
-# Peezy 4.0/Tasks/Task Card Components/TaskFlowBusinessSearchCard.swift
+# peezy-build-spec-07.md Phase C
+# peezy-v1-architecture.md §8
+# peezy-v1-catalog-sheet.md SETUP_INTERNET
+# firestore.rules ispPlans block (already deployed in the Phase B gate)
+# functions/seedVendors.js and functions/seedProviderDirectory.js
+# Peezy 4.0/MainInterface/Views/ComparisonCardView.swift
+# Peezy 4.0/MainInterface/Models/ComparisonCardModel.swift
 # Peezy 4.0/MainInterface/Models/IdentityService.swift
-# Peezy 4.0/MainInterface/Models/WorkflowService.swift
-# Peezy 4.0/Tasks/Task Cards/HandleAutoInsuranceFlow.swift
-# Peezy 4.0/Tasks/Task Cards/HandleHomeInsuranceFlow.swift
+# Peezy 4.0/Tasks/Task Cards/SetupInternetFlow.swift

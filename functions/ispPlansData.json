@@ -1,0 +1,81 @@
+{
+  "researchedAt": "2026-07-27",
+  "curationNote": "Representative plans from providers that advertise service in the Kansas City market. These cards are not address-level availability results; each provider must confirm service, final price, taxes, fees, and offer eligibility at the user's exact address.",
+  "plans": [
+    {
+      "planId": "google_fiber_core_1_gig",
+      "provider": "Google Fiber",
+      "tier": "Core 1 Gig",
+      "speed": "Up to 1 Gbps upload and download",
+      "price": "$70/mo",
+      "promo": "Wi-Fi 6E router, installation, and unlimited data included",
+      "contract": "No annual contract",
+      "why": "A straightforward symmetrical fiber option for busy connected homes.",
+      "providerURL": "https://fiber.google.com/internet/",
+      "affiliateURL": "#AFFILIATE_PENDING",
+      "sourceURL": "https://fiber.google.com/blog/2026/02/gfiber-core-1-gig-yes-its-still-70-and.html",
+      "sourceTitle": "GFiber Core 1 Gig: Yes, it's still $70",
+      "sortOrder": 1
+    },
+    {
+      "planId": "att_fiber_300",
+      "provider": "AT&T Fiber",
+      "tier": "Internet 300",
+      "speed": "Up to 300 Mbps",
+      "price": "$35/mo promotional",
+      "promo": "New-customer and billing discounts apply; availability is limited",
+      "contract": "No annual contract",
+      "why": "A lower-cost fiber tier with enough speed for streaming and video calls.",
+      "providerURL": "https://www.att.com/internet/fiber/",
+      "affiliateURL": "#AFFILIATE_PENDING",
+      "sourceURL": "https://www.att.com/internet/fiber/",
+      "sourceTitle": "AT&T Fiber plans",
+      "sortOrder": 2
+    },
+    {
+      "planId": "xfinity_300",
+      "provider": "Xfinity",
+      "tier": "300 Mbps",
+      "speed": "Up to 300 Mbps",
+      "price": "$45/mo for 5 years",
+      "promo": "WiFi equipment and unlimited data included; offer ends 7/27/26",
+      "contract": "No annual contract",
+      "why": "A price-guaranteed cable option for everyday work, play, and streaming.",
+      "providerURL": "https://www.xfinity.com/local/mo/kansas-city",
+      "affiliateURL": "#AFFILIATE_PENDING",
+      "sourceURL": "https://www.xfinity.com/local/mo/kansas-city",
+      "sourceTitle": "Xfinity Internet in Kansas City, Missouri",
+      "sortOrder": 3
+    },
+    {
+      "planId": "spectrum_internet_premier",
+      "provider": "Spectrum",
+      "tier": "Internet Premier",
+      "speed": "Up to 500 Mbps",
+      "price": "$40/mo for year 1",
+      "promo": "Advanced WiFi available for $10/mo; current offer terms apply",
+      "contract": "No contract or data cap",
+      "why": "A mid-tier cable option for households with several active devices.",
+      "providerURL": "https://www.spectrum.com/internet/plans",
+      "affiliateURL": "#AFFILIATE_PENDING",
+      "sourceURL": "https://www.spectrum.com/internet/plans",
+      "sourceTitle": "Spectrum Internet plans",
+      "sortOrder": 4
+    },
+    {
+      "planId": "tmobile_rely_home_internet",
+      "provider": "T-Mobile Home Internet",
+      "tier": "Rely",
+      "speed": "Typical download 133–354 Mbps",
+      "price": "$50/mo with AutoPay",
+      "promo": "5-year price guarantee and 5G gateway included",
+      "contract": "No annual contract",
+      "why": "A quick self-install wireless option where wired service is inconvenient.",
+      "providerURL": "https://www.t-mobile.com/home-internet/plans",
+      "affiliateURL": "#AFFILIATE_PENDING",
+      "sourceURL": "https://www.t-mobile.com/home-internet/plans",
+      "sourceTitle": "T-Mobile 5G Home Internet plans",
+      "sortOrder": 5
+    }
+  ]
+}
