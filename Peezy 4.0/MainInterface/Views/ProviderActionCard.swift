@@ -150,10 +150,12 @@ struct ProviderActionCard: View {
         switch resolution.method {
         case .link:
             if let url = resolution.url {
-                PeezyAssessmentButton("Open (resolution.name)") {
+                PeezyAssessmentButton("Open " + resolution.name) {
                     safariDestination = ProviderSafariDestination(url: url)
                 }
-                .accessibilityHint("Opens (resolution.name)'s official (actionKind.noun) page in the app")
+                .accessibilityHint(
+                    "Opens " + resolution.name + "'s official " + actionKind.noun + " page in the app"
+                )
                 .accessibilityIdentifier("provider.action.open")
             }
 
@@ -172,13 +174,13 @@ struct ProviderActionCard: View {
                     .accessibilityLabel("Suggested call script: \(actionKind.callScript)")
                     .accessibilityIdentifier("provider.action.script")
 
-                PeezyAssessmentButton("Call (resolution.name)") {
+                PeezyAssessmentButton("Call " + resolution.name) {
                     let dialable = phone.filter { $0.isNumber || $0 == "+" }
                     if let url = URL(string: "tel:\(dialable)") {
                         openURL(url)
                     }
                 }
-                .accessibilityHint("Calls (phone)")
+                .accessibilityHint("Calls " + phone)
                 .accessibilityIdentifier("provider.action.call")
             }
 
@@ -253,7 +255,7 @@ struct ProviderResolutionLoadingCard: View {
             ProgressView("Checking \(providerName)…")
                 .font(.body)
                 .tint(PeezyTheme.Colors.deepInk)
-                .accessibilityLabel("Checking (providerName) for an official action")
+                .accessibilityLabel("Checking " + providerName + " for an official action")
                 .accessibilityIdentifier("provider.resolving.progress")
 
             Spacer()
