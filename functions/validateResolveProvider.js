@@ -44,6 +44,11 @@ async function run() {
   });
   assert.equal(resolved.url, officialURL);
   assert.equal(cached.url, officialURL);
+  const cachedDocument = _test.resolvedDocument(resolved, "New Provider", "utility");
+  assert.equal(cachedDocument.source, "resolved");
+  assert.equal(cachedDocument.verified, false);
+  assert.equal(cachedDocument.addressChangeURL, officialURL);
+  assert.equal(cachedDocument.citations[0].url, officialURL);
 
   for (const unsafeResult of [
     { name: "Uncited", url: "https://attacker.example/invented", method: "link", confidence: "high", citations: [citation] },
@@ -68,6 +73,24 @@ async function run() {
   });
   assert.equal(failure.method, "concierge");
   assert.ok(!Object.hasOwn(failure, "url"));
+
+  const timeout = await _test.resolveProviderRequest("Slow Provider", "financial", {
+    lookup: async () => null,
+    search: async () => new Promise(() => {}),
+    cache: async () => assert.fail("Timeouts must not cache"),
+    timeoutMs: 5
+  });
+  assert.equal(timeout.method, "concierge");
+  assert.ok(!Object.hasOwn(timeout, "url"));
+
+  const uncitedCall = _test.safePayload({
+    name: "Invented Phone",
+    phone: "1-800-555-0199",
+    method: "call",
+    confidence: "high",
+    citations: []
+  }, "Invented Phone");
+  assert.equal(uncitedCall.method, "concierge");
 
   const response = _test.parseSearchResponse({
     content: [{

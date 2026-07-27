@@ -99,7 +99,7 @@ function safePayload(candidate, fallbackName) {
 
   if (method === "call") {
     const phone = cleanPhone(candidate?.phone);
-    if (!phone) return conciergePayload(name, citations);
+    if (!phone || citations.length === 0) return conciergePayload(name, citations);
     return { ...base, phone };
   }
 
@@ -263,12 +263,13 @@ async function resolveProviderRequest(name, category, dependencies = {}) {
   const lookup = dependencies.lookup || lookupDirectory;
   const search = dependencies.search || searchOfficialProvider;
   const cache = dependencies.cache || cacheResolved;
+  const timeoutMs = dependencies.timeoutMs || SEARCH_TIMEOUT_MS;
 
   try {
     const record = await lookup(name);
     if (record) return directoryRecordPayload(record, name);
 
-    const searched = await withTimeout(Promise.resolve().then(() => search(name, category)));
+    const searched = await withTimeout(Promise.resolve().then(() => search(name, category)), timeoutMs);
     const safe = safePayload(searched, name);
     if (safe.confidence !== "high" || safe.method === "concierge") {
       return conciergePayload(safe.name, safe.citations);
@@ -310,7 +311,9 @@ module.exports = {
     directoryRecordPayload,
     normalize,
     parseSearchResponse,
+    resolvedDocument,
     resolveProviderRequest,
-    safePayload
+    safePayload,
+    withTimeout
   }
 };
