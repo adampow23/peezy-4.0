@@ -25,6 +25,8 @@ enum MoveScopeFactory {
         let storageCube = storageStop?.addedCubicFeet ?? 0
         let includedItems = inventoryItems.filter(\.shouldMove)
         guard !includedItems.isEmpty else {
+            // The bedroom fallback ranges already model closets, cabinets, and
+            // drawers. Applying the scan-only allowance here would count them twice.
             let range = PricingConstants.bedroomCubeRange(for: bedroomsAnswer)
             return CubeResult(
                 cubicFeet: ((range.lowerBound + range.upperBound) / 2) + storageCube,
@@ -39,7 +41,11 @@ enum MoveScopeFactory {
                 quantity: item.quantity
             )
         }
-        return CubeResult(cubicFeet: inventoryCube + storageCube, source: .inventoryScan)
+        let hiddenGoodsCube = PricingConstants.hiddenGoodsCubeFeet(for: bedroomsAnswer)
+        return CubeResult(
+            cubicFeet: inventoryCube + hiddenGoodsCube + storageCube,
+            source: .inventoryScan
+        )
     }
 
     static func storageStop(from assessment: [String: Any]) -> StorageStop? {

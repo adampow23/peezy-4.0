@@ -304,6 +304,9 @@ enum PricingEngine {
 
     static func disclosures(for scope: MoveScope) -> [String] {
         var result: [String] = []
+        if scope.cubeSource == .inventoryScan {
+            result.append("Includes what scans can't see — closets, cabinets, drawers.")
+        }
         if scope.packedStatus == .unpacked { result.append("Unpacked boxes") }
         if scope.originAccess.route == .elevator && !scope.originAccess.elevatorReserved {
             result.append("Unreserved elevator at origin")

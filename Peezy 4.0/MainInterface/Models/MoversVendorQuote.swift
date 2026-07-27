@@ -22,7 +22,7 @@ struct MoversVendorQuote: Identifiable, Equatable {
             insuranceTier: valuationTier.label,
             why: estimate.why,
             priceBasis: priceBasis,
-            detailNotes: estimate.specialtyHandlingNotes
+            detailNotes: estimate.disclosures + estimate.specialtyHandlingNotes
         )
     }
 }

@@ -266,3 +266,64 @@ All remaining launch and maintenance work is tracked only in
 - Phase C documentation checks matched conventions to the source event list and
   validated the unchanged app privacy manifest. No backend or production
   deployment occurred anywhere in the chip.
+
+## Estimate Integrity chip — Phase A complete; protocol STOP before Phase B (2026-07-27)
+
+### What the spec got wrong or left ambiguous
+
+- Phase B does not define the room-name normalization contract, the
+  dwelling-to-garage/basement mapping, or the numeric meaning of “one confidence
+  notch.” Fresh users also reach inventory capture without `currentBedrooms`;
+  identity has no bedroom or dwelling fields, so the required expectation has
+  no authoritative source for that path.
+- Phase D names a LOCKED-pending-calibration `storageStopLoadHours` constant but
+  supplies no starting value. It also leaves the no-stop storage-cube behavior
+  and exact +30-minute fallback disclosure unspecified.
+- Phase E does not say whether room floors apply to the aggregate room, each
+  kitchen branch, or each generated session. “Kitchen always ≥2 sessions” also
+  conflicts with the existing short-timeline merge unless it means before
+  compression.
+- Phase F names the `estimateCalibration` document shape but not its Firestore
+  path. The smallest reversible backend-owned choice would be
+  `estimateCalibration/{reviewId}`, written transactionally with the review.
+- Phase G requires regression-gating an existing byte-identical moving fixture
+  if duplicates appear, but the repo contains no processInventory fixture,
+  per-vertical config, or suitable room images. The deployed inline prompt
+  already contains a cross-frame dedup instruction.
+
+### What surprised us
+
+- The hidden-goods disclosure already had a durable home in
+  `PriceEstimate.disclosures`, but the comparison adapter discarded every
+  disclosure and rendered only specialty notes. Phase A now carries both into
+  the visible comparison card.
+- Xcode blocked in `NSFileCoordinator` while reading the Desktop-backed project
+  package. A tar mirror containing byte-identical Phase A source avoided the
+  File Provider deadlock and produced reliable simulator test evidence.
+- The 1,300-cu-ft Phase C gate alone cannot prove the six-hour why-line
+  invariant: the current four-person throughput crosses six hours at 1,230 cu
+  ft before access, specialty, or storage-stop labor. Phase C therefore needs a
+  scope-level physical-hours viability guard in addition to the cube boundary.
+
+### Phase A implementation and validation ledger
+
+- Added the exact 1BR/2BR/3BR/4BR+ hidden-goods factors only to scan-derived
+  cube; the bedroom fallback remains unchanged and documents why it already
+  includes hidden goods.
+- Added the exact locked scan disclosure and propagated estimate disclosures to
+  comparison-card detail notes.
+- Standalone PricingEngine tests passed 45 assertions. Targeted iPhone 17 Pro
+  tests passed 4/4 on iOS 26.5; workspace and mirror hub-file SHA-256 values
+  matched exactly. The fresh-context validator reported PASS for A1–A5.
+- `project.pbxproj` remained byte-diff clean. No function, rules, catalog, flow,
+  or other remote deployment occurred.
+
+### Stop reason and proposed documentation edits
+
+- Per the execution protocol and the chip’s “STOP on anything not covered”
+  boundary, Phase B did not start. Adam must supply the missing Phase B contract
+  before A→G can continue; downstream D/E/F choices should be locked in the
+  same clarification to avoid a second stop.
+- Once decided, add the canonical coverage-room mapping/confidence tiers,
+  storage-stop calibration/copy, packing-floor semantics, and calibration path
+  to conventions so later clients do not infer them again.

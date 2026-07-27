@@ -57,6 +57,16 @@ enum PricingConstants {
         6: 2_600...3_800
     ]
 
+    /// LOCKED-pending-calibration allowance for goods a room scan cannot see.
+    /// The bedroom fallback ranges above already include hidden goods, so this
+    /// table is applied only when inventoryScan is the cube source.
+    static let hiddenGoodsCubeByBedrooms: [Int: Double] = [
+        1: 80,
+        2: 140,
+        3: 220,
+        4: 300
+    ]
+
     /// LOCKED-pending-calibration storage contribution from the Spec 02 trio.
     static let storageUnitCubicFeet: [String: Double] = [
         "small": 180,
@@ -132,6 +142,13 @@ enum PricingConstants {
             .flatMap { Int($0) }
         let cappedBedrooms = min(max(firstNumber ?? 1, 1), 6)
         return bedroomFallbackCubicFeet[cappedBedrooms] ?? bedroomFallbackCubicFeet[1]!
+    }
+
+    static func hiddenGoodsCubeFeet(for bedroomsAnswer: String) -> Double {
+        let firstNumber = bedroomsAnswer.split(whereSeparator: { !$0.isNumber }).first
+            .flatMap { Int($0) }
+        let cappedBedrooms = min(max(firstNumber ?? 1, 1), 4)
+        return hiddenGoodsCubeByBedrooms[cappedBedrooms] ?? hiddenGoodsCubeByBedrooms[1]!
     }
 
     static func storageCubeFeet(size: String, fullness: String) -> Double {

@@ -1,41 +1,39 @@
-# Chip Measurement — Phase C: Documentation sync (PERIPHERY)
+# Chip Estimate Integrity — Phase A: Hidden-goods factor (CORE)
 #
-# ACCEPTANCE CONTRACT (written before Phase C implementation edits)
-# C1 GIVEN the measurement layer is implemented, WHEN conventions are read,
-#    THEN one Analytics section lists exactly the 13 custom events, states that
-#    analytics parameters contain no PII, and requires new surfaces to log at
-#    the same service-layer state-change boundary where possible.
-# C2 GIVEN the canonical launch ledger, WHEN measurement readiness is checked,
-#    THEN a VERIFIED measurement row records Crashlytics receipt, the 13-event
-#    logged journey, the clean iPhone 17 Pro build, and the no-deployment scope.
-# C3 GIVEN PrivacyInfo.xcprivacy and launch rows L11/L12, WHEN Firebase manifests
-#    are cross-checked, THEN the app manifest is changed only if the approved
-#    data-use matrix requires it. SDK-provided Crashlytics declarations are noted,
-#    while app-wide analytics/privacy-label declarations remain gated on L11 and
-#    must not be guessed; L11/L12 therefore do not close with this chip.
-# C4 GIVEN the Phase C diff, WHEN documentation checks run, THEN the conventions
-#    event list exactly matches AnalyticsEvents.swift, the checklist status is
-#    internally consistent, PrivacyInfo.xcprivacy remains valid, git diff check
-#    passes, and project.pbxproj remains byte-diff clean from HEAD.
-# C5 GIVEN C1-C4 evidence, WHEN a fresh-context validator runs the Phase C
-#    acceptance list, THEN it reports PASS before the phase is committed. Nothing
-#    deploys and no remote state is mutated.
+# ACCEPTANCE CONTRACT (written before Phase A implementation edits)
+# A1 GIVEN scan-derived inventory cube and a bedroom answer, WHEN MoveScopeFactory
+#    builds cube scope, THEN it adds exactly the LOCKED-pending-calibration hidden
+#    goods factor (1BR 80, 2BR 140, 3BR 220, 4BR+ 300 cu ft) once.
+# A2 GIVEN no moveable scan inventory, WHEN bedroom fallback supplies cube, THEN
+#    the existing fallback midpoint is unchanged because that table already
+#    includes hidden goods; storage contribution remains independent.
+# A3 GIVEN otherwise-identical scan scopes before/after the factor, WHEN pricing
+#    runs, THEN both range bounds move upward and the estimate contains the exact
+#    locked disclosure: "Includes what scans can't see — closets, cabinets, drawers."
+# A4 GIVEN scan and fallback estimates, WHEN disclosures are mapped to a mover
+#    comparison card, THEN the hidden-goods line is visible for scan estimates
+#    only and remains part of the durable estimate disclosures.
+# A5 GIVEN the Phase A diff, WHEN standalone CORE tests and a clean simulator
+#    build run, THEN both pass; a fresh-context validator grades A1-A4 PASS and
+#    the phase report walks every hub-file diff before commit. No deploy occurs.
 #
 # EDIT SITES
 # PHASE_MANIFEST
-# peezy-conventions-v2.md
-# LAUNCH_CHECKLIST.md
-# SESSION_NOTES.md (session's final file write)
-#
-# CONDITIONAL EDIT SITE
-# Peezy 4.0/PrivacyInfo.xcprivacy (only with an approved collected-data matrix)
+# Peezy 4.0/MainInterface/Models/PricingConstants.swift
+# Peezy 4.0/MainInterface/Models/PricingEngine.swift
+# Peezy 4.0/MainInterface/Models/MoveScopeFactory.swift
+# Peezy 4.0/MainInterface/Models/MoversVendorQuote.swift
+# Tests/PricingEngineTests.swift
+# Peezy 4.0Tests/EstimateIntegrityTests.swift (new)
+# SESSION_NOTES.md (session final write only)
 #
 # READ SITES
-# peezy-chip-measurement.md
+# peezy-chip-estimate-integrity.md
 # peezy-execution-protocol.md
+# peezy-conventions-v2.md
 # CLAUDE.md
-# Peezy 4.0/MainInterface/Models/AnalyticsEvents.swift
-# Peezy 4.0/PrivacyInfo.xcprivacy
-# Firebase 12.7.0 Crashlytics/Resources/PrivacyInfo.xcprivacy
-# LAUNCH_CHECKLIST.md rows L11/L12
-# Peezy 4.0.xcodeproj/project.pbxproj (read-only; protected)
+# peezy-v1-architecture.md
+# Peezy 4.0/Inventory/Models/InventoryModels.swift
+# Peezy 4.0/MainInterface/Models/ComparisonCardModel.swift
+# Peezy 4.0/MainInterface/Models/Vendor.swift
+# Peezy 4.0/MainInterface/Views/ComparisonCardView.swift

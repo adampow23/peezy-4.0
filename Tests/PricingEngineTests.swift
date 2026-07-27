@@ -182,6 +182,14 @@ struct PricingEngineTests {
         let fallbackWidth = fallbackEstimate.range.high - fallbackEstimate.range.low
         check(fallbackWidth > (scannedSameHome.range.high - scannedSameHome.range.low), "bedrooms fallback produces a wider range than scan scope")
         check(scannedWidth > 0, "price range has a positive width")
+        check(
+            scannedSameHome.disclosures.contains("Includes what scans can't see — closets, cabinets, drawers."),
+            "scan estimate includes the locked hidden-goods disclosure"
+        )
+        check(
+            !fallbackEstimate.disclosures.contains("Includes what scans can't see — closets, cabinets, drawers."),
+            "bedrooms fallback does not claim a scan-only hidden-goods adjustment"
+        )
         let storageStop = StorageStop(size: "Medium", fullness: "1/2")
         check(storageStop.addedCubicFeet == 210, "storage size and fullness contribute cube")
         let storageScope = MoveScope(
