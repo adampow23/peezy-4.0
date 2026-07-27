@@ -100,7 +100,7 @@ struct FlowEngineView: View {
             providerResolveTask?.cancel()
         }
         .fullScreenCover(isPresented: $showPaywallGate) {
-            PaywallGateSheet { subscribed in
+            PaywallGateSheet(action: .conciergeSubmission) { subscribed in
                 showPaywallGate = false
                 if subscribed { submitAndComplete() }
             }

@@ -50,7 +50,7 @@ struct FindMoversFlow: View {
             )
         }
         .fullScreenCover(isPresented: $showPaywallGate) {
-            PaywallGateSheet { subscribed in
+            PaywallGateSheet(action: .vendorBooking) { subscribed in
                 showPaywallGate = false
                 if subscribed { model.showBooking() }
             }

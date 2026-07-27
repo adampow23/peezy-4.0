@@ -37,6 +37,7 @@ struct CompletionFlowView: View {
     @State private var stage: Stage = .generating
     @State private var taskCount: Int = 0
     @State private var showContent = true
+    @State private var paywallPresentedAt: Date?
 
     /// Ensures stage can only advance forward, never go back.
     private func advanceStage(to newStage: Stage) {
@@ -53,6 +54,8 @@ struct CompletionFlowView: View {
         if subscriptionManager.isSubscribed {
             routeToMainApp()
         } else {
+            paywallPresentedAt = Date()
+            AnalyticsEvents.paywallViewed(trigger: .postAssessment)
             advanceStage(to: .paywallGate)
         }
     }
@@ -97,6 +100,15 @@ struct CompletionFlowView: View {
 
                     case .paywallGate:
                         PaywallGateView(onDismiss: {
+                            if subscriptionManager.isSubscribed,
+                               let paywallPresentedAt {
+                                Task {
+                                    await AnalyticsEvents.recordNewPaywallConversion(
+                                        trigger: .postAssessment,
+                                        presentedAt: paywallPresentedAt
+                                    )
+                                }
+                            }
                             routeToMainApp()
                         })
                         .environmentObject(subscriptionManager)

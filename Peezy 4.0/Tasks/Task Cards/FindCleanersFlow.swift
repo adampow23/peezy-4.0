@@ -84,7 +84,7 @@ struct FindCleanersFlow: View {
 
         }
         .fullScreenCover(isPresented: $showPaywallGate) {
-            PaywallGateSheet { subscribed in
+            PaywallGateSheet(action: .vendorBooking) { subscribed in
                 showPaywallGate = false
                 if subscribed { submitAndComplete() }
             }

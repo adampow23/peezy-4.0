@@ -27,6 +27,14 @@ enum PaywallGatedAction {
     case conciergeSubmission
     /// Supplies-kit one-tap order (lands with the packing plan).
     case suppliesKitOrder
+
+    var analyticsTrigger: AnalyticsEvents.PaywallTrigger {
+        switch self {
+        case .vendorBooking: .book
+        case .conciergeSubmission: .concierge
+        case .suppliesKitOrder: .kit
+        }
+    }
 }
 
 enum PaywallPolicy {
@@ -53,14 +61,30 @@ enum PaywallPolicy {
 /// returns to the flow; if the user subscribed inside the paywall, the
 /// pending action re-fires.
 struct PaywallGateSheet: View {
+    let action: PaywallGatedAction
     /// Called on dismiss; `true` when the user is subscribed on the way out.
     let onFinished: (Bool) -> Void
+    @State private var presentedAt: Date?
 
     var body: some View {
         PaywallGateView(onDismiss: {
-            onFinished(SubscriptionManager.shared.isSubscribed)
+            let subscribed = SubscriptionManager.shared.isSubscribed
+            if subscribed, let presentedAt {
+                Task {
+                    await AnalyticsEvents.recordNewPaywallConversion(
+                        trigger: action.analyticsTrigger,
+                        presentedAt: presentedAt
+                    )
+                }
+            }
+            onFinished(subscribed)
         })
         .environmentObject(SubscriptionManager.shared)
+        .onAppear {
+            guard presentedAt == nil else { return }
+            presentedAt = Date()
+            AnalyticsEvents.paywallViewed(trigger: action.analyticsTrigger)
+        }
         .accessibilityIdentifier("paywall.gate_sheet")
     }
 }

@@ -1,50 +1,73 @@
-# Chip Measurement — Phase A: Crashlytics (PERIPHERY)
+# Chip Measurement — Phase B: Funnel events (CORE)
 #
-# ACCEPTANCE CONTRACT (written before Phase A implementation edits)
-# A1 GIVEN Firebase config succeeds and the separately committed app-target
-#    dependencies are present, WHEN the app launches, THEN Crashlytics initializes
-#    alongside Firebase without changing the visible launch flow.
-# A2 GIVEN assessment persistence fails, WHEN AssessmentCoordinator swallows the
-#    failure and continues task generation, THEN Crashlytics records the same error
-#    and the existing saveError/continuation behavior is unchanged.
-# A3 GIVEN identity migration persistence fails, WHEN IdentityService preserves its
-#    best-effort return behavior, THEN Crashlytics records the write failure and the
-#    built identity is still returned.
-# A4 GIVEN workflow submission fails, WHEN WorkflowService propagates the error to
-#    its existing caller behavior, THEN Crashlytics records the error exactly once at
-#    the shared service boundary and still throws the original error.
-# A5 GIVEN a temporary DEBUG-only forced-crash trigger, WHEN the installed simulator
-#    app crashes outside the debugger and relaunches, THEN Crashlytics console or API
-#    evidence proves receipt; the trigger is removed before commit.
-# A6 GIVEN the final Phase A diff, WHEN grep checks, the exact iPhone 17 Pro build,
-#    fresh-context validation, and diff review run, THEN A1-A5 receive an
-#    evidence-backed PASS/FAIL; no deployment occurs and project.pbxproj remains
-#    unchanged from prerequisite commit bf3af26.
+# ACCEPTANCE CONTRACT (written before Phase B implementation edits)
+# B1 GIVEN Firebase Analytics is linked, WHEN the analytics facade is inspected,
+#    THEN `AnalyticsEvents.swift` is the only custom-event definition site and
+#    contains exactly the 13 specified event names; the only custom user property
+#    is `has_subscription`.
+# B2 GIVEN one onboarding/assessment session, WHEN the explainer finishes, the
+#    assessment first appears, and completion begins, THEN `explainer_complete`,
+#    `assessment_start`, and `assessment_complete(questionCount)` each log once at
+#    their guarded state transitions, never from a rendering expression.
+# B3 GIVEN the persisted dose counters, WHEN a user completes their first-ever task
+#    and later crosses today's frozen dose target, THEN `dose_first_complete` logs
+#    only for the zero-to-one lifetime completion and `dose_day_complete(dayNumber)`
+#    logs only for the incomplete-to-complete daily crossing across every task exit.
+# B4 GIVEN a draft inventory and no prior packing plan, WHEN final submission and
+#    plan persistence succeed, THEN `scan_complete(itemCount,cubicFeet)` and
+#    `packing_plan_created` each log once; regeneration never re-logs plan creation.
+# B5 GIVEN the four paywall triggers and downstream service successes, WHEN a gate
+#    opens, a new StoreKit purchase completes, booking/quote submission succeeds, a
+#    kit offer loads/orders, or check-in succeeds, THEN the matching paywall,
+#    booking, kit, and check-in events each log once with only the specified params.
+# B6 GIVEN a temporary DEBUG-only acceptance journey, WHEN the simulator runs it,
+#    THEN the `[PeezyAnalytics]` dump lists every specified event exactly once; the
+#    hook is removed, grep finds no PII parameter keys, the exact iPhone 17 Pro build
+#    passes, and a fresh-context validator grades B1-B6. No deployment occurs and
+#    project.pbxproj remains unchanged from bf3af26.
 #
 # NEEDS-CLARIFICATION (bounded, reversible interpretations)
-# - WorkflowService has no swallowed catch of its own. The shared service boundary
-#   records and rethrows so every caller retains its current behavior without editing
-#   multiple views or double-reporting a single submission failure.
-# - Identity migration's `try?` write is converted to do/catch solely to expose the
-#   same swallowed error to Crashlytics; its nil/success return contract is unchanged.
+# - `itemCount` uses the inventory manager's existing record count; `cubicFeet`
+#   uses the same move-eligible per-item estimate and quantity calculation as move
+#   scope pricing, so the analytics value matches the product's displayed scope.
+# - `itemTotal` means the sum of all nine kit-unit quantities, not cents or dollars.
+# - A successful historical Restore Purchases is not a new `paywall_convert`.
+#   Conversion requires a verified auto-renewable transaction purchased after the
+#   current paywall presentation and records only its product identifier.
+# - `booking_submit.vertical` is derived from the non-PII workflow id: `movers` for
+#   `book_movers`, `cleaners` for `book_cleaners`; cleaners is a quote request.
 #
 # EDIT SITES
 # PHASE_MANIFEST
+# Peezy 4.0/MainInterface/Models/AnalyticsEvents.swift
 # Peezy 4.0/MainInterface/Models/PeezyV1App.swift
+# Peezy 4.0/MainInterface/Views/Onboarding/ExplainerView.swift
+# Peezy 4.0/Assessment/AssessmentModels/AssessmentFlowView.swift
 # Peezy 4.0/Assessment/AssessmentModels/AssessmentCoordinator.swift
-# Peezy 4.0/MainInterface/Models/IdentityService.swift
+# Peezy 4.0/MainInterface/Models/PeezyHomeViewModel.swift
+# Peezy 4.0/Inventory/Models/InventorySessionManager.swift
+# Peezy 4.0/MainInterface/Models/TaskActionService.swift
 # Peezy 4.0/MainInterface/Models/WorkflowService.swift
-# Peezy 4.0/Documents/measurement-crashlytics-receipt.png
+# Peezy 4.0/Assessment/AssessmentViews/Onboarding/CompletionFlowView.swift
+# Peezy 4.0/MainInterface/Models/PaywallPolicy.swift
+# Peezy 4.0/Tasks/Task Cards/FindCleanersFlow.swift
+# Peezy 4.0/Tasks/Task Cards/FindMoversFlow.swift
+# Peezy 4.0/Tasks/FlowEngine/FlowEngineView.swift
+# Peezy 4.0/Tasks/Task Cards/SuppliesKitView.swift
+# Peezy 4.0/MainInterface/Models/CheckInService.swift
+# Peezy 4.0/Documents/measurement-analytics-event-dump.txt
 #
 # READ SITES
 # peezy-conventions-v2.md
 # peezy-execution-protocol.md
 # peezy-chip-measurement.md
 # CLAUDE.md
-# Peezy 4.0.xcodeproj/project.pbxproj (read-only; protected again)
-# Peezy 4.0.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
-# Peezy 4.0/MainInterface/Models/PeezyV1App.swift
-# Peezy 4.0/Assessment/AssessmentModels/AssessmentDataManager.swift
-# Peezy 4.0/Assessment/AssessmentModels/AssessmentCoordinator.swift
-# Peezy 4.0/MainInterface/Models/IdentityService.swift
-# Peezy 4.0/MainInterface/Models/WorkflowService.swift
+# Peezy 4.0.xcodeproj/project.pbxproj (read-only; protected)
+# Peezy 4.0/MainInterface/Models/SubscriptionManager.swift (read-only; frozen)
+# Peezy 4.0/MainInterface/Views/Paywall/PaywallGateView.swift (read-only; frozen)
+# Peezy 4.0/MainInterface/Views/AppRootView.swift
+# Peezy 4.0/Assessment/AssessmentViews/Onboarding/AssessmentIntroView.swift
+# Peezy 4.0/MainInterface/Models/MoversFlowViewModel.swift
+# Peezy 4.0/MainInterface/Models/MoveScopeFactory.swift
+# Peezy 4.0/MainInterface/Models/KitEstimator.swift
+# Peezy 4.0/Inventory/Models/InventoryModels.swift

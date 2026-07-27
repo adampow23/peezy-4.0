@@ -36,15 +36,36 @@ class WorkflowService {
                 throw WorkflowServiceError.invalidResponse
             }
 
-            return WorkflowSubmissionResponse(
+            let response = WorkflowSubmissionResponse(
                 success: data["success"] as? Bool ?? false,
                 submissionId: data["submissionId"] as? String ?? "",
                 message: data["message"] as? String ?? "",
                 estimatedResponseTime: data["estimatedResponseTime"] as? String ?? "24-48 hours"
             )
+            if response.success {
+                recordBookingSubmission(workflowId: workflowId, answers: answers)
+            }
+            return response
         } catch {
             Crashlytics.crashlytics().record(error: error)
             throw error
+        }
+    }
+
+    private func recordBookingSubmission(
+        workflowId: String,
+        answers: WorkflowAnswers
+    ) {
+        switch workflowId {
+        case "book_movers":
+            AnalyticsEvents.bookingSubmitted(
+                vertical: "movers",
+                isQuoteRequest: answers.answers["quoteRequest"]?.first == "true"
+            )
+        case "book_cleaners":
+            AnalyticsEvents.bookingSubmitted(vertical: "cleaners", isQuoteRequest: true)
+        default:
+            break
         }
     }
 }

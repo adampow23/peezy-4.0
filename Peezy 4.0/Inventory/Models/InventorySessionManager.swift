@@ -421,6 +421,19 @@ final class InventorySessionManager {
         )
 
         self.submissionStatus = .submitted
+        let cubicFeet = allItems
+            .filter(\.shouldMove)
+            .reduce(0) { partial, item in
+                partial + PricingConstants.cubicFeet(
+                    forItemNamed: item.name,
+                    scannerEstimate: item.cubicFeet,
+                    quantity: item.quantity
+                )
+            }
+        AnalyticsEvents.scanCompleted(
+            itemCount: totalItemCount,
+            cubicFeet: cubicFeet
+        )
     }
 
     func reset() {

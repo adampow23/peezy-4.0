@@ -12,6 +12,7 @@ struct SuppliesKitView: View {
     @State private var isSubmitting = false
     @State private var showPaywall = false
     @State private var submitted = false
+    @State private var didLogOfferView = false
     @State private var errorMessage: String?
 
     private let actionService = TaskActionService()
@@ -38,7 +39,7 @@ struct SuppliesKitView: View {
             )
         }
         .fullScreenCover(isPresented: $showPaywall) {
-            PaywallGateSheet { subscribed in
+            PaywallGateSheet(action: .suppliesKitOrder) { subscribed in
                 showPaywall = false
                 if subscribed {
                     Task { await submitOrder() }
@@ -230,7 +231,12 @@ struct SuppliesKitView: View {
     private func loadKit() async {
         errorMessage = nil
         do {
-            kit = try await actionService.loadSuppliesKit(userId: userId, taskId: taskId)
+            let loadedKit = try await actionService.loadSuppliesKit(userId: userId, taskId: taskId)
+            kit = loadedKit
+            if !didLogOfferView {
+                didLogOfferView = true
+                AnalyticsEvents.kitOfferViewed(itemTotal: itemTotal(loadedKit))
+            }
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -283,6 +289,7 @@ struct SuppliesKitView: View {
             guard response.success else {
                 throw WorkflowServiceError.submissionFailed(response.message)
             }
+            AnalyticsEvents.kitOrdered(itemTotal: itemTotal(kit))
             if let moveDate = identity.moveDate {
                 do {
                     _ = try await TaskGenerationService().generateNewlyMatchingTasks(
@@ -345,6 +352,11 @@ struct SuppliesKitView: View {
 
     private func formattedPrice(_ cents: Int) -> String {
         String(format: "$%.2f", Double(cents) / 100)
+    }
+
+    private func itemTotal(_ kit: SuppliesKit) -> Int {
+        kit.small + kit.medium + kit.large + kit.wardrobe + kit.dishPack
+            + kit.tape + kit.paper + kit.wrap + kit.mattressBags
     }
 }
 

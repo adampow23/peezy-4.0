@@ -31,6 +31,9 @@ struct PeezyV1App: App {
                     // Handle Google Sign-In URL callback
                     GIDSignIn.sharedInstance.handle(url)
                 }
+                .onReceive(SubscriptionManager.shared.$subscriptionStatus) { status in
+                    AnalyticsEvents.setHasSubscription(status.isActive)
+                }
         }
     }
 }

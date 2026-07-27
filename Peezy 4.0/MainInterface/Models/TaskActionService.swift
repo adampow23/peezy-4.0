@@ -170,6 +170,9 @@ struct TaskActionService {
             )
         }
         try await persist(plan, suppliesKit: suppliesKit, userId: userId)
+        if previous == nil {
+            AnalyticsEvents.packingPlanCreated()
+        }
         return plan
     }
 

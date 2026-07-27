@@ -356,6 +356,22 @@ final class PeezyHomeViewModel {
         showTaskFlow = false
     }
 
+    private func recordDoseProgress(completedTask: Bool) {
+        let wasFirstCompletion = totalCompletedCount == 0
+        let wasDayComplete = isTodayComplete
+
+        dailyDoseCompletedCount += 1
+        if completedTask {
+            totalCompletedCount += 1
+            if wasFirstCompletion {
+                AnalyticsEvents.firstDoseCompleted()
+            }
+        }
+        if !wasDayComplete && isTodayComplete {
+            AnalyticsEvents.dayDoseCompleted(dayNumber: dayNumber)
+        }
+    }
+
     // MARK: - Complete Simple Task
 
     func completeCurrentTask() {
@@ -363,8 +379,7 @@ final class PeezyHomeViewModel {
         Task { await actionService.markTaskCompleted(task) }
         PeezyHaptics.taskComplete()
         completedThisSession += 1
-        dailyDoseCompletedCount += 1
-        totalCompletedCount += 1
+        recordDoseProgress(completedTask: true)
         allActiveTasks.removeAll { $0.id == task.id }
         currentTask = nil
         isFocusedTask = false
@@ -377,7 +392,7 @@ final class PeezyHomeViewModel {
         guard let task = currentTask else { return }
         let returnDate = Calendar.current.date(byAdding: .day, value: 3, to: Date()) ?? Date()
         Task { await actionService.writeUserInProgress(task, returnDate: returnDate) }
-        dailyDoseCompletedCount += 1
+        recordDoseProgress(completedTask: false)
         completedThisSession += 1
         currentTask = nil
         isFocusedTask = false
@@ -412,9 +427,8 @@ final class PeezyHomeViewModel {
             }
             await MainActor.run {
                 allActiveTasks.removeAll { $0.id == task.id }
-                dailyDoseCompletedCount += 1
+                recordDoseProgress(completedTask: true)
                 completedThisSession += 1
-                totalCompletedCount += 1
                 currentTask = nil
                 isFocusedTask = false
                 advanceAfterTask()
@@ -450,8 +464,7 @@ final class PeezyHomeViewModel {
 
         PeezyHaptics.taskComplete()
         completedThisSession += 1
-        dailyDoseCompletedCount += 1
-        totalCompletedCount += 1
+        recordDoseProgress(completedTask: true)
         allActiveTasks.removeAll { $0.id == task.id }
 
         finishFlowAndDeferAdvance()
@@ -482,8 +495,7 @@ final class PeezyHomeViewModel {
 
         PeezyHaptics.taskComplete()
         completedThisSession += 1
-        dailyDoseCompletedCount += 1
-        totalCompletedCount += 1
+        recordDoseProgress(completedTask: true)
         allActiveTasks.removeAll { $0.id == task.id }
 
         finishFlowAndDeferAdvance()
@@ -498,7 +510,7 @@ final class PeezyHomeViewModel {
         let returnDate = Calendar.current.date(byAdding: .day, value: 3, to: Date()) ?? Date()
         Task { await actionService.writeUserInProgress(task, returnDate: returnDate) }
 
-        dailyDoseCompletedCount += 1
+        recordDoseProgress(completedTask: false)
         completedThisSession += 1
 
         finishFlowAndDeferAdvance()
@@ -514,7 +526,7 @@ final class PeezyHomeViewModel {
         Task { await actionService.writeSnooze(task, snoozedUntil: snoozedUntil) }
 
         allActiveTasks.removeAll { $0.id == task.id }
-        dailyDoseCompletedCount += 1
+        recordDoseProgress(completedTask: false)
 
         finishFlowAndDeferAdvance()
     }
@@ -526,7 +538,7 @@ final class PeezyHomeViewModel {
             return
         }
         allActiveTasks.removeAll { $0.id == task.id }
-        dailyDoseCompletedCount += 1
+        recordDoseProgress(completedTask: false)
         completedThisSession += 1
         finishFlowAndDeferAdvance()
     }
@@ -539,7 +551,7 @@ final class PeezyHomeViewModel {
         }
         allActiveTasks.removeAll { $0.id == task.id }
         inProgressTaskCount += 1
-        dailyDoseCompletedCount += 1
+        recordDoseProgress(completedTask: false)
         completedThisSession += 1
         finishFlowAndDeferAdvance()
     }

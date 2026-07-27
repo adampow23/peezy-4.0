@@ -5,6 +5,7 @@ import SwiftUI
 struct ExplainerView: View {
     let onFinished: () -> Void
     @State private var index = 0
+    @State private var didFinish = false
 
     private let cards: [ExplainerCard] = [
         .init(
@@ -74,7 +75,10 @@ struct ExplainerView: View {
         if index < cards.count - 1 {
             index += 1
         } else {
+            guard !didFinish else { return }
+            didFinish = true
             UserDefaults.standard.set(true, forKey: "peezy.explainer.seen")
+            AnalyticsEvents.explainerCompleted()
             onFinished()
         }
     }

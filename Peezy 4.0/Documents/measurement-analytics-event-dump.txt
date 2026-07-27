@@ -1,0 +1,42 @@
+Peezy measurement Phase B — DEBUG acceptance journey
+Simulator: iPhone 17 Pro
+Harness: temporary PEEZY_MEASUREMENT_ACCEPTANCE launch hook (removed before final build)
+
+01 fresh install / explainer
+[PeezyAnalytics] explainer_complete
+
+02 assessment start
+[PeezyAnalytics] assessment_start
+
+03 assessment completion
+[PeezyAnalytics] assessment_complete questionCount=31
+
+04 first dose task
+[PeezyAnalytics] dose_first_complete
+
+05 daily dose crossing
+[PeezyAnalytics] dose_day_complete dayNumber=1
+
+06 inventory submission
+[PeezyAnalytics] scan_complete cubicFeet=742.5 itemCount=18
+
+07 first packing-plan persistence
+[PeezyAnalytics] packing_plan_created
+
+08 post-assessment paywall presentation
+[PeezyAnalytics] paywall_view trigger=post_assessment
+
+09 verified new paywall purchase
+[PeezyAnalytics] paywall_convert productId=peezy.plus.annual trigger=post_assessment
+
+10 mover booking submission
+[PeezyAnalytics] booking_submit isQuoteRequest=false vertical=movers
+
+11 kit offer presentation
+[PeezyAnalytics] kit_offer_view itemTotal=42
+
+12 kit order submission
+[PeezyAnalytics] kit_order itemTotal=42
+
+13 move-day check-in submission
+[PeezyAnalytics] checkin_complete flagged=true

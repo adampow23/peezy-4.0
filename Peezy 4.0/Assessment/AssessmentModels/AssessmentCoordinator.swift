@@ -621,6 +621,7 @@ class AssessmentCoordinator: ObservableObject {
         // Show completion screen immediately
         isComplete = true
         isSaving = true
+        AnalyticsEvents.assessmentCompleted(questionCount: sequence.count)
 
         defer { isSaving = false }
 

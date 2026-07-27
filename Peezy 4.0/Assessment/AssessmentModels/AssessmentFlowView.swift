@@ -14,6 +14,7 @@ struct AssessmentFlowView: View {
     @Binding var showAssessment: Bool
     @StateObject private var coordinator: AssessmentCoordinator
     @StateObject private var dataManager: AssessmentDataManager
+    @State private var didLogAssessmentStart = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     
     init(showAssessment: Binding<Bool>) {
@@ -54,6 +55,11 @@ struct AssessmentFlowView: View {
         }
         .environmentObject(coordinator)
         .environmentObject(dataManager)
+        .onAppear {
+            guard !didLogAssessmentStart else { return }
+            didLogAssessmentStart = true
+            AnalyticsEvents.assessmentStarted()
+        }
         .fullScreenCover(isPresented: $coordinator.isComplete) {
             CompletionFlowView(coordinator: coordinator)
                 .environmentObject(SubscriptionManager.shared)

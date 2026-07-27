@@ -74,11 +74,13 @@ struct CheckInService {
         else {
             throw CheckInServiceError.invalidResponse
         }
-        return CheckInSubmissionResponse(
+        let response = CheckInSubmissionResponse(
             reviewId: reviewId,
             vendorId: data["vendorId"] as? String,
             flags: data["flags"] as? [String] ?? []
         )
+        AnalyticsEvents.checkinCompleted(flagged: !response.flags.isEmpty)
+        return response
     }
 }
 
