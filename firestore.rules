@@ -73,5 +73,16 @@ service cloud.firestore {
     match /vendors/{document=**} {
       allow read: if request.auth != null;
     }
+
+    // Provider action directory is backend-owned; clients may only read.
+    match /providerDirectory/{document=**} {
+      allow read: if request.auth != null;
+    }
+
+    // Curated ISP plans are backend-owned; clients may only read.
+    // Included in Spec 07's single rules deploy gate with providerDirectory.
+    match /ispPlans/{document=**} {
+      allow read: if request.auth != null;
+    }
   }
 }

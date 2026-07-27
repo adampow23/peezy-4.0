@@ -14,6 +14,7 @@ const { packageInventory } = require('./packageInventory');
 const { validateSubscription } = require('./validateSubscription');
 const { joinWaitlist } = require('./joinWaitlist');
 const { notifyAdmin } = require('./notifyAdmin');
+const { resolveProvider } = require('./resolveProvider');
 
 // Set global options
 setGlobalOptions({ maxInstances: 10 });
@@ -658,6 +659,7 @@ exports.validateSubscription = validateSubscription;
 exports.processInventory = processInventory;
 exports.packageInventory = packageInventory;
 exports.joinWaitlist = joinWaitlist;
+exports.resolveProvider = resolveProvider;
 
 /**
  * Notification health check — runs hourly.
