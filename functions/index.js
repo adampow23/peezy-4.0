@@ -15,6 +15,7 @@ const { validateSubscription } = require('./validateSubscription');
 const { joinWaitlist } = require('./joinWaitlist');
 const { notifyAdmin } = require('./notifyAdmin');
 const { resolveProvider } = require('./resolveProvider');
+const { submitCheckIn } = require('./submitCheckIn');
 
 // Set global options
 setGlobalOptions({ maxInstances: 10 });
@@ -660,6 +661,7 @@ exports.processInventory = processInventory;
 exports.packageInventory = packageInventory;
 exports.joinWaitlist = joinWaitlist;
 exports.resolveProvider = resolveProvider;
+exports.submitCheckIn = submitCheckIn;
 
 /**
  * Notification health check — runs hourly.

@@ -43,6 +43,10 @@ class TaskGenerationService {
 
         // 1. Fetch all tasks from taskCatalog
         let catalogSnapshot = try await db.collection("taskCatalog").getDocuments()
+        let hasSuppliesKitSubmission = try await hasWorkflowResponse(
+            userId: userId,
+            workflowId: "supplies_kit"
+        )
         #if DEBUG
         print("📚 Found \(catalogSnapshot.documents.count) tasks in catalog")
         print("🔍 ASSESSMENT DATA FOR CONDITIONS:")
@@ -55,6 +59,9 @@ class TaskGenerationService {
 
         // 2. Evaluate each task's conditions
         for document in catalogSnapshot.documents {
+            if document.documentID == "BOX_RETURN", !hasSuppliesKitSubmission {
+                continue
+            }
             let taskData = document.data()
             let taskTitle = taskData["title"] as? String ?? "Unknown"
 
@@ -107,6 +114,9 @@ class TaskGenerationService {
                 // Copy workflowId only if present (workflow tasks only)
                 if let workflowId = taskData["workflowId"] as? String {
                     userTask["workflowId"] = workflowId
+                }
+                if let days = taskData["surfaceAfterDaysPastMove"] as? NSNumber {
+                    userTask["surfaceAfterDaysPastMove"] = days
                 }
 
                 // Copy selfServiceOnly flag (defaults to false if absent)
@@ -182,6 +192,10 @@ class TaskGenerationService {
         let existingIds = Set(existingSnapshot.documents.map { $0.documentID })
 
         let catalogSnapshot = try await db.collection("taskCatalog").getDocuments()
+        let hasSuppliesKitSubmission = try await hasWorkflowResponse(
+            userId: userId,
+            workflowId: "supplies_kit"
+        )
 
         let batch = db.batch()
         let userTasksRef = db.collection("users").document(userId).collection("tasks")
@@ -189,6 +203,9 @@ class TaskGenerationService {
 
         for document in catalogSnapshot.documents {
             guard !existingIds.contains(document.documentID) else { continue }
+            if document.documentID == "BOX_RETURN", !hasSuppliesKitSubmission {
+                continue
+            }
             let taskData = document.data()
             let conditions = taskData["conditions"] as? [String: Any]
             guard TaskConditionParser.evaluateConditions(conditions, against: assessment) else { continue }
@@ -218,6 +235,9 @@ class TaskGenerationService {
             if let workflowId = taskData["workflowId"] as? String {
                 userTask["workflowId"] = workflowId
             }
+            if let days = taskData["surfaceAfterDaysPastMove"] as? NSNumber {
+                userTask["surfaceAfterDaysPastMove"] = days
+            }
             userTask["selfServiceOnly"] = taskData["selfServiceOnly"] as? Bool ?? false
             if let rowGen = taskData["rowGeneration"] as? [String: Any] {
                 let rows = Self.flowRows(from: rowGen, assessment: assessment)
@@ -234,6 +254,14 @@ class TaskGenerationService {
             try await batch.commit()
         }
         return created
+    }
+
+    private func hasWorkflowResponse(userId: String, workflowId: String) async throws -> Bool {
+        guard !userId.isEmpty else { return false }
+        let snapshot = try await db.collection("users").document(userId)
+            .collection("workflowResponses").document(workflowId)
+            .getDocument()
+        return snapshot.exists
     }
 
     // MARK: - Flow Rows

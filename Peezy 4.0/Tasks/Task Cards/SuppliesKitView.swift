@@ -283,6 +283,17 @@ struct SuppliesKitView: View {
             guard response.success else {
                 throw WorkflowServiceError.submissionFailed(response.message)
             }
+            if let moveDate = identity.moveDate {
+                do {
+                    _ = try await TaskGenerationService().generateNewlyMatchingTasks(
+                        userId: userId,
+                        assessment: [:],
+                        moveDate: moveDate
+                    )
+                } catch {
+                    print("⚠️ BOX_RETURN generation refresh failed: \(error.localizedDescription)")
+                }
+            }
             submitted = true
         } catch {
             errorMessage = error.localizedDescription

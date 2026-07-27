@@ -1,53 +1,66 @@
-# Spec 07 Phase D — documentation sync (PERIPHERY)
+# Spec 08 Phase A — post-move check-in (CORE)
 #
 # ACCEPTANCE CONTRACT (written before edits)
-# D1 GIVEN the completed Spec 07 implementation and live evidence, WHEN the v1
-#    architecture is read, THEN section 8 describes the 46-entry seeded provider
-#    directory, exact-citation resolver invariant, high-confidence write-through
-#    cache/admin-review boundary, and the five Firestore-backed ISP cards with
-#    pending-affiliate provider fallback and no address-level serviceability claim.
-# D2 GIVEN the 45-row catalog remains unchanged, WHEN the catalog sheet is read,
-#    THEN its source count and SETUP_INTERNET row reflect the shipped Spec 07 flow
-#    without implying that affiliate URLs or a serviceability API are live.
-# D3 GIVEN the approved deployed rules and scoped operations, WHEN conventions and
-#    CLAUDE.md are read, THEN they record entries-shaped userKnowledge, authenticated
-#    read/backend-only providerDirectory and ispPlans, the URL-citation invariant,
-#    exact seed counts, sanctioned deploy scope, and current accessibility counts.
-# D4 GIVEN protocol section 6, WHEN SESSION_NOTES is read, THEN an append-only Spec
-#    07 block records spec gaps, surprises, missing/misleading guidance, concrete
-#    doc edits, and open ownership for affiliate URLs (Adam) plus admin review of
-#    source:resolved directory entries.
-# D5 GIVEN the Phase D diff, WHEN a fresh-context validator and final local checks
-#    run, THEN D1-D4 receive evidence-backed PASS/FAIL, markdown changes pass
-#    git diff --check, all three data/resolver validators pass, and the exact iPhone
-#    17 Pro simulator build succeeds without any additional deploy or seed.
+# A1 GIVEN a catalog task with surfaceAfterDaysPastMove = 1 and a move date,
+#    WHEN a new frozen dose is computed before moveDate + 1 day, THEN that task
+#    is absent and does not inflate the regular target; WHEN computed on or
+#    after the gate, THEN it joins the dose under the ordinary urgency ordering.
+# A2 GIVEN MOVE_CHECKIN and BOX_RETURN catalog rows, WHEN catalog validation and
+#    the sanctioned reseed run, THEN MOVE_CHECKIN is unconditional at move + 1,
+#    BOX_RETURN is gated to an existing supplies_kit workflow response at move
+#    + 7, all fields round-trip, and no retired catalog/definition ghosts remain.
+# A3 GIVEN a signed-in user with a book_movers response, WHEN move_checkin opens,
+#    THEN the vendor-specific branch renders all four LOCKED factual yes/no
+#    questions plus one optional note; GIVEN no booking response, THEN the
+#    general branch renders the same factual form without inventing a vendor.
+# A4 GIVEN all four answers, WHEN the user submits a flagged vendor response,
+#    THEN submitCheckIn writes one backend-owned vendorReviews document with
+#    vendorId, userId, answers, flags, and submittedAt and emits either the exact
+#    PEEZY FLAG SMS family or the exact "SMS notify not configured" log; WHEN the
+#    general path submits, THEN the stored vendorId is null.
+# A5 GIVEN the Phase A diff, WHEN focused Swift/Node tests, syntax checks,
+#    catalog validation, a fresh-context validator, and the exact iPhone 17 Pro
+#    simulator build run, THEN every criterion receives evidence-backed PASS or
+#    FAIL before the separate Phase A commit and only submitCheckIn plus the
+#    catalog reseed are deployed.
 #
 # NEEDS-CLARIFICATION (bounded, reversible interpretations)
-# - The catalog sheet is a planning artifact but its 56-task source header is now
-#   objectively stale; update the header/net-result note to the verified 45-row
-#   post-Spec-06 catalog while leaving functions/taskCatalogData.json untouched.
-# - "Last action" in protocol section 6 is treated as the final repository edit:
-#   append SESSION_NOTES after the other doc edits, then validate and commit it so
-#   the required artifact is independently checked and retained in history.
+# - "Kit purchasers" is evaluated from the durable client-readable
+#   users/{uid}/workflowResponses/supplies_kit document. A successful kit order
+#   invokes the existing add-only generation refresh so BOX_RETURN is created
+#   without overwriting any live task status.
+# - "Any negative answer" means an adverse outcome: no for arrival/steady crew,
+#   yes for over-quote cost/damage. Flags use stable machine ids and SMS uses the
+#   corresponding factual label.
+# - Post-move gating is a daily-dose surfacing rule. The full Tasks tab remains
+#   the complete plan, matching its existing role; frozen-dose membership is
+#   the acceptance surface named by the spec.
 #
 # EDIT SITES
 # PHASE_MANIFEST
-# peezy-v1-architecture.md
-# peezy-v1-catalog-sheet.md
-# peezy-conventions-v2.md
-# CLAUDE.md
-# SESSION_NOTES.md
+# Peezy 4.0/MainInterface/Models/PeezyCard.swift
+# Peezy 4.0/Tasks/Store/PeezyCardFirestoreMapper.swift
+# Peezy 4.0/MainInterface/Models/DailyDoseEngine.swift
+# Peezy 4.0/MainInterface/Models/PeezyHomeViewModel.swift
+# Peezy 4.0/Assessment/AssessmentModels/TaskGenerationService.swift
+# Peezy 4.0/MainInterface/Models/CheckInService.swift
+# Peezy 4.0/MainInterface/Models/TaskFlowRouter.swift
+# Peezy 4.0/Tasks/Task Cards/MoveCheckInView.swift
+# Peezy 4.0/Tasks/Task Cards/SuppliesKitView.swift
+# Peezy 4.0Tests/PostMoveDoseTests.swift
+# functions/taskCatalogData.json
+# functions/seedTaskCatalog.js
+# functions/submitCheckIn.js
+# functions/index.js
+# functions/tests/submitCheckIn.test.js
 #
 # READ SITES
-# peezy-build-spec-07.md Phase D and Files Summary
-# peezy-execution-protocol.md section 6
-# functions/providerDirectoryData.json
-# functions/seedProviderDirectory.js
-# functions/resolveProvider.js
-# functions/ispPlansData.json
-# functions/seedIspPlans.js
+# peezy-build-spec-08.md Phase A and Files Summary
+# peezy-execution-protocol.md sections 1-4
+# Peezy 4.0/MainInterface/Models/WorkflowService.swift
+# Peezy 4.0/MainInterface/Models/MoversBookingPayload.swift
+# Peezy 4.0/MainInterface/Models/TaskActionService.swift
+# Peezy 4.0/Tasks/FlowEngine/FlowEngineView.swift
+# functions/getWorkflowQualifying.js
+# functions/vendorsData.json
 # firestore.rules
-# Peezy 4.0/MainInterface/Models/UserKnowledgeService.swift
-# Peezy 4.0/MainInterface/Models/ProviderDirectoryService.swift
-# Peezy 4.0/MainInterface/Models/ISPPlanService.swift
-# Peezy 4.0/Tasks/Task Cards/SetupInternetFlow.swift

@@ -1014,5 +1014,41 @@
     "tips": "Units near new builds sell out first — early answers get options.",
     "urgencyPercentage": 87,
     "whyNeeded": "Storage found on move day costs double and sits across town."
+  },
+  {
+    "taskId": "MOVE_CHECKIN",
+    "title": "Tell us how moving day went",
+    "actionCategory": "verify-review",
+    "category": "moving",
+    "actionType": "in-app",
+    "taskType": "survey",
+    "workflowId": "move_checkin",
+    "selfServiceOnly": true,
+    "conditions": {},
+    "surfaceAfterDaysPastMove": 1,
+    "desc": "Four factual questions help Peezy hold moving partners accountable and improve the experience for everyone.",
+    "estHours": 0.1,
+    "estPeezy": "1 min",
+    "tips": "Stick to what happened — arrival, pace, price, and damage.",
+    "urgencyPercentage": 99,
+    "whyNeeded": "Fresh facts are how good vendors earn trust and bad behavior gets addressed."
+  },
+  {
+    "taskId": "BOX_RETURN",
+    "title": "Return or recycle your boxes",
+    "actionCategory": "verify-return",
+    "category": "packing",
+    "actionType": "in-app",
+    "taskType": "survey",
+    "workflowId": "box_return",
+    "selfServiceOnly": true,
+    "conditions": {},
+    "surfaceAfterDaysPastMove": 7,
+    "desc": "Count the boxes leaving your home so Peezy can tune future kits and help arrange pickup if you want it.",
+    "estHours": 0.1,
+    "estPeezy": "30 secs",
+    "tips": "Flatten clean boxes before recycling or pickup.",
+    "urgencyPercentage": 90,
+    "whyNeeded": "Returned counts reduce waste and make the next kit estimate sharper."
   }
 ]

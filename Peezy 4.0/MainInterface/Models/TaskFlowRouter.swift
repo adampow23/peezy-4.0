@@ -82,6 +82,12 @@ struct TaskFlowRouter {
                 onComplete: onComplete,
                 onDismiss: onDismiss
             )
+        case "move_checkin":
+            MoveCheckInView(
+                userId: userId,
+                onDismiss: onDismiss,
+                onStatusAction: onStatusAction
+            )
 
         // ── Swift custom flows (Types 4–6; superseded in Specs 05–06) ──
 

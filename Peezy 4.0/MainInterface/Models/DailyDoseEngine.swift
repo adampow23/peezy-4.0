@@ -79,16 +79,25 @@ struct DailyDoseEngine {
     func taskIdsForNewDose(
         from sortedCards: [PeezyCard],
         daysUntilMove: Int,
+        moveDate: Date? = nil,
         today: Date = Date(),
         calendar: Calendar = .current
     ) -> [String] {
-        let regularCards = sortedCards.filter { !$0.isPackingSession && !$0.isPackingReadiness }
+        let surfacedCards = sortedCards.filter {
+            isEligibleForDose(
+                $0,
+                moveDate: moveDate,
+                today: today,
+                calendar: calendar
+            )
+        }
+        let regularCards = surfacedCards.filter { !$0.isPackingSession && !$0.isPackingReadiness }
         let regularTarget = dailyTarget(
             activeTaskCount: regularCards.count,
             daysUntilMove: daysUntilMove
         )
         let startToday = calendar.startOfDay(for: today)
-        let duePacking = sortedCards
+        let duePacking = surfacedCards
             .compactMap { card -> (PeezyCard, PackingSession)? in
                 guard let session = card.packingSession,
                       calendar.startOfDay(for: session.scheduledDate) <= startToday else { return nil }
@@ -102,7 +111,7 @@ struct DailyDoseEngine {
             }
             .first
 
-        let dueReadiness = sortedCards.first { card in
+        let dueReadiness = surfacedCards.first { card in
             guard card.isPackingReadiness, let dueDate = card.dueDate else { return false }
             return calendar.startOfDay(for: dueDate) <= startToday
         }
@@ -113,6 +122,25 @@ struct DailyDoseEngine {
         if let duePacking { ids.append(duePacking.0.id) }
         if let dueReadiness { ids.append(dueReadiness.id) }
         return ids
+    }
+
+    /// Date-gated catalog tasks join the normal dose only on or after the
+    /// configured post-move day. A missing move date cannot satisfy the gate.
+    func isEligibleForDose(
+        _ card: PeezyCard,
+        moveDate: Date?,
+        today: Date = Date(),
+        calendar: Calendar = .current
+    ) -> Bool {
+        guard let daysPastMove = card.surfaceAfterDaysPastMove else { return true }
+        guard let moveDate,
+              let surfaceDate = calendar.date(
+                byAdding: .day,
+                value: daysPastMove,
+                to: calendar.startOfDay(for: moveDate)
+              )
+        else { return false }
+        return calendar.startOfDay(for: today) >= surfaceDate
     }
 
     /// Urgency-descending, title as tiebreak — the dose ordering.

@@ -28,6 +28,7 @@
 const admin = require("firebase-admin");
 const fs = require("fs");
 const path = require("path");
+const { isDeepStrictEqual } = require("util");
 
 // ── Initialize Firebase Admin ──
 // Option A: If running from functions/ directory with default credentials
@@ -107,6 +108,7 @@ async function seedCollection() {
         conditions: task.conditions, // stored as map: { key: [values] }
         desc: task.desc,
         estHours: task.estHours,
+        estPeezy: task.estPeezy,
         tips: task.tips,
         urgencyPercentage: task.urgencyPercentage,
         whyNeeded: task.whyNeeded,
@@ -125,6 +127,9 @@ async function seedCollection() {
       // TaskGenerationService to stamp per-user flowRows on task docs
       if (task.rowGeneration) {
         doc.rowGeneration = task.rowGeneration;
+      }
+      if (Number.isInteger(task.surfaceAfterDaysPastMove)) {
+        doc.surfaceAfterDaysPastMove = task.surfaceAfterDaysPastMove;
       }
 
       batch.set(docRef, doc);
@@ -155,8 +160,31 @@ async function verifySeed() {
     console.log(`   ✓ No ghost tasks — collection matches taskCatalogData.json exactly`);
   }
 
+  const documentsById = new Map(snapshot.docs.map((document) => [document.id, document.data()]));
+  const roundTripFailures = [];
+  for (const task of tasks) {
+    const stored = documentsById.get(task.taskId);
+    if (!stored) {
+      roundTripFailures.push(`${task.taskId}: missing document`);
+      continue;
+    }
+    const mismatchedFields = Object.entries(task)
+      .filter(([key, value]) => !isDeepStrictEqual(stored[key], value))
+      .map(([key]) => key);
+    if (mismatchedFields.length > 0) {
+      roundTripFailures.push(`${task.taskId}: ${mismatchedFields.join(", ")}`);
+    }
+  }
+  if (roundTripFailures.length > 0) {
+    throw new Error(`Catalog round-trip failed — ${roundTripFailures.join("; ")}`);
+  }
+  console.log("   ✓ Every JSON-declared catalog field round-tripped exactly");
+
   // Spot-check a few documents (catalog v2 ids)
-  const spotChecks = ["BOOK_MOVERS", "SETUP_INTERNET", "MEMBERSHIPS", "FINANCIAL_ACCOUNTS", "STORAGE_UNIT"];
+  const spotChecks = [
+    "BOOK_MOVERS", "SETUP_INTERNET", "MEMBERSHIPS", "FINANCIAL_ACCOUNTS",
+    "STORAGE_UNIT", "MOVE_CHECKIN", "BOX_RETURN"
+  ];
   for (const id of spotChecks) {
     const doc = await db.collection(COLLECTION).doc(id).get();
     if (doc.exists) {

@@ -288,7 +288,8 @@ final class PeezyHomeViewModel {
                     date: today,
                     taskIds: doseEngine.taskIdsForNewDose(
                         from: sorted,
-                        daysUntilMove: userState?.daysUntilMove ?? 30
+                        daysUntilMove: userState?.daysUntilMove ?? 30,
+                        moveDate: userState?.moveDate
                     )
                 )
                 await doseEngine.freeze(dose, userId: userId)

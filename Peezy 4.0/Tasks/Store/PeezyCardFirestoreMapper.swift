@@ -28,6 +28,7 @@ enum PeezyCardFirestoreMapper {
         let lastSnoozedAt = (data["lastSnoozedAt"] as? Timestamp)?.dateValue()
         let completedAt = (data["completedAt"] as? Timestamp)?.dateValue()
         let urgencyPercentage = (data["urgencyPercentage"] as? NSNumber)?.intValue
+        let surfaceAfterDaysPastMove = (data["surfaceAfterDaysPastMove"] as? NSNumber)?.intValue
         let userInProgressDate = (data["userInProgressDate"] as? Timestamp)?.dateValue()
         let userInProgressReturnDate = (data["userInProgressReturnDate"] as? Timestamp)?.dateValue()
 
@@ -57,6 +58,7 @@ enum PeezyCardFirestoreMapper {
             lastSnoozedAt: lastSnoozedAt,
             taskCategory: categoryRaw,
             urgencyPercentage: urgencyPercentage,
+            surfaceAfterDaysPastMove: surfaceAfterDaysPastMove,
             userInProgressDate: userInProgressDate,
             userInProgressReturnDate: userInProgressReturnDate,
             completedAt: completedAt,

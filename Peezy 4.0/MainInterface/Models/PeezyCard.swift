@@ -59,6 +59,10 @@ struct PeezyCard: Identifiable, Equatable, Codable {
     // Daily Dose — task urgency from catalog (0–99, higher = more urgent)
     var urgencyPercentage: Int?
 
+    // Optional post-move dose gate from the catalog. The card stays in the
+    // complete Tasks plan, but cannot join a frozen dose before moveDate + n.
+    var surfaceAfterDaysPastMove: Int?
+
     // Intro card briefing message (warm, conversational summary)
     var briefingMessage: String?
 
@@ -253,6 +257,7 @@ struct PeezyCard: Identifiable, Equatable, Codable {
         briefingMessage: String? = nil,
         taskCategory: String? = nil,
         urgencyPercentage: Int? = nil,
+        surfaceAfterDaysPastMove: Int? = nil,
         userInProgressDate: Date? = nil,
         userInProgressReturnDate: Date? = nil,
         completedAt: Date? = nil,
@@ -284,6 +289,7 @@ struct PeezyCard: Identifiable, Equatable, Codable {
         self.briefingMessage = briefingMessage
         self.taskCategory = taskCategory
         self.urgencyPercentage = urgencyPercentage
+        self.surfaceAfterDaysPastMove = surfaceAfterDaysPastMove
         self.userInProgressDate = userInProgressDate
         self.userInProgressReturnDate = userInProgressReturnDate
         self.completedAt = completedAt
