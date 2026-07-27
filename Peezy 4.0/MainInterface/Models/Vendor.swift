@@ -85,9 +85,64 @@ struct VendorSurcharges: Codable, Equatable {
     let peakSeason: Double
 }
 
+struct VendorStrike: Codable, Equatable {
+    enum Severity: String, Codable, Equatable {
+        case high
+        case dayOfPriceChange
+    }
+
+    enum Status: String, Codable, Equatable {
+        case pendingReview
+        case confirmed
+        case dismissed
+    }
+
+    let date: Date
+    let source: String
+    let severity: Severity
+    let status: Status
+    let note: String
+}
+
 struct VendorAccountability: Codable, Equatable {
     let standardsVersion: String
-    let strikes: Int
+    let strikes: [VendorStrike]
+
+    init(standardsVersion: String, strikes: [VendorStrike]) {
+        self.standardsVersion = standardsVersion
+        self.strikes = strikes
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case standardsVersion
+        case strikes
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        standardsVersion = try container.decode(String.self, forKey: .standardsVersion)
+        if let strikes = try? container.decode([VendorStrike].self, forKey: .strikes) {
+            self.strikes = strikes
+            return
+        }
+
+        let legacyCount = max(0, (try? container.decode(Int.self, forKey: .strikes)) ?? 0)
+        strikes = (0..<legacyCount).map { index in
+            VendorStrike(
+                date: Date(timeIntervalSince1970: 0),
+                source: "legacy-\(index + 1)",
+                severity: .high,
+                status: .confirmed,
+                note: "Migrated from legacy strike count"
+            )
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(standardsVersion, forKey: .standardsVersion)
+        try container.encode(strikes, forKey: .strikes)
+    }
 }
 
 /// Direct Firestore transport for backend-owned vendor rate cards. The active

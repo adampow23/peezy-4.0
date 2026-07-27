@@ -105,7 +105,7 @@ struct MoversBookingPayload {
             ],
             "accountability": [
                 "standardsVersion": quote.vendor.accountability.standardsVersion,
-                "strikes": quote.vendor.accountability.strikes
+                "strikes": quote.vendor.accountability.strikes.count
             ]
         ]
     }

@@ -24,7 +24,7 @@ struct VendorTests {
             "specialtyFees": { "piano": 240, "safe": 175, "treadmill": 85, "marbleTops": 140 },
             "blackoutDates": ["2026-12-25"]
           },
-          "accountability": { "standardsVersion": "v1", "strikes": 0 },
+          "accountability": { "standardsVersion": "v1", "strikes": [] },
           "active": true
         }
         """#
@@ -38,6 +38,38 @@ struct VendorTests {
         #expect(vendor.rateCard.tripChargeModel == VendorTripCharge(kind: .flat, amount: 129))
         #expect(vendor.rateCard.surcharges.peakSeason == 0.12)
         #expect(vendor.rateCard.specialtyFees["piano"] == 240)
+        #expect(vendor.accountability.strikes.isEmpty)
+    }
+
+    @Test func accountabilityDecodesArraySchemaAndLegacyCount() throws {
+        let arrayJSON = #"""
+        {
+          "standardsVersion": "v1",
+          "strikes": [{
+            "date": 0,
+            "source": "review-123",
+            "severity": "dayOfPriceChange",
+            "status": "confirmed",
+            "note": "Confirmed day-of price change"
+          }]
+        }
+        """#
+        let legacyJSON = #"{"standardsVersion":"v1","strikes":2}"#
+
+        let current = try JSONDecoder().decode(
+            VendorAccountability.self,
+            from: Data(arrayJSON.utf8)
+        )
+        let legacy = try JSONDecoder().decode(
+            VendorAccountability.self,
+            from: Data(legacyJSON.utf8)
+        )
+
+        #expect(current.strikes.count == 1)
+        #expect(current.strikes.first?.severity == .dayOfPriceChange)
+        #expect(current.strikes.first?.status == .confirmed)
+        #expect(legacy.strikes.count == 2)
+        #expect(legacy.strikes.allSatisfy { $0.status == .confirmed })
     }
 
     @Test func inactiveVendorNeverSurfacesFromStoreFilter() {
@@ -66,7 +98,7 @@ struct VendorTests {
                 specialtyFees: ["piano": 240],
                 blackoutDates: []
             ),
-            accountability: VendorAccountability(standardsVersion: "v1", strikes: 0),
+            accountability: VendorAccountability(standardsVersion: "v1", strikes: []),
             active: active
         )
     }

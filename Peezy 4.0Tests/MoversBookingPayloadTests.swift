@@ -44,7 +44,7 @@ struct MoversBookingPayloadTests {
                 specialtyFees: ["piano": 240],
                 blackoutDates: []
             ),
-            accountability: VendorAccountability(standardsVersion: "v1", strikes: 0),
+            accountability: VendorAccountability(standardsVersion: "v1", strikes: []),
             active: true
         )
         let estimate = PriceEstimate(

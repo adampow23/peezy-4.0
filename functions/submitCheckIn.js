@@ -1,6 +1,11 @@
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const admin = require("firebase-admin");
 const twilio = require("twilio");
+const {
+  accountabilityTransition,
+  normalizeStrikes,
+  pendingStrikesForFlags
+} = require("./accountabilityLadder");
 
 if (!admin.apps.length) {
   admin.initializeApp();
@@ -102,6 +107,37 @@ async function notifyFlags(vendorName, flags) {
   }
 }
 
+async function writeReviewAndAccountability(db, reviewRef, vendor, review) {
+  if (!vendor) {
+    await reviewRef.set(review);
+    return;
+  }
+
+  const vendorRef = db.collection("vendors").doc(vendor.vendorId);
+  await db.runTransaction(async (transaction) => {
+    const vendorSnapshot = await transaction.get(vendorRef);
+    transaction.set(reviewRef, review);
+    if (!vendorSnapshot.exists) return;
+
+    const vendorData = vendorSnapshot.data();
+    const existingStrikes = vendorData.accountability?.strikes;
+    const additions = pendingStrikesForFlags(
+      review.flags,
+      reviewRef.id,
+      admin.firestore.Timestamp.now()
+    );
+    const transition = accountabilityTransition(
+      [...normalizeStrikes(existingStrikes), ...additions],
+      vendorData.active !== false
+    );
+
+    transaction.update(vendorRef, {
+      "accountability.strikes": transition.strikes,
+      active: transition.active
+    });
+  });
+}
+
 const submitCheckIn = onCall(
   { region: "us-central1", timeoutSeconds: 15, memory: "256MiB" },
   async (request) => {
@@ -115,14 +151,15 @@ const submitCheckIn = onCall(
     const vendor = await bookedVendor(db, userId);
     const flags = buildFlags(answers);
     const reviewRef = db.collection("vendorReviews").doc();
-
-    await reviewRef.set({
+    const review = {
       vendorId: vendor?.vendorId ?? null,
       userId,
       answers,
       flags,
       submittedAt: admin.firestore.FieldValue.serverTimestamp()
-    });
+    };
+
+    await writeReviewAndAccountability(db, reviewRef, vendor, review);
 
     await notifyFlags(vendor?.name ?? "General move", flags);
 
@@ -140,5 +177,6 @@ module.exports = {
   buildFlags,
   flagMessage,
   parsedVendor,
+  writeReviewAndAccountability,
   FLAG_LABELS
 };

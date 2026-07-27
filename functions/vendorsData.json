@@ -60,7 +60,7 @@
       },
       "accountability": {
         "standardsVersion": "v1",
-        "strikes": 0
+        "strikes": []
       },
       "active": true
     },
@@ -124,7 +124,7 @@
       },
       "accountability": {
         "standardsVersion": "v1",
-        "strikes": 0
+        "strikes": []
       },
       "active": true
     },
@@ -187,7 +187,7 @@
       },
       "accountability": {
         "standardsVersion": "v1",
-        "strikes": 0
+        "strikes": []
       },
       "active": true
     }

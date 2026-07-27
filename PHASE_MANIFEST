@@ -1,66 +1,60 @@
-# Spec 08 Phase A — post-move check-in (CORE)
+# Spec 08 Phase B — strike ladder and standards (CORE)
 #
-# ACCEPTANCE CONTRACT (written before edits)
-# A1 GIVEN a catalog task with surfaceAfterDaysPastMove = 1 and a move date,
-#    WHEN a new frozen dose is computed before moveDate + 1 day, THEN that task
-#    is absent and does not inflate the regular target; WHEN computed on or
-#    after the gate, THEN it joins the dose under the ordinary urgency ordering.
-# A2 GIVEN MOVE_CHECKIN and BOX_RETURN catalog rows, WHEN catalog validation and
-#    the sanctioned reseed run, THEN MOVE_CHECKIN is unconditional at move + 1,
-#    BOX_RETURN is gated to an existing supplies_kit workflow response at move
-#    + 7, all fields round-trip, and no retired catalog/definition ghosts remain.
-# A3 GIVEN a signed-in user with a book_movers response, WHEN move_checkin opens,
-#    THEN the vendor-specific branch renders all four LOCKED factual yes/no
-#    questions plus one optional note; GIVEN no booking response, THEN the
-#    general branch renders the same factual form without inventing a vendor.
-# A4 GIVEN all four answers, WHEN the user submits a flagged vendor response,
-#    THEN submitCheckIn writes one backend-owned vendorReviews document with
-#    vendorId, userId, answers, flags, and submittedAt and emits either the exact
-#    PEEZY FLAG SMS family or the exact "SMS notify not configured" log; WHEN the
-#    general path submits, THEN the stored vendorId is null.
-# A5 GIVEN the Phase A diff, WHEN focused Swift/Node tests, syntax checks,
-#    catalog validation, a fresh-context validator, and the exact iPhone 17 Pro
-#    simulator build run, THEN every criterion receives evidence-backed PASS or
-#    FAIL before the separate Phase A commit and only submitCheckIn plus the
-#    catalog reseed are deployed.
+# ACCEPTANCE CONTRACT (written before implementation edits)
+# B1 GIVEN legacy vendors whose accountability.strikes is numeric and new vendors
+#    whose strikes are arrays, WHEN the iOS model decodes either shape, THEN live
+#    vendors remain comparable and new strikes preserve date, review source,
+#    severity, status, and note without a vendor reseed.
+# B2 GIVEN pending, dismissed, and confirmed strikes, WHEN the pure server
+#    ladderState function runs, THEN only confirmed strikes advance the ladder:
+#    zero = ok, one = conversation, two = warning, and three = removed; any
+#    confirmed dayOfPriceChange strike is removed immediately.
+# B3 GIVEN a vendor check-in with charged_more_than_quoted and/or damage flags,
+#    WHEN submitCheckIn commits the review, THEN it atomically appends one high,
+#    pendingReview strike per qualifying flag with the review id as source;
+#    late-arrival and unsteady-crew flags do not auto-create strikes.
+# B4 GIVEN a third confirmed strike or a confirmed dayOfPriceChange strike,
+#    WHEN the accountability transition is emulated, THEN active becomes false;
+#    WHEN that vendor reaches VendorStore.active, THEN it is absent from client
+#    comparison results.
+# B5 GIVEN the Phase B diff, WHEN ladder/Swift tests, syntax and diff checks, a
+#    fresh-context validator, and the exact iPhone 17 Pro build run, THEN B1-B4
+#    receive evidence-backed PASS/FAIL, docs/vendor-standards.md uses the required
+#    direct warm register, and only submitCheckIn is redeployed before the
+#    separate Phase B commit.
 #
 # NEEDS-CLARIFICATION (bounded, reversible interpretations)
-# - "Kit purchasers" is evaluated from the durable client-readable
-#   users/{uid}/workflowResponses/supplies_kit document. A successful kit order
-#   invokes the existing add-only generation refresh so BOX_RETURN is created
-#   without overwriting any live task status.
-# - "Any negative answer" means an adverse outcome: no for arrival/steady crew,
-#   yes for over-quote cost/damage. Flags use stable machine ids and SMS uses the
-#   corresponding factual label.
-# - Post-move gating is a daily-dose surfacing rule. The full Tasks tab remains
-#   the complete plan, matching its existing role; frozen-dose membership is
-#   the acceptance surface named by the spec.
+# - Console writes cannot invoke server code without a new Firestore trigger,
+#   which is outside the sanctioned deploy list. For MVP, ladderState and the
+#   server transition are pure/tested; submitCheckIn reconciles confirmed state
+#   whenever it touches a vendor. Adam confirms/dismisses at:
+#   Firebase Console → project peezy-1ecrdl → Build → Firestore Database → Data
+#   → vendors → {vendorId} → accountability.strikes, and sets the sibling active
+#   field to false in that same vendor document edit when the computed state is
+#   removed. No unsanctioned trigger is introduced.
+# - "Day-of-price-change" is represented by the stable severity value
+#   dayOfPriceChange. The broader charged-more-than-quoted answer starts as high
+#   pendingReview; Adam may reclassify it only when the facts establish timing.
+# - Existing production placeholders use numeric strikes. The read model accepts
+#   both shapes, and submitCheckIn lazily migrates a touched vendor to the array
+#   schema; seedVendors is not run because vendor reseeding is not sanctioned.
 #
 # EDIT SITES
 # PHASE_MANIFEST
-# Peezy 4.0/MainInterface/Models/PeezyCard.swift
-# Peezy 4.0/Tasks/Store/PeezyCardFirestoreMapper.swift
-# Peezy 4.0/MainInterface/Models/DailyDoseEngine.swift
-# Peezy 4.0/MainInterface/Models/PeezyHomeViewModel.swift
-# Peezy 4.0/Assessment/AssessmentModels/TaskGenerationService.swift
-# Peezy 4.0/MainInterface/Models/CheckInService.swift
-# Peezy 4.0/MainInterface/Models/TaskFlowRouter.swift
-# Peezy 4.0/Tasks/Task Cards/MoveCheckInView.swift
-# Peezy 4.0/Tasks/Task Cards/SuppliesKitView.swift
-# Peezy 4.0Tests/PostMoveDoseTests.swift
-# functions/taskCatalogData.json
-# functions/seedTaskCatalog.js
+# Peezy 4.0/MainInterface/Models/Vendor.swift
+# Peezy 4.0/MainInterface/Models/MoversBookingPayload.swift
+# Peezy 4.0Tests/VendorTests.swift
+# Peezy 4.0Tests/MoversBookingPayloadTests.swift
+# functions/accountabilityLadder.js
 # functions/submitCheckIn.js
-# functions/index.js
+# functions/tests/accountabilityLadder.test.js
 # functions/tests/submitCheckIn.test.js
+# functions/vendorsData.json
+# docs/vendor-standards.md
 #
 # READ SITES
-# peezy-build-spec-08.md Phase A and Files Summary
+# peezy-build-spec-08.md Phase B and Files Summary
 # peezy-execution-protocol.md sections 1-4
-# Peezy 4.0/MainInterface/Models/WorkflowService.swift
-# Peezy 4.0/MainInterface/Models/MoversBookingPayload.swift
-# Peezy 4.0/MainInterface/Models/TaskActionService.swift
-# Peezy 4.0/Tasks/FlowEngine/FlowEngineView.swift
-# functions/getWorkflowQualifying.js
-# functions/vendorsData.json
-# firestore.rules
+# functions/seedVendors.js
+# functions/index.js
+# Peezy 4.0/MainInterface/Models/MoversFlowViewModel.swift
