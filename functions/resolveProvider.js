@@ -26,6 +26,17 @@ function normalize(value) {
     .replace(/[^a-z0-9]+/g, "");
 }
 
+function categoryFamily(value) {
+  const category = cleanText(value, 60).toLowerCase();
+  if (/insurance/.test(category)) return "insurance";
+  if (/(bank|brokerage|invest|credit|loan|financial)/.test(category)) return "financial";
+  if (/(membership|gym|yoga|studio|cycling|spa|club)/.test(category)) return "membership";
+  if (/(subscription|streaming)/.test(category)) return "subscription";
+  if (/(wireless|carrier|cellular)/.test(category)) return "wireless";
+  if (/utility/.test(category)) return "utility";
+  return normalize(category);
+}
+
 function cleanText(value, maxLength) {
   return typeof value === "string" ? value.trim().slice(0, maxLength) : "";
 }
@@ -129,14 +140,15 @@ async function loadDirectory() {
   return providers;
 }
 
-async function lookupDirectory(name) {
+async function lookupDirectory(name, category) {
   const key = normalize(name);
   if (!key) return null;
   const providers = await loadDirectory();
-  return providers.find((provider) =>
-    [provider.name, ...(Array.isArray(provider.aliases) ? provider.aliases : [])]
-      .some((candidate) => normalize(candidate) === key)
-  ) || null;
+  return providers.find((provider) => {
+    const nameMatches = [provider.name, ...(Array.isArray(provider.aliases) ? provider.aliases : [])]
+      .some((candidate) => normalize(candidate) === key);
+    return nameMatches && categoryFamily(provider.category) === categoryFamily(category);
+  }) || null;
 }
 
 function getAnthropicClient() {
@@ -266,7 +278,7 @@ async function resolveProviderRequest(name, category, dependencies = {}) {
   const timeoutMs = dependencies.timeoutMs || SEARCH_TIMEOUT_MS;
 
   try {
-    const record = await lookup(name);
+    const record = await lookup(name, category);
     if (record) return directoryRecordPayload(record, name);
 
     const searched = await withTimeout(Promise.resolve().then(() => search(name, category)), timeoutMs);
@@ -307,6 +319,7 @@ module.exports = {
   resolveProvider,
   _test: {
     cleanCitations,
+    categoryFamily,
     conciergePayload,
     directoryRecordPayload,
     normalize,

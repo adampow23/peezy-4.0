@@ -19,6 +19,10 @@ async function run() {
   });
   assert.equal(seeded.url, officialURL);
   assert.equal(seeded.citations[0].url, officialURL);
+  assert.equal(_test.categoryFamily("brokerage investment"), "financial");
+  assert.equal(_test.categoryFamily("auto insurance"), "insurance");
+  assert.equal(_test.categoryFamily("yoga studio"), "membership");
+  assert.notEqual(_test.categoryFamily("veterinarian"), _test.categoryFamily("insurance"));
 
   const poisonedSeed = _test.directoryRecordPayload({
     providerId: "poisoned",

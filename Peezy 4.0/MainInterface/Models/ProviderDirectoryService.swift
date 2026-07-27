@@ -46,6 +46,7 @@ private struct ProviderDirectoryRecord: Decodable {
     let providerId: String
     let name: String
     let aliases: [String]
+    let category: String
     let addressChangeURL: String?
     let cancellationURL: String?
     let phone: String?
@@ -63,7 +64,7 @@ final class ProviderDirectoryService {
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmedName.count >= 2 else { return .concierge(named: trimmedName) }
 
-        if let record = await directoryRecord(named: trimmedName) {
+        if let record = await directoryRecord(named: trimmedName, category: category) {
             return Self.safeResolution(
                 providerId: record.providerId,
                 name: record.name,
@@ -88,7 +89,7 @@ final class ProviderDirectoryService {
         }
     }
 
-    private func directoryRecord(named name: String) async -> ProviderDirectoryRecord? {
+    private func directoryRecord(named name: String, category: String) async -> ProviderDirectoryRecord? {
         let lookupKey = Self.normalize(name)
         guard !lookupKey.isEmpty else { return nil }
 
@@ -107,9 +108,10 @@ final class ProviderDirectoryService {
         }
 
         return directoryCache?.first { record in
-            ([record.name] + record.aliases).contains { candidate in
+            let nameMatches = ([record.name] + record.aliases).contains { candidate in
                 Self.normalize(candidate) == lookupKey
             }
+            return nameMatches && Self.categoryFamily(record.category) == Self.categoryFamily(category)
         }
     }
 
@@ -171,7 +173,9 @@ final class ProviderDirectoryService {
             )
 
         case .call:
-            guard let phone, !phone.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            guard let phone,
+                  !phone.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  !citations.isEmpty else {
                 return .concierge(named: safeName)
             }
             return ProviderResolution(
@@ -195,5 +199,20 @@ final class ProviderDirectoryService {
             .map(String.init)
             .joined()
             .lowercased()
+    }
+
+    private static func categoryFamily(_ value: String) -> String {
+        let category = value.lowercased()
+        if category.contains("insurance") { return "insurance" }
+        if ["bank", "brokerage", "invest", "credit", "loan", "financial"].contains(where: { category.contains($0) }) {
+            return "financial"
+        }
+        if ["membership", "gym", "yoga", "studio", "cycling", "spa", "club"].contains(where: { category.contains($0) }) {
+            return "membership"
+        }
+        if ["subscription", "streaming"].contains(where: { category.contains($0) }) { return "subscription" }
+        if ["wireless", "carrier", "cellular"].contains(where: { category.contains($0) }) { return "wireless" }
+        if category.contains("utility") { return "utility" }
+        return normalize(category)
     }
 }
