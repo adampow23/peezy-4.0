@@ -1,66 +1,65 @@
-# Spec 06 Phase A — Packing plan engine + daily-dose integration (CORE)
+# Spec 06 Phase B — Derived supplies kit + concierge order (PERIPHERY)
 #
 # ACCEPTANCE CONTRACT (written before build)
-# A1 GIVEN inventory rooms with storage, general, guest, garage, secondary-bedroom,
-#    kitchen, primary-bedroom, and bathroom items, WHEN a plan is generated, THEN
-#    sessions follow the LOCKED category order and the first-night bag is last/standalone.
-# A2 GIVEN a move date and enough calendar days, WHEN the plan is generated, THEN
-#    sessions are reverse-scheduled through moveDate-1 with no dropped session.
-# A3 GIVEN fewer calendar days than sessions, WHEN the plan is generated, THEN the
-#    smallest adjacent non-first-night sessions merge until the timeline fits (except
-#    the documented one-day/standalone-bag edge) and no item summary is dropped.
-# A4 GIVEN past-dated incomplete sessions, WHEN the plan loads, THEN remaining work is
-#    silently re-spread from today through moveDate-1 and at most one due packing task
-#    is selected into a day's frozen dose.
-# A5 GIVEN a submitted inventory review, WHEN submitFinal succeeds, THEN
-#    users/{uid}/packingPlan/current exists and PACKING_SESSION_n task docs materialize.
-# A6 GIVEN a completed packing session, WHEN the user completes its view, THEN the task
-#    and plan session complete atomically, the locked consequence line renders, and the
-#    next incomplete session remains scheduled.
-# A7 GIVEN a move-date change or inventory resubmission, WHEN regeneration runs, THEN
-#    sessions matching stable session keys preserve completedAt.
-# A8 GIVEN the Phase A diff, WHEN unit tests and an iPhone 17 Pro simulator build/run are
-#    executed by a fresh-context validator, THEN every criterion receives PASS/FAIL with evidence.
+# B1 GIVEN scanned inventory cube and item mix, WHEN KitEstimator runs, THEN it
+#    returns small/medium/large boxes plus wardrobe, dishPack, tape, paper, wrap,
+#    and mattressBags using centralized LOCKED-pending-calibration constants.
+# B2 GIVEN boxable inventory, WHEN quantities are estimated, THEN the size-bucket
+#    raw box demand receives exactly 12% headroom before each count rounds up.
+# B3 GIVEN beds and hanging-clothes counts, WHEN a kit is estimated, THEN
+#    mattressBags equals bed count and wardrobe boxes equal hanging capacity rounded up.
+# B4 GIVEN first packing-plan creation, WHEN persistence completes, THEN exactly one
+#    PACKING_SUPPLIES_KIT in-app task exists with an itemized kit, one placeholder
+#    price, disclosed locked headroom copy, and a delivery date before session one.
+# B5 GIVEN the kit view, WHEN Customize is used, THEN its single quantity sheet saves
+#    all editable counts and recomputes the price; WHEN No thanks is used, THEN the
+#    task leaves Home permanently but remains reopenable in the Tasks tab.
+# B6 GIVEN an unsubscribed user, WHEN Order my kit is tapped, THEN the existing hard
+#    paywall gate renders; after entitlement, submission uses workflowId supplies_kit
+#    and persists a complete kit + authoritative identity payload.
+# B7 GIVEN a supplies_kit submission, WHEN submitWorkflowAnswers handles it, THEN the
+#    PACKING_SUPPLIES_KIT task enters matching_in_progress and direct best-effort SMS
+#    uses the approved `PEEZY KIT ORDER: ...` family or logs `SMS notify not configured`.
+# B8 GIVEN the sanctioned catalog reseed, WHEN it completes, THEN
+#    BUY_PACKING_SUPPLIES is absent, the live catalog count matches JSON, and no ghosts exist.
+# B9 GIVEN the Phase B diff and deployed sanctioned surfaces, WHEN a fresh-context
+#    validator runs estimator tests plus the live iPhone/Firestore/function acceptance,
+#    THEN every B criterion receives PASS/FAIL with evidence.
 #
 # NEEDS-CLARIFICATION (bounded, reversible interpretations)
-# - Firestore shorthand users/{uid}/packingPlan has no document id; use
-#   users/{uid}/packingPlan/current, matching the identity single-doc pattern.
-# - The LOCKED taxonomy omits common room names; unmatched rooms use the early
-#   decor/books bucket. Kitchen inventory is split by centralized essential keywords.
-# - A one-day timeline cannot both keep first-night bag standalone and fit one session/day;
-#   keep the bag standalone and co-schedule the final two tasks without putting both in dose.
+# - The 12% headroom applies to raw small/medium/large box demand. Exact-fit accessories
+#   (one mattress bag per bed, wardrobe capacity, one dish pack when kitchen items exist)
+#   are not doubled by rounding 1.12 units to 2; tape/paper/wrap derive from headed boxes.
+# - `No thanks` means permanently dismissed from Home, not deleted: store UserInProgress
+#   with no return date so the stable task remains an explicit Tasks-tab escape hatch.
+# - Until a supplier signs, centralized retail placeholders produce an `Estimated kit`
+#   price line. No vendor promise, cart handoff, or fulfillment integration is inferred.
+# - WorkflowService keeps its deployed answer envelope: complete kit and identity objects
+#   are losslessly JSON-encoded into named answer rows, matching the approved mover payload.
 #
 # EDIT SITES
 PHASE_MANIFEST
-Peezy 4.0/MainInterface/Models/PackingConstants.swift
-Peezy 4.0/MainInterface/Models/PackingPlanEngine.swift
-Peezy 4.0/MainInterface/Models/DailyDoseEngine.swift
+Peezy 4.0/MainInterface/Models/KitEstimator.swift
 Peezy 4.0/MainInterface/Models/TaskActionService.swift
-Peezy 4.0/MainInterface/Models/PeezyCard.swift
-Peezy 4.0/MainInterface/Models/PeezyHomeViewModel.swift
-Peezy 4.0/MainInterface/Models/IdentityService.swift
-Peezy 4.0/Inventory/Models/InventorySessionManager.swift
-Peezy 4.0/Tasks/Store/PeezyCardFirestoreMapper.swift
 Peezy 4.0/MainInterface/Models/TaskFlowRouter.swift
-Peezy 4.0/Tasks/Task Cards/PackingSessionView.swift
-Tests/PackingPlanEngineTests.swift
-Peezy 4.0Tests/PackingDoseTests.swift
+Peezy 4.0/MainInterface/Models/PeezyHomeViewModel.swift
+Peezy 4.0/MainInterface/Views/PeezyHomeView.swift
+Peezy 4.0/Tasks/Task Cards/SuppliesKitView.swift
+Tests/KitEstimatorTests.swift
+functions/getWorkflowQualifying.js
+functions/taskCatalogData.json
 
 # READ SITES
-# peezy-conventions-v2.md — ground truth/frozen regions
-# peezy-v1-architecture.md §7 — locked packing architecture
-# peezy-execution-protocol.md — acceptance/validator/commit rules
-# peezy-build-spec-06.md — phase contract
-# CLAUDE.md — repository hooks and build command
-# firestore.rules — owner-recursive access verified; no edit/deploy
-# Peezy 4.0/Assessment/AssessmentModels/TaskGenerationService.swift — task shape
-# Peezy 4.0/Inventory/Models/InventoryModels.swift — inventory item shape
-# Peezy 4.0/Inventory/Services/InventoryStorageService.swift — Firestore decoding pattern
-# Peezy 4.0/Inventory/ViewModels/InventoryReviewViewModel.swift — packable cube math
-# Peezy 4.0/Inventory/Views/InventoryFlowView.swift — review completion path
-# Peezy 4.0/Inventory/Views/InventoryRoomHubView.swift — submitFinal call site
-# Peezy 4.0/MainInterface/Models/PeezyIdentity.swift — authoritative move date
-# Peezy 4.0/MainInterface/Views/PeezyHomeView.swift — router callback contract
-# Peezy 4.0/Tasks/FlowEngine/InAppTaskFlows.swift — confirm-date IdentityService.update path
-# Peezy 4.0/Tasks/Store/TasksStore.swift — shared mapper consumer
-# Peezy 4.0/Tasks/Views/TaskRowButtons.swift — existing open/complete actions
+# peezy-build-spec-06.md Phase B — phase contract and sanctioned deploys
+# peezy-v1-architecture.md §7/§10 — delivery-before-session and hard-gate contract
+# Peezy 4.0/MainInterface/Models/PaywallPolicy.swift — existing suppliesKitOrder gate
+# Peezy 4.0/MainInterface/Models/WorkflowService.swift — callable submission envelope
+# Peezy 4.0/MainInterface/Models/WorkflowCardModels.swift — answer shape
+# Peezy 4.0/MainInterface/Models/PeezyIdentity.swift — authoritative identity payload
+# Peezy 4.0/Inventory/Models/InventoryModels.swift — cube/item source
+# Peezy 4.0/Inventory/ViewModels/InventoryReviewViewModel.swift — cube fallback precedent
+# Peezy 4.0/Tasks/Store/TaskGrouping.swift — persistent Tasks-tab section semantics
+# Peezy 4.0/Tasks/Views/TaskRow.swift — Tasks-tab row routing
+# Peezy 4.0/Tasks/Views/TaskRowButtons.swift — reopen action
+# Peezy 4.0/Tasks/Store/TasksStore.swift — task listener/action semantics
+# functions/seedTaskCatalog.js — sanctioned reseed and ghost verifier

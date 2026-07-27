@@ -19,6 +19,10 @@ enum TaskFlowStatusAction {
     case inProgress
     case done
     case later
+    /// The flow already persisted a permanent Home dismissal.
+    case dismissedPermanently
+    /// The flow already persisted a server-side concierge submission.
+    case submittedToPeezy
 }
 
 struct TaskFlowRouter {
@@ -61,6 +65,13 @@ struct TaskFlowRouter {
                 userId: userId,
                 taskId: taskId ?? "",
                 onComplete: onComplete,
+                onDismiss: onDismiss,
+                onStatusAction: onStatusAction
+            )
+        case "supplies_kit":
+            SuppliesKitView(
+                userId: userId,
+                taskId: taskId ?? SuppliesKit.taskId,
                 onDismiss: onDismiss,
                 onStatusAction: onStatusAction
             )

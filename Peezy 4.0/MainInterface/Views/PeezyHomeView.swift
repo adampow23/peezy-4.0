@@ -142,6 +142,8 @@ struct PeezyHomeView: View {
                         case .done: viewModel.statusActionDone()
                         case .inProgress: viewModel.statusActionInProgress()
                         case .later: viewModel.statusActionLater()
+                        case .dismissedPermanently: viewModel.statusActionDismissedPermanently()
+                        case .submittedToPeezy: viewModel.statusActionSubmittedToPeezy()
                         }
                     }
                 )

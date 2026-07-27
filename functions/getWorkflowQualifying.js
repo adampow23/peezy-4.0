@@ -262,10 +262,13 @@ const submitWorkflowAnswers = onCall(
 
         // Update the user's task status (best-effort: task doc may not exist for generic workflows)
         try {
+          const taskDocumentId = workflowId === 'supplies_kit'
+            ? 'PACKING_SUPPLIES_KIT'
+            : workflowId;
           await db.collection('users')
             .doc(userId)
             .collection('tasks')
-            .doc(workflowId)
+            .doc(taskDocumentId)
             .update({
               status: 'matching_in_progress',
               qualifyingAnswers: answers,
@@ -275,10 +278,10 @@ const submitWorkflowAnswers = onCall(
           console.warn(`Could not update task status for ${workflowId} (task may not exist):`, updateErr.message);
         }
         
-        // Mover notifications are direct, best-effort Twilio SMS. The full
-        // submission remains in Firestore; only first name, cities, date, and
-        // booking summary are sent by text.
+        // Booking and kit notifications are direct, best-effort Twilio SMS.
+        // Full submissions remain in Firestore; texts stay decision-sized.
         await notifyMoverSubmission(workflowId, answers);
+        await notifySuppliesKitSubmission(workflowId, answers);
 
         return {
           success: true,
@@ -335,6 +338,33 @@ async function notifyMoverSubmission(workflowId, answers) {
   }
 }
 
+async function notifySuppliesKitSubmission(workflowId, answers) {
+  if (workflowId !== 'supplies_kit') return;
+
+  const accountSid = process.env.TWILIO_ACCOUNT_SID;
+  const authToken = process.env.TWILIO_AUTH_TOKEN;
+  const fromNumber = process.env.TWILIO_FROM_NUMBER;
+  const notifyNumber = process.env.ADAM_NOTIFY_NUMBER;
+
+  if (!accountSid || !authToken || !fromNumber || !notifyNumber ||
+      accountSid === 'placeholder_will_set_later') {
+    console.warn('SMS notify not configured');
+    return;
+  }
+
+  try {
+    const client = twilio(accountSid, authToken);
+    await client.messages.create({
+      body: buildKitNotificationBody(answers),
+      from: fromNumber,
+      to: notifyNumber
+    });
+    console.log('Kit order SMS sent');
+  } catch (err) {
+    console.error('SMS notify failed:', err.message);
+  }
+}
+
 function buildMoverNotificationBody(answers) {
   const identity = parsedAnswerObject(answers, 'identity');
   const estimate = parsedAnswerObject(answers, 'estimate');
@@ -352,6 +382,23 @@ function buildMoverNotificationBody(answers) {
   const low = normalizedMoney(estimate.low);
   const high = normalizedMoney(estimate.high);
   return `PEEZY BOOKING: ${firstName}, ${originCity}→${destCity}, ${date}, ${vendorName}, est $${low}–$${high}.`;
+}
+
+function buildKitNotificationBody(answers) {
+  const identity = parsedAnswerObject(answers, 'identity');
+  const kit = parsedAnswerObject(answers, 'kit');
+  const firstName = String(identity.name || 'Customer').trim().split(/\s+/)[0];
+  const city = String(identity.newAddress?.city || identity.currentAddress?.city || 'City pending');
+  const date = normalizedMoveDate(identity.moveDate);
+  const dollars = normalizedCents(kit.totalPriceCents);
+  const summary = [
+    `${normalizedCount(kit.small)}S`,
+    `${normalizedCount(kit.medium)}M`,
+    `${normalizedCount(kit.large)}L`,
+    `${normalizedCount(kit.wardrobe)}W`,
+    `${normalizedCount(kit.mattressBags)}MB`
+  ].join('/');
+  return `PEEZY KIT ORDER: ${firstName}, ${city}, ${date}, ${summary}, $${dollars}.`;
 }
 
 function answerMap(answers) {
@@ -385,9 +432,20 @@ function normalizedMoney(value) {
   return Number.isFinite(number) ? Math.round(number).toString() : 'pending';
 }
 
+function normalizedCount(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.max(0, Math.round(number)).toString() : '0';
+}
+
+function normalizedCents(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? (Math.max(0, number) / 100).toFixed(2) : 'pending';
+}
+
 module.exports = {
   getWorkflowQualifying,
   submitWorkflowAnswers,
   getMiniAssessmentTypes,
-  buildMoverNotificationBody
+  buildMoverNotificationBody,
+  buildKitNotificationBody
 };

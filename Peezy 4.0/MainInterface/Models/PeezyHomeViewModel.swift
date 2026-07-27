@@ -518,6 +518,31 @@ final class PeezyHomeViewModel {
         finishFlowAndDeferAdvance()
     }
 
+    /// The custom flow has already written the permanent Tasks-tab state.
+    func statusActionDismissedPermanently() {
+        guard let task = currentTask else {
+            showTaskFlow = false
+            return
+        }
+        allActiveTasks.removeAll { $0.id == task.id }
+        dailyDoseCompletedCount += 1
+        completedThisSession += 1
+        finishFlowAndDeferAdvance()
+    }
+
+    /// The callable has already moved the task into Peezy's in-progress lane.
+    func statusActionSubmittedToPeezy() {
+        guard let task = currentTask else {
+            showTaskFlow = false
+            return
+        }
+        allActiveTasks.removeAll { $0.id == task.id }
+        inProgressTaskCount += 1
+        dailyDoseCompletedCount += 1
+        completedThisSession += 1
+        finishFlowAndDeferAdvance()
+    }
+
     // MARK: - Get Ahead
 
     func getAhead() {

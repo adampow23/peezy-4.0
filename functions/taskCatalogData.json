@@ -554,22 +554,6 @@
     "workflowId": "transfer_renters_insurance"
   },
   {
-    "taskId": "BUY_PACKING_SUPPLIES",
-    "title": "Buy packing supplies",
-    "actionCategory": "purchase-get",
-    "category": "packing",
-    "actionType": "off-app",
-    "taskType": "provide_info",
-    "selfServiceOnly": true,
-    "conditions": {},
-    "desc": "A one-bedroom needs roughly 30 small, 40 medium, and 20 large boxes, plus tape, paper, and markers. Budget $100-200 total.",
-    "estHours": 1.5,
-    "estPeezy": "30 secs",
-    "tips": "Liquor stores give away sturdy small boxes — perfect for books.",
-    "urgencyPercentage": 85,
-    "whyNeeded": "Running out mid-pack means a last-minute store run during peak chaos."
-  },
-  {
     "taskId": "SCAN_INVENTORY",
     "title": "Scan your home",
     "actionCategory": "document-record",

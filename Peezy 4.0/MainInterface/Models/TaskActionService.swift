@@ -148,7 +148,28 @@ struct TaskActionService {
             today: today,
             preserving: previous
         )
-        try await persist(plan, userId: userId)
+        var suppliesKit = KitEstimator.estimate(items: rooms.flatMap { room in
+            room.items.filter(\.shouldMove).map { item in
+                KitInventoryItem(
+                    name: item.name,
+                    category: item.category,
+                    roomName: room.name,
+                    tier: item.tier,
+                    sizeEstimate: item.sizeEstimate,
+                    quantity: item.quantity,
+                    cubicFeet: item.cubicFeet,
+                    isFragile: item.isFragile
+                )
+            }
+        })
+        if let firstSessionDate = plan.sessions.map(\.scheduledDate).min() {
+            suppliesKit.deliveryBy = Calendar.current.date(
+                byAdding: .day,
+                value: -2,
+                to: firstSessionDate
+            )
+        }
+        try await persist(plan, suppliesKit: suppliesKit, userId: userId)
         return plan
     }
 
@@ -200,6 +221,49 @@ struct TaskActionService {
             throw PackingPlanPersistenceError.sessionNotFound
         }
         return session
+    }
+
+    func loadSuppliesKit(userId: String, taskId: String = SuppliesKit.taskId) async throws -> SuppliesKit {
+        guard !userId.isEmpty else { throw PackingPlanPersistenceError.kitNotFound }
+        let snapshot = try await Firestore.firestore()
+            .collection("users").document(userId)
+            .collection("tasks").document(taskId)
+            .getDocument()
+        guard let data = snapshot.data(),
+              let rawKit = data["suppliesKit"] as? [String: Any],
+              let kit = decodeSuppliesKit(from: rawKit) else {
+            throw PackingPlanPersistenceError.kitNotFound
+        }
+        return kit
+    }
+
+    func updateSuppliesKit(userId: String, taskId: String, kit: SuppliesKit) async throws {
+        guard !userId.isEmpty, !taskId.isEmpty else { throw PackingPlanPersistenceError.kitNotFound }
+        var normalizedKit = kit
+        normalizedKit.clampToNonnegative()
+        try await Firestore.firestore()
+            .collection("users").document(userId)
+            .collection("tasks").document(taskId)
+            .updateData([
+                "suppliesKit": suppliesKitData(normalizedKit),
+                "desc": normalizedKit.itemizedSummary,
+                "kitCustomizedAt": FieldValue.serverTimestamp()
+            ])
+    }
+
+    /// `No thanks` removes the one-time offer from Home permanently while
+    /// retaining an explicit, reopenable row under "You're on it" in Tasks.
+    func dismissSuppliesKit(userId: String, taskId: String) async throws {
+        guard !userId.isEmpty, !taskId.isEmpty else { throw PackingPlanPersistenceError.kitNotFound }
+        try await Firestore.firestore()
+            .collection("users").document(userId)
+            .collection("tasks").document(taskId)
+            .updateData([
+                "status": "UserInProgress",
+                "kitDismissedAt": FieldValue.serverTimestamp(),
+                "userInProgressDate": FieldValue.serverTimestamp(),
+                "userInProgressReturnDate": FieldValue.delete()
+            ])
     }
 
     /// Plan and task completion land in one batch so regeneration never loses
@@ -254,7 +318,11 @@ struct TaskActionService {
 
     // MARK: Packing plan persistence helpers
 
-    private func persist(_ plan: PackingPlan, userId: String) async throws {
+    private func persist(
+        _ plan: PackingPlan,
+        suppliesKit: SuppliesKit? = nil,
+        userId: String
+    ) async throws {
         let db = Firestore.firestore()
         let taskCollection = db.collection("users").document(userId).collection("tasks")
         let existing = try await taskCollection
@@ -273,7 +341,8 @@ struct TaskActionService {
         batch.setData(packingPlanData(plan), forDocument: packingPlanRef(db: db, userId: userId))
 
         let newIds = Set(plan.sessions.map(\.taskId))
-        for old in existing.documents where !newIds.contains(old.documentID) {
+        for old in existing.documents
+        where old.documentID.hasPrefix("PACKING_SESSION_") && !newIds.contains(old.documentID) {
             batch.deleteDocument(old.reference)
         }
         for session in plan.sessions {
@@ -282,6 +351,26 @@ struct TaskActionService {
                 packingTaskData(session, previousData: previousData),
                 forDocument: taskCollection.document(session.taskId)
             )
+        }
+        if let suppliesKit {
+            let previousData = existingById[SuppliesKit.taskId]
+            let resolvedKit: SuppliesKit
+            if previousData?["kitCustomizedAt"] != nil,
+               let rawKit = previousData?["suppliesKit"] as? [String: Any],
+               var customized = decodeSuppliesKit(from: rawKit) {
+                customized.deliveryBy = suppliesKit.deliveryBy
+                resolvedKit = customized
+            } else {
+                resolvedKit = suppliesKit
+            }
+            batch.setData(
+                suppliesKitTaskData(resolvedKit, previousData: previousData),
+                forDocument: taskCollection.document(SuppliesKit.taskId),
+                merge: true
+            )
+            // TRANSFORM successor: a generated kit replaces the legacy task
+            // for this user as well as retiring it from the catalog.
+            batch.deleteDocument(taskCollection.document("BUY_PACKING_SUPPLIES"))
         }
         try await batch.commit()
     }
@@ -383,6 +472,75 @@ struct TaskActionService {
         return data
     }
 
+    private func suppliesKitTaskData(
+        _ kit: SuppliesKit,
+        previousData: [String: Any]?
+    ) -> [String: Any] {
+        var data: [String: Any] = [
+            "id": SuppliesKit.taskId,
+            "taskId": SuppliesKit.taskId,
+            "workflowId": "supplies_kit",
+            "title": "Your packing supplies kit",
+            "desc": kit.itemizedSummary,
+            "category": "packing",
+            "actionCategory": "purchase-get",
+            "actionType": "in-app",
+            "taskType": "provide_info",
+            "urgencyPercentage": 86,
+            "estHours": 0.1,
+            "tips": "Includes a few extra — running out mid-pack is worse than spares.",
+            "whyNeeded": "The right supplies arrive before packing starts, without a mid-session store run.",
+            "status": previousData?["status"] as? String ?? "Upcoming",
+            "selfServiceOnly": false,
+            "generatedBy": "packingPlan",
+            "createdAt": previousData?["createdAt"] ?? FieldValue.serverTimestamp(),
+            "suppliesKit": suppliesKitData(kit)
+        ]
+        if let deliveryBy = kit.deliveryBy {
+            data["dueDate"] = Timestamp(date: deliveryBy)
+        } else {
+            data["dueDate"] = FieldValue.serverTimestamp()
+        }
+        return data
+    }
+
+    private func suppliesKitData(_ kit: SuppliesKit) -> [String: Any] {
+        var data: [String: Any] = [
+            "small": kit.small,
+            "medium": kit.medium,
+            "large": kit.large,
+            "wardrobe": kit.wardrobe,
+            "dishPack": kit.dishPack,
+            "tape": kit.tape,
+            "paper": kit.paper,
+            "wrap": kit.wrap,
+            "mattressBags": kit.mattressBags,
+            "headroomPercent": KitConstants.headroomPercent,
+            "totalPriceCents": kit.totalPriceCents
+        ]
+        if let deliveryBy = kit.deliveryBy {
+            data["deliveryBy"] = Timestamp(date: deliveryBy)
+        }
+        return data
+    }
+
+    private func decodeSuppliesKit(from data: [String: Any]) -> SuppliesKit? {
+        let keys = ["small", "medium", "large", "wardrobe", "dishPack", "tape", "paper", "wrap", "mattressBags"]
+        guard keys.allSatisfy({ data[$0] is NSNumber }) else { return nil }
+        return SuppliesKit(
+            small: (data["small"] as? NSNumber)?.intValue ?? 0,
+            medium: (data["medium"] as? NSNumber)?.intValue ?? 0,
+            large: (data["large"] as? NSNumber)?.intValue ?? 0,
+            wardrobe: (data["wardrobe"] as? NSNumber)?.intValue ?? 0,
+            dishPack: (data["dishPack"] as? NSNumber)?.intValue ?? 0,
+            tape: (data["tape"] as? NSNumber)?.intValue ?? 0,
+            paper: (data["paper"] as? NSNumber)?.intValue ?? 0,
+            wrap: (data["wrap"] as? NSNumber)?.intValue ?? 0,
+            mattressBags: (data["mattressBags"] as? NSNumber)?.intValue ?? 0,
+            deliveryBy: (data["deliveryBy"] as? Timestamp)?.dateValue()
+        )
+    }
+
     private func packingPlan(from data: [String: Any]) -> PackingPlan? {
         guard let moveDate = data["moveDate"] as? Timestamp,
               let generatedAt = data["generatedAt"] as? Timestamp,
@@ -422,12 +580,14 @@ enum PackingPlanPersistenceError: LocalizedError {
     case missingUser
     case missingMoveDate
     case sessionNotFound
+    case kitNotFound
 
     var errorDescription: String? {
         switch self {
         case .missingUser: return "A signed-in user is required to create a packing plan."
         case .missingMoveDate: return "Add a move date before creating a packing plan."
         case .sessionNotFound: return "That packing session is no longer available."
+        case .kitNotFound: return "That packing supplies kit is no longer available."
         }
     }
 }
