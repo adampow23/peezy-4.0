@@ -1,39 +1,65 @@
-# Spec 07 Phase A — userKnowledge schema adoption (PERIPHERY)
+# Spec 07 Phase B — provider directory + resolver (CORE)
 #
 # ACCEPTANCE CONTRACT (written before edits)
-# A1 GIVEN an assessment save, WHEN userKnowledge/{uid} is read back, THEN every
-#    stored answer is nested at entries.<key> with value, source:"assessment",
-#    and updatedAt, and the write uses merge semantics.
-# A2 GIVEN any Settings move-detail edit (date/current/new address), WHEN its
-#    userKnowledge mirror completes, THEN only the edited entry is merged with
-#    source:"settings" and unrelated assessment entries remain present.
-# A3 GIVEN an in-app assessment-key update, WHEN its best-effort mirror runs,
-#    THEN it uses the entries schema with source:"assessment".
-# A4 GIVEN a test-bot entries-shaped document, WHEN contextBuilder flattens it,
-#    THEN the harness returns non-empty mapped values from those entries.
-# A5 GIVEN the complete Phase A diff, WHEN a fresh-context validator receives
-#    this contract, the spec, diff, and build/harness evidence, THEN A1-A4 each
-#    receive an evidence-backed PASS or FAIL; the writer does not self-grade.
+# B1 GIVEN the provider seed, WHEN its validator loads every row, THEN roughly
+#    forty real providers have unique ids, required schema fields, valid methods,
+#    and verified:true appears only on link rows whose official action URL was
+#    confirmed live during this session.
+# B2 GIVEN the single gated rules diff, WHEN reviewed against HEAD, THEN its only
+#    access changes are authenticated read/no client write for providerDirectory
+#    and ispPlans (Phase C's required read folded into this one deploy); no rules
+#    deploy occurs until Adam explicitly approves the presented diff.
+# B3 GIVEN a seeded provider or alias, WHEN resolveProvider runs, THEN it returns
+#    the matching safe link/call/concierge payload without invoking Anthropic.
+# B4 GIVEN a directory miss, WHEN Anthropic web search returns a high-confidence
+#    result, THEN a URL is returned only when that exact URL occurs in a web-search
+#    citation, the payload includes citations, and the result caches with
+#    source:"resolved", verified:false; medium/low, malformed, timeout, failure,
+#    fake brand, or any uncited URL returns method:"concierge" with no URL.
+# B5 GIVEN a supported businessSearch row, WHEN a provider resolves, THEN link
+#    renders an in-app Safari action plus one-tap identity copy, call renders the
+#    phone and drafted call line, and concierge follows the existing submission;
+#    method/confidence are not exposed and every new UI state has an accessibility id.
+# B6 GIVEN the complete local Phase B implementation, WHEN the simulator builds
+#    and a fresh-context validator runs pre-deploy checks, THEN B1-B5 receive
+#    evidence-backed PASS/FAIL. After approval/deploy, seeded link open, unseeded
+#    real-brand citation+cache, gibberish concierge, and fake-brand no-URL receive
+#    live evidence before Phase B closes.
 #
-# NEEDS-CLARIFICATION (bounded, reversible interpretation)
-# - The spec says four write sites: AssessmentDataManager + three Settings sites.
-#   Current code instead has one AssessmentDataManager writer, one shared Settings
-#   date writer, two identity-only Settings address edits, and one in-app writer.
-#   Migrate every actual writer and add schema mirrors for the three Settings move
-#   details (date/current/new address), preserving identity as the canonical store.
+# NEEDS-CLARIFICATION (bounded, reversible interpretations)
+# - Current utility definitions contain no businessSearch/provider-name step, and
+#   deploying flowDefinitions is not sanctioned. Keep their existing concierge
+#   route; do not invent or deploy an extra definition mutation in this run.
+# - Insurance businessSearch lives in two custom Swift flows, not row definitions.
+#   Integrate the update-address branch in those files; quote/switch stays concierge.
+# - Phase C requires ispPlans authenticated reads. firestore.rules has no reusable
+#   wildcard, so include its block now in the one Phase B-gated rules diff.
 #
 # EDIT SITES
 PHASE_MANIFEST
-Peezy 4.0/MainInterface/Models/UserKnowledgeService.swift
-Peezy 4.0/Assessment/AssessmentModels/AssessmentDataManager.swift
-Peezy 4.0/Menu/PeezySettingsView.swift
-Peezy 4.0/Tasks/FlowEngine/InAppTaskFlows.swift
+firestore.rules
+functions/providerDirectoryData.json
+functions/seedProviderDirectory.js
+functions/resolveProvider.js
+functions/index.js
+Peezy 4.0/MainInterface/Models/ProviderDirectoryService.swift
+Peezy 4.0/MainInterface/Views/ProviderActionCard.swift
+Peezy 4.0/Tasks/FlowEngine/FlowEngineView.swift
+Peezy 4.0/Tasks/Task Cards/HandleAutoInsuranceFlow.swift
+Peezy 4.0/Tasks/Task Cards/HandleHomeInsuranceFlow.swift
 
 # READ SITES
-# peezy-build-spec-07.md Phase A
-# functions/contextBuilder.js:40-80
-# firestore.rules:27-31
+# peezy-build-spec-07.md Phase B + Phase C rules note
+# firestore.rules
+# functions/package.json
+# functions/processInventory.js (Anthropic initialization/call pattern)
+# functions/index.js (v2 callable/export pattern)
+# functions/seedVendors.js (backend-owned seed/round-trip pattern)
+# functions/flowDefinitionsData.json (businessSearch and row topology)
+# Peezy 4.0/Tasks/FlowEngine/FlowDefinition.swift
+# Peezy 4.0/Tasks/FlowEngine/FlowEngineView.swift
+# Peezy 4.0/Tasks/Task Card Components/TaskFlowBusinessSearchCard.swift
 # Peezy 4.0/MainInterface/Models/IdentityService.swift
-# Peezy 4.0/Assessment/AssessmentModels/AssessmentDataManager.swift
-# Peezy 4.0/Menu/PeezySettingsView.swift
-# Peezy 4.0/Tasks/FlowEngine/InAppTaskFlows.swift
+# Peezy 4.0/MainInterface/Models/WorkflowService.swift
+# Peezy 4.0/Tasks/Task Cards/HandleAutoInsuranceFlow.swift
+# Peezy 4.0/Tasks/Task Cards/HandleHomeInsuranceFlow.swift
