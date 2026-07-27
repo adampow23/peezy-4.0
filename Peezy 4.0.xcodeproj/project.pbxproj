@@ -14,6 +14,8 @@
 		45D0CA082F157FCC00064C3C /* FirebaseFunctions in Frameworks */ = {isa = PBXBuildFile; productRef = 45D0CA072F157FCC00064C3C /* FirebaseFunctions */; };
 		45D0CA0A2F160200000GSIN1 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = 45D0CA092F160200000GSIN1 /* GoogleSignIn */; };
 		45D0CA0C2F160200000STRG1 /* FirebaseStorage in Frameworks */ = {isa = PBXBuildFile; productRef = 45D0CA0B2F160200000STRG1 /* FirebaseStorage */; };
+		B3DE11D747EF80D6685EAEBB /* FirebaseCrashlytics in Frameworks */ = {isa = PBXBuildFile; productRef = D8A0062C57C13DFB0845AAA0 /* FirebaseCrashlytics */; };
+		E2FDE08F2185226BFBBE36E6 /* FirebaseAnalytics in Frameworks */ = {isa = PBXBuildFile; productRef = 0A9C99245C2774798F6A1F83 /* FirebaseAnalytics */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -44,16 +46,22 @@
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		45D0C9932F14D0A500064C3C /* Peezy 4.0 */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+			);
 			path = "Peezy 4.0";
 			sourceTree = "<group>";
 		};
 		45D0C9A12F14D0A600064C3C /* Peezy 4.0Tests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+			);
 			path = "Peezy 4.0Tests";
 			sourceTree = "<group>";
 		};
 		45D0C9AB2F14D0A600064C3C /* Peezy 4.0UITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+			);
 			path = "Peezy 4.0UITests";
 			sourceTree = "<group>";
 		};
@@ -69,6 +77,8 @@
 				45D0CA062F157FCC00064C3C /* FirebaseFirestore in Frameworks */,
 				45D0CA0A2F160200000GSIN1 /* GoogleSignIn in Frameworks */,
 				45D0CA0C2F160200000STRG1 /* FirebaseStorage in Frameworks */,
+				B3DE11D747EF80D6685EAEBB /* FirebaseCrashlytics in Frameworks */,
+				E2FDE08F2185226BFBBE36E6 /* FirebaseAnalytics in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -129,6 +139,7 @@
 				45D0C98D2F14D0A500064C3C /* Sources */,
 				45D0C98E2F14D0A500064C3C /* Frameworks */,
 				45D0C98F2F14D0A500064C3C /* Resources */,
+				CDB6007C8A278DBAF3421928 /* [Firebase] Crashlytics */,
 			);
 			buildRules = (
 			);
@@ -144,6 +155,8 @@
 				45D0CA072F157FCC00064C3C /* FirebaseFunctions */,
 				45D0CA092F160200000GSIN1 /* GoogleSignIn */,
 				45D0CA0B2F160200000STRG1 /* FirebaseStorage */,
+				D8A0062C57C13DFB0845AAA0 /* FirebaseCrashlytics */,
+				0A9C99245C2774798F6A1F83 /* FirebaseAnalytics */,
 			);
 			productName = "Peezy 4.0";
 			productReference = 45D0C9912F14D0A500064C3C /* Peezy 4.0.app */;
@@ -166,8 +179,6 @@
 				45D0C9A12F14D0A600064C3C /* Peezy 4.0Tests */,
 			);
 			name = "Peezy 4.0Tests";
-			packageProductDependencies = (
-			);
 			productName = "Peezy 4.0Tests";
 			productReference = 45D0C99E2F14D0A600064C3C /* Peezy 4.0Tests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
@@ -189,8 +200,6 @@
 				45D0C9AB2F14D0A600064C3C /* Peezy 4.0UITests */,
 			);
 			name = "Peezy 4.0UITests";
-			packageProductDependencies = (
-			);
 			productName = "Peezy 4.0UITests";
 			productReference = 45D0C9A82F14D0A600064C3C /* Peezy 4.0UITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
@@ -269,6 +278,33 @@
 		};
 /* End PBXResourcesBuildPhase section */
 
+/* Begin PBXShellScriptBuildPhase section */
+		CDB6007C8A278DBAF3421928 /* [Firebase] Crashlytics */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"${DWARF_DSYM_FOLDER_PATH}/${DWARF_DSYM_FILE_NAME}",
+				"${DWARF_DSYM_FOLDER_PATH}/${DWARF_DSYM_FILE_NAME}/Contents/Resources/DWARF/${PRODUCT_NAME}",
+				"${DWARF_DSYM_FOLDER_PATH}/${DWARF_DSYM_FILE_NAME}/Contents/Info.plist",
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/GoogleService-Info.plist",
+				"$(TARGET_BUILD_DIR)/$(EXECUTABLE_PATH)",
+				"${DWARF_DSYM_FOLDER_PATH}/${DWARF_DSYM_FILE_NAME}/Contents/Resources/DWARF/${PRODUCT_NAME}.debug.dylib",
+			);
+			name = "[Firebase] Crashlytics";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "\"${BUILD_DIR%/Build/*}/SourcePackages/checkouts/firebase-ios-sdk/Crashlytics/run\"";
+		};
+/* End PBXShellScriptBuildPhase section */
+
 /* Begin PBXSourcesBuildPhase section */
 		45D0C98D2F14D0A500064C3C /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
@@ -341,7 +377,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = C7434HTS3Q;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
@@ -453,6 +489,10 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-ObjC",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = "peezy.Peezy-4-0";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -494,6 +534,10 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-ObjC",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = "peezy.Peezy-4-0";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -655,6 +699,11 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		0A9C99245C2774798F6A1F83 /* FirebaseAnalytics */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 45D0C9BB2F1512B300064C3C /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAnalytics;
+		};
 		45D0CA032F157FCC00064C3C /* FirebaseAuth */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 45D0C9BB2F1512B300064C3C /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
@@ -679,6 +728,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 45D0C9BB2F1512B300064C3C /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
 			productName = FirebaseStorage;
+		};
+		D8A0062C57C13DFB0845AAA0 /* FirebaseCrashlytics */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 45D0C9BB2F1512B300064C3C /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseCrashlytics;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
