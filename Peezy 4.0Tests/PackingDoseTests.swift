@@ -55,6 +55,31 @@ struct PackingDoseTests {
         #expect(ids == ["A"])
     }
 
+    @Test func readinessJoinsOnTMinusOneAfterPackingAndNotBefore() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let tMinusTwo = calendar.date(from: DateComponents(year: 2026, month: 8, day: 13))!
+        let tMinusOne = calendar.date(byAdding: .day, value: 1, to: tMinusTwo)!
+        let packing = packingCard(id: "PACKING_SESSION_9", scheduledDate: tMinusOne)
+        let readiness = readinessCard(scheduledDate: tMinusOne)
+
+        let earlyIds = DailyDoseEngine().taskIdsForNewDose(
+            from: [readiness, packing],
+            daysUntilMove: 2,
+            today: tMinusTwo,
+            calendar: calendar
+        )
+        let dueIds = DailyDoseEngine().taskIdsForNewDose(
+            from: [readiness, packing],
+            daysUntilMove: 1,
+            today: tMinusOne,
+            calendar: calendar
+        )
+
+        #expect(earlyIds.isEmpty)
+        #expect(dueIds == ["PACKING_SESSION_9", ReadinessChecklist.taskId])
+    }
+
     private func packingCard(id: String, scheduledDate: Date) -> PeezyCard {
         let session = PackingSession(
             taskId: id,
@@ -77,6 +102,18 @@ struct PackingDoseTests {
             taskId: id,
             workflowId: "packing_session",
             payload: .packing(session)
+        )
+    }
+
+    private func readinessCard(scheduledDate: Date) -> PeezyCard {
+        PeezyCard(
+            id: ReadinessChecklist.taskId,
+            type: .task,
+            title: "Readiness",
+            subtitle: "",
+            taskId: ReadinessChecklist.taskId,
+            workflowId: "packing_readiness",
+            dueDate: scheduledDate
         )
     }
 }

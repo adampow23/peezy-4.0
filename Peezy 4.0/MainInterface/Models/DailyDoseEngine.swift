@@ -74,14 +74,15 @@ struct DailyDoseEngine {
 
     /// Builds a new day's frozen ids. Packing work is scheduled-date-driven:
     /// it does not inflate the regular task target, and at most one due packing
-    /// session joins (and is counted in) today's frozen dose.
+    /// session joins (and is counted in) today's frozen dose. The stable T−1
+    /// readiness gate follows any packing session when it becomes due.
     func taskIdsForNewDose(
         from sortedCards: [PeezyCard],
         daysUntilMove: Int,
         today: Date = Date(),
         calendar: Calendar = .current
     ) -> [String] {
-        let regularCards = sortedCards.filter { !$0.isPackingSession }
+        let regularCards = sortedCards.filter { !$0.isPackingSession && !$0.isPackingReadiness }
         let regularTarget = dailyTarget(
             activeTaskCount: regularCards.count,
             daysUntilMove: daysUntilMove
@@ -101,9 +102,16 @@ struct DailyDoseEngine {
             }
             .first
 
-        let regularSlots = max(regularTarget - (duePacking == nil ? 0 : 1), 0)
+        let dueReadiness = sortedCards.first { card in
+            guard card.isPackingReadiness, let dueDate = card.dueDate else { return false }
+            return calendar.startOfDay(for: dueDate) <= startToday
+        }
+
+        let scheduledCount = (duePacking == nil ? 0 : 1) + (dueReadiness == nil ? 0 : 1)
+        let regularSlots = max(regularTarget - scheduledCount, 0)
         var ids = regularCards.prefix(regularSlots).map(\.id)
         if let duePacking { ids.append(duePacking.0.id) }
+        if let dueReadiness { ids.append(dueReadiness.id) }
         return ids
     }
 

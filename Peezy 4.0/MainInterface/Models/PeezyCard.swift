@@ -215,6 +215,10 @@ struct PeezyCard: Identifiable, Equatable, Codable {
         packingSession != nil || (taskId ?? id).hasPrefix("PACKING_SESSION_")
     }
 
+    var isPackingReadiness: Bool {
+        (taskId ?? id) == ReadinessChecklist.taskId
+    }
+
     /// Whether this card should be shown in the stack
     var shouldShow: Bool {
         // If snoozed, only show if snooze date has passed

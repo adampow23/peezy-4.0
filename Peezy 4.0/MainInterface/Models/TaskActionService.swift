@@ -266,6 +266,102 @@ struct TaskActionService {
             ])
     }
 
+    // MARK: - Packing readiness
+
+    func loadReadinessGate(
+        userId: String,
+        taskId: String = ReadinessChecklist.taskId
+    ) async throws -> ReadinessGateRecord {
+        guard !userId.isEmpty, !taskId.isEmpty else {
+            throw PackingPlanPersistenceError.readinessNotFound
+        }
+
+        let db = Firestore.firestore()
+        let userRef = db.collection("users").document(userId)
+        async let taskSnapshot = userRef.collection("tasks").document(taskId).getDocument()
+        async let readinessSnapshot = readinessRef(db: db, userId: userId).getDocument()
+        async let plan = loadPackingPlan(userId: userId)
+
+        let (taskDocument, readinessDocument, packingPlan) = try await (
+            taskSnapshot,
+            readinessSnapshot,
+            plan
+        )
+        guard let scheduledDate = (taskDocument.data()?["dueDate"] as? Timestamp)?.dateValue() else {
+            throw PackingPlanPersistenceError.readinessNotFound
+        }
+
+        if let data = readinessDocument.data(),
+           let rawItems = data["items"] as? [String: Any] {
+            let items = rawItems.compactMapValues { $0 as? Bool }
+            let checklist = ReadinessChecklist(items: items)
+            return ReadinessGateRecord(
+                checklist: checklist,
+                scheduledDate: scheduledDate,
+                completedAt: checklist.isComplete
+                    ? (data["completedAt"] as? Timestamp)?.dateValue()
+                    : nil
+            )
+        }
+
+        let reservationPrefill = await hasCompletedReserveAccessAnswers(
+            db: db,
+            userId: userId
+        )
+        let checklist = ReadinessChecklist(
+            allSessionsComplete: packingPlan?.sessions.allSatisfy(\.isCompleted) == true,
+            accessReserved: reservationPrefill
+        )
+        let record = ReadinessGateRecord(
+            checklist: checklist,
+            scheduledDate: scheduledDate,
+            completedAt: nil
+        )
+        try await saveReadinessGate(userId: userId, record: record)
+        return record
+    }
+
+    func saveReadinessGate(userId: String, record: ReadinessGateRecord) async throws {
+        guard !userId.isEmpty else { throw PackingPlanPersistenceError.readinessNotFound }
+
+        let db = Firestore.firestore()
+        let batch = db.batch()
+        let completedAt = record.checklist.isComplete ? (record.completedAt ?? Date()) : nil
+
+        // LOCKED purpose: this persisted checklist is the vendor-accountability
+        // evidence layer for explaining moving-day overages after the fact.
+        var readinessData: [String: Any] = [
+            "items": record.checklist.items,
+            "scheduledDate": Timestamp(date: record.scheduledDate),
+            "updatedAt": FieldValue.serverTimestamp()
+        ]
+        if let completedAt {
+            readinessData["completedAt"] = Timestamp(date: completedAt)
+        } else {
+            readinessData["completedAt"] = FieldValue.delete()
+        }
+        batch.setData(
+            readinessData,
+            forDocument: readinessRef(db: db, userId: userId),
+            merge: true
+        )
+
+        var taskData: [String: Any] = [
+            "status": record.checklist.isComplete ? "Completed" : "Upcoming"
+        ]
+        if let completedAt {
+            taskData["completedAt"] = Timestamp(date: completedAt)
+        } else {
+            taskData["completedAt"] = FieldValue.delete()
+        }
+        batch.updateData(
+            taskData,
+            forDocument: db.collection("users").document(userId)
+                .collection("tasks").document(ReadinessChecklist.taskId)
+        )
+        try await batch.commit()
+    }
+
     /// Plan and task completion land in one batch so regeneration never loses
     /// a completion that the task row already showed.
     func completePackingSession(
@@ -312,6 +408,7 @@ struct TaskActionService {
             .getDocuments()
         let batch = db.batch()
         batch.deleteDocument(packingPlanRef(db: db, userId: userId))
+        batch.deleteDocument(readinessRef(db: db, userId: userId))
         for task in tasks.documents { batch.deleteDocument(task.reference) }
         try await batch.commit()
     }
@@ -351,6 +448,20 @@ struct TaskActionService {
                 packingTaskData(session, previousData: previousData),
                 forDocument: taskCollection.document(session.taskId)
             )
+        }
+
+        let previousReadiness = existingById[ReadinessChecklist.taskId]
+        let readinessDate = readinessScheduledDate(moveDate: plan.moveDate)
+        batch.setData(
+            readinessTaskData(
+                scheduledDate: readinessDate,
+                previousData: previousReadiness
+            ),
+            forDocument: taskCollection.document(ReadinessChecklist.taskId)
+        )
+        if let oldDate = (previousReadiness?["dueDate"] as? Timestamp)?.dateValue(),
+           Calendar.current.startOfDay(for: oldDate) != Calendar.current.startOfDay(for: readinessDate) {
+            batch.deleteDocument(readinessRef(db: db, userId: userId))
         }
         if let suppliesKit {
             let previousData = existingById[SuppliesKit.taskId]
@@ -400,6 +511,19 @@ struct TaskActionService {
         // needs a concrete Firestore document id. This mirrors identity/identity.
         db.collection("users").document(userId)
             .collection("packingPlan").document("current")
+    }
+
+    private func readinessRef(db: Firestore, userId: String) -> DocumentReference {
+        // NEEDS-CLARIFICATION: the spec's users/{uid}/readiness shorthand
+        // needs a concrete document id. This mirrors packingPlan/current.
+        db.collection("users").document(userId)
+            .collection("readiness").document("current")
+    }
+
+    private func readinessScheduledDate(moveDate: Date) -> Date {
+        let calendar = Calendar.current
+        let moveDay = calendar.startOfDay(for: moveDate)
+        return calendar.date(byAdding: .day, value: -1, to: moveDay) ?? moveDay
     }
 
     private func packingPlanData(_ plan: PackingPlan) -> [String: Any] {
@@ -470,6 +594,78 @@ struct TaskActionService {
             }
         }
         return data
+    }
+
+    private func readinessTaskData(
+        scheduledDate: Date,
+        previousData: [String: Any]?
+    ) -> [String: Any] {
+        let previousDate = (previousData?["dueDate"] as? Timestamp)?.dateValue()
+        let sameDate = previousDate.map {
+            Calendar.current.startOfDay(for: $0) == Calendar.current.startOfDay(for: scheduledDate)
+        } ?? false
+        let preservedStatus = sameDate ? previousData?["status"] as? String : nil
+
+        var data: [String: Any] = [
+            "id": ReadinessChecklist.taskId,
+            "taskId": ReadinessChecklist.taskId,
+            "workflowId": "packing_readiness",
+            "title": "Final moving-day readiness check",
+            "desc": "Confirm packing, furniture, building access, a clear path, and your first-night bag.",
+            "category": "packing",
+            "actionCategory": "packing",
+            "actionType": "in-app",
+            "taskType": "provide_info",
+            "urgencyPercentage": 99,
+            "estHours": 0.1,
+            "tips": "Tap each item as it becomes ready. Nothing here blocks your move.",
+            "whyNeeded": "A final readiness record protects the estimate and explains avoidable overages.",
+            "dueDate": Timestamp(date: scheduledDate),
+            "status": preservedStatus ?? "Upcoming",
+            "selfServiceOnly": true,
+            "generatedBy": "packingPlan",
+            "createdAt": previousData?["createdAt"] ?? FieldValue.serverTimestamp()
+        ]
+        if sameDate, let completedAt = previousData?["completedAt"] {
+            data["completedAt"] = completedAt
+        }
+        if sameDate,
+           let status = previousData?["status"] as? String,
+           status == "Snoozed" || status == "UserInProgress" {
+            data["status"] = status
+            for key in ["snoozedUntil", "lastSnoozedAt", "userInProgressDate", "userInProgressReturnDate"] {
+                if let value = previousData?[key] { data[key] = value }
+            }
+        }
+        return data
+    }
+
+    private func hasCompletedReserveAccessAnswers(
+        db: Firestore,
+        userId: String
+    ) async -> Bool {
+        let userRef = db.collection("users").document(userId)
+        let pairs = [
+            (taskId: "RESERVE_ACCESS_OLD", workflowId: "reserve_access_old"),
+            (taskId: "RESERVE_ACCESS_NEW", workflowId: "reserve_access_new")
+        ]
+
+        var taskExists: [String: Bool] = [:]
+        var responseExists: [String: Bool] = [:]
+        for pair in pairs {
+            let task = try? await userRef.collection("tasks").document(pair.taskId).getDocument()
+            let response = try? await userRef.collection("workflowResponses")
+                .document(pair.workflowId).getDocument()
+            let status = task?.data()?["status"] as? String
+            taskExists[pair.taskId] = task?.exists == true && status != "Skipped"
+            responseExists[pair.taskId] = response?.data()?["answers"] != nil
+        }
+
+        let applicable = pairs.filter { taskExists[$0.taskId] == true }
+        if !applicable.isEmpty {
+            return applicable.allSatisfy { responseExists[$0.taskId] == true }
+        }
+        return pairs.contains { responseExists[$0.taskId] == true }
     }
 
     private func suppliesKitTaskData(
@@ -581,6 +777,7 @@ enum PackingPlanPersistenceError: LocalizedError {
     case missingMoveDate
     case sessionNotFound
     case kitNotFound
+    case readinessNotFound
 
     var errorDescription: String? {
         switch self {
@@ -588,6 +785,7 @@ enum PackingPlanPersistenceError: LocalizedError {
         case .missingMoveDate: return "Add a move date before creating a packing plan."
         case .sessionNotFound: return "That packing session is no longer available."
         case .kitNotFound: return "That packing supplies kit is no longer available."
+        case .readinessNotFound: return "That moving-day readiness check is no longer available."
         }
     }
 }

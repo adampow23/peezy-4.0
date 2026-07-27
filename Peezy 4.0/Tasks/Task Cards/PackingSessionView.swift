@@ -75,6 +75,16 @@ struct PackingSessionView: View {
                     }
                 }
                 .accessibilityIdentifier("packing.session.summary")
+
+                if session.isBehindPace {
+                    // Copy LOCKED (Spec 06 Phase C).
+                    Text("You're behind pace — movers charge by the hour, and unpacked homes run long. Today's session matters.")
+                        .font(.subheadline)
+                        .bold()
+                        .foregroundStyle(PeezyTheme.Colors.emotionalRed)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("packing.session.behind_pace")
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 24)

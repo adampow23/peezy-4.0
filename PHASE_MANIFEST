@@ -1,65 +1,56 @@
-# Spec 06 Phase B — Derived supplies kit + concierge order (PERIPHERY)
+# Spec 06 Phase C — T-1 readiness gate + pace consequence (PERIPHERY)
 #
 # ACCEPTANCE CONTRACT (written before build)
-# B1 GIVEN scanned inventory cube and item mix, WHEN KitEstimator runs, THEN it
-#    returns small/medium/large boxes plus wardrobe, dishPack, tape, paper, wrap,
-#    and mattressBags using centralized LOCKED-pending-calibration constants.
-# B2 GIVEN boxable inventory, WHEN quantities are estimated, THEN the size-bucket
-#    raw box demand receives exactly 12% headroom before each count rounds up.
-# B3 GIVEN beds and hanging-clothes counts, WHEN a kit is estimated, THEN
-#    mattressBags equals bed count and wardrobe boxes equal hanging capacity rounded up.
-# B4 GIVEN first packing-plan creation, WHEN persistence completes, THEN exactly one
-#    PACKING_SUPPLIES_KIT in-app task exists with an itemized kit, one placeholder
-#    price, disclosed locked headroom copy, and a delivery date before session one.
-# B5 GIVEN the kit view, WHEN Customize is used, THEN its single quantity sheet saves
-#    all editable counts and recomputes the price; WHEN No thanks is used, THEN the
-#    task leaves Home permanently but remains reopenable in the Tasks tab.
-# B6 GIVEN an unsubscribed user, WHEN Order my kit is tapped, THEN the existing hard
-#    paywall gate renders; after entitlement, submission uses workflowId supplies_kit
-#    and persists a complete kit + authoritative identity payload.
-# B7 GIVEN a supplies_kit submission, WHEN submitWorkflowAnswers handles it, THEN the
-#    PACKING_SUPPLIES_KIT task enters matching_in_progress and direct best-effort SMS
-#    uses the approved `PEEZY KIT ORDER: ...` family or logs `SMS notify not configured`.
-# B8 GIVEN the sanctioned catalog reseed, WHEN it completes, THEN
-#    BUY_PACKING_SUPPLIES is absent, the live catalog count matches JSON, and no ghosts exist.
-# B9 GIVEN the Phase B diff and deployed sanctioned surfaces, WHEN a fresh-context
-#    validator runs estimator tests plus the live iPhone/Firestore/function acceptance,
-#    THEN every B criterion receives PASS/FAIL with evidence.
+# C1 GIVEN a persisted packing plan, WHEN its task documents are generated or the
+#    move date regenerates, THEN exactly one PACKING_READINESS_GATE in-app task is
+#    scheduled for moveDate−1 and ordinary packing reflow never changes that date.
+# C2 GIVEN the T−1 calendar day, WHEN a new frozen dose is computed, THEN the gate
+#    joins after any due packing session; before T−1 it does not join, and an
+#    incomplete overdue gate remains eligible rather than being reflowed away.
+# C3 GIVEN existing reserve_access_old/new workflow responses, WHEN readiness first
+#    loads, THEN elevator/parking reserved is pre-filled true while the remaining
+#    checklist reflects packing completion or defaults false.
+# C4 GIVEN any checklist row, WHEN it is tapped, THEN all five item booleans persist
+#    to users/{uid}/readiness/current; completedAt exists iff all five are true, and
+#    a fresh read returns the same values.
+# C5 GIVEN an incomplete gate after the T−1 calendar day ends, WHEN the card renders,
+#    THEN it shows exactly one locked consequence line and does not block or loop.
+# C6 GIVEN reflow requiring >1.5 remaining sessions/day, WHEN the next packing card
+#    renders, THEN it shows the exact locked behind-pace nudge; an ordinary session
+#    does not show that line.
+# C7 GIVEN the Phase C diff, WHEN a fresh-context validator runs current-workspace
+#    tests plus live iPhone/Firestore acceptance, THEN C1–C6 each receive PASS/FAIL
+#    evidence and isolated fixture data is removed.
 #
 # NEEDS-CLARIFICATION (bounded, reversible interpretations)
-# - The 12% headroom applies to raw small/medium/large box demand. Exact-fit accessories
-#   (one mattress bag per bed, wardrobe capacity, one dish pack when kitchen items exist)
-#   are not doubled by rounding 1.12 units to 2; tape/paper/wrap derive from headed boxes.
-# - `No thanks` means permanently dismissed from Home, not deleted: store UserInProgress
-#   with no return date so the stable task remains an explicit Tasks-tab escape hatch.
-# - Until a supplier signs, centralized retail placeholders produce an `Estimated kit`
-#   price line. No vendor promise, cart handoff, or fulfillment integration is inferred.
-# - WorkflowService keeps its deployed answer envelope: complete kit and identity objects
-#   are losslessly JSON-encoded into named answer rows, matching the approved mover payload.
+# - The spec shorthand users/{uid}/readiness needs a concrete document id. Use
+#   users/{uid}/readiness/current, matching packingPlan/current and identity/identity.
+# - The single reservation checkbox represents every applicable RESERVE_ACCESS task:
+#   prefill true when every generated old/new access task has a nonempty corresponding
+#   workflow response; if task docs are absent but a response exists, response presence
+#   is the safe backward-compatible signal. No reservation vendor semantics are invented.
+# - "At day's end" means from the start of move day onward (the first instant after
+#   the moveDate−1 calendar day). The warning is display-only; the gate remains usable.
+# - Readiness is scheduled work in addition to the at-most-one packing-session rule.
+#   On T−1 it follows the packing session so the first-night bag can be completed first.
 #
 # EDIT SITES
 PHASE_MANIFEST
-Peezy 4.0/MainInterface/Models/KitEstimator.swift
+Peezy 4.0/MainInterface/Models/ReadinessGate.swift
+Peezy 4.0/MainInterface/Models/DailyDoseEngine.swift
+Peezy 4.0/MainInterface/Models/PeezyCard.swift
 Peezy 4.0/MainInterface/Models/TaskActionService.swift
 Peezy 4.0/MainInterface/Models/TaskFlowRouter.swift
-Peezy 4.0/MainInterface/Models/PeezyHomeViewModel.swift
-Peezy 4.0/MainInterface/Views/PeezyHomeView.swift
-Peezy 4.0/Tasks/Task Cards/SuppliesKitView.swift
-Tests/KitEstimatorTests.swift
-functions/getWorkflowQualifying.js
-functions/taskCatalogData.json
+Peezy 4.0/Tasks/Task Cards/PackingSessionView.swift
+Peezy 4.0/Tasks/Task Cards/PackingReadinessView.swift
+Tests/ReadinessGateTests.swift
+Peezy 4.0Tests/PackingDoseTests.swift
 
 # READ SITES
-# peezy-build-spec-06.md Phase B — phase contract and sanctioned deploys
-# peezy-v1-architecture.md §7/§10 — delivery-before-session and hard-gate contract
-# Peezy 4.0/MainInterface/Models/PaywallPolicy.swift — existing suppliesKitOrder gate
-# Peezy 4.0/MainInterface/Models/WorkflowService.swift — callable submission envelope
-# Peezy 4.0/MainInterface/Models/WorkflowCardModels.swift — answer shape
-# Peezy 4.0/MainInterface/Models/PeezyIdentity.swift — authoritative identity payload
-# Peezy 4.0/Inventory/Models/InventoryModels.swift — cube/item source
-# Peezy 4.0/Inventory/ViewModels/InventoryReviewViewModel.swift — cube fallback precedent
-# Peezy 4.0/Tasks/Store/TaskGrouping.swift — persistent Tasks-tab section semantics
-# Peezy 4.0/Tasks/Views/TaskRow.swift — Tasks-tab row routing
-# Peezy 4.0/Tasks/Views/TaskRowButtons.swift — reopen action
-# Peezy 4.0/Tasks/Store/TasksStore.swift — task listener/action semantics
-# functions/seedTaskCatalog.js — sanctioned reseed and ghost verifier
+# peezy-build-spec-06.md Phase C — exact checklist/copy and acceptance
+# peezy-v1-architecture.md §7 — T−1 evidence-layer contract
+# Peezy 4.0/MainInterface/Models/PackingPlanEngine.swift — reflow threshold + flag
+# Peezy 4.0/MainInterface/Models/MoveScopeFactory.swift — reserve-access task IDs
+# Peezy 4.0/Tasks/FlowEngine/FlowEngineView.swift — answer persistence envelope
+# functions/getWorkflowQualifying.js — workflowResponses answer shape
+# firestore.rules — recursive users/{uid}/{document=**} owner rule already covers path

@@ -75,6 +75,13 @@ struct TaskFlowRouter {
                 onDismiss: onDismiss,
                 onStatusAction: onStatusAction
             )
+        case "packing_readiness":
+            PackingReadinessView(
+                userId: userId,
+                taskId: taskId ?? ReadinessChecklist.taskId,
+                onComplete: onComplete,
+                onDismiss: onDismiss
+            )
 
         // ── Swift custom flows (Types 4–6; superseded in Specs 05–06) ──
 
