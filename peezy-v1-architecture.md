@@ -1,5 +1,5 @@
 # Peezy v1 Architecture — Locked Decisions
-Status: LOCKED except items marked DECISION. Grounded in V1_ARCHITECTURE_MAP.md (audit @ f7e47ad) and cleanup commits through da1916e. This document is the authoritative input to the v1 build spec. Read peezy-conventions-v2.md first.
+Status: LOCKED except items marked DECISION; machine-track implementation is complete through Spec 08. Grounded in V1_ARCHITECTURE_MAP.md (audit @ f7e47ad) and verified against the current repository on 2026-07-27. This document is the authoritative input to the v1 build spec. Read peezy-conventions-v2.md first.
 
 ## 0. Non-negotiables
 
@@ -24,6 +24,12 @@ CAPTURE → MEASURE → SCOPE → PRICE → COMPARE → BOOK → VERIFY
 - COMPARE: hotel-scan pattern. One reusable comparison card component; 3 vendor cards; each carries only decision-driving fields (price range, window, crew, insurance, rating, one line of why). Renders movers, cleaners, junk, ISP plans identically.
 - BOOK: one tap → vendor confirmation request (service) or attributed pre-filled handoff (affiliate).
 - VERIFY: post-job check-in with specific factual questions (arrived in window? crew worked steadily? charged more than quoted? damage?) feeding the accountability ladder: conversation → warning → removal. Day-of price changes are a bannable offense, stated in vendor terms. Marketing promise is about OUR behavior ("we hold them accountable"), never a price guarantee.
+
+Implementation status (Spec 08): `MOVE_CHECKIN` surfaces at moveDate+1,
+`submitCheckIn` stores the factual review and deterministic flags, and the pure
+confirmed-strike ladder drives conversation/warning/removal. MVP confirmation is
+Adam-owned in Firestore Console; a removed result requires `active:false` in the
+same vendor document because a console field edit does not invoke server code.
 
 ## 2. Flow engine (replaces the 39 templated screens)
 
@@ -57,7 +63,7 @@ PeezyIdentity {
 
 - Written once at assessment completion (parsing the AddressSearchManager string formats — parser from commit 8413f2d is the seed), updated via Settings edits that write THIS doc (kills the `.limit(to:1)` nondeterminism) and recompute distance on address change.
 - `UserState` remains the app-side struct (21 consumers keep their @Binding) but is rebuilt to load from the identity doc; the city/state-only stopgap fields are replaced by full address structs.
-- Contract rot purge: the ~15 always-empty assessment keys (bedrooms, sq-ft, storage, hasVehiclesDetail, hirePackers, wantToSell, moveConcerns, referral/promo, *Details maps) are removed from `getAllAssessmentData()` and the catalog conditions that reference them are corrected or retired in the same pass. hasVehicles-always-"No" and default autoRoomList are known-wrong signals — no task may condition on them until re-collected.
+- Contract cleanup remains a consumer-audited maintenance pass for legacy unused payload fields. `hasVehicles`, `hasDeclutter`, and `wantToSell` are now collected and normalized, so current catalog conditions may use them. Never delete an assessment key without auditing catalog, context-builder, and Firestore consumers in the same change.
 - `userKnowledge/{uid}` is the assistant-context store. The client and `contextBuilder.js` now share `{entries: {key: {value, source, updatedAt}}}`; assessment, Settings, and in-app task writes merge individual entries without erasing other sources.
 
 ## 5. Capture architecture
@@ -81,7 +87,7 @@ PeezyIdentity {
 - Reverse-scheduled from move date, generated from the inventory: rarely-used → daily-use → first-night bag. One daily-dose card per session ("Today: the guest closet, ~40 min"). Plan silently reflows remaining rooms when the user slips — never a wall of overdue.
 - Readiness gate T-1: everything boxed, disassembly done, elevator reserved, path clear, essentials out. Gate results are stored — they are the evidence layer for vendor-overage adjudication.
 - Supplies kit: derived quantities (boxes by size from cube+mix, wardrobe from hanging count, dish packs, mattress bags) + 10–15% disclosed headroom, offered as ONE bundle, one tap, at plan creation, delivery dated before session 1. No line-item shopping UI; single "customize" escape hatch. Fulfillment: local KC supplier first, national affiliate cart-handoff as the always-available fallback.
-- Return loop: post-move box pickup as a scheduled rate-card line item; returned counts feed kit-estimate calibration.
+- Return loop: `BOX_RETURN` surfaces at moveDate+7 only after a durable `supplies_kit` response. It derives delivered from that placed order, writes/reads back `users/{uid}.kitCalibration {delivered, returned}`, and can reuse the existing concierge request for optional pickup. Estimator tuning remains deliberately out of scope.
 
 ## 8. Non-service tasks (tiered execution)
 
@@ -121,3 +127,8 @@ Soft, dismissible offer post-assessment (current PaywallGateView presentation, u
 10. Verify layer: post-job check-in + strike ladder + vendor standards doc
 
 Each phase: spec → build → diff review → commit → simulator screenshot verification (XcodeBuildMCP) → next. Hooks enforce the protected-file list and manifest.
+
+Implementation status (Spec 08): step 10's verify layer has landed and the
+current machine-track spec sequence is closed. Launch operations, external
+partners, App Store submission work, and deferred cleanup are tracked only in
+`LAUNCH_CHECKLIST.md`.

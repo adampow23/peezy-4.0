@@ -1,50 +1,73 @@
-# Spec 08 Phase C — kit calibration hook (PERIPHERY)
+# Spec 08 Phase D — launch readiness audit (PERIPHERY)
 #
-# ACCEPTANCE CONTRACT (written before implementation edits)
-# C1 GIVEN a durable supplies_kit workflow response containing the ordered kit,
-#    WHEN BOX_RETURN loads, THEN delivered equals the sum of small, medium,
-#    large, wardrobe, and dishPack counts from that exact submitted payload.
-# C2 GIVEN a nonnegative returned count, WHEN the user submits BOX_RETURN, THEN
-#    users/{uid} contains the exact map kitCalibration {delivered, returned};
-#    the client reads it back and only reports success when both values match.
-# C3 GIVEN the optional pickup toggle is on with returned > 0, WHEN the flow
-#    submits, THEN the existing requestConcierge callable creates one request
-#    for BOX_RETURN with the returned count in its title; WHEN the toggle is off,
-#    no concierge call is made.
-# C4 GIVEN the BOX_RETURN catalog workflow id, WHEN routed, THEN a numeric,
-#    nonnegative return control, optional pickup toggle, submit/error/success
-#    states, and stable accessibility identifiers render; no KitEstimator
-#    constant or estimation path changes.
-# C5 GIVEN the Phase C diff, WHEN focused Swift tests, diff checks, a
-#    fresh-context validator, and the exact iPhone 17 Pro build run, THEN C1-C4
-#    receive evidence-backed PASS/FAIL before a separate Phase C commit and no
-#    function, rules, catalog, vendor, or workflow deployment occurs.
+# ACCEPTANCE CONTRACT (written before Phase D implementation edits)
+# D1 GIVEN the conventions open-items, tasks/todo.md chips and unchecked boxes,
+#    repository launch/submission/shipping markers, and current live backend
+#    state, WHEN the audit is complete, THEN every actionable item is reconciled
+#    in LAUNCH_CHECKLIST.md and stale completed items are explicitly closed.
+# D2 GIVEN each checklist row, WHEN independently reviewed, THEN it names exactly
+#    one owner (Adam or machine), an evidence-backed status, and an exact command,
+#    repository path, or Firebase/Xcode/App Store Connect console path to close it.
+# D3 GIVEN the Spec 08 expected members, WHEN checked against local and live
+#    evidence, THEN Twilio/SMS, five affiliate URLs, source:resolved review, Test
+#    Mover replacement, kit supplier, Xcode StoreKit pass-through, privacy/auth
+#    legal work, and App Store asset/metadata refresh all appear without assuming
+#    they are complete.
+# D4 GIVEN the completed Spec 08 implementation, WHEN docs are synchronized, THEN
+#    CLAUDE.md, peezy-conventions-v2.md, peezy-v1-architecture.md, and
+#    peezy-v1-catalog-sheet.md record the 47-row catalog, verify layer,
+#    accountability and kit-calibration contracts, and LAUNCH_CHECKLIST.md as the
+#    single source of launch work.
+# D5 GIVEN the Phase D diff, WHEN documentation checks, the exact iPhone 17 Pro
+#    build, a fresh-context validator, and diff review run, THEN D1-D4 receive
+#    evidence-backed PASS/FAIL before a separate Phase D commit; no function,
+#    rules, catalog, vendor, provider, ISP, or workflow deployment occurs.
 #
 # NEEDS-CLARIFICATION (bounded, reversible interpretations)
-# - users/{uid}/kitCalibration ends at the existing user document, so
-#   kitCalibration is stored as a map field on users/{uid}, not as an invalid
-#   collection path without a document id.
-# - delivered comes from the durable supplies_kit workflow response's submitted
-#   kit JSON. That is the actual customized order and cannot drift when the
-#   packing estimator later regenerates its task payload.
-# - Pickup with zero returned boxes is disabled. The existing requestConcierge
-#   callable is reused unchanged with taskId BOX_RETURN and category packing;
-#   no backend deployment is required or permitted in this phase.
+# - "todo.md chips" includes the two explicitly spawned bug chips plus the six
+#   stale unchecked Spec 04 Phase A boxes. The historical execution log remains
+#   unchanged; LAUNCH_CHECKLIST reconciles each item with commit evidence.
+# - A checklist close-path may name a future mutation that requires separate
+#   authorization. This phase records that path but performs no launch mutation.
+# - External-partner and App Store decisions remain Adam-owned; code/test work is
+#   machine-owned. Mixed work is split into separate rows rather than assigning
+#   two owners to one item.
 #
 # EDIT SITES
 # PHASE_MANIFEST
-# Peezy 4.0/MainInterface/Models/BoxReturnService.swift
-# Peezy 4.0/MainInterface/Models/TaskFlowRouter.swift
-# Peezy 4.0/Tasks/Task Cards/BoxReturnView.swift
-# Peezy 4.0Tests/BoxReturnTests.swift
+# LAUNCH_CHECKLIST.md
+# CLAUDE.md
+# peezy-conventions-v2.md
+# peezy-v1-architecture.md
+# peezy-v1-catalog-sheet.md
+# SESSION_NOTES.md
 #
 # READ SITES
-# peezy-build-spec-08.md Phase C and Files Summary
-# peezy-execution-protocol.md sections 1-4
-# Peezy 4.0/Tasks/Task Cards/SuppliesKitView.swift
-# Peezy 4.0/MainInterface/Models/KitEstimator.swift
-# Peezy 4.0/MainInterface/Models/TaskActionService.swift
-# Peezy 4.0/MainInterface/Models/WorkflowCardModels.swift
-# functions/getWorkflowQualifying.js submitWorkflowAnswers persistence shape
-# functions/index.js requestConcierge
+# peezy-build-spec-08.md Phase D and Files Summary
+# peezy-execution-protocol.md sections 1-6
+# tasks/todo.md
+# SESSION_NOTES.md
+# app-marketing-context.md
+# docs/APP_STORE_CONVERSION_PLAN.md
+# DEAD_CODE_REMOVAL_LIST.md
+# Tests/ConditionVerification.swift
+# Peezy 4.0/PrivacyInfo.xcprivacy
+# Peezy 4.0/Auth/AuthView.swift
+# Peezy 4.0/Auth/SignUpView.swift
+# Peezy 4.0/Menu/PeezySettingsView.swift
+# Peezy 4.0/MainInterface/Views/Paywall/PaywallGateView.swift
+# Peezy 4.0.xcodeproj/xcshareddata/xcschemes/Peezy 4.0.xcscheme
+# Configuration.storekit
+# functions/.env (presence-only; no values printed or edited)
+# functions/vendorsData.json
+# functions/seedVendors.js
+# functions/ispPlansData.json
+# functions/seedIspPlans.js
+# functions/providerDirectoryData.json
+# functions/seedProviderDirectory.js
+# functions/resolveProvider.js
+# functions/seedTaskCatalog.js
+# functions/submitCheckIn.js
 # firestore.rules
+# live Firestore providerDirectory/vendors/ispPlans (read-only)
+# live deployed-functions inventory (read-only)
