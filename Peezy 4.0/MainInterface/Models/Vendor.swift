@@ -55,6 +55,14 @@ struct CrewHourlyRates: Codable, Equatable {
         default: nil
         }
     }
+
+    var availableCrewSizes: [Int] {
+        [2, 3, 4].filter { (rate(for: $0) ?? 0) > 0 }
+    }
+
+    var largestAvailableCrewSize: Int? {
+        availableCrewSizes.max()
+    }
 }
 
 struct VendorTripCharge: Codable, Equatable {

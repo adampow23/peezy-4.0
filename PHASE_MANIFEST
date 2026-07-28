@@ -1,47 +1,36 @@
-# Chip Estimate Integrity — Phase B: Coverage check (CORE)
+# Chip Estimate Integrity — Phase C: Physical-hours concierge gate (CORE)
 #
-# ACCEPTANCE CONTRACT (locked before Phase B implementation edits)
-# B1 GIVEN an assessment bedroom count and dwelling type, WHEN expected coverage
-#    is built, THEN it contains bedroom × count + kitchen + living room + bathroom;
-#    House additionally contains garage + basement, while Apartment/Condo/Townhome
-#    contain neither. An absent assessment bedroom count contributes zero bedroom
-#    expectations, preserving the existing refinement-input migration contract.
-# B2 GIVEN scanned room labels, WHEN coverage is compared, THEN labels normalize
-#    case-insensitively through the documented RESO-derived synonym map; unmatched
-#    scanned rooms remain visible extras, and missing bedrooms render numbered
-#    expected rows (Bedroom 2, Bedroom 3, and so on).
-# B3 GIVEN an expected-but-unseen room, WHEN Add a clip is chosen, THEN capture is
-#    prefilled for that room and a completed scan resolves it; WHEN Nothing there
-#    is chosen, THEN its stable expected-room ID is saved as coverageConfirmed and
-#    survives metadata encode/decode and Firestore read-back.
-# B4 GIVEN N unresolved unseen rooms on a scan-derived scope, WHEN pricing runs,
-#    THEN the low bound is unchanged and the high-side multiplier is multiplied by
-#    (1 + 0.15 × N), capped at the bedrooms-fallback high-side multiplier for the
-#    same access/packing scope. Unit tests prove the cap. Resolved rooms do not widen.
-# B5 GIVEN unresolved unseen rooms, WHEN an estimate and comparison card render,
-#    THEN they contain exactly "Some rooms weren't scanned."; when all expected
-#    rooms are scanned or confirmed, neither widening nor disclosure occurs.
-# B6 GIVEN the Phase B UI fixture, WHEN the room hub renders, THEN a screenshot shows
-#    "Scanned:" and "Not seen:" plus both actions. CORE tests, simulator tests, a
-#    fresh-context validator, and walked hub-file diffs pass. No deploy occurs.
+# ACCEPTANCE CONTRACT (locked before Phase C implementation edits)
+# C1 GIVEN a local-move scope and active mover rate cards, WHEN the largest
+#    positive crew size advertised across all active vendors is evaluated using
+#    unrounded physical work hours, THEN <= 6.0 routes to instant comparison and
+#    > 6.0 routes to concierge. Drive time and price never affect this gate.
+# C2 GIVEN an active vendor whose card has no positive-rate crew capable of <= 6.0
+#    physical hours, WHEN PricingEngine estimates that card, THEN it returns nil;
+#    it never falls back to an over-ceiling quote. Zero/nonpositive rates are not
+#    available crews.
+# C3 GIVEN an instant estimate, WHEN its locked why-line is emitted, THEN the
+#    selected crew's unrounded physical hours are <= 6.0 by construction. Tests
+#    assert the invariant at the 6.0 boundary and immediately above it.
+# C4 GIVEN a local move above the global largest-crew ceiling, WHEN comparison is
+#    prepared, THEN quoteRequest=true, vendor cards are absent, and the existing
+#    concierge card renders exactly "This is a big one." and "Big moves deserve
+#    a hand-built quote — we'll have yours within a day." A simulator screenshot
+#    captures the card. Long-distance gating remains intact.
+# C5 GIVEN the repository and built app, WHEN the phase is audited, THEN there is
+#    no bigMoveCubicFeetGate or other cube threshold. CORE tests, simulator tests,
+#    a fresh-context validator, and walked hub-file diffs pass. No deploy occurs.
 #
 # EDIT SITES
 # PHASE_MANIFEST
-# Peezy 4.0/Inventory/Models/InventoryCoverage.swift (new)
-# Peezy 4.0/Inventory/Models/InventorySessionManager.swift
-# Peezy 4.0/Inventory/Views/InventoryRoomHubView.swift
-# Peezy 4.0/MainInterface/Models/MoveScopeFactory.swift
-# Peezy 4.0/MainInterface/Models/MoversFlowViewModel.swift
-# Peezy 4.0/MainInterface/Models/MoversBookingPayload.swift
 # Peezy 4.0/MainInterface/Models/PricingEngine.swift
-# Peezy 4.0/MainInterface/Models/PricingConstants.swift
+# Peezy 4.0/MainInterface/Models/Vendor.swift
+# Peezy 4.0/MainInterface/Models/MoversFlowViewModel.swift
+# Peezy 4.0/Tasks/Task Cards/FindMoversFlow.swift
 # Peezy 4.0/MainInterface/Models/PeezyV1App.swift (DEBUG fixture route only)
-# Tests/CoverageCheckTests.swift (new)
 # Tests/PricingEngineTests.swift
-# Peezy 4.0Tests/CoverageFirestoreIntegrationTests.swift (new)
-# Peezy 4.0Tests/EstimateIntegrityPhaseBTests.swift (new)
-# Peezy 4.0Tests/MoversBookingPayloadTests.swift
-# Peezy 4.0UITests/EstimateIntegrityPhaseBUITests.swift (new)
+# Peezy 4.0Tests/EstimateIntegrityPhaseCTests.swift (new)
+# Peezy 4.0UITests/EstimateIntegrityPhaseCUITests.swift (new)
 # SESSION_NOTES.md (session-final write only)
 #
 # READ SITES
@@ -50,16 +39,7 @@
 # peezy-conventions-v2.md
 # CLAUDE.md
 # peezy-v1-architecture.md
-# Peezy 4.0/Assessment/AssessmentModels/AssessmentDataManager.swift
-# Peezy 4.0/Assessment/AssessmentModels/AssessmentCoordinator.swift
-# Peezy 4.0/Assessment/AssessmentViews/Questions/CurrentBedrooms.swift
-# Peezy 4.0/Inventory/Models/InventoryModels.swift
-# Peezy 4.0/Inventory/Views/InventoryFlowView.swift
-# Peezy 4.0/MainInterface/Models/ComparisonCardModel.swift
 # Peezy 4.0/MainInterface/Models/MoversVendorQuote.swift
-# Peezy 4.0/MainInterface/Models/UserKnowledgeService.swift
-# Peezy 4.0/Tasks/Task Cards/FindMoversFlow.swift
-# Peezy 4.0/Tasks/Task Cards/ScanInventoryFlow.swift
-# firestore.rules
-# RESO Data Dictionary ImageOf vocabulary:
-# https://dd.reso.org/DD1.7/Media/ImageOf/
+# Peezy 4.0/MainInterface/Models/MoversBookingPayload.swift
+# Peezy 4.0/MainInterface/Models/ComparisonCardModel.swift
+# Peezy 4.0/MainInterface/Views/MoversComparisonView.swift

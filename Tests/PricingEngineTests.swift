@@ -137,6 +137,62 @@ struct PricingEngineTests {
             "unrounded 6.01 physical hours adds a mover even when display hours round to 6.0"
         )
 
+        let exactLargestCrewCeiling = MoveScope(
+            cubicFeet: 1_230, driveMinutes: 600,
+            originAccess: .ground, destAccess: .ground,
+            packedStatus: .packed, cubeSource: .inventoryScan
+        )
+        let aboveLargestCrewCeiling = MoveScope(
+            cubicFeet: 1_230.205, driveMinutes: 0,
+            originAccess: .ground, destAccess: .ground,
+            packedStatus: .packed, cubeSource: .inventoryScan
+        )
+        check(PricingEngine.physicalHours(for: exactLargestCrewCeiling, crew: 4) == 6,
+              "largest crew fixture models exactly 6.0 unrounded physical hours")
+        check(
+            PricingEngine.quoteRoute(
+                scope: exactLargestCrewCeiling,
+                largestAvailableCrewSize: 4
+            ) == .instantComparison,
+            "exactly 6.0 physical hours remains instant regardless of drive time"
+        )
+        check(
+            PricingEngine.quoteRoute(
+                scope: aboveLargestCrewCeiling,
+                largestAvailableCrewSize: 4
+            ) == .conciergeQuote,
+            "more than 6.0 physical hours at the largest crew routes concierge"
+        )
+        check(
+            PricingEngine.quoteRoute(
+                scope: baseline,
+                largestAvailableCrewSize: nil
+            ) == .conciergeQuote,
+            "no positive active-vendor crew routes concierge"
+        )
+        check(PricingEngine.estimate(scope: aboveLargestCrewCeiling, rateCard: rateCard) == nil,
+              "a vendor card never falls back to an over-ceiling estimate")
+        let unavailableFourPersonCard = PricingRateCard(
+            hourlyByCrew: [3: 150, 4: 0], tripCharge: 0, minimumHours: 2
+        )
+        let needsFourPeople = MoveScope(
+            cubicFeet: 1_100, driveMinutes: 0,
+            originAccess: .ground, destAccess: .ground,
+            packedStatus: .packed, cubeSource: .inventoryScan
+        )
+        check(PricingEngine.estimate(scope: needsFourPeople, rateCard: unavailableFourPersonCard) == nil,
+              "a nonpositive rate does not make that crew size available")
+        let invariantScopes = [minimumScope, belowCeiling, aboveCeiling, justAboveCeiling]
+        for (index, invariantScope) in invariantScopes.enumerated() {
+            if let estimate = PricingEngine.estimate(scope: invariantScope, rateCard: rateCard) {
+                check(
+                    PricingEngine.physicalHours(for: invariantScope, crew: estimate.crew)
+                        <= PricingConstants.physicalHoursCeiling,
+                    "why-line estimate fixture \(index + 1) never exceeds physical-hours ceiling"
+                )
+            }
+        }
+
         check(PricingEngine.quoteRoute(moveDistanceMiles: 100) == .instantComparison, "100-mile boundary stays instant")
         check(PricingEngine.quoteRoute(moveDistanceMiles: 100.1) == .conciergeQuote, "over 100 miles routes to concierge")
         check(PricingEngine.quoteRoute(moveDistanceMiles: nil) == .conciergeQuote, "pending distance routes to concierge")

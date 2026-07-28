@@ -201,13 +201,29 @@ enum PricingEngine {
         return .instantComparison
     }
 
-    static func loadHours(for scope: MoveScope, crew: Int) -> Double {
-        roundedHours(rawLoadHours(for: scope, crew: crew))
+    /// Local-move size gate. The caller supplies the single largest positive-
+    /// rate crew size found across active vendors; vendor-by-vendor gating is
+    /// intentionally unnecessary. Physical work is unrounded and excludes drive.
+    static func quoteRoute(
+        scope: MoveScope,
+        largestAvailableCrewSize: Int?
+    ) -> MoverQuoteRoute {
+        guard let crew = largestAvailableCrewSize else { return .conciergeQuote }
+        let hours = physicalHours(for: scope, crew: crew)
+        return hours.isFinite && hours <= PricingConstants.physicalHoursCeiling
+            ? .instantComparison
+            : .conciergeQuote
     }
 
-    private static func rawLoadHours(for scope: MoveScope, crew: Int) -> Double {
+    static func loadHours(for scope: MoveScope, crew: Int) -> Double {
+        roundedHours(physicalHours(for: scope, crew: crew))
+    }
+
+    /// Unrounded modeled loading/unloading work used for every ceiling decision.
+    /// Invalid crew sizes return infinity so they can never pass a safety gate.
+    static func physicalHours(for scope: MoveScope, crew: Int) -> Double {
         guard let cubePerHour = PricingConstants.cubicFeetPerCrewHour[crew], cubePerHour > 0 else {
-            return 0
+            return .infinity
         }
 
         let packingMultiplier: Double
@@ -227,7 +243,9 @@ enum PricingEngine {
 
     static func crewQuotes(for scope: MoveScope, rateCard: PricingRateCard) -> [CrewQuote] {
         rateCard.hourlyByCrew.keys.sorted().compactMap { crew in
-            guard let hourlyRate = rateCard.hourlyByCrew[crew] else { return nil }
+            guard let hourlyRate = rateCard.hourlyByCrew[crew], hourlyRate > 0,
+                  PricingConstants.cubicFeetPerCrewHour[crew] != nil
+            else { return nil }
             let load = loadHours(for: scope, crew: crew)
             let total = roundedHours(load + scope.driveMinutes / 60)
             let billable = max(total, rateCard.minimumHours)
@@ -256,8 +274,8 @@ enum PricingEngine {
         // cannot be forced into larger crews, so selection starts at two and
         // increases only when physical load/unload work exceeds six hours.
         guard let selected = quotes.first(where: {
-            rawLoadHours(for: scope, crew: $0.crew) <= PricingConstants.physicalHoursCeiling
-        }) ?? quotes.last else { return nil }
+            physicalHours(for: scope, crew: $0.crew) <= PricingConstants.physicalHoursCeiling
+        }) else { return nil }
 
         let multipliers = confidenceRangeMultipliers(for: scope)
         let range = PriceRange(

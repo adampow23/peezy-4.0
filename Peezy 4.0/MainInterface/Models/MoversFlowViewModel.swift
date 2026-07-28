@@ -8,6 +8,31 @@ import FirebaseFirestore
 import Foundation
 import Observation
 
+struct MoversConciergeCopy: Equatable {
+    let title: String
+    let body: String
+}
+
+enum MoversConciergeReason: Equatable {
+    case longDistance
+    case physicalHours
+
+    var copy: MoversConciergeCopy {
+        switch self {
+        case .longDistance:
+            MoversConciergeCopy(
+                title: "A custom quote for the long haul",
+                body: "Long-distance moves get a hand-built quote from us — you'll have it within a day."
+            )
+        case .physicalHours:
+            MoversConciergeCopy(
+                title: "This is a big one.",
+                body: "Big moves deserve a hand-built quote — we'll have yours within a day."
+            )
+        }
+    }
+}
+
 @MainActor
 @Observable
 final class MoversFlowViewModel {
@@ -20,6 +45,7 @@ final class MoversFlowViewModel {
     private(set) var isSubmitting = false
     private(set) var hasInventory = false
     private(set) var isQuoteRequest = false
+    private(set) var conciergeReason: MoversConciergeReason?
 
     var bedroomsAnswer = "1 Bedroom"
     var destinationBedroomsAnswer = "1 Bedroom"
@@ -69,6 +95,10 @@ final class MoversFlowViewModel {
 
     var priceBasis: String {
         scope?.cubeSource == .inventoryScan ? "your scan" : "home details"
+    }
+
+    var conciergeCopy: MoversConciergeCopy {
+        (conciergeReason ?? .longDistance).copy
     }
 
     func prepare(userId: String, taskId: String) async {
@@ -143,16 +173,24 @@ final class MoversFlowViewModel {
             guard let scope, let identity else { throw FlowError.missingScope }
 
             if PricingEngine.quoteRoute(moveDistanceMiles: identity.moveDistanceMiles) == .conciergeQuote {
-                isQuoteRequest = true
-                quotes = []
-                selectedQuote = nil
-                transition(to: .comparison)
+                routeToConcierge(reason: .longDistance)
+                return
+            }
+
+            let activeVendors = try await VendorStore().activeVendors(for: .movers)
+            let largestAvailableCrewSize = activeVendors
+                .compactMap { $0.rateCard.hourlyByCrew.largestAvailableCrewSize }
+                .max()
+            if PricingEngine.quoteRoute(
+                scope: scope,
+                largestAvailableCrewSize: largestAvailableCrewSize
+            ) == .conciergeQuote {
+                routeToConcierge(reason: .physicalHours)
                 return
             }
 
             isQuoteRequest = false
-
-            let activeVendors = try await VendorStore().activeVendors(for: .movers)
+            conciergeReason = nil
             let eligibleVendors = try await vendorsWithinRadius(activeVendors, identity: identity)
             let prepared = eligibleVendors.compactMap { vendor -> MoversVendorQuote? in
                 guard let estimate = PricingEngine.estimate(
@@ -369,6 +407,14 @@ final class MoversFlowViewModel {
         else { return }
         let id = taskId
         Task { await actionService.setStage(taskId: id, stage: taskStage) }
+    }
+
+    private func routeToConcierge(reason: MoversConciergeReason) {
+        isQuoteRequest = true
+        conciergeReason = reason
+        quotes = []
+        selectedQuote = nil
+        transition(to: .comparison)
     }
 
     private func fail(_ message: String) {
