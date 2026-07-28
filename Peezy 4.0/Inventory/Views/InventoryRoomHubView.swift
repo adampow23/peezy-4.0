@@ -141,6 +141,8 @@ struct InventoryRoomHubView: View {
     private var roomList: some View {
         ScrollView {
             LazyVStack(spacing: 10) {
+                coverageStrip
+
                 ForEach(sessionManager.scannedRooms) { room in
                     roomRow(room)
                 }
@@ -148,6 +150,81 @@ struct InventoryRoomHubView: View {
             .padding(.horizontal, 20)
             .padding(.top, 12)
         }
+    }
+
+    private var coverageStrip: some View {
+        let report = sessionManager.coverageReport
+        return VStack(alignment: .leading, spacing: 12) {
+            Text("Coverage check")
+                .font(.system(size: 16, weight: .bold))
+                .foregroundStyle(PeezyTheme.Colors.deepInk)
+
+            Text("Scanned: \(report.scannedRoomNames.joined(separator: ", "))")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.7))
+                .accessibilityIdentifier("coverage.scanned")
+
+            if report.unresolvedRooms.isEmpty {
+                Label("All expected rooms accounted for", systemImage: "checkmark.circle.fill")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Color(uiColor: .systemGreen))
+                    .accessibilityIdentifier("coverage.complete")
+            } else {
+                Text("Not seen: \(report.unresolvedRooms.map(\.displayName).joined(separator: ", "))")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(PeezyTheme.Colors.deepInk)
+                    .accessibilityIdentifier("coverage.not_seen")
+
+                ForEach(report.unresolvedRooms) { room in
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(room.displayName)
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(PeezyTheme.Colors.deepInk)
+
+                        HStack(spacing: 8) {
+                            Button {
+                                PeezyHaptics.light()
+                                newRoomName = room.displayName
+                                showRoomNameEntry = true
+                            } label: {
+                                Label("Add a clip", systemImage: "video.badge.plus")
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 9)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(PeezyTheme.Colors.deepInk)
+                            .accessibilityIdentifier("coverage.add_clip.\(room.id)")
+
+                            Button {
+                                PeezyHaptics.light()
+                                Task { await sessionManager.confirmNothingThere(room) }
+                            } label: {
+                                Text("Nothing there")
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 9)
+                            }
+                            .buttonStyle(.bordered)
+                            .tint(PeezyTheme.Colors.deepInk)
+                            .accessibilityIdentifier("coverage.nothing_there.\(room.id)")
+                        }
+                    }
+                    .padding(10)
+                    .background(PeezyTheme.Colors.deepInk.opacity(0.04))
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                }
+            }
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(.regularMaterial)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(PeezyTheme.Colors.deepInk.opacity(0.08), lineWidth: 1)
+        )
     }
 
     private func roomRow(_ room: ScannedRoom) -> some View {
@@ -277,6 +354,7 @@ struct InventoryRoomHubView: View {
                                 .stroke(Color.primary.opacity(0.07), lineWidth: 1)
                         )
                         .padding(.horizontal, 24)
+                        .accessibilityIdentifier("coverage.room_name")
                 }
 
                 PeezyAssessmentButton("Begin Scanning") {

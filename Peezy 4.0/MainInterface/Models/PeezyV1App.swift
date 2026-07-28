@@ -24,7 +24,7 @@ struct PeezyV1App: App {
 
     var body: some Scene {
         WindowGroup {
-            AppRootView()
+            rootView
                 .preferredColorScheme(.light)
                 .environmentObject(SubscriptionManager.shared)
                 .onOpenURL { url in
@@ -36,4 +36,59 @@ struct PeezyV1App: App {
                 }
         }
     }
+
+    @ViewBuilder
+    private var rootView: some View {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--estimate-integrity-phase-b") {
+            EstimateIntegrityPhaseBCoverageFixture()
+        } else {
+            AppRootView()
+        }
+        #else
+        AppRootView()
+        #endif
+    }
 }
+
+#if DEBUG
+@MainActor
+private struct EstimateIntegrityPhaseBCoverageFixture: View {
+    @State private var sessionManager = InventorySessionManager()
+    @State private var didConfigure = false
+
+    var body: some View {
+        InventoryRoomHubView(
+            sessionManager: sessionManager,
+            onDismiss: {},
+            onSubmitted: {}
+        )
+        .onAppear {
+            guard !didConfigure else { return }
+            didConfigure = true
+            sessionManager.state = .roomList
+            sessionManager.configureCoverage(
+                bedroomsAnswer: "2 Bedrooms",
+                dwellingType: "House"
+            )
+            sessionManager.scannedRooms = [
+                room("Family Room"),
+                room("Kitchen"),
+                room("Bathroom"),
+                room("Bedroom 1"),
+                room("Garage"),
+                room("Office")
+            ]
+        }
+    }
+
+    private func room(_ name: String) -> ScannedRoom {
+        ScannedRoom(
+            id: name.lowercased().replacingOccurrences(of: " ", with: "-"),
+            name: name,
+            items: [],
+            scannedAt: Date(timeIntervalSince1970: 1_800_000_000)
+        )
+    }
+}
+#endif
