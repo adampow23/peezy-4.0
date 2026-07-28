@@ -12,17 +12,41 @@ struct MoveCheckInView: View {
     @State private var costMoreThanQuoted: Bool?
     @State private var damaged: Bool?
     @State private var note = ""
+    @State private var finalBill = ""
     @State private var isSubmitting = false
     @State private var isSubmitted = false
     @State private var errorMessage: String?
 
     private let service = CheckInService()
+    private let usesFixtureContext: Bool
+
+    init(
+        userId: String,
+        onDismiss: @escaping () -> Void,
+        onStatusAction: @escaping (TaskFlowStatusAction) -> Void,
+        fixtureBookingContext: CheckInBookingContext? = nil,
+        fixtureContextLoaded: Bool = false
+    ) {
+        self.userId = userId
+        self.onDismiss = onDismiss
+        self.onStatusAction = onStatusAction
+        usesFixtureContext = fixtureContextLoaded
+        _bookingContext = State(initialValue: fixtureBookingContext)
+        _hasLoadedContext = State(initialValue: fixtureContextLoaded)
+    }
 
     private var hasAllAnswers: Bool {
         arrivedInWindow != nil
             && crewWorkedSteadily != nil
             && costMoreThanQuoted != nil
             && damaged != nil
+            && isFinalBillValid
+    }
+
+    private var isFinalBillValid: Bool {
+        guard bookingContext != nil else { return true }
+        let trimmed = finalBill.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty || CheckInService.finalBill(from: trimmed) != nil
     }
 
     var body: some View {
@@ -34,7 +58,11 @@ struct MoveCheckInView: View {
                 content
             }
         }
-        .task { await loadContext() }
+        .task {
+            if !usesFixtureContext {
+                await loadContext()
+            }
+        }
         .accessibilityIdentifier("checkin.flow")
     }
 
@@ -109,6 +137,29 @@ struct MoveCheckInView: View {
                     .lineLimit(3...6)
                     .textFieldStyle(.roundedBorder)
                     .accessibilityIdentifier("checkin.note")
+
+                    if let bookingContext {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text(
+                                "Peezy estimate: \(money(bookingContext.estimatedRange.low))–\(money(bookingContext.estimatedRange.high))"
+                            )
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .accessibilityIdentifier("checkin.estimated_range")
+
+                            TextField("What was the final bill? (optional)", text: $finalBill)
+                                .keyboardType(.decimalPad)
+                                .textFieldStyle(.roundedBorder)
+                                .accessibilityIdentifier("checkin.final_bill")
+
+                            if !isFinalBillValid {
+                                Text("Enter a final bill greater than $0, or leave it blank.")
+                                    .font(.footnote)
+                                    .foregroundStyle(PeezyTheme.Colors.emotionalRed)
+                                    .accessibilityIdentifier("checkin.final_bill_error")
+                            }
+                        }
+                    }
 
                     if let errorMessage {
                         Text(errorMessage)
@@ -270,6 +321,7 @@ struct MoveCheckInView: View {
               let crewWorkedSteadily,
               let costMoreThanQuoted,
               let damaged,
+              hasAllAnswers,
               !isSubmitting
         else { return }
         isSubmitting = true
@@ -279,7 +331,8 @@ struct MoveCheckInView: View {
             crewWorkedSteadily: crewWorkedSteadily,
             costMoreThanQuoted: costMoreThanQuoted,
             damaged: damaged,
-            note: note
+            note: note,
+            finalBill: bookingContext == nil ? nil : CheckInService.finalBill(from: finalBill)
         )
         Task {
             do {
@@ -291,6 +344,13 @@ struct MoveCheckInView: View {
                 isSubmitting = false
             }
         }
+    }
+
+    private func money(_ amount: Double) -> String {
+        amount.formatted(
+            .currency(code: "USD")
+                .precision(.fractionLength(0))
+        )
     }
 }
 

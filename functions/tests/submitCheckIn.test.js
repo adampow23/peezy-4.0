@@ -2,11 +2,42 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const {
   buildFlags,
+  calibrationRecord,
+  cleanAnswers,
   flagMessage,
+  parsedBookingContext,
   parsedVendor,
   writeReviewAndAccountability,
   FLAG_LABELS
-} = require("../submitCheckIn");
+} = require("../submitCheckInCore");
+
+function storedBookingAnswers(overrides = {}) {
+  const vendor = {
+    vendorId: "test_mover_a",
+    name: "Test Mover A"
+  };
+  const estimate = {
+    low: 1200,
+    high: 1600,
+    typicalHours: 5.5,
+    crew: 4
+  };
+  const scope = {
+    cubicFeet: 980,
+    driveMinutes: 45,
+    packedStatus: "mostlyPacked"
+  };
+  return {
+    workflowId: "book_movers",
+    answers: {
+      chosen_vendor: [JSON.stringify(vendor)],
+      estimate: [JSON.stringify(estimate)],
+      scope: [JSON.stringify(scope)],
+      quoteRequest: ["false"],
+      ...overrides
+    }
+  };
+}
 
 test("adverse outcomes map to stable factual flags", () => {
   const flags = buildFlags({
@@ -56,8 +87,111 @@ test("booked vendor parser handles the persisted WorkflowAnswers envelope", () =
   assert.equal(parsedVendor({ answers: { chosen_vendor: ["{}"] } }), null);
 });
 
+test("booked move context comes only from the persisted booking envelope", () => {
+  const context = parsedBookingContext(storedBookingAnswers());
+
+  assert.deepEqual(context, {
+    vendor: {
+      vendorId: "test_mover_a",
+      name: "Test Mover A"
+    },
+    estimatedRange: {
+      low: 1200,
+      high: 1600
+    },
+    scopeSnapshot: {
+      cubicFeet: 980,
+      driveMinutes: 45,
+      packedStatus: "mostlyPacked"
+    }
+  });
+  assert.equal(parsedBookingContext(storedBookingAnswers({ quoteRequest: ["true"] })), null);
+  assert.equal(parsedBookingContext(storedBookingAnswers({ estimate: ["{}"] })), null);
+  assert.equal(parsedBookingContext(storedBookingAnswers({ scope: ["{}"] })), null);
+});
+
+test("final bill is optional, positive, finite, and client calibration context is discarded", () => {
+  const withoutBill = cleanAnswers({
+    arrivedInWindow: true,
+    crewWorkedSteadily: true,
+    costMoreThanQuoted: false,
+    damaged: false,
+    vendorId: "client-forgery",
+    estimatedRange: { low: 1, high: 2 },
+    scopeSnapshot: { cubicFeet: 1 }
+  });
+  assert.deepEqual(withoutBill, {
+    arrivedInWindow: true,
+    crewWorkedSteadily: true,
+    costMoreThanQuoted: false,
+    damaged: false,
+    note: ""
+  });
+
+  const withBill = cleanAnswers({
+    arrivedInWindow: true,
+    crewWorkedSteadily: true,
+    costMoreThanQuoted: false,
+    damaged: false,
+    note: "  all good  ",
+    finalBill: 1432.18
+  });
+  assert.equal(withBill.finalBill, 1432.18);
+  assert.equal(withBill.note, "all good");
+
+  for (const invalid of [0, -1, Number.NaN, Number.POSITIVE_INFINITY, "1432.18"]) {
+    assert.throws(() => cleanAnswers({
+      arrivedInWindow: true,
+      crewWorkedSteadily: true,
+      costMoreThanQuoted: false,
+      damaged: false,
+      finalBill: invalid
+    }));
+  }
+});
+
+test("calibration record is conditional and links persisted context to its review", () => {
+  const context = parsedBookingContext(storedBookingAnswers());
+  const submittedAt = { sentinel: "server-time" };
+  const record = calibrationRecord({
+    reviewId: "review-123",
+    userId: "user-123",
+    bookingContext: context,
+    answers: { finalBill: 1432.18 },
+    submittedAt
+  });
+
+  assert.deepEqual(record, {
+    reviewId: "review-123",
+    userId: "user-123",
+    vendorId: "test_mover_a",
+    estimatedRange: { low: 1200, high: 1600 },
+    finalBill: 1432.18,
+    scopeSnapshot: {
+      cubicFeet: 980,
+      driveMinutes: 45,
+      packedStatus: "mostlyPacked"
+    },
+    submittedAt
+  });
+  assert.equal(calibrationRecord({
+    reviewId: "review-123",
+    userId: "user-123",
+    bookingContext: context,
+    answers: {},
+    submittedAt
+  }), null);
+  assert.equal(calibrationRecord({
+    reviewId: "review-123",
+    userId: "user-123",
+    bookingContext: null,
+    answers: { finalBill: 1432.18 },
+    submittedAt
+  }), null);
+});
+
 function transactionHarness(vendorData) {
-  const writes = { reviews: [], vendorUpdates: [] };
+  const writes = { sets: [], vendorUpdates: [] };
   const db = {
     collection(name) {
       return {
@@ -75,7 +209,7 @@ function transactionHarness(vendorData) {
           };
         },
         set(reference, data) {
-          writes.reviews.push({ reference, data });
+          writes.sets.push({ reference, data });
         },
         update(reference, data) {
           writes.vendorUpdates.push({ reference, data });
@@ -103,12 +237,14 @@ test("review transaction appends pending high strikes for price and damage", asy
   await writeReviewAndAccountability(
     db,
     reviewRef,
+    null,
     { vendorId: "test_mover_a", name: "Test Mover A" },
-    review
+    review,
+    null
   );
 
-  assert.equal(writes.reviews.length, 1);
-  assert.deepEqual(writes.reviews[0].data, review);
+  assert.equal(writes.sets.length, 1);
+  assert.deepEqual(writes.sets[0].data, review);
   assert.equal(writes.vendorUpdates.length, 1);
   assert.equal(writes.vendorUpdates[0].data.active, true);
   assert.deepEqual(
@@ -151,6 +287,7 @@ test("review transaction reconciles a confirmed removal state to inactive", asyn
   await writeReviewAndAccountability(
     db,
     { id: "review-4", path: "vendorReviews/review-4" },
+    null,
     { vendorId: "test_mover_a", name: "Test Mover A" },
     {
       vendorId: "test_mover_a",
@@ -158,10 +295,57 @@ test("review transaction reconciles a confirmed removal state to inactive", asyn
       answers: {},
       flags: ["late_arrival"],
       submittedAt: "server-time"
-    }
+    },
+    null
   );
 
   assert.equal(writes.vendorUpdates.length, 1);
   assert.equal(writes.vendorUpdates[0].data.active, false);
   assert.equal(writes.vendorUpdates[0].data["accountability.strikes"].length, 3);
+});
+
+test("review and estimate calibration are written in the same transaction", async () => {
+  const { db, writes } = transactionHarness({
+    active: true,
+    accountability: { standardsVersion: "v1", strikes: [] }
+  });
+  const reviewRef = { id: "review-123", path: "vendorReviews/review-123" };
+  const calibrationRef = {
+    id: "calibration-456",
+    path: "estimateCalibration/calibration-456"
+  };
+  const vendor = { vendorId: "test_mover_a", name: "Test Mover A" };
+  const review = {
+    vendorId: vendor.vendorId,
+    userId: "user-123",
+    answers: { finalBill: 1432.18 },
+    flags: [],
+    submittedAt: "server-time"
+  };
+  const calibration = {
+    reviewId: reviewRef.id,
+    userId: "user-123",
+    vendorId: vendor.vendorId,
+    estimatedRange: { low: 1200, high: 1600 },
+    finalBill: 1432.18,
+    scopeSnapshot: { cubicFeet: 980 },
+    submittedAt: "server-time"
+  };
+
+  await writeReviewAndAccountability(
+    db,
+    reviewRef,
+    calibrationRef,
+    vendor,
+    review,
+    calibration
+  );
+
+  assert.deepEqual(
+    writes.sets.map(({ reference, data }) => ({ path: reference.path, data })),
+    [
+      { path: reviewRef.path, data: review },
+      { path: calibrationRef.path, data: calibration }
+    ]
+  );
 });

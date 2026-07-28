@@ -2,80 +2,24 @@ const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const admin = require("firebase-admin");
 const twilio = require("twilio");
 const {
-  accountabilityTransition,
-  normalizeStrikes,
-  pendingStrikesForFlags
-} = require("./accountabilityLadder");
+  buildFlags,
+  calibrationRecord,
+  CheckInValidationError,
+  cleanAnswers,
+  flagMessage,
+  parsedBookingContext,
+  writeReviewAndAccountability
+} = require("./submitCheckInCore");
 
 if (!admin.apps.length) {
   admin.initializeApp();
 }
 
-const FLAG_LABELS = Object.freeze({
-  late_arrival: "did not arrive in the window",
-  unsteady_crew: "crew did not work steadily",
-  charged_more_than_quoted: "charged more than quoted",
-  damage: "damage reported"
-});
-
-function buildFlags(answers) {
-  const flags = [];
-  if (answers.arrivedInWindow === false) flags.push("late_arrival");
-  if (answers.crewWorkedSteadily === false) flags.push("unsteady_crew");
-  if (answers.costMoreThanQuoted === true) flags.push("charged_more_than_quoted");
-  if (answers.damaged === true) flags.push("damage");
-  return flags;
-}
-
-function flagMessage(vendorName, flag) {
-  return `PEEZY FLAG: ${vendorName} — ${FLAG_LABELS[flag]}.`;
-}
-
-function cleanAnswers(raw) {
-  const required = [
-    "arrivedInWindow",
-    "crewWorkedSteadily",
-    "costMoreThanQuoted",
-    "damaged"
-  ];
-  if (!raw || typeof raw !== "object" ||
-      required.some((key) => typeof raw[key] !== "boolean")) {
-    throw new HttpsError("invalid-argument", "All four factual answers are required");
-  }
-  return {
-    arrivedInWindow: raw.arrivedInWindow,
-    crewWorkedSteadily: raw.crewWorkedSteadily,
-    costMoreThanQuoted: raw.costMoreThanQuoted,
-    damaged: raw.damaged,
-    note: typeof raw.note === "string" ? raw.note.trim().slice(0, 2000) : ""
-  };
-}
-
-function answerMap(storedAnswers) {
-  if (storedAnswers?.answers && typeof storedAnswers.answers === "object") {
-    return storedAnswers.answers;
-  }
-  return storedAnswers && typeof storedAnswers === "object" ? storedAnswers : {};
-}
-
-function parsedVendor(storedAnswers) {
-  const encoded = answerMap(storedAnswers).chosen_vendor;
-  if (!Array.isArray(encoded) || typeof encoded[0] !== "string") return null;
-  try {
-    const vendor = JSON.parse(encoded[0]);
-    const vendorId = typeof vendor?.vendorId === "string" ? vendor.vendorId.trim() : "";
-    const name = typeof vendor?.name === "string" ? vendor.name.trim() : "";
-    return vendorId && name ? { vendorId, name } : null;
-  } catch {
-    return null;
-  }
-}
-
-async function bookedVendor(db, userId) {
+async function bookedMoveContext(db, userId) {
   const snapshot = await db.collection("users").doc(userId)
     .collection("workflowResponses").doc("book_movers")
     .get();
-  return snapshot.exists ? parsedVendor(snapshot.get("answers")) : null;
+  return snapshot.exists ? parsedBookingContext(snapshot.get("answers")) : null;
 }
 
 async function notifyFlags(vendorName, flags) {
@@ -107,37 +51,6 @@ async function notifyFlags(vendorName, flags) {
   }
 }
 
-async function writeReviewAndAccountability(db, reviewRef, vendor, review) {
-  if (!vendor) {
-    await reviewRef.set(review);
-    return;
-  }
-
-  const vendorRef = db.collection("vendors").doc(vendor.vendorId);
-  await db.runTransaction(async (transaction) => {
-    const vendorSnapshot = await transaction.get(vendorRef);
-    transaction.set(reviewRef, review);
-    if (!vendorSnapshot.exists) return;
-
-    const vendorData = vendorSnapshot.data();
-    const existingStrikes = vendorData.accountability?.strikes;
-    const additions = pendingStrikesForFlags(
-      review.flags,
-      reviewRef.id,
-      admin.firestore.Timestamp.now()
-    );
-    const transition = accountabilityTransition(
-      [...normalizeStrikes(existingStrikes), ...additions],
-      vendorData.active !== false
-    );
-
-    transaction.update(vendorRef, {
-      "accountability.strikes": transition.strikes,
-      active: transition.active
-    });
-  });
-}
-
 const submitCheckIn = onCall(
   { region: "us-central1", timeoutSeconds: 15, memory: "256MiB" },
   async (request) => {
@@ -146,26 +59,58 @@ const submitCheckIn = onCall(
       throw new HttpsError("unauthenticated", "Sign in before submitting a check-in");
     }
 
-    const answers = cleanAnswers(request.data?.answers);
+    let answers;
+    try {
+      answers = cleanAnswers(request.data?.answers);
+    } catch (error) {
+      if (error instanceof CheckInValidationError) {
+        throw new HttpsError("invalid-argument", error.message);
+      }
+      throw error;
+    }
+
     const db = admin.firestore();
-    const vendor = await bookedVendor(db, userId);
+    const bookingContext = await bookedMoveContext(db, userId);
+    const vendor = bookingContext?.vendor ?? null;
+    if (!bookingContext) delete answers.finalBill;
+
     const flags = buildFlags(answers);
     const reviewRef = db.collection("vendorReviews").doc();
+    const submittedAt = admin.firestore.FieldValue.serverTimestamp();
     const review = {
       vendorId: vendor?.vendorId ?? null,
       userId,
       answers,
       flags,
-      submittedAt: admin.firestore.FieldValue.serverTimestamp()
+      submittedAt
     };
+    const calibration = calibrationRecord({
+      reviewId: reviewRef.id,
+      userId,
+      bookingContext,
+      answers,
+      submittedAt
+    });
+    const calibrationRef = calibration
+      ? db.collection("estimateCalibration").doc()
+      : null;
 
-    await writeReviewAndAccountability(db, reviewRef, vendor, review);
+    await writeReviewAndAccountability(
+      db,
+      reviewRef,
+      calibrationRef,
+      vendor,
+      review,
+      calibration,
+      admin.firestore.Timestamp.now()
+    );
 
     await notifyFlags(vendor?.name ?? "General move", flags);
 
     return {
       success: true,
       reviewId: reviewRef.id,
+      calibrationId: calibrationRef?.id ?? null,
       vendorId: vendor?.vendorId ?? null,
       flags
     };
@@ -174,9 +119,5 @@ const submitCheckIn = onCall(
 
 module.exports = {
   submitCheckIn,
-  buildFlags,
-  flagMessage,
-  parsedVendor,
-  writeReviewAndAccountability,
-  FLAG_LABELS
+  bookedMoveContext
 };

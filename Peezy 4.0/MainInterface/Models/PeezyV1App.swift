@@ -40,7 +40,11 @@ struct PeezyV1App: App {
     @ViewBuilder
     private var rootView: some View {
         #if DEBUG
-        if ProcessInfo.processInfo.arguments.contains("--estimate-integrity-phase-d") {
+        if ProcessInfo.processInfo.arguments.contains("--estimate-integrity-phase-f-booked") {
+            EstimateIntegrityPhaseFCheckInFixture(booked: true)
+        } else if ProcessInfo.processInfo.arguments.contains("--estimate-integrity-phase-f-general") {
+            EstimateIntegrityPhaseFCheckInFixture(booked: false)
+        } else if ProcessInfo.processInfo.arguments.contains("--estimate-integrity-phase-d") {
             EstimateIntegrityPhaseDStorageFixture()
         } else if ProcessInfo.processInfo.arguments.contains("--estimate-integrity-phase-c") {
             EstimateIntegrityPhaseCConciergeFixture()
@@ -56,6 +60,33 @@ struct PeezyV1App: App {
 }
 
 #if DEBUG
+private struct EstimateIntegrityPhaseFCheckInFixture: View {
+    let booked: Bool
+
+    private var bookingContext: CheckInBookingContext? {
+        guard booked else { return nil }
+        return CheckInBookingContext(
+            vendorId: "test_mover_a",
+            vendorName: "Test Mover A",
+            estimatedRange: CheckInEstimatedRange(low: 1_200, high: 1_600),
+            scopeSnapshot: [
+                "cubicFeet": 980,
+                "driveMinutes": 45
+            ]
+        )
+    }
+
+    var body: some View {
+        MoveCheckInView(
+            userId: "phase-f-fixture",
+            onDismiss: {},
+            onStatusAction: { _ in },
+            fixtureBookingContext: bookingContext,
+            fixtureContextLoaded: true
+        )
+    }
+}
+
 @MainActor
 private struct EstimateIntegrityPhaseDStorageFixture: View {
     @State private var model = MoversFlowViewModel()

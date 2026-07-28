@@ -1,32 +1,49 @@
-# Chip Estimate Integrity — Phase E: Packing room floors (CORE)
+# Chip Estimate Integrity — Phase F: Calibration persistence (CORE)
 #
-# ACCEPTANCE CONTRACT (locked before Phase E implementation edits)
-# E1 GIVEN a room classified as kitchen, garage, bedroom, or bathroom, WHEN its
-#    work is estimated, THEN the LOCKED-pending-calibration minimum is applied
-#    once to the aggregate ROOM before splitting: kitchen 150, garage 120,
-#    bedroom 60, bathroom 30 minutes. Two rooms each receive their own floor.
-# E2 GIVEN a room whose item-derived work exceeds its room-type floor, WHEN the
-#    plan is generated, THEN item-derived minutes win; the floor never replaces
-#    or adds to greater work.
-# E3 GIVEN a floor-adjusted room workload, WHEN sessions are constructed, THEN
-#    the adjusted room total is split into approximately 40-minute sessions and
-#    the sum of those pre-compression session minutes exactly preserves the
-#    adjusted room total (subject only to the existing 20-minute generic minimum
-#    for room types without a larger floor).
-# E4 GIVEN a kitchen with sparse, one-sided, or large-item work, WHEN room drafts
-#    are built, THEN its 150-minute room floor is applied once across essential
-#    and non-essential variants and it has at least two sessions before timeline
-#    compression. A short timeline may merge those drafts under existing rules.
-# E5 GIVEN normal and short timelines, WHEN a plan is generated, THEN locked room
-#    ordering, first-night isolation, merge item coverage, completion continuity,
-#    and reflow behavior remain intact. CORE tests, fresh validation, and walked
-#    diffs pass. No deploy or reseed occurs.
+# ACCEPTANCE CONTRACT (locked before Phase F implementation edits)
+# F1 GIVEN a persisted booked-vendor `book_movers` response, WHEN moving-day
+#    check-in loads, THEN the stored vendor, estimated low/high range,
+#    and move scope can be parsed; the form shows one optional final-bill money
+#    field. GIVEN no booked vendor (including quote-only or malformed stored
+#    responses), THEN the final-bill question is not rendered or submitted.
+# F2 GIVEN a signed-in check-in submission, WHEN `submitCheckIn` runs, THEN it
+#    validates the four existing factual answers and an optional positive,
+#    finite final bill, re-reads `users/{uid}/workflowResponses/book_movers`,
+#    and derives vendor, estimate, and scope only from that server-side read;
+#    vendor/estimate/scope injected into the same check-in request cannot
+#    influence calibration. The existing stored booking remains the source.
+# F3 GIVEN a booked vendor and valid final bill, WHEN the review is accepted,
+#    THEN one atomic server-side operation writes the existing review plus a new
+#    top-level `estimateCalibration/{autoId}` document containing reviewId,
+#    userId, vendorId, estimatedRange, finalBill, scopeSnapshot, and submittedAt.
+#    Omitted final bill or no booked vendor writes no estimate-calibration doc.
+# F4 GIVEN Firestore access control, WHEN Phase F ships, THEN
+#    `estimateCalibration` remains backend-owned: no client write path and no
+#    Firestore rule granting client access is added. `firestore.rules` is not
+#    changed.
+# F5 GIVEN a box-return submission, WHEN calibration is saved and read back,
+#    THEN `users/{uid}.kitCalibration` retains delivered and returned counts and
+#    also round-trips the user's `ranOut` yes/no answer. Its UI requires that
+#    answer and keeps pickup behavior unchanged.
+# F6 GIVEN the complete Phase F change, WHEN verification runs, THEN focused
+#    Node and Swift unit tests, booked/unbooked UI coverage, signed live
+#    persistence readback, fresh validation, and walked diffs pass. Only
+#    `functions:submitCheckIn` is deployed; no rule deploy or flow reseed occurs.
 #
 # EDIT SITES
 # PHASE_MANIFEST
-# Peezy 4.0/MainInterface/Models/PackingConstants.swift
-# Peezy 4.0/MainInterface/Models/PackingPlanEngine.swift
-# Tests/PackingPlanEngineTests.swift
+# functions/submitCheckIn.js
+# functions/submitCheckInCore.js
+# functions/tests/submitCheckIn.test.js
+# Peezy 4.0/MainInterface/Models/CheckInService.swift
+# Peezy 4.0/Tasks/Task Cards/MoveCheckInView.swift
+# Peezy 4.0/MainInterface/Models/BoxReturnService.swift
+# Peezy 4.0/Tasks/Task Cards/BoxReturnView.swift
+# Peezy 4.0/MainInterface/Models/PeezyV1App.swift
+# Peezy 4.0Tests/CheckInTests.swift
+# Peezy 4.0Tests/BoxReturnTests.swift
+# Peezy 4.0Tests/PhaseFCalibrationFirestoreIntegrationTests.swift
+# Peezy 4.0UITests/EstimateIntegrityPhaseFUITests.swift
 # SESSION_NOTES.md (session-final write only)
 #
 # READ SITES
@@ -35,5 +52,7 @@
 # peezy-conventions-v2.md
 # CLAUDE.md
 # peezy-v1-architecture.md
-# Peezy 4.0/MainInterface/Models/DailyDoseEngine.swift
-# Peezy 4.0/MainInterface/Models/PackingPlanStore.swift
+# firestore.rules
+# functions/getWorkflowQualifying.js
+# Peezy 4.0/MainInterface/Models/MoversBookingPayload.swift
+# Peezy 4.0/MainInterface/Models/MoversFlowViewModel.swift

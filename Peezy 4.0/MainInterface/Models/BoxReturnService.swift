@@ -5,11 +5,13 @@ import Foundation
 struct KitCalibration: Equatable {
     let delivered: Int
     let returned: Int
+    let ranOut: Bool
 
-    var firestoreData: [String: Int] {
+    var firestoreData: [String: Any] {
         [
             "delivered": delivered,
-            "returned": returned
+            "returned": returned,
+            "ranOut": ranOut
         ]
     }
 }
@@ -42,13 +44,18 @@ struct BoxReturnService {
     func submit(
         userId: String,
         returned: Int,
+        ranOut: Bool,
         requestPickup: Bool
     ) async throws -> KitCalibration {
         guard !userId.isEmpty else { throw BoxReturnServiceError.missingUser }
         guard returned >= 0 else { throw BoxReturnServiceError.invalidReturnedCount }
 
         let delivered = try await loadDeliveredCount(userId: userId)
-        let calibration = KitCalibration(delivered: delivered, returned: returned)
+        let calibration = KitCalibration(
+            delivered: delivered,
+            returned: returned,
+            ranOut: ranOut
+        )
         let userRef = db.collection("users").document(userId)
         try await userRef.setData(
             ["kitCalibration": calibration.firestoreData],
@@ -96,10 +103,11 @@ struct BoxReturnService {
     static func calibration(fromFirestore data: [String: Any]) -> KitCalibration? {
         guard let delivered = (data["delivered"] as? NSNumber)?.intValue,
               let returned = (data["returned"] as? NSNumber)?.intValue,
+              let ranOut = data["ranOut"] as? Bool,
               delivered >= 0,
               returned >= 0
         else { return nil }
-        return KitCalibration(delivered: delivered, returned: returned)
+        return KitCalibration(delivered: delivered, returned: returned, ranOut: ranOut)
     }
 
     static func pickupPayload(userId: String, returned: Int) -> [String: Any] {

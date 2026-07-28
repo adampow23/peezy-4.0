@@ -7,6 +7,7 @@ struct BoxReturnView: View {
 
     @State private var deliveredCount: Int?
     @State private var returnedCount = 0
+    @State private var ranOut: Bool?
     @State private var requestsPickup = false
     @State private var submittedCalibration: KitCalibration?
     @State private var submittedWithPickup = false
@@ -91,6 +92,19 @@ struct BoxReturnView: View {
                     .accessibilityValue("\(returnedCount)")
                     .accessibilityIdentifier("box_return.returned_stepper")
 
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Did you run out of boxes before move day?")
+                            .font(.headline)
+                            .foregroundStyle(PeezyTheme.Colors.deepInk)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier("box_return.ran_out_question")
+
+                        HStack(spacing: 12) {
+                            ranOutButton("Yes", value: true)
+                            ranOutButton("No", value: false)
+                        }
+                    }
+
                     Toggle("I'd like Peezy to arrange pickup", isOn: $requestsPickup)
                         .tint(PeezyTheme.Colors.successGreen)
                         .disabled(returnedCount == 0)
@@ -119,7 +133,7 @@ struct BoxReturnView: View {
             VStack(spacing: 12) {
                 PeezyAssessmentButton(
                     isSubmitting ? "Saving…" : "Save box count",
-                    disabled: isSubmitting,
+                    disabled: ranOut == nil || isSubmitting,
                     action: submit
                 )
                 .accessibilityIdentifier("box_return.submit")
@@ -207,7 +221,7 @@ struct BoxReturnView: View {
     }
 
     private func submit() {
-        guard !isSubmitting else { return }
+        guard let ranOut, !isSubmitting else { return }
         isSubmitting = true
         errorMessage = nil
         let pickup = requestsPickup
@@ -216,6 +230,7 @@ struct BoxReturnView: View {
                 let calibration = try await service.submit(
                     userId: userId,
                     returned: returnedCount,
+                    ranOut: ranOut,
                     requestPickup: pickup
                 )
                 submittedWithPickup = pickup
@@ -226,6 +241,34 @@ struct BoxReturnView: View {
                 isSubmitting = false
             }
         }
+    }
+
+    private func ranOutButton(_ label: String, value: Bool) -> some View {
+        Button {
+            ranOut = value
+            PeezyHaptics.selection()
+        } label: {
+            Text(label)
+                .font(.headline)
+                .foregroundStyle(PeezyTheme.Colors.deepInk)
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .background(
+                    ranOut == value
+                        ? AnyShapeStyle(PeezyTheme.Colors.successGreen.opacity(0.2))
+                        : AnyShapeStyle(.regularMaterial)
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .stroke(
+                            ranOut == value ? PeezyTheme.Colors.successGreen : .clear,
+                            lineWidth: 2
+                        )
+                }
+        }
+        .buttonStyle(.plain)
+        .accessibilityValue(ranOut == value ? "Selected" : "Not selected")
+        .accessibilityIdentifier("box_return.ran_out.\(value ? "yes" : "no")")
     }
 }
 

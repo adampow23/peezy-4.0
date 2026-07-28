@@ -2,6 +2,7 @@ import Foundation
 import Testing
 @testable import Peezy_4_0
 
+@MainActor
 struct BoxReturnTests {
     @Test func deliveredCountComesFromSubmittedKitEnvelope() throws {
         let kit: [String: Any] = [
@@ -49,18 +50,38 @@ struct BoxReturnTests {
     @Test func calibrationRoundTripAndPickupPayloadKeepExactCounts() {
         let calibration = BoxReturnService.calibration(fromFirestore: [
             "delivered": 15,
-            "returned": 9
+            "returned": 9,
+            "ranOut": true
         ])
         let payload = BoxReturnService.pickupPayload(
             userId: "user-123",
             returned: 9
         )
 
-        #expect(calibration == KitCalibration(delivered: 15, returned: 9))
-        #expect(calibration?.firestoreData == ["delivered": 15, "returned": 9])
+        #expect(calibration == KitCalibration(delivered: 15, returned: 9, ranOut: true))
+        #expect(calibration?.firestoreData["delivered"] as? Int == 15)
+        #expect(calibration?.firestoreData["returned"] as? Int == 9)
+        #expect(calibration?.firestoreData["ranOut"] as? Bool == true)
         #expect(payload["taskId"] as? String == "BOX_RETURN")
         #expect(payload["taskTitle"] as? String == "Pick up 9 returned boxes")
         #expect(payload["taskCategory"] as? String == "packing")
         #expect(payload["userId"] as? String == "user-123")
+    }
+
+    @Test func calibrationRequiresRanOutBooleanOnReadback() {
+        #expect(BoxReturnService.calibration(fromFirestore: [
+            "delivered": 15,
+            "returned": 9
+        ]) == nil)
+        #expect(BoxReturnService.calibration(fromFirestore: [
+            "delivered": 15,
+            "returned": 9,
+            "ranOut": "yes"
+        ]) == nil)
+        #expect(BoxReturnService.calibration(fromFirestore: [
+            "delivered": 15,
+            "returned": 9,
+            "ranOut": false
+        ]) == KitCalibration(delivered: 15, returned: 9, ranOut: false))
     }
 }
