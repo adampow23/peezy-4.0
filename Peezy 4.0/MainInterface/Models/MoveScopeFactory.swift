@@ -119,7 +119,8 @@ enum MoveScopeFactory {
         assessment: [String: Any],
         identity: PeezyIdentity,
         packedStatus: PackedStatus,
-        reserveAccessAnswers: [String: String] = [:]
+        reserveAccessAnswers: [String: String] = [:],
+        unresolvedUnseenRoomCount: Int = 0
     ) async -> MoveScope {
         let storageStop = storageStop(from: assessment)
         let bedrooms = (assessment["currentBedrooms"] as? String) ?? ""
@@ -148,7 +149,8 @@ enum MoveScopeFactory {
             specialtyItems: specialtyItems(from: inventoryItems),
             storageStop: storageStop,
             serviceDate: identity.moveDate,
-            cubeSource: cube.source
+            cubeSource: cube.source,
+            unresolvedUnseenRoomCount: unresolvedUnseenRoomCount
         )
     }
 

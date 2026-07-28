@@ -54,7 +54,8 @@ struct MoversBookingPayload {
             "destinationAccess": Self.accessObject(scope.destAccess),
             "packedStatus": scope.packedStatus.rawValue,
             "specialtyItems": scope.specialtyItems.map(\.rawValue),
-            "cubeSource": scope.cubeSource.rawValue
+            "cubeSource": scope.cubeSource.rawValue,
+            "unresolvedUnseenRoomCount": scope.unresolvedUnseenRoomCount
         ]
         if let storage = scope.storageStop {
             object["storageStop"] = [

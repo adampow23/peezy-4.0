@@ -190,6 +190,40 @@ struct PricingEngineTests {
             !fallbackEstimate.disclosures.contains("Includes what scans can't see — closets, cabinets, drawers."),
             "bedrooms fallback does not claim a scan-only hidden-goods adjustment"
         )
+        let oneUnseenRoomScope = MoveScope(
+            cubicFeet: 600, driveMinutes: 0, originAccess: .ground, destAccess: .ground,
+            packedStatus: .packed, cubeSource: .inventoryScan,
+            unresolvedUnseenRoomCount: 1
+        )
+        let manyUnseenRoomsScope = MoveScope(
+            cubicFeet: 600, driveMinutes: 0, originAccess: .ground, destAccess: .ground,
+            packedStatus: .packed, cubeSource: .inventoryScan,
+            unresolvedUnseenRoomCount: 8
+        )
+        let oneUnseenEstimate = PricingEngine.estimate(scope: oneUnseenRoomScope, rateCard: rateCard)!
+        let manyUnseenEstimate = PricingEngine.estimate(scope: manyUnseenRoomsScope, rateCard: rateCard)!
+        let resolvedMultipliers = PricingEngine.confidenceRangeMultipliers(for: baseline)
+        let oneUnseenMultipliers = PricingEngine.confidenceRangeMultipliers(for: oneUnseenRoomScope)
+        let fallbackMultipliers = PricingEngine.confidenceRangeMultipliers(for: fallbackScope)
+        check(oneUnseenEstimate.range.low == scannedSameHome.range.low,
+              "unresolved room leaves low estimate unchanged")
+        check(oneUnseenEstimate.range.high > scannedSameHome.range.high,
+              "unresolved room widens high estimate")
+        check(oneUnseenMultipliers.high == min(
+            resolvedMultipliers.high * (1 + PricingConstants.unresolvedRoomHighSideIncrement),
+            fallbackMultipliers.high
+        ), "unresolved room applies the locked numeric high-side multiplier")
+        check(manyUnseenEstimate.range.high == fallbackEstimate.range.high,
+              "unresolved-room widening caps at bedrooms fallback high side")
+        check(
+            manyUnseenEstimate.range.high - manyUnseenEstimate.range.low
+                <= fallbackEstimate.range.high - fallbackEstimate.range.low,
+            "unresolved-room total range width never exceeds bedrooms fallback width"
+        )
+        check(oneUnseenEstimate.disclosures.contains("Some rooms weren't scanned."),
+              "unresolved room emits locked disclosure")
+        check(!scannedSameHome.disclosures.contains("Some rooms weren't scanned."),
+              "resolved coverage omits unresolved-room disclosure")
         let storageStop = StorageStop(size: "Medium", fullness: "1/2")
         check(storageStop.addedCubicFeet == 210, "storage size and fullness contribute cube")
         let storageScope = MoveScope(

@@ -1,31 +1,48 @@
-# Chip Estimate Integrity — Phase A: Hidden-goods factor (CORE)
+# Chip Estimate Integrity — Phase B: Coverage check (CORE)
 #
-# ACCEPTANCE CONTRACT (written before Phase A implementation edits)
-# A1 GIVEN scan-derived inventory cube and a bedroom answer, WHEN MoveScopeFactory
-#    builds cube scope, THEN it adds exactly the LOCKED-pending-calibration hidden
-#    goods factor (1BR 80, 2BR 140, 3BR 220, 4BR+ 300 cu ft) once.
-# A2 GIVEN no moveable scan inventory, WHEN bedroom fallback supplies cube, THEN
-#    the existing fallback midpoint is unchanged because that table already
-#    includes hidden goods; storage contribution remains independent.
-# A3 GIVEN otherwise-identical scan scopes before/after the factor, WHEN pricing
-#    runs, THEN both range bounds move upward and the estimate contains the exact
-#    locked disclosure: "Includes what scans can't see — closets, cabinets, drawers."
-# A4 GIVEN scan and fallback estimates, WHEN disclosures are mapped to a mover
-#    comparison card, THEN the hidden-goods line is visible for scan estimates
-#    only and remains part of the durable estimate disclosures.
-# A5 GIVEN the Phase A diff, WHEN standalone CORE tests and a clean simulator
-#    build run, THEN both pass; a fresh-context validator grades A1-A4 PASS and
-#    the phase report walks every hub-file diff before commit. No deploy occurs.
+# ACCEPTANCE CONTRACT (locked before Phase B implementation edits)
+# B1 GIVEN an assessment bedroom count and dwelling type, WHEN expected coverage
+#    is built, THEN it contains bedroom × count + kitchen + living room + bathroom;
+#    House additionally contains garage + basement, while Apartment/Condo/Townhome
+#    contain neither. An absent assessment bedroom count contributes zero bedroom
+#    expectations, preserving the existing refinement-input migration contract.
+# B2 GIVEN scanned room labels, WHEN coverage is compared, THEN labels normalize
+#    case-insensitively through the documented RESO-derived synonym map; unmatched
+#    scanned rooms remain visible extras, and missing bedrooms render numbered
+#    expected rows (Bedroom 2, Bedroom 3, and so on).
+# B3 GIVEN an expected-but-unseen room, WHEN Add a clip is chosen, THEN capture is
+#    prefilled for that room and a completed scan resolves it; WHEN Nothing there
+#    is chosen, THEN its stable expected-room ID is saved as coverageConfirmed and
+#    survives metadata encode/decode and Firestore read-back.
+# B4 GIVEN N unresolved unseen rooms on a scan-derived scope, WHEN pricing runs,
+#    THEN the low bound is unchanged and the high-side multiplier is multiplied by
+#    (1 + 0.15 × N), capped at the bedrooms-fallback high-side multiplier for the
+#    same access/packing scope. Unit tests prove the cap. Resolved rooms do not widen.
+# B5 GIVEN unresolved unseen rooms, WHEN an estimate and comparison card render,
+#    THEN they contain exactly "Some rooms weren't scanned."; when all expected
+#    rooms are scanned or confirmed, neither widening nor disclosure occurs.
+# B6 GIVEN the Phase B UI fixture, WHEN the room hub renders, THEN a screenshot shows
+#    "Scanned:" and "Not seen:" plus both actions. CORE tests, simulator tests, a
+#    fresh-context validator, and walked hub-file diffs pass. No deploy occurs.
 #
 # EDIT SITES
 # PHASE_MANIFEST
-# Peezy 4.0/MainInterface/Models/PricingConstants.swift
-# Peezy 4.0/MainInterface/Models/PricingEngine.swift
+# Peezy 4.0/Inventory/Models/InventoryCoverage.swift (new)
+# Peezy 4.0/Inventory/Models/InventorySessionManager.swift
+# Peezy 4.0/Inventory/Views/InventoryRoomHubView.swift
 # Peezy 4.0/MainInterface/Models/MoveScopeFactory.swift
-# Peezy 4.0/MainInterface/Models/MoversVendorQuote.swift
+# Peezy 4.0/MainInterface/Models/MoversFlowViewModel.swift
+# Peezy 4.0/MainInterface/Models/MoversBookingPayload.swift
+# Peezy 4.0/MainInterface/Models/PricingEngine.swift
+# Peezy 4.0/MainInterface/Models/PricingConstants.swift
+# Peezy 4.0/MainInterface/Models/PeezyV1App.swift (DEBUG fixture route only)
+# Tests/CoverageCheckTests.swift (new)
 # Tests/PricingEngineTests.swift
-# Peezy 4.0Tests/EstimateIntegrityTests.swift (new)
-# SESSION_NOTES.md (session final write only)
+# Peezy 4.0Tests/CoverageFirestoreIntegrationTests.swift (new)
+# Peezy 4.0Tests/EstimateIntegrityPhaseBTests.swift (new)
+# Peezy 4.0Tests/MoversBookingPayloadTests.swift
+# Peezy 4.0UITests/EstimateIntegrityPhaseBUITests.swift (new)
+# SESSION_NOTES.md (session-final write only)
 #
 # READ SITES
 # peezy-chip-estimate-integrity.md
@@ -33,7 +50,16 @@
 # peezy-conventions-v2.md
 # CLAUDE.md
 # peezy-v1-architecture.md
+# Peezy 4.0/Assessment/AssessmentModels/AssessmentDataManager.swift
+# Peezy 4.0/Assessment/AssessmentModels/AssessmentCoordinator.swift
+# Peezy 4.0/Assessment/AssessmentViews/Questions/CurrentBedrooms.swift
 # Peezy 4.0/Inventory/Models/InventoryModels.swift
+# Peezy 4.0/Inventory/Views/InventoryFlowView.swift
 # Peezy 4.0/MainInterface/Models/ComparisonCardModel.swift
-# Peezy 4.0/MainInterface/Models/Vendor.swift
-# Peezy 4.0/MainInterface/Views/ComparisonCardView.swift
+# Peezy 4.0/MainInterface/Models/MoversVendorQuote.swift
+# Peezy 4.0/MainInterface/Models/UserKnowledgeService.swift
+# Peezy 4.0/Tasks/Task Cards/FindMoversFlow.swift
+# Peezy 4.0/Tasks/Task Cards/ScanInventoryFlow.swift
+# firestore.rules
+# RESO Data Dictionary ImageOf vocabulary:
+# https://dd.reso.org/DD1.7/Media/ImageOf/

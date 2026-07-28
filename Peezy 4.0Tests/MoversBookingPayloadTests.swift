@@ -25,7 +25,8 @@ struct MoversBookingPayloadTests {
             originAccess: MoveAccess(route: .stairs, elevatorReserved: false, longCarry: false),
             destAccess: .ground, packedStatus: .packed,
             storageStop: StorageStop(size: "Medium", fullness: "1/2"),
-            cubeSource: .inventoryScan
+            cubeSource: .inventoryScan,
+            unresolvedUnseenRoomCount: 2
         )
         let tier = VendorValuationTier(
             id: "standard", label: "Standard valuation",
@@ -68,6 +69,12 @@ struct MoversBookingPayloadTests {
             let object = try #require(JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any])
             #expect(!object.isEmpty)
         }
+
+        let scopeJSON = try #require(payload["scope"]?.first)
+        let scopeObject = try #require(
+            JSONSerialization.jsonObject(with: Data(scopeJSON.utf8)) as? [String: Any]
+        )
+        #expect((scopeObject["unresolvedUnseenRoomCount"] as? NSNumber)?.intValue == 2)
 
         let quoteRequest = MoversBookingPayload(
             identity: identity,

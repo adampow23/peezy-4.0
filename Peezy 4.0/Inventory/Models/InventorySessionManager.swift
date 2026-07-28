@@ -19,6 +19,34 @@ import FirebaseAuth
 import FirebaseFirestore
 
 @MainActor
+protocol CoverageConfirmationPersisting {
+    /// Atomically adds one stable expected-room ID, then returns the server
+    /// value read back from the same metadata document.
+    func insertConfirmedRoomID(_ roomID: String, userID: String) async throws -> Set<String>
+}
+
+@MainActor
+struct FirestoreCoverageConfirmationStore: CoverageConfirmationPersisting {
+    func insertConfirmedRoomID(_ roomID: String, userID: String) async throws -> Set<String> {
+        let metadataRef = Firestore.firestore().collection("users").document(userID)
+            .collection("inventory").document("_metadata")
+        try await metadataRef.setData([
+            InventoryCoverage.confirmedMetadataKey: FieldValue.arrayUnion([roomID]),
+            "updatedAt": Timestamp(date: Date())
+        ], merge: true)
+
+        let snapshot = try await metadataRef.getDocument()
+        let readBack = InventoryCoverage.confirmedRoomIDs(
+            fromMetadata: snapshot.data() ?? [:]
+        )
+        guard readBack.contains(roomID) else {
+            throw CoveragePersistenceError.readBackMismatch
+        }
+        return readBack
+    }
+}
+
+@MainActor
 @Observable
 final class InventorySessionManager {
 
@@ -46,6 +74,8 @@ final class InventorySessionManager {
     var submissionStatus: SubmissionStatus = .draft
     var error: String?
     var isProcessing = false
+    private(set) var expectedCoverageRooms: [ExpectedCoverageRoom] = []
+    private(set) var coverageConfirmedRoomIDs: Set<String> = []
 
     /// Confidence threshold — furniture items below this go to user confirmation
     static let confidenceThreshold: Double = 0.9
@@ -54,6 +84,21 @@ final class InventorySessionManager {
 
     private let storageService = InventoryStorageService()
     private let apiClient = InventoryAPIClient()
+    private let coverageConfirmationStore: any CoverageConfirmationPersisting
+    private let userIDProvider: () -> String?
+
+    init() {
+        self.coverageConfirmationStore = FirestoreCoverageConfirmationStore()
+        self.userIDProvider = { Auth.auth().currentUser?.uid }
+    }
+
+    init(
+        coverageConfirmationStore: any CoverageConfirmationPersisting,
+        userIDProvider: @escaping () -> String?
+    ) {
+        self.coverageConfirmationStore = coverageConfirmationStore
+        self.userIDProvider = userIDProvider
+    }
 
     /// Firestore listener for the session document we're currently observing.
     /// Removed whenever we transition out of .processing or reset.
@@ -78,8 +123,16 @@ final class InventorySessionManager {
         scannedRooms.flatMap { $0.items }
     }
 
+    var coverageReport: InventoryCoverageReport {
+        InventoryCoverage.report(
+            expectedRooms: expectedCoverageRooms,
+            scannedRoomNames: scannedRooms.map(\.name),
+            confirmedRoomIDs: coverageConfirmedRoomIDs
+        )
+    }
+
     var userId: String? {
-        Auth.auth().currentUser?.uid
+        userIDProvider()
     }
 
     /// String key for animating state transitions
@@ -121,13 +174,34 @@ final class InventorySessionManager {
                 .collection("inventory").document("_metadata")
                 .getDocument()
 
-            if let data = metadataDoc.data(),
-               let statusRaw = data["submissionStatus"] as? String,
-               let status = SubmissionStatus(rawValue: statusRaw) {
-                loadedStatus = status
+            if let data = metadataDoc.data() {
+                if let statusRaw = data["submissionStatus"] as? String,
+                   let status = SubmissionStatus(rawValue: statusRaw) {
+                    loadedStatus = status
+                }
+                coverageConfirmedRoomIDs = InventoryCoverage.confirmedRoomIDs(
+                    fromMetadata: data
+                )
             }
         } catch {
             loadedStatus = .draft
+        }
+
+        do {
+            let knowledgeData = try? await db.collection("userKnowledge")
+                .document(userId).getDocument().data()
+            let assessmentSnapshot = try await db.collection("users").document(userId)
+                .collection("user_assessments").getDocuments()
+            let inputs = InventoryCoverage.expectationInputs(
+                userKnowledgeData: knowledgeData,
+                legacyAssessmentDocuments: assessmentSnapshot.documents.map { $0.data() }
+            )
+            configureCoverage(
+                bedroomsAnswer: inputs.bedroomsAnswer,
+                dwellingType: inputs.dwellingType
+            )
+        } catch {
+            configureCoverage(bedroomsAnswer: "", dwellingType: "")
         }
 
         do {
@@ -168,6 +242,40 @@ final class InventorySessionManager {
 
     func startNewRoom(name: String) {
         state = .scanning(roomName: name)
+    }
+
+    func configureCoverage(bedroomsAnswer: String, dwellingType: String) {
+        expectedCoverageRooms = InventoryCoverage.expectedRooms(
+            bedroomsAnswer: bedroomsAnswer,
+            dwellingType: dwellingType
+        )
+    }
+
+    /// Resolves an expected room as intentionally empty and verifies the
+    /// backend-owned metadata round-trip before considering the action saved.
+    func confirmNothingThere(_ room: ExpectedCoverageRoom) async {
+        guard expectedCoverageRooms.contains(where: { $0.id == room.id }) else { return }
+        let wasAlreadyConfirmed = coverageConfirmedRoomIDs.contains(room.id)
+        coverageConfirmedRoomIDs.insert(room.id)
+
+        // DEBUG acceptance fixtures have no signed-in user; local state still
+        // exercises the exact action and rendering path.
+        guard let userId else { return }
+
+        do {
+            let readBack = try await coverageConfirmationStore.insertConfirmedRoomID(
+                room.id,
+                userID: userId
+            )
+            // Union, never assign: another row may have completed while this
+            // operation was suspended.
+            coverageConfirmedRoomIDs.formUnion(readBack)
+        } catch {
+            // Roll back only this operation. Restoring an old snapshot could
+            // discard another row that succeeded concurrently.
+            if !wasAlreadyConfirmed { coverageConfirmedRoomIDs.remove(room.id) }
+            self.error = "Couldn't save that coverage answer. Please try again."
+        }
     }
 
     /// Hand off frames extracted from a scan. Fire-and-forget from the caller's
@@ -380,10 +488,15 @@ final class InventorySessionManager {
 
         let metaRef = db.collection("users").document(userId)
             .collection("inventory").document("_metadata")
-        batch.setData([
+        var metadata: [String: Any] = [
             "submissionStatus": SubmissionStatus.draft.rawValue,
             "updatedAt": Timestamp(date: Date())
-        ], forDocument: metaRef, merge: true)
+        ]
+        metadata.merge(
+            InventoryCoverage.metadata(confirmedRoomIDs: coverageConfirmedRoomIDs),
+            uniquingKeysWith: { _, new in new }
+        )
+        batch.setData(metadata, forDocument: metaRef, merge: true)
 
         try await batch.commit()
 
@@ -403,10 +516,15 @@ final class InventorySessionManager {
 
         let metaRef = db.collection("users").document(userId)
             .collection("inventory").document("_metadata")
-        batch.setData([
+        var metadata: [String: Any] = [
             "submissionStatus": SubmissionStatus.submitted.rawValue,
             "submittedAt": Timestamp(date: Date())
-        ], forDocument: metaRef, merge: true)
+        ]
+        metadata.merge(
+            InventoryCoverage.metadata(confirmedRoomIDs: coverageConfirmedRoomIDs),
+            uniquingKeysWith: { _, new in new }
+        )
+        batch.setData(metadata, forDocument: metaRef, merge: true)
 
         try await batch.commit()
 
@@ -439,6 +557,7 @@ final class InventorySessionManager {
     func reset() {
         teardownActiveProcessing()
         scannedRooms = []
+        coverageConfirmedRoomIDs = []
         submissionStatus = .draft
         error = nil
         isProcessing = false
@@ -491,6 +610,10 @@ final class InventorySessionManager {
             ], forDocument: roomRef)
         }
     }
+}
+
+private enum CoveragePersistenceError: Error {
+    case readBackMismatch
 }
 
 // MARK: - ScannedRoom

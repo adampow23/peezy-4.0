@@ -38,6 +38,7 @@ final class MoversFlowViewModel {
     private var userId = ""
     private var taskId = ""
     private var inventoryItems: [InventoryItem] = []
+    private var unresolvedUnseenRoomCount = 0
     private var assessment: [String: Any] = [:]
     private let actionService = TaskActionService()
 
@@ -118,6 +119,7 @@ final class MoversFlowViewModel {
     func useHomeDetailsInstead() async {
         do {
             inventoryItems = []
+            unresolvedUnseenRoomCount = 0
             hasInventory = false
             try await rebuildScope()
             transition(to: .scope)
@@ -274,6 +276,7 @@ final class MoversFlowViewModel {
         let manager = InventorySessionManager()
         await manager.loadExistingInventory()
         inventoryItems = manager.allItems
+        unresolvedUnseenRoomCount = manager.coverageReport.unresolvedRoomCount
         hasInventory = inventoryItems.contains(where: \.shouldMove)
     }
 
@@ -292,7 +295,8 @@ final class MoversFlowViewModel {
             inventoryItems: inventoryItems,
             assessment: refinedAssessment,
             identity: identity,
-            packedStatus: packedStatus
+            packedStatus: packedStatus,
+            unresolvedUnseenRoomCount: unresolvedUnseenRoomCount
         )
         scope = MoveScope(
             cubicFeet: base.cubicFeet,
@@ -311,7 +315,8 @@ final class MoversFlowViewModel {
             specialtyItems: base.specialtyItems,
             storageStop: base.storageStop,
             serviceDate: base.serviceDate,
-            cubeSource: base.cubeSource
+            cubeSource: base.cubeSource,
+            unresolvedUnseenRoomCount: base.unresolvedUnseenRoomCount
         )
     }
 

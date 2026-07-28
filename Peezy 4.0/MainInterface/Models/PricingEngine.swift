@@ -97,6 +97,7 @@ struct MoveScope: Equatable {
     let storageStop: StorageStop?
     let serviceDate: Date?
     let cubeSource: CubeSource
+    let unresolvedUnseenRoomCount: Int
 
     init(
         cubicFeet: Double,
@@ -107,7 +108,8 @@ struct MoveScope: Equatable {
         specialtyItems: [SpecialtyItem] = [],
         storageStop: StorageStop? = nil,
         serviceDate: Date? = nil,
-        cubeSource: CubeSource
+        cubeSource: CubeSource,
+        unresolvedUnseenRoomCount: Int = 0
     ) {
         self.cubicFeet = max(cubicFeet, 0)
         self.driveMinutes = max(driveMinutes, 0)
@@ -118,6 +120,7 @@ struct MoveScope: Equatable {
         self.storageStop = storageStop
         self.serviceDate = serviceDate
         self.cubeSource = cubeSource
+        self.unresolvedUnseenRoomCount = max(unresolvedUnseenRoomCount, 0)
     }
 }
 
@@ -256,10 +259,10 @@ enum PricingEngine {
             rawLoadHours(for: scope, crew: $0.crew) <= PricingConstants.physicalHoursCeiling
         }) ?? quotes.last else { return nil }
 
-        let rangeWidth = confidenceRangeWidth(for: scope)
+        let multipliers = confidenceRangeMultipliers(for: scope)
         let range = PriceRange(
-            low: roundMoney(selected.price * (1 - rangeWidth)),
-            high: roundMoney(selected.price * (1 + rangeWidth))
+            low: roundMoney(selected.price * multipliers.low),
+            high: roundMoney(selected.price * multipliers.high)
         )
         return PriceEstimate(
             range: range,
@@ -290,7 +293,26 @@ enum PricingEngine {
     }
 
     static func confidenceRangeWidth(for scope: MoveScope) -> Double {
-        var width = scope.cubeSource == .inventoryScan
+        confidenceRangeWidth(for: scope.cubeSource, scope: scope)
+    }
+
+    static func confidenceRangeMultipliers(for scope: MoveScope) -> (low: Double, high: Double) {
+        let width = confidenceRangeWidth(for: scope)
+        let baseHigh = 1 + width
+        guard scope.cubeSource == .inventoryScan,
+              scope.unresolvedUnseenRoomCount > 0
+        else { return (1 - width, baseHigh) }
+
+        let unresolvedMultiplier = 1 + (
+            PricingConstants.unresolvedRoomHighSideIncrement
+                * Double(scope.unresolvedUnseenRoomCount)
+        )
+        let fallbackCap = 1 + confidenceRangeWidth(for: .bedroomsFallback, scope: scope)
+        return (1 - width, min(baseHigh * unresolvedMultiplier, fallbackCap))
+    }
+
+    private static func confidenceRangeWidth(for source: CubeSource, scope: MoveScope) -> Double {
+        var width = source == .inventoryScan
             ? PricingConstants.scannedInventoryRangeWidth
             : PricingConstants.bedroomsFallbackRangeWidth
         if scope.originAccess.isDefaulted || scope.destAccess.isDefaulted {
@@ -318,6 +340,9 @@ enum PricingEngine {
         if scope.destAccess.longCarry { result.append("Long carry at destination") }
         if scope.originAccess.isDefaulted || scope.destAccess.isDefaulted {
             result.append("Undisclosed stairs or access")
+        }
+        if scope.cubeSource == .inventoryScan && scope.unresolvedUnseenRoomCount > 0 {
+            result.append("Some rooms weren't scanned.")
         }
         return result
     }
