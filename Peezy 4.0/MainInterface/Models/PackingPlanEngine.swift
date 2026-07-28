@@ -246,23 +246,53 @@ enum PackingPlanEngine {
     // MARK: - Session construction
 
     private static func roomDrafts(from rooms: [PackingRoomInput]) -> [DraftSession] {
-        var ordered: [(bucket: RoomBucket, roomName: String, variant: String, items: [PackingPlanItem])] = []
+        var ordered: [(
+            bucket: RoomBucket,
+            roomName: String,
+            variant: String,
+            items: [PackingPlanItem],
+            targetMinutes: Int
+        )] = []
 
         for room in rooms {
             let packable = room.items.filter { $0.tier.lowercased() != "furniture" }
             guard !packable.isEmpty else { continue }
 
             if roomBucket(for: room.name) == .kitchenNonEssentials {
-                let essentials = packable.filter(isKitchenEssential)
+                let essentials = packable.filter { isKitchenEssential($0) }
                 let nonEssentials = packable.filter { !isKitchenEssential($0) }
+                var variants: [(bucket: RoomBucket, variant: String, items: [PackingPlanItem])] = []
                 if !nonEssentials.isEmpty {
-                    ordered.append((.kitchenNonEssentials, room.name, "non_essentials", nonEssentials))
+                    variants.append((.kitchenNonEssentials, "non_essentials", nonEssentials))
                 }
                 if !essentials.isEmpty {
-                    ordered.append((.kitchenEssentials, room.name, "essentials", essentials))
+                    variants.append((.kitchenEssentials, "essentials", essentials))
+                }
+
+                let rawMinutes = variants.map { workUnits(from: $0.items).reduce(0) { $0 + $1.minutes } }
+                let roomMinutes = max(
+                    rawMinutes.reduce(0, +),
+                    PackingConstants.minimumRoomMinutes(for: room.name),
+                    PackingConstants.minimumSessionMinutes
+                )
+                let targets = distributedTargets(rawMinutes: rawMinutes, totalMinutes: roomMinutes)
+                for (index, variant) in variants.enumerated() {
+                    ordered.append((
+                        variant.bucket,
+                        room.name,
+                        variant.variant,
+                        variant.items,
+                        targets[index]
+                    ))
                 }
             } else {
-                ordered.append((roomBucket(for: room.name), room.name, "room", packable))
+                let itemMinutes = workUnits(from: packable).reduce(0) { $0 + $1.minutes }
+                let roomMinutes = max(
+                    itemMinutes,
+                    PackingConstants.minimumRoomMinutes(for: room.name),
+                    PackingConstants.minimumSessionMinutes
+                )
+                ordered.append((roomBucket(for: room.name), room.name, "room", packable, roomMinutes))
             }
         }
 
@@ -281,7 +311,13 @@ enum PackingPlanEngine {
             case .kitchenEssentials: label = "\(entry.roomName) essentials"
             default: label = entry.roomName
             }
-            return chunkDrafts(roomName: entry.roomName, label: label, variant: entry.variant, items: entry.items)
+            return chunkDrafts(
+                roomName: entry.roomName,
+                label: label,
+                variant: entry.variant,
+                items: entry.items,
+                targetMinutes: entry.targetMinutes
+            )
         }
     }
 
@@ -289,9 +325,68 @@ enum PackingPlanEngine {
         roomName: String,
         label: String,
         variant: String,
-        items: [PackingPlanItem]
+        items: [PackingPlanItem],
+        targetMinutes: Int
     ) -> [DraftSession] {
-        let units = items.flatMap { item -> [WorkUnit] in
+        var units = workUnits(from: items)
+        guard !units.isEmpty else { return [] }
+
+        let itemMinutes = units.reduce(0) { $0 + $1.minutes }
+        let padding = max(targetMinutes - itemMinutes, 0)
+        if padding > 0 {
+            units[0] = WorkUnit(name: units[0].name, minutes: units[0].minutes + padding)
+        }
+
+        let chunkCount = max(
+            Int(ceil(Double(targetMinutes) / Double(PackingConstants.targetSessionMinutes))),
+            1
+        )
+        let baseChunkMinutes = targetMinutes / chunkCount
+        let remainder = targetMinutes % chunkCount
+        let capacities = (0..<chunkCount).map { index in
+            baseChunkMinutes + (index < remainder ? 1 : 0)
+        }
+
+        var chunks: [[WorkUnit]] = []
+        chunks.reserveCapacity(chunkCount)
+        var unitIndex = 0
+        var unitMinutesRemaining = units[0].minutes
+
+        for capacity in capacities {
+            var capacityRemaining = capacity
+            var chunk: [WorkUnit] = []
+            while capacityRemaining > 0 && unitIndex < units.count {
+                let consumed = min(capacityRemaining, unitMinutesRemaining)
+                chunk.append(WorkUnit(name: units[unitIndex].name, minutes: consumed))
+                capacityRemaining -= consumed
+                unitMinutesRemaining -= consumed
+                if unitMinutesRemaining == 0 {
+                    unitIndex += 1
+                    if unitIndex < units.count {
+                        unitMinutesRemaining = units[unitIndex].minutes
+                    }
+                }
+            }
+            chunks.append(chunk)
+        }
+
+        let normalizedRoom = slug(roomName)
+        return chunks.enumerated().map { index, chunk in
+            let chunkLabel = chunks.count > 1 ? "\(label) — part \(index + 1)" : label
+            let sourceKey = "\(normalizedRoom):\(variant):\(index + 1)"
+            return DraftSession(
+                sourceKeys: [sourceKey],
+                rooms: [roomName],
+                roomLabel: chunkLabel,
+                estMinutes: capacities[index],
+                itemSummary: summarized(chunk),
+                isFirstNightBag: false
+            )
+        }
+    }
+
+    private static func workUnits(from items: [PackingPlanItem]) -> [WorkUnit] {
+        items.flatMap { item -> [WorkUnit] in
             let boxEquivalents = max(
                 Int(ceil(item.cubicFeet / PackingConstants.cubicFeetPerBoxEquivalent)),
                 1
@@ -302,44 +397,18 @@ enum PackingPlanEngine {
             )
             return (0..<item.quantity).map { _ in WorkUnit(name: item.name, minutes: minutes) }
         }
+    }
 
-        var chunks: [[WorkUnit]] = []
-        var current: [WorkUnit] = []
-        var currentMinutes = 0
-
-        func flush() {
-            guard !current.isEmpty else { return }
-            chunks.append(current)
-            current = []
-            currentMinutes = 0
+    private static func distributedTargets(rawMinutes: [Int], totalMinutes: Int) -> [Int] {
+        guard rawMinutes.count > 1 else { return [totalMinutes] }
+        var result = rawMinutes
+        var remaining = max(totalMinutes - rawMinutes.reduce(0, +), 0)
+        while remaining > 0 {
+            guard let index = result.indices.min(by: { result[$0] < result[$1] }) else { break }
+            result[index] += 1
+            remaining -= 1
         }
-
-        for unit in units {
-            if !current.isEmpty && currentMinutes + unit.minutes > PackingConstants.targetSessionMinutes {
-                flush()
-            }
-            current.append(unit)
-            currentMinutes += unit.minutes
-            if currentMinutes >= PackingConstants.targetSessionMinutes {
-                flush()
-            }
-        }
-        flush()
-
-        let normalizedRoom = slug(roomName)
-        return chunks.enumerated().map { index, chunk in
-            let minutes = max(chunk.reduce(0) { $0 + $1.minutes }, PackingConstants.minimumSessionMinutes)
-            let chunkLabel = chunks.count > 1 ? "\(label) — part \(index + 1)" : label
-            let sourceKey = "\(normalizedRoom):\(variant):\(index + 1)"
-            return DraftSession(
-                sourceKeys: [sourceKey],
-                rooms: [roomName],
-                roomLabel: chunkLabel,
-                estMinutes: minutes,
-                itemSummary: summarized(chunk),
-                isFirstNightBag: false
-            )
-        }
+        return result
     }
 
     private static func firstNightDraft(from rooms: [PackingRoomInput]) -> DraftSession {

@@ -1,43 +1,32 @@
-# Chip Estimate Integrity — Phase D: Storage-stop legs (CORE)
+# Chip Estimate Integrity — Phase E: Packing room floors (CORE)
 #
-# ACCEPTANCE CONTRACT (locked before Phase D implementation edits)
-# D1 GIVEN hasStorage=Yes and the moving-day-stop answer is No, WHEN scope is
-#    assembled, THEN storage size/fullness contributes its existing cube only;
-#    drive time remains origin-to-destination, no stop leg or 0.75 load hour is
-#    added, and no storage-route disclosure is emitted.
-# D2 GIVEN the moving-day-stop answer is Yes and the optional storage address
-#    resolves, WHEN scope is assembled, THEN drive time is the sum of
-#    origin-to-storage plus storage-to-destination ETAs and exactly
-#    storageStopLoadHours=0.75 (LOCKED-pending-calibration) is added to unrounded
-#    physical hours before ceiling evaluation and display-hour rounding.
-# D3 GIVEN a moving-day storage stop with no unit address or a failed stop leg,
-#    WHEN scope is assembled, THEN direct origin-to-destination ETA (or its
-#    existing fallback) receives a flat +30 minutes and the estimate discloses
-#    exactly "Storage stop estimated — add the unit's address to tighten this."
-# D4 GIVEN an otherwise sub-ceiling scope, WHEN the 0.75-hour stop addition moves
-#    unrounded physical hours above 6.0, THEN the Phase C gate routes concierge;
-#    boundary tests prove the stop addition occurs before the ceiling/rounding.
-# D5 GIVEN hasStorage=Yes in mover refinement, WHEN the card renders, THEN it asks
-#    "Is your storage unit a stop on moving day?" and accepts an optional unit
-#    address only for Yes. Booking/quote payloads retain storage contents and stop
-#    routing facts. CORE and simulator tests, fresh validation, and walked diffs
-#    pass. No deploy or flow reseed occurs.
+# ACCEPTANCE CONTRACT (locked before Phase E implementation edits)
+# E1 GIVEN a room classified as kitchen, garage, bedroom, or bathroom, WHEN its
+#    work is estimated, THEN the LOCKED-pending-calibration minimum is applied
+#    once to the aggregate ROOM before splitting: kitchen 150, garage 120,
+#    bedroom 60, bathroom 30 minutes. Two rooms each receive their own floor.
+# E2 GIVEN a room whose item-derived work exceeds its room-type floor, WHEN the
+#    plan is generated, THEN item-derived minutes win; the floor never replaces
+#    or adds to greater work.
+# E3 GIVEN a floor-adjusted room workload, WHEN sessions are constructed, THEN
+#    the adjusted room total is split into approximately 40-minute sessions and
+#    the sum of those pre-compression session minutes exactly preserves the
+#    adjusted room total (subject only to the existing 20-minute generic minimum
+#    for room types without a larger floor).
+# E4 GIVEN a kitchen with sparse, one-sided, or large-item work, WHEN room drafts
+#    are built, THEN its 150-minute room floor is applied once across essential
+#    and non-essential variants and it has at least two sessions before timeline
+#    compression. A short timeline may merge those drafts under existing rules.
+# E5 GIVEN normal and short timelines, WHEN a plan is generated, THEN locked room
+#    ordering, first-night isolation, merge item coverage, completion continuity,
+#    and reflow behavior remain intact. CORE tests, fresh validation, and walked
+#    diffs pass. No deploy or reseed occurs.
 #
 # EDIT SITES
 # PHASE_MANIFEST
-# Peezy 4.0/MainInterface/Models/PricingConstants.swift
-# Peezy 4.0/MainInterface/Models/PricingEngine.swift
-# Peezy 4.0/MainInterface/Models/MoveScopeFactory.swift
-# Peezy 4.0/MainInterface/Models/PricingCalibrationHarness.swift (model migration)
-# Peezy 4.0/MainInterface/Models/MoversFlowViewModel.swift
-# Peezy 4.0/MainInterface/Models/MoversBookingPayload.swift
-# Peezy 4.0/MainInterface/Models/PeezyV1App.swift (DEBUG fixture route only)
-# Peezy 4.0/Tasks/Task Cards/MoveRefinementView.swift
-# Tests/PricingEngineTests.swift
-# Peezy 4.0Tests/EstimateIntegrityTests.swift (model migration)
-# Peezy 4.0Tests/EstimateIntegrityPhaseDTests.swift (new)
-# Peezy 4.0Tests/MoversBookingPayloadTests.swift
-# Peezy 4.0UITests/EstimateIntegrityPhaseDUITests.swift (new)
+# Peezy 4.0/MainInterface/Models/PackingConstants.swift
+# Peezy 4.0/MainInterface/Models/PackingPlanEngine.swift
+# Tests/PackingPlanEngineTests.swift
 # SESSION_NOTES.md (session-final write only)
 #
 # READ SITES
@@ -46,6 +35,5 @@
 # peezy-conventions-v2.md
 # CLAUDE.md
 # peezy-v1-architecture.md
-# Peezy 4.0/MainInterface/Models/PeezyIdentity.swift
-# Peezy 4.0/MainInterface/Models/MoversVendorQuote.swift
-# Peezy 4.0/MainInterface/Models/ComparisonCardModel.swift
+# Peezy 4.0/MainInterface/Models/DailyDoseEngine.swift
+# Peezy 4.0/MainInterface/Models/PackingPlanStore.swift

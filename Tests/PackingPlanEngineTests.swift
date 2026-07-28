@@ -112,6 +112,95 @@ struct PackingPlanEngineTests {
         }
         check(regeneratedMatches.first?.completedAt == completedAt, "date regeneration preserves completed source keys")
 
+        check(PackingConstants.minimumRoomMinutes(for: "Kitchen") == 150,
+              "kitchen room floor is locked at 150 minutes")
+        check(PackingConstants.minimumRoomMinutes(for: "Garage") == 120,
+              "garage room floor is locked at 120 minutes")
+        check(PackingConstants.minimumRoomMinutes(for: "Bedroom 2") == 60,
+              "bedroom room floor is locked at 60 minutes")
+        check(PackingConstants.minimumRoomMinutes(for: "Bathroom") == 30,
+              "bathroom room floor is locked at 30 minutes")
+
+        let sparseRooms = [
+            room("Garage", "Tape"),
+            room("Bedroom 2", "Shirt"),
+            room("Bedroom 3", "Socks"),
+            room("Bathroom", "Soap"),
+            room("Kitchen", "Serving spoon")
+        ]
+        let sparsePlan = PackingPlanEngine.generate(
+            rooms: sparseRooms,
+            moveDate: roomyMoveDate,
+            today: today,
+            calendar: calendar
+        )
+        check(roomMinutes("Garage", in: sparsePlan) == 120, "sparse garage floor binds once")
+        check(roomMinutes("Bedroom 2", in: sparsePlan) == 60, "first sparse bedroom receives its floor")
+        check(roomMinutes("Bedroom 3", in: sparsePlan) == 60, "second sparse bedroom receives its own floor")
+        check(roomMinutes("Bathroom", in: sparsePlan) == 30, "sparse bathroom floor binds once")
+        check(roomMinutes("Kitchen", in: sparsePlan) == 150,
+              "sparse kitchen receives one aggregate floor before splitting")
+        check(roomSessionCount("Kitchen", in: sparsePlan) >= 2,
+              "kitchen has at least two pre-compression sessions")
+        check(sparsePlan.sessions.filter { !$0.isFirstNightBag }.allSatisfy { $0.estMinutes <= 40 },
+              "floor-adjusted rooms split into at-most-40-minute drafts")
+
+        let heavyGarage = PackingPlanEngine.generate(
+            rooms: [PackingRoomInput(
+                name: "Garage",
+                items: [PackingPlanItem(name: "Packed bins", cubicFeet: 120)]
+            )],
+            moveDate: roomyMoveDate,
+            today: today,
+            calendar: calendar
+        )
+        check(roomMinutes("Garage", in: heavyGarage) == 160,
+              "item-derived garage work wins when greater than the floor")
+
+        let splitKitchen = PackingPlanEngine.generate(
+            rooms: [PackingRoomInput(name: "Kitchen", items: [
+                PackingPlanItem(name: "Serving platters", cubicFeet: 3),
+                PackingPlanItem(name: "Coffee mugs", cubicFeet: 3)
+            ])],
+            moveDate: roomyMoveDate,
+            today: today,
+            calendar: calendar
+        )
+        check(roomMinutes("Kitchen", in: splitKitchen) == 150,
+              "kitchen floor is shared across variants rather than applied twice")
+        check(roomSessionCount("Kitchen", in: splitKitchen) >= 2,
+              "split kitchen keeps its pre-compression session minimum")
+
+        let heavyKitchen = PackingPlanEngine.generate(
+            rooms: [PackingRoomInput(
+                name: "Kitchen",
+                items: [PackingPlanItem(name: "Packed pantry bins", cubicFeet: 300)]
+            )],
+            moveDate: roomyMoveDate,
+            today: today,
+            calendar: calendar
+        )
+        check(roomMinutes("Kitchen", in: heavyKitchen) == 400,
+              "large kitchen item-derived work wins over the floor")
+        check(roomSessionCount("Kitchen", in: heavyKitchen) >= 2,
+              "large one-variant kitchen still has multiple sessions")
+        check(heavyKitchen.sessions.filter { !$0.isFirstNightBag }.allSatisfy { $0.estMinutes <= 40 },
+              "large kitchen work is chunked into approximately 40-minute drafts")
+
+        let compressedKitchen = PackingPlanEngine.generate(
+            rooms: [PackingRoomInput(name: "Kitchen", items: [
+                PackingPlanItem(name: "Serving platters", cubicFeet: 3),
+                PackingPlanItem(name: "Coffee mugs", cubicFeet: 3)
+            ])],
+            moveDate: date(2026, 7, 29, calendar: calendar),
+            today: today,
+            calendar: calendar
+        )
+        check(roomSessionCount("Kitchen", in: compressedKitchen) < roomSessionCount("Kitchen", in: splitKitchen),
+              "short-timeline compression may merge kitchen drafts")
+        check(roomMinutes("Kitchen", in: compressedKitchen) == 150,
+              "short-timeline merging preserves kitchen minutes")
+
         if failures.isEmpty {
             print("\nPackingPlanEngineTests: PASS (\(checksRun) assertions)")
         } else {
@@ -142,6 +231,16 @@ struct PackingPlanEngineTests {
 
     private static func index(ofPrefix prefix: String, in values: [String]) -> Int {
         values.firstIndex(where: { $0.hasPrefix(prefix) }) ?? Int.max
+    }
+
+    private static func roomMinutes(_ room: String, in plan: PackingPlan) -> Int {
+        plan.sessions
+            .filter { !$0.isFirstNightBag && $0.rooms.contains(room) }
+            .reduce(0) { $0 + $1.estMinutes }
+    }
+
+    private static func roomSessionCount(_ room: String, in plan: PackingPlan) -> Int {
+        plan.sessions.filter { !$0.isFirstNightBag && $0.rooms.contains(room) }.count
     }
 
     private static func replacing(_ session: PackingSession, scheduledDate: Date) -> PackingSession {
