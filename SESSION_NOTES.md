@@ -327,3 +327,103 @@ All remaining launch and maintenance work is tracked only in
 - Once decided, add the canonical coverage-room mapping/confidence tiers,
   storage-stop calibration/copy, packing-floor semantics, and calibration path
   to conventions so later clients do not infer them again.
+
+## Estimate Integrity chip — Phases B–G complete (2026-07-28)
+
+### What the spec got wrong or left ambiguous
+
+- Phase G originally assumed byte-stable vision output. Three identical-input
+  runs proved the model has ordinary naming, category, quantity, and cube
+  variance, so prompt changes must be judged against a measured same-prompt
+  band rather than a byte-identical diff.
+- The attempted identity-ledger prompt addressed one duplicated decorative
+  heart-frame item under 1 cu ft but destabilized cube-material inventory:
+  armchairs moved `4 → 5 → 5`, and the credenza disappeared in run 3. Requested
+  material cube moved from 169 cu ft on the original prompt to 163/188/173 cu ft
+  on the rejected prompt. The approach was rejected on cost and rolled back to
+  the exact prompt at model-migration commit `4023ca3`; no second prompt attempt
+  occurred.
+- “Deduplication” needed two separate meanings. The accepted deterministic
+  post-processor is exact-entry aggregation: NFKC/case/punctuation/whitespace
+  normalized name plus exact category, stable first occurrence, and summed
+  quantity. It performs no fuzzy or semantic identity matching and therefore
+  does not claim to reduce a duplicated physical count when names differ.
+- A useful cube-material variance report requires identity rows as well as
+  totals. The rejected prompt's extra chair and missing credenza could otherwise
+  cancel in aggregate. The controlled ground truth now includes the credenza
+  and explicit aliases/category expectations.
+
+### Phase B–F implementation ledger
+
+- Phase B commits `f58a5a1` and `0d91619` added the normalized expected-room
+  coverage model, missing-bedroom rows, dwelling garage/basement mapping,
+  scanned extras, the capped high-side confidence notch, the Not seen strip,
+  and the Nothing there resolution action.
+- Phase C commits `adb064e` and `2f20594` replaced the cube threshold with the
+  largest-active-crew physical-hours gate and routed scopes with no crew at or
+  below six hours to the concierge quote card. The why-line invariant is now
+  true by construction; `bigMoveCubicFeetGate` is gone.
+- Phase D commits `e6905fd` and `0c27869` modeled storage as an optional moving-day
+  stop, added the locked 0.75 load hours before ceiling, summed geocoded legs,
+  retained cube-only storage when it is not a stop, and added the locked
+  30-minute/address disclosure fallback.
+- Phase E commit `568a7dc` applies room floors before session splitting and then
+  runs existing approximately-40-minute chunking/compression; the kitchen
+  two-session minimum is established before compression.
+- Phase F commits `b2e78b9` and `2b4c4bb` write backend-owned
+  `estimateCalibration/{autoId}` records transactionally from `submitCheckIn`,
+  retain `kitCalibration` under the user, and reject Boolean values masquerading
+  as numeric booking metrics. Fresh validation passed F1–F6, including the
+  signed live write/readback/cleanup. Only `functions:submitCheckIn` deployed.
+
+### Phase G final regression baselines
+
+- No prior byte-identical `processInventory` baseline existed. The separately
+  committed model migration `4023ca3` replaced the retired model with
+  `claude-sonnet-4-6` and deployed only `functions:processInventory`.
+- The controlled fixture is five overlapping generated camera views of one
+  furnished room. Its three final runs used the same deployed source SHA-256
+  `b7ac389f3288f60644f745a0ebc765a397bac21a5aed9ef9f5e409edc42d3141`.
+  All nine ground-truth groups were present with no duplicate or missing group.
+- Tracked cube-material identity counts were invariant: sofa `1/1/1`, armchairs
+  `4/4/4`, coffee table `1/1/1`, side table `1/1/1`, and credenza `1/1/1`.
+  The identity-count variance band is therefore width 0.
+- For the requested material categories (`furniture`, `appliance`, `boxes`),
+  entry counts were `5/5/6`, reported units `8/8/9`, and total cube
+  `173/178/174` cu ft. The observed regression tolerance is: tracked identity
+  count width 0; category-material entry/unit width 1; total material-cube width
+  5 cu ft, or 2.89% of the 173-cu-ft minimum. Run 3's extra category-material
+  row was an area-rug category drift, not an identity/count change.
+- Supplemental all-item cube was `205.1/210.9/192.8` cu ft, an 18.1-cu-ft band.
+  Future prompt work must report this separately and must not substitute it for
+  the narrower requested-category band.
+- The realistic multi-room baseline contains Living room 11 entries and Family
+  room 29 entries: 40 combined entries, reported quantity 58, and 195.85 cu ft.
+  Every one of its eight input frames is SHA-256 pinned, and the combined output
+  is stored alongside the per-room output.
+- Commit `8f02be0` contains the controlled and multi-room baselines, five-frame
+  fixture, frame hashes, diagnostic/variance harness, rollback proof, exact-entry
+  aggregation, and unit tests.
+
+### Validation, deployment, and close ledger
+
+- The exact-entry aggregator passed 4/4 focused tests. The final Functions suite
+  passed 23/23; the final diagnostic/baseline suite passed 9/9; syntax and walked
+  diff checks passed. Fresh source and artifact validators passed G1–G5 and G7.
+- The rejected prompt was deployed only after its diagnostic found the decorative
+  duplicate. The final sanctioned deployment again targeted only
+  `functions:processInventory` and combined the exact `4023ca3` prompt rollback
+  with deterministic exact-entry aggregation. No rules, broad-functions,
+  catalog, or flow deployment/reseed occurred.
+- Exact live-fixture cleanup was independently verified at zero remaining
+  Phase-G Firestore session documents and zero Storage objects. Source sessions
+  were never mutated.
+- `peezyBrain` and `.env.example` now pin `claude-sonnet-4-6` in commit
+  `fa2a324`; focused 3/3 and full-suite validation passed. No deployment was
+  needed because `peezyRespond` is orphaned from the current iOS client and
+  `healthCheck` never invokes Anthropic. The intentional negative guard and
+  archival inventory spec/build logs remain untouched.
+- Remote mutations across B–G were limited to the sanctioned
+  `functions:submitCheckIn` and scoped `functions:processInventory` deployments.
+  Flow/catalog data did not change, so no reseed ran. This SESSION_NOTES block
+  is the final repository edit/action of the session.
