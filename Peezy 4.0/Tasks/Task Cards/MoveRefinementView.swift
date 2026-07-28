@@ -40,7 +40,7 @@ struct MoveRefinementView: View {
                         .accessibilityIdentifier("movers.refinement.destination_bedrooms")
                     }
 
-                    Toggle("Include a storage stop", isOn: $model.hasStorage)
+                    Toggle("Include items from storage", isOn: $model.hasStorage)
                         .font(.body)
                         .accessibilityIdentifier("movers.refinement.has_storage")
 
@@ -63,6 +63,22 @@ struct MoveRefinementView: View {
                         }
                         .pickerStyle(.segmented)
                         .accessibilityIdentifier("movers.refinement.storage_fullness")
+
+                        Toggle("Is your storage unit a stop on moving day?", isOn: $model.storageStopOnMovingDay)
+                            .font(.body)
+                            .accessibilityIdentifier("movers.refinement.storage_stop")
+
+                        if model.storageStopOnMovingDay {
+                            fieldLabel("Storage unit address or city (optional)")
+                            TextField("Storage unit address or city", text: $model.storageUnitAddress)
+                                .textInputAutocapitalization(.words)
+                                .padding(PeezyTheme.Layout.cardPaddingSmall)
+                                .background(
+                                    Color.white.opacity(0.65),
+                                    in: .rect(cornerRadius: PeezyTheme.Layout.cornerRadiusSmall)
+                                )
+                                .accessibilityIdentifier("movers.refinement.storage_address")
+                        }
                     }
 
                     fieldLabel("Origin access")

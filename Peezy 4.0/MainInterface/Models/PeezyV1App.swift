@@ -40,7 +40,9 @@ struct PeezyV1App: App {
     @ViewBuilder
     private var rootView: some View {
         #if DEBUG
-        if ProcessInfo.processInfo.arguments.contains("--estimate-integrity-phase-c") {
+        if ProcessInfo.processInfo.arguments.contains("--estimate-integrity-phase-d") {
+            EstimateIntegrityPhaseDStorageFixture()
+        } else if ProcessInfo.processInfo.arguments.contains("--estimate-integrity-phase-c") {
             EstimateIntegrityPhaseCConciergeFixture()
         } else if ProcessInfo.processInfo.arguments.contains("--estimate-integrity-phase-b") {
             EstimateIntegrityPhaseBCoverageFixture()
@@ -54,6 +56,19 @@ struct PeezyV1App: App {
 }
 
 #if DEBUG
+@MainActor
+private struct EstimateIntegrityPhaseDStorageFixture: View {
+    @State private var model = MoversFlowViewModel()
+
+    var body: some View {
+        ZStack {
+            InteractiveBackground()
+                .ignoresSafeArea()
+            MoveRefinementView(model: model, onContinue: {}, onBack: {})
+        }
+    }
+}
+
 private struct EstimateIntegrityPhaseCConciergeFixture: View {
     @State private var notes = ""
 
