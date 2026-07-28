@@ -27,7 +27,7 @@ function getAnthropicClient() {
 
 // Default configuration
 const DEFAULT_CONFIG = {
-  model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-20250514',
+  model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6',
   maxTokens: parseInt(process.env.MAX_TOKENS) || 1024,
   temperature: 0.7,
   timeout: parseInt(process.env.REQUEST_TIMEOUT) || 25000
