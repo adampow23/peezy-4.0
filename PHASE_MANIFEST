@@ -1,36 +1,43 @@
-# Chip Estimate Integrity — Phase C: Physical-hours concierge gate (CORE)
+# Chip Estimate Integrity — Phase D: Storage-stop legs (CORE)
 #
-# ACCEPTANCE CONTRACT (locked before Phase C implementation edits)
-# C1 GIVEN a local-move scope and active mover rate cards, WHEN the largest
-#    positive crew size advertised across all active vendors is evaluated using
-#    unrounded physical work hours, THEN <= 6.0 routes to instant comparison and
-#    > 6.0 routes to concierge. Drive time and price never affect this gate.
-# C2 GIVEN an active vendor whose card has no positive-rate crew capable of <= 6.0
-#    physical hours, WHEN PricingEngine estimates that card, THEN it returns nil;
-#    it never falls back to an over-ceiling quote. Zero/nonpositive rates are not
-#    available crews.
-# C3 GIVEN an instant estimate, WHEN its locked why-line is emitted, THEN the
-#    selected crew's unrounded physical hours are <= 6.0 by construction. Tests
-#    assert the invariant at the 6.0 boundary and immediately above it.
-# C4 GIVEN a local move above the global largest-crew ceiling, WHEN comparison is
-#    prepared, THEN quoteRequest=true, vendor cards are absent, and the existing
-#    concierge card renders exactly "This is a big one." and "Big moves deserve
-#    a hand-built quote — we'll have yours within a day." A simulator screenshot
-#    captures the card. Long-distance gating remains intact.
-# C5 GIVEN the repository and built app, WHEN the phase is audited, THEN there is
-#    no bigMoveCubicFeetGate or other cube threshold. CORE tests, simulator tests,
-#    a fresh-context validator, and walked hub-file diffs pass. No deploy occurs.
+# ACCEPTANCE CONTRACT (locked before Phase D implementation edits)
+# D1 GIVEN hasStorage=Yes and the moving-day-stop answer is No, WHEN scope is
+#    assembled, THEN storage size/fullness contributes its existing cube only;
+#    drive time remains origin-to-destination, no stop leg or 0.75 load hour is
+#    added, and no storage-route disclosure is emitted.
+# D2 GIVEN the moving-day-stop answer is Yes and the optional storage address
+#    resolves, WHEN scope is assembled, THEN drive time is the sum of
+#    origin-to-storage plus storage-to-destination ETAs and exactly
+#    storageStopLoadHours=0.75 (LOCKED-pending-calibration) is added to unrounded
+#    physical hours before ceiling evaluation and display-hour rounding.
+# D3 GIVEN a moving-day storage stop with no unit address or a failed stop leg,
+#    WHEN scope is assembled, THEN direct origin-to-destination ETA (or its
+#    existing fallback) receives a flat +30 minutes and the estimate discloses
+#    exactly "Storage stop estimated — add the unit's address to tighten this."
+# D4 GIVEN an otherwise sub-ceiling scope, WHEN the 0.75-hour stop addition moves
+#    unrounded physical hours above 6.0, THEN the Phase C gate routes concierge;
+#    boundary tests prove the stop addition occurs before the ceiling/rounding.
+# D5 GIVEN hasStorage=Yes in mover refinement, WHEN the card renders, THEN it asks
+#    "Is your storage unit a stop on moving day?" and accepts an optional unit
+#    address only for Yes. Booking/quote payloads retain storage contents and stop
+#    routing facts. CORE and simulator tests, fresh validation, and walked diffs
+#    pass. No deploy or flow reseed occurs.
 #
 # EDIT SITES
 # PHASE_MANIFEST
+# Peezy 4.0/MainInterface/Models/PricingConstants.swift
 # Peezy 4.0/MainInterface/Models/PricingEngine.swift
-# Peezy 4.0/MainInterface/Models/Vendor.swift
+# Peezy 4.0/MainInterface/Models/MoveScopeFactory.swift
+# Peezy 4.0/MainInterface/Models/PricingCalibrationHarness.swift (model migration)
 # Peezy 4.0/MainInterface/Models/MoversFlowViewModel.swift
-# Peezy 4.0/Tasks/Task Cards/FindMoversFlow.swift
+# Peezy 4.0/MainInterface/Models/MoversBookingPayload.swift
 # Peezy 4.0/MainInterface/Models/PeezyV1App.swift (DEBUG fixture route only)
+# Peezy 4.0/Tasks/Task Cards/MoveRefinementView.swift
 # Tests/PricingEngineTests.swift
-# Peezy 4.0Tests/EstimateIntegrityPhaseCTests.swift (new)
-# Peezy 4.0UITests/EstimateIntegrityPhaseCUITests.swift (new)
+# Peezy 4.0Tests/EstimateIntegrityTests.swift (model migration)
+# Peezy 4.0Tests/EstimateIntegrityPhaseDTests.swift (new)
+# Peezy 4.0Tests/MoversBookingPayloadTests.swift
+# Peezy 4.0UITests/EstimateIntegrityPhaseDUITests.swift (new)
 # SESSION_NOTES.md (session-final write only)
 #
 # READ SITES
@@ -39,7 +46,6 @@
 # peezy-conventions-v2.md
 # CLAUDE.md
 # peezy-v1-architecture.md
+# Peezy 4.0/MainInterface/Models/PeezyIdentity.swift
 # Peezy 4.0/MainInterface/Models/MoversVendorQuote.swift
-# Peezy 4.0/MainInterface/Models/MoversBookingPayload.swift
 # Peezy 4.0/MainInterface/Models/ComparisonCardModel.swift
-# Peezy 4.0/MainInterface/Views/MoversComparisonView.swift

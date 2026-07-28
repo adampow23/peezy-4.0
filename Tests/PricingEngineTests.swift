@@ -280,16 +280,34 @@ struct PricingEngineTests {
               "unresolved room emits locked disclosure")
         check(!scannedSameHome.disclosures.contains("Some rooms weren't scanned."),
               "resolved coverage omits unresolved-room disclosure")
-        let storageStop = StorageStop(size: "Medium", fullness: "1/2")
-        check(storageStop.addedCubicFeet == 210, "storage size and fullness contribute cube")
+        let storageContents = StorageContents(size: "Medium", fullness: "1/2")
+        check(storageContents.addedCubicFeet == 210, "storage size and fullness contribute cube")
+        check(PricingConstants.storageStopLoadHours == 0.75,
+              "moving-day storage stop load time remains locked at 0.75 hours")
+        check(PricingConstants.storageStopFallbackDriveMinutes == 30,
+              "missing storage route allowance remains locked at 30 minutes")
         let storageScope = MoveScope(
-            cubicFeet: baseline.cubicFeet + storageStop.addedCubicFeet,
+            cubicFeet: baseline.cubicFeet + storageContents.addedCubicFeet,
             driveMinutes: 0, originAccess: .ground, destAccess: .ground,
-            packedStatus: .packed, storageStop: storageStop, cubeSource: .inventoryScan
+            packedStatus: .packed, storageContents: storageContents, cubeSource: .inventoryScan
         )
         check(
             PricingEngine.loadHours(for: storageScope, crew: 2) > PricingEngine.loadHours(for: baseline, crew: 2),
             "storage contribution increases modeled labor"
+        )
+        let movingDayStorageStopScope = MoveScope(
+            cubicFeet: storageScope.cubicFeet,
+            driveMinutes: 0, originAccess: .ground, destAccess: .ground,
+            packedStatus: .packed,
+            storageContents: storageContents,
+            storageStop: StorageStop(address: "100 Storage Way", usedEstimatedRoute: false),
+            cubeSource: .inventoryScan
+        )
+        check(
+            PricingEngine.physicalHours(for: movingDayStorageStopScope, crew: 2)
+                == PricingEngine.physicalHours(for: storageScope, crew: 2)
+                    + PricingConstants.storageStopLoadHours,
+            "moving-day storage stop adds exactly 0.75 unrounded physical hours"
         )
         let defaultAccessScope = MoveScope(
             cubicFeet: 600, driveMinutes: 0, originAccess: .defaulted, destAccess: .defaulted,

@@ -19,7 +19,7 @@ struct EstimateIntegrityPhaseATests {
             let result = MoveScopeFactory.cubeResult(
                 inventoryItems: [scanItem],
                 bedroomsAnswer: bedrooms,
-                storageStop: nil
+                storageContents: nil
             )
             #expect(result.source == .inventoryScan)
             #expect(result.cubicFeet == expectedCube)
@@ -28,7 +28,7 @@ struct EstimateIntegrityPhaseATests {
         let withStorage = MoveScopeFactory.cubeResult(
             inventoryItems: [scanItem],
             bedroomsAnswer: "1 Bedroom",
-            storageStop: StorageStop(size: "Medium", fullness: "1/2")
+            storageContents: StorageContents(size: "Medium", fullness: "1/2")
         )
         #expect(withStorage.cubicFeet == 390)
     }
@@ -37,7 +37,7 @@ struct EstimateIntegrityPhaseATests {
         let result = MoveScopeFactory.cubeResult(
             inventoryItems: [],
             bedroomsAnswer: "1 Bedroom",
-            storageStop: nil
+            storageContents: nil
         )
 
         #expect(result.source == .bedroomsFallback)
@@ -46,7 +46,7 @@ struct EstimateIntegrityPhaseATests {
         let withStorage = MoveScopeFactory.cubeResult(
             inventoryItems: [],
             bedroomsAnswer: "1 Bedroom",
-            storageStop: StorageStop(size: "Medium", fullness: "1/2")
+            storageContents: StorageContents(size: "Medium", fullness: "1/2")
         )
         #expect(withStorage.cubicFeet == 710)
     }
@@ -68,7 +68,7 @@ struct EstimateIntegrityPhaseATests {
         let adjustedCube = MoveScopeFactory.cubeResult(
             inventoryItems: [inventoryItem(cubicFeet: 600)],
             bedroomsAnswer: "1 Bedroom",
-            storageStop: nil
+            storageContents: nil
         )
         let adjusted = MoveScope(
             cubicFeet: adjustedCube.cubicFeet,

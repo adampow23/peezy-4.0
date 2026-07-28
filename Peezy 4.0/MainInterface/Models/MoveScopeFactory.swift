@@ -11,6 +11,37 @@ import CoreLocation
 import Foundation
 import MapKit
 
+protocol MoveRouteEstimating {
+    func etaMinutes(from: String, to: String) async -> Double?
+}
+
+struct MapKitMoveRouteEstimator: MoveRouteEstimating {
+    nonisolated init() {}
+
+    func etaMinutes(from: String, to: String) async -> Double? {
+        let trimmedFrom = from.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedTo = to.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedFrom.isEmpty, !trimmedTo.isEmpty else { return nil }
+
+        do {
+            let geocoder = CLGeocoder()
+            guard let originPlacemark = try await geocoder.geocodeAddressString(trimmedFrom).first,
+                  let destinationPlacemark = try await geocoder.geocodeAddressString(trimmedTo).first
+            else { return nil }
+
+            let request = MKDirections.Request()
+            request.transportType = .automobile
+            request.source = MKMapItem(placemark: MKPlacemark(placemark: originPlacemark))
+            request.destination = MKMapItem(placemark: MKPlacemark(placemark: destinationPlacemark))
+            let response = try await MKDirections(request: request).calculate()
+            guard let route = response.routes.first else { return nil }
+            return route.expectedTravelTime / 60
+        } catch {
+            return nil
+        }
+    }
+}
+
 enum MoveScopeFactory {
     struct CubeResult: Equatable {
         let cubicFeet: Double
@@ -20,9 +51,9 @@ enum MoveScopeFactory {
     static func cubeResult(
         inventoryItems: [InventoryItem],
         bedroomsAnswer: String,
-        storageStop: StorageStop?
+        storageContents: StorageContents?
     ) -> CubeResult {
-        let storageCube = storageStop?.addedCubicFeet ?? 0
+        let storageCube = storageContents?.addedCubicFeet ?? 0
         let includedItems = inventoryItems.filter(\.shouldMove)
         guard !includedItems.isEmpty else {
             // The bedroom fallback ranges already model closets, cabinets, and
@@ -48,14 +79,14 @@ enum MoveScopeFactory {
         )
     }
 
-    static func storageStop(from assessment: [String: Any]) -> StorageStop? {
+    static func storageContents(from assessment: [String: Any]) -> StorageContents? {
         guard (assessment["hasStorage"] as? String)?.lowercased() == "yes",
               let size = assessment["storageSize"] as? String,
               let fullness = assessment["storageFullness"] as? String,
               !size.isEmpty,
               !fullness.isEmpty
         else { return nil }
-        return StorageStop(size: size, fullness: fullness)
+        return StorageContents(size: size, fullness: fullness)
     }
 
     /// A completed RESERVE_ACCESS task can supply a fresher access selection
@@ -120,23 +151,25 @@ enum MoveScopeFactory {
         identity: PeezyIdentity,
         packedStatus: PackedStatus,
         reserveAccessAnswers: [String: String] = [:],
-        unresolvedUnseenRoomCount: Int = 0
+        unresolvedUnseenRoomCount: Int = 0,
+        routeEstimator: any MoveRouteEstimating = MapKitMoveRouteEstimator()
     ) async -> MoveScope {
-        let storageStop = storageStop(from: assessment)
+        let storageContents = storageContents(from: assessment)
         let bedrooms = (assessment["currentBedrooms"] as? String) ?? ""
         let cube = cubeResult(
             inventoryItems: inventoryItems,
             bedroomsAnswer: bedrooms,
-            storageStop: storageStop
+            storageContents: storageContents
         )
-        let driveMinutes = await etaMinutes(
-            from: identity.currentAddress,
-            to: identity.newAddress
-        ) ?? PricingConstants.defaultDriveMinutes
+        let route = await driveRoute(
+            identity: identity,
+            assessment: assessment,
+            estimator: routeEstimator
+        )
 
         return MoveScope(
             cubicFeet: cube.cubicFeet,
-            driveMinutes: driveMinutes,
+            driveMinutes: route.minutes,
             originAccess: access(
                 from: assessment["currentFloorAccess"] as? String,
                 reservationAnswer: reserveAccessAnswers["RESERVE_ACCESS_OLD"]
@@ -147,36 +180,59 @@ enum MoveScopeFactory {
             ),
             packedStatus: packedStatus,
             specialtyItems: specialtyItems(from: inventoryItems),
-            storageStop: storageStop,
+            storageContents: storageContents,
+            storageStop: route.storageStop,
             serviceDate: identity.moveDate,
             cubeSource: cube.source,
             unresolvedUnseenRoomCount: unresolvedUnseenRoomCount
         )
     }
 
-    /// Uses the identity addresses, rather than a hand-entered distance field,
-    /// so the quote's drive time is the same ETA a mover would inspect.
-    static func etaMinutes(from origin: PeezyAddress?, to destination: PeezyAddress?) async -> Double? {
-        guard let origin, let destination,
-              !origin.raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-              !destination.raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        else { return nil }
+    private struct DriveRoute {
+        let minutes: Double
+        let storageStop: StorageStop?
+    }
 
-        do {
-            let geocoder = CLGeocoder()
-            guard let originPlacemark = try await geocoder.geocodeAddressString(origin.raw).first,
-                  let destinationPlacemark = try await geocoder.geocodeAddressString(destination.raw).first
-            else { return nil }
+    /// Uses identity addresses for the direct route. An addressed storage stop
+    /// replaces that route with two real legs. Missing/failed stop routing keeps
+    /// the direct ETA and adds the locked 30-minute allowance.
+    private static func driveRoute(
+        identity: PeezyIdentity,
+        assessment: [String: Any],
+        estimator: any MoveRouteEstimating
+    ) async -> DriveRoute {
+        let origin = identity.currentAddress?.raw.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let destination = identity.newAddress?.raw.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let hasStorage = (assessment["hasStorage"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased() == "yes"
+        let isMovingDayStop = hasStorage && (assessment["storageStopOnMovingDay"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased() == "yes"
 
-            let request = MKDirections.Request()
-            request.transportType = .automobile
-            request.source = MKMapItem(placemark: MKPlacemark(placemark: originPlacemark))
-            request.destination = MKMapItem(placemark: MKPlacemark(placemark: destinationPlacemark))
-            let response = try await MKDirections(request: request).calculate()
-            guard let route = response.routes.first else { return nil }
-            return route.expectedTravelTime / 60
-        } catch {
-            return nil
+        guard isMovingDayStop else {
+            let direct = await estimator.etaMinutes(from: origin, to: destination)
+                ?? PricingConstants.defaultDriveMinutes
+            return DriveRoute(minutes: direct, storageStop: nil)
         }
+
+        let address = (assessment["storageUnitAddress"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedAddress = address?.isEmpty == false ? address : nil
+        if let normalizedAddress,
+           let firstLeg = await estimator.etaMinutes(from: origin, to: normalizedAddress),
+           let secondLeg = await estimator.etaMinutes(from: normalizedAddress, to: destination) {
+            return DriveRoute(
+                minutes: firstLeg + secondLeg,
+                storageStop: StorageStop(address: normalizedAddress, usedEstimatedRoute: false)
+            )
+        }
+
+        let direct = await estimator.etaMinutes(from: origin, to: destination)
+            ?? PricingConstants.defaultDriveMinutes
+        return DriveRoute(
+            minutes: direct + PricingConstants.storageStopFallbackDriveMinutes,
+            storageStop: StorageStop(address: normalizedAddress, usedEstimatedRoute: true)
+        )
     }
 }

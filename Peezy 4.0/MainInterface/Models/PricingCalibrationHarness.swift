@@ -90,7 +90,7 @@ enum PricingCalibrationHarness {
                       originAccess: .ground,
                       destAccess: MoveAccess(route: .elevator, elevatorReserved: true, longCarry: true),
                       packedStatus: .packed, specialtyItems: [.piano],
-                      storageStop: StorageStop(size: "Medium", fullness: "1/2"),
+                      storageContents: StorageContents(size: "Medium", fullness: "1/2"),
                       serviceDate: date(2026, 8, 29), cubeSource: .inventoryScan),
             rateCard
         ),

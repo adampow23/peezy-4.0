@@ -57,11 +57,17 @@ struct MoversBookingPayload {
             "cubeSource": scope.cubeSource.rawValue,
             "unresolvedUnseenRoomCount": scope.unresolvedUnseenRoomCount
         ]
-        if let storage = scope.storageStop {
-            object["storageStop"] = [
+        if let storage = scope.storageContents {
+            object["storageContents"] = [
                 "size": storage.size,
                 "fullness": storage.fullness,
                 "addedCubicFeet": storage.addedCubicFeet
+            ]
+        }
+        if let stop = scope.storageStop {
+            object["storageStop"] = [
+                "address": stop.address ?? "",
+                "usedEstimatedRoute": stop.usedEstimatedRoute
             ]
         }
         return object

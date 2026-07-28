@@ -24,7 +24,8 @@ struct MoversBookingPayloadTests {
             cubicFeet: 900, driveMinutes: 24,
             originAccess: MoveAccess(route: .stairs, elevatorReserved: false, longCarry: false),
             destAccess: .ground, packedStatus: .packed,
-            storageStop: StorageStop(size: "Medium", fullness: "1/2"),
+            storageContents: StorageContents(size: "Medium", fullness: "1/2"),
+            storageStop: StorageStop(address: "300 Storage Way", usedEstimatedRoute: false),
             cubeSource: .inventoryScan,
             unresolvedUnseenRoomCount: 2
         )
@@ -75,6 +76,36 @@ struct MoversBookingPayloadTests {
             JSONSerialization.jsonObject(with: Data(scopeJSON.utf8)) as? [String: Any]
         )
         #expect((scopeObject["unresolvedUnseenRoomCount"] as? NSNumber)?.intValue == 2)
+        let storageContents = try #require(scopeObject["storageContents"] as? [String: Any])
+        #expect(storageContents["size"] as? String == "Medium")
+        #expect((storageContents["addedCubicFeet"] as? NSNumber)?.doubleValue == 210)
+        let storageStop = try #require(scopeObject["storageStop"] as? [String: Any])
+        #expect(storageStop["address"] as? String == "300 Storage Way")
+        #expect((storageStop["usedEstimatedRoute"] as? NSNumber)?.boolValue == false)
+
+        let contentsOnlyScope = MoveScope(
+            cubicFeet: 900,
+            driveMinutes: 24,
+            originAccess: .ground,
+            destAccess: .ground,
+            packedStatus: .packed,
+            storageContents: StorageContents(size: "Medium", fullness: "1/2"),
+            cubeSource: .inventoryScan
+        )
+        let contentsOnlyPayload = MoversBookingPayload(
+            identity: identity,
+            scope: contentsOnlyScope,
+            quote: nil,
+            quoteRequest: true,
+            requestedArrivalWindow: "TEST RUN — flexible",
+            notes: "TEST RUN isolated account"
+        ).workflowAnswers()
+        let contentsOnlyJSON = try #require(contentsOnlyPayload["scope"]?.first)
+        let contentsOnlyObject = try #require(
+            JSONSerialization.jsonObject(with: Data(contentsOnlyJSON.utf8)) as? [String: Any]
+        )
+        #expect(contentsOnlyObject["storageContents"] != nil)
+        #expect(contentsOnlyObject["storageStop"] == nil)
 
         let quoteRequest = MoversBookingPayload(
             identity: identity,

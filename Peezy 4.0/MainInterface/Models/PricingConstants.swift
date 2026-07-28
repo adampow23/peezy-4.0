@@ -85,6 +85,10 @@ enum PricingConstants {
     /// addresses are absent or not geocodable. LOCKED-pending-calibration.
     static let defaultDriveMinutes: Double = 30
 
+    /// Flat drive-time allowance for a moving-day storage stop whose unit
+    /// address or route is unavailable. LOCKED-pending-calibration.
+    static let storageStopFallbackDriveMinutes: Double = 30
+
     // MARK: Labor constants
 
     /// LOCKED-pending-calibration cubic feet handled per crew hour.
@@ -113,6 +117,10 @@ enum PricingConstants {
         .treadmill: 0.75,
         .marbleTops: 1.00
     ]
+
+    /// LOCKED-pending-calibration handling time for an actual moving-day
+    /// storage stop. Added to unrounded physical hours before ceiling checks.
+    static let storageStopLoadHours: Double = 0.75
 
     // MARK: Confidence constants
 

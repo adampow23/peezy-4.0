@@ -44,13 +44,18 @@ enum MoverQuoteRoute: Equatable {
     case conciergeQuote
 }
 
-struct StorageStop: Equatable {
+struct StorageContents: Equatable {
     let size: String
     let fullness: String
 
     var addedCubicFeet: Double {
         PricingConstants.storageCubeFeet(size: size, fullness: fullness)
     }
+}
+
+struct StorageStop: Equatable {
+    let address: String?
+    let usedEstimatedRoute: Bool
 }
 
 struct MoveAccess: Equatable {
@@ -94,6 +99,7 @@ struct MoveScope: Equatable {
     let destAccess: MoveAccess
     let packedStatus: PackedStatus
     let specialtyItems: [SpecialtyItem]
+    let storageContents: StorageContents?
     let storageStop: StorageStop?
     let serviceDate: Date?
     let cubeSource: CubeSource
@@ -106,6 +112,7 @@ struct MoveScope: Equatable {
         destAccess: MoveAccess,
         packedStatus: PackedStatus,
         specialtyItems: [SpecialtyItem] = [],
+        storageContents: StorageContents? = nil,
         storageStop: StorageStop? = nil,
         serviceDate: Date? = nil,
         cubeSource: CubeSource,
@@ -117,6 +124,7 @@ struct MoveScope: Equatable {
         self.destAccess = destAccess
         self.packedStatus = packedStatus
         self.specialtyItems = specialtyItems
+        self.storageContents = storageContents
         self.storageStop = storageStop
         self.serviceDate = serviceDate
         self.cubeSource = cubeSource
@@ -238,7 +246,10 @@ enum PricingEngine {
         let specialtyHours = scope.specialtyItems.reduce(0) {
             $0 + (PricingConstants.specialtyItemHours[$1] ?? 0)
         }
-        return baseHours + accessHours + specialtyHours
+        let storageStopHours = scope.storageStop == nil
+            ? 0
+            : PricingConstants.storageStopLoadHours
+        return baseHours + accessHours + specialtyHours + storageStopHours
     }
 
     static func crewQuotes(for scope: MoveScope, rateCard: PricingRateCard) -> [CrewQuote] {
@@ -361,6 +372,9 @@ enum PricingEngine {
         }
         if scope.cubeSource == .inventoryScan && scope.unresolvedUnseenRoomCount > 0 {
             result.append("Some rooms weren't scanned.")
+        }
+        if scope.storageStop?.usedEstimatedRoute == true {
+            result.append("Storage stop estimated — add the unit's address to tighten this.")
         }
         return result
     }

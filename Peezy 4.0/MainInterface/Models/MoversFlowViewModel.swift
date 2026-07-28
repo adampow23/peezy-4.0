@@ -52,6 +52,8 @@ final class MoversFlowViewModel {
     var hasStorage = false
     var storageSize = "Small"
     var storageFullness = "1/2"
+    var storageStopOnMovingDay = false
+    var storageUnitAddress = ""
     var originAccessAnswer = "Unknown"
     var destinationAccessAnswer = "Unknown"
     var originLongCarry = false
@@ -90,7 +92,8 @@ final class MoversFlowViewModel {
 
     var storageSummary: String? {
         guard hasStorage else { return nil }
-        return "\(storageSize) storage · \(storageFullness) full"
+        let stop = storageStopOnMovingDay ? " · moving-day stop" : ""
+        return "\(storageSize) storage · \(storageFullness) full\(stop)"
     }
 
     var priceBasis: String {
@@ -326,6 +329,8 @@ final class MoversFlowViewModel {
         refinedAssessment["hasStorage"] = hasStorage ? "Yes" : "No"
         refinedAssessment["storageSize"] = storageSize
         refinedAssessment["storageFullness"] = storageFullness
+        refinedAssessment["storageStopOnMovingDay"] = storageStopOnMovingDay ? "Yes" : "No"
+        refinedAssessment["storageUnitAddress"] = storageUnitAddress
         refinedAssessment["currentFloorAccess"] = originAccessAnswer == "Unknown" ? "" : originAccessAnswer
         refinedAssessment["newFloorAccess"] = destinationAccessAnswer == "Unknown" ? "" : destinationAccessAnswer
 
@@ -351,6 +356,7 @@ final class MoversFlowViewModel {
             ),
             packedStatus: base.packedStatus,
             specialtyItems: base.specialtyItems,
+            storageContents: base.storageContents,
             storageStop: base.storageStop,
             serviceDate: base.serviceDate,
             cubeSource: base.cubeSource,
@@ -364,6 +370,8 @@ final class MoversFlowViewModel {
         hasStorage = (assessment["hasStorage"] as? String)?.lowercased() == "yes"
         storageSize = Self.normalizedStorageSize(assessment["storageSize"] as? String)
         storageFullness = Self.normalizedStorageFullness(assessment["storageFullness"] as? String)
+        storageStopOnMovingDay = (assessment["storageStopOnMovingDay"] as? String)?.lowercased() == "yes"
+        storageUnitAddress = Self.nonempty(assessment["storageUnitAddress"] as? String) ?? ""
         originAccessAnswer = Self.normalizedAccess(assessment["currentFloorAccess"] as? String)
         destinationAccessAnswer = Self.normalizedAccess(assessment["newFloorAccess"] as? String)
     }
