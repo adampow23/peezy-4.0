@@ -22,6 +22,42 @@ function getAnthropicClient() {
   return anthropic;
 }
 
+function normalizedInventoryName(value) {
+  return String(value ?? '')
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .trim();
+}
+
+function mergeExactInventoryItems(items) {
+  if (!Array.isArray(items)) {
+    throw new TypeError('items must be an array');
+  }
+
+  const mergedItems = [];
+  const indexByIdentity = new Map();
+  for (const item of items) {
+    const identity = JSON.stringify([
+      normalizedInventoryName(item.name),
+      item.category
+    ]);
+    const existingIndex = indexByIdentity.get(identity);
+    if (existingIndex === undefined) {
+      indexByIdentity.set(identity, mergedItems.length);
+      mergedItems.push({ ...item });
+      continue;
+    }
+
+    const firstItem = mergedItems[existingIndex];
+    mergedItems[existingIndex] = {
+      ...firstItem,
+      quantity: firstItem.quantity + item.quantity
+    };
+  }
+  return mergedItems;
+}
+
 exports.processInventory = onCall(
   {
     timeoutSeconds: 120,
@@ -184,7 +220,7 @@ Each object must have exactly these fields:
       const validSizes = ['small', 'medium', 'large', 'oversized'];
       const validTiers = ['furniture', 'boxable'];
 
-      const items = rawItems.map((item, idx) => {
+      const normalizedItems = rawItems.map((item, idx) => {
         // Normalize bounding box if present
         let boundingBox = null;
         if (item.boundingBox && typeof item.boundingBox === 'object') {
@@ -228,6 +264,7 @@ Each object must have exactly these fields:
           notes: ''
         };
       });
+      const items = mergeExactInventoryItems(normalizedItems);
 
       // 8. Update Firestore session document
       await sessionRef.update({
@@ -253,3 +290,5 @@ Each object must have exactly these fields:
     }
   }
 );
+
+exports.mergeExactInventoryItems = mergeExactInventoryItems;

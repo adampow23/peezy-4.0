@@ -1,31 +1,76 @@
-# Chip Estimate Integrity — Phase G0: processInventory model migration (CORE)
+# Chip Estimate Integrity — Phase G: Duplicate-count diagnostic (CORE)
 #
-# ACCEPTANCE CONTRACT (locked before migration implementation edits)
-# M1 GIVEN production inventory scans fail because the deployed Anthropic model
-#    is retired, WHEN this migration ships, THEN `processInventory` requests
-#    exactly `claude-sonnet-4-6`, matching the Spec 07 resolver. The inventory
-#    vision prompt, parsing, normalization, persistence, and callable contract
-#    remain byte-identical.
-# M2 GIVEN the model migration, WHEN focused verification runs, THEN a unit guard
-#    rejects the retired identifier and requires the new identifier, Node syntax
-#    passes, and the walked diff contains no behavior change beyond model/config.
-# M3 GIVEN deployment authorization, WHEN shipping, THEN only
-#    `functions:processInventory` is deployed. No rules deploy, other function
-#    deploy, catalog reseed, or flow reseed occurs.
-# M4 GIVEN the deployed migration, WHEN a bounded signed test-bot scan runs, THEN
-#    it completes on the new model and its exact Firestore session and Storage
-#    prefix are deleted and independently verified absent.
+# ACCEPTANCE CONTRACT (G-final, locked before rollback/merge implementation)
+# G1 GIVEN the three-run rejected-prompt evidence, WHEN Phase G closes, THEN the
+#    vision prompt exactly matches `functions/processInventory.js` at commit
+#    `4023ca3`. `SESSION_NOTES.md` records that the prompt was rejected because
+#    it destabilized cube-material identities/counts (armchairs 4→5→5 and the
+#    run-3 credenza omission) to address one duplicated decorative item under
+#    one cubic foot. No second prompt attempt occurs.
+# G2 GIVEN normalized vision items, WHEN two or more entries have exactly the
+#    same deterministic normalized name AND exactly the same normalized
+#    category, THEN post-processing emits one first-occurrence entry with summed
+#    quantity and otherwise retains the first entry's fields. Case, Unicode
+#    compatibility, punctuation, and whitespace normalization are deterministic;
+#    there is no model call, fuzzy matching, or cross-category merge. Unit tests
+#    cover merge, non-merge, order, field retention, and input immutability.
+# G3 GIVEN G1 and G2 pass locally, WHEN deployment runs, THEN the single
+#    sanctioned target is `functions:processInventory`, containing both the
+#    prompt rollback and deterministic merge. No other function/rules/reseed
+#    mutation occurs.
+# G4 GIVEN the final deployed behavior, WHEN the controlled five-frame fixture
+#    runs three times on identical input, THEN all outputs are captured side by
+#    side and the run-to-run variance band is reported specifically for
+#    cube-material categories (`furniture`, `appliance`, `boxes`): identity/count
+#    ranges and total cubic-foot range. One realistic multi-room run is captured.
+#    Those controlled and multi-room artifacts become the NEW regression
+#    baselines; no prior byte-identical baseline existed, and the model migration
+#    to `claude-sonnet-4-6` is recorded.
+# G5 GIVEN the complete Phase G work, WHEN verification runs, THEN the diagnostic
+#    harness unit tests, controlled ground-truth walk, realistic multi-room
+#    output walk, fresh independent validation, and walked repository diffs pass.
+#    Exact bounded live fixture documents/objects are cleaned up; no flow/catalog
+#    reseed or unsanctioned deployment occurs.
+# G6 `SESSION_NOTES.md` is the final repository edit/action of the whole B→G
+#    session. It records the model migration, both new baselines, the duplicate
+#    verdict, whether a prompt/deploy occurred, tests, validators, and diffs.
+# G7 `functions/peezyBrain.js` and model defaults in `functions/.env.example`
+#    pin `claude-sonnet-4-6`. Only deployed Cloud Function exports proven to be
+#    backed by `peezyBrain` may be deployed; if none are live, no deploy occurs.
+#    The negative processInventory regression guard and archival iOS documents
+#    and build logs remain untouched.
 #
 # EDIT SITES
 # PHASE_MANIFEST
+# Tests/ProcessInventoryDiagnostic.js
+# Tests/ProcessInventoryDiagnostic.test.js
+# Tests/Fixtures/ProcessInventory/controlled-single-room/fixture.json
+# Tests/Fixtures/ProcessInventory/controlled-single-room/frame_0.jpg
+# Tests/Fixtures/ProcessInventory/controlled-single-room/frame_1.jpg
+# Tests/Fixtures/ProcessInventory/controlled-single-room/frame_2.jpg
+# Tests/Fixtures/ProcessInventory/controlled-single-room/frame_3.jpg
+# Tests/Fixtures/ProcessInventory/controlled-single-room/frame_4.jpg
+# Tests/Fixtures/ProcessInventory/controlled-single-room/baseline.json
+# Tests/Fixtures/ProcessInventory/realistic-multi-room/fixture.json
+# Tests/Fixtures/ProcessInventory/realistic-multi-room/baseline.json
 # functions/processInventory.js
-# functions/tests/processInventoryModel.test.js
+# functions/tests/processInventoryMerge.test.js
+# functions/peezyBrain.js
+# functions/.env.example
+# functions/tests/peezyBrainModel.test.js
+# SESSION_NOTES.md (session-final write only)
 #
 # READ SITES
 # peezy-chip-estimate-integrity.md
 # peezy-execution-protocol.md
 # peezy-conventions-v2.md
-# functions/resolveProvider.js
-# functions/peezyBrain.js
+# CLAUDE.md
+# peezy-v1-architecture.md
 # functions/index.js
+# functions/package.json
 # firebase.json
+# firestore.rules
+# storage.rules
+# Peezy 4.0/Inventory/Models/InventoryModels.swift
+# Peezy 4.0/Inventory/Services/InventoryAPIClient.swift
+# Peezy 4.0/Inventory/Services/InventoryStorageService.swift

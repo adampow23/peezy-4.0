@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "realistic-multi-room",
+  "description": "Bounded excerpts from two independently captured, furnished rooms in one realistic dwelling scan set.",
+  "sourceUserIdEnv": "PEEZY_G_REALISTIC_SOURCE_UID",
+  "rooms": [
+    {
+      "id": "living-room",
+      "roomName": "Living room",
+      "sourceSessionId": "9D71C7DD-4B90-4265-BCA1-160C94F1797F",
+      "frameCount": 5
+    },
+    {
+      "id": "family-room",
+      "roomName": "Family room",
+      "sourceSessionId": "82708BEE-542A-4D31-8628-F04E17D9D2AC",
+      "frameCount": 3
+    }
+  ]
+}

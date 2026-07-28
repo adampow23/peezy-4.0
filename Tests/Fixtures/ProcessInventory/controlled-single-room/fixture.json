@@ -1,0 +1,92 @@
+{
+  "schemaVersion": 1,
+  "id": "controlled-single-room",
+  "description": "Five overlapping camera views of one furnished lounge with locked large-item identities.",
+  "construction": {
+    "tool": "OpenAI built-in image generation/editing",
+    "useCase": "precise-object-edit",
+    "source": "Authorized furnished-room imagery available to the project",
+    "promptSummary": "Camera-only reframings; preserve one sofa, four armchairs, one rectangular coffee table, one round side table, one floor plant, one rug, one throw pillow, and grouped tabletop settings; add/remove/merge/duplicate nothing.",
+    "measurementNote": "The visible wooden counter/credenza is tracked because rejected-prompt run 3 omitted it after prior runs classified it as movable furniture."
+  },
+  "rooms": [
+    {
+      "id": "lounge",
+      "roomName": "Living room",
+      "frames": [
+        "frame_0.jpg",
+        "frame_1.jpg",
+        "frame_2.jpg",
+        "frame_3.jpg",
+        "frame_4.jpg"
+      ]
+    }
+  ],
+  "groundTruth": [
+    {
+      "id": "sofa",
+      "label": "Sofa",
+      "expectedQuantity": 1,
+      "cubeMaterial": true,
+      "expectedCategory": "furniture",
+      "aliases": ["sofa", "couch", "settee", "loveseat", "banquette", "banquette seating", "window bench"]
+    },
+    {
+      "id": "armchairs",
+      "label": "Upholstered armchairs",
+      "expectedQuantity": 4,
+      "cubeMaterial": true,
+      "expectedCategory": "furniture",
+      "aliases": ["armchair", "armchairs", "accent chair", "accent chairs", "lounge chair", "lounge chairs"]
+    },
+    {
+      "id": "coffee-table",
+      "label": "Rectangular coffee table",
+      "expectedQuantity": 1,
+      "cubeMaterial": true,
+      "expectedCategory": "furniture",
+      "aliases": ["rectangular coffee table", "coffee table", "coffee dining table", "dining coffee table", "dining lounge table", "dining table", "lounge table"]
+    },
+    {
+      "id": "side-table",
+      "label": "Round side table",
+      "expectedQuantity": 1,
+      "cubeMaterial": true,
+      "expectedCategory": "furniture",
+      "aliases": ["round side table", "side table", "end table"]
+    },
+    {
+      "id": "credenza-counter",
+      "label": "Wooden credenza/counter",
+      "expectedQuantity": 1,
+      "cubeMaterial": true,
+      "expectedCategory": "furniture",
+      "aliases": ["credenza", "wooden credenza", "reception counter", "bar counter", "credenza bar counter", "wooden counter"]
+    },
+    {
+      "id": "floor-plant",
+      "label": "Large potted floor plant",
+      "expectedQuantity": 1,
+      "aliases": ["potted plant", "floor plant", "indoor plant", "large plant", "potted palm", "palm plant"]
+    },
+    {
+      "id": "area-rug",
+      "label": "Area rug",
+      "expectedQuantity": 1,
+      "aliases": ["area rug", "rug"]
+    },
+    {
+      "id": "throw-pillow",
+      "label": "Throw pillow",
+      "expectedQuantity": 1,
+      "aliases": ["throw pillow", "decorative pillow", "cushion"]
+    },
+    {
+      "id": "tabletop-settings",
+      "label": "Grouped tabletop place settings",
+      "expectedQuantity": 1,
+      "quantityMode": "presence",
+      "aliases": ["place settings", "table settings", "tableware", "plates", "drinking glasses", "glassware", "napkins"]
+    }
+  ]
+}
