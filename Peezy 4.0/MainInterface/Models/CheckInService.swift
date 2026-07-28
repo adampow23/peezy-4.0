@@ -100,6 +100,14 @@ struct CheckInService {
             return decoded
         }
 
+        func finiteNumber(_ value: Any?) -> Double? {
+            guard let number = value as? NSNumber,
+                  CFGetTypeID(number) != CFBooleanGetTypeID()
+            else { return nil }
+            let value = number.doubleValue
+            return value.isFinite ? value : nil
+        }
+
         guard firstString("quoteRequest") == "false",
               let vendor = object("chosen_vendor"),
               let vendorId = (vendor["vendorId"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -107,19 +115,15 @@ struct CheckInService {
               let vendorName = (vendor["name"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
               !vendorName.isEmpty,
               let estimate = object("estimate"),
-              let low = (estimate["low"] as? NSNumber)?.doubleValue,
-              low.isFinite,
+              let low = finiteNumber(estimate["low"]),
               low >= 0,
-              let high = (estimate["high"] as? NSNumber)?.doubleValue,
-              high.isFinite,
+              let high = finiteNumber(estimate["high"]),
               high >= low,
               let scope = object("scope"),
               !scope.isEmpty,
-              let cubicFeet = (scope["cubicFeet"] as? NSNumber)?.doubleValue,
-              cubicFeet.isFinite,
+              let cubicFeet = finiteNumber(scope["cubicFeet"]),
               cubicFeet >= 0,
-              let driveMinutes = (scope["driveMinutes"] as? NSNumber)?.doubleValue,
-              driveMinutes.isFinite,
+              let driveMinutes = finiteNumber(scope["driveMinutes"]),
               driveMinutes >= 0
         else { return nil }
 

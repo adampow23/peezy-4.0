@@ -75,6 +75,43 @@ struct CheckInTests {
         ]) == nil)
     }
 
+    @Test func booleanNumericBookingFieldsAreMalformed() throws {
+        let validVendor = try json([
+            "vendorId": "test_mover_a",
+            "name": "Test Mover A"
+        ])
+        let validEstimate = try json(["low": 1_200, "high": 1_600])
+        let validScope = try json(["cubicFeet": 980, "driveMinutes": 45])
+
+        for malformedEstimate in [
+            try json(["low": true, "high": 1_600]),
+            try json(["low": 1_200, "high": true])
+        ] {
+            #expect(CheckInService.bookingContext(fromWorkflowResponse: [
+                "answers": ["answers": [
+                    "chosen_vendor": [validVendor],
+                    "estimate": [malformedEstimate],
+                    "scope": [validScope],
+                    "quoteRequest": ["false"]
+                ]]
+            ]) == nil)
+        }
+
+        for malformedScope in [
+            try json(["cubicFeet": true, "driveMinutes": 45]),
+            try json(["cubicFeet": 980, "driveMinutes": false])
+        ] {
+            #expect(CheckInService.bookingContext(fromWorkflowResponse: [
+                "answers": ["answers": [
+                    "chosen_vendor": [validVendor],
+                    "estimate": [validEstimate],
+                    "scope": [malformedScope],
+                    "quoteRequest": ["false"]
+                ]]
+            ]) == nil)
+        }
+    }
+
     @Test func finalBillPayloadIsOptionalAndCarriesNoClientCalibrationContext() {
         let facts = MoveCheckInAnswers(
             arrivedInWindow: true,

@@ -1,11 +1,12 @@
 # Chip Estimate Integrity — Phase F: Calibration persistence (CORE)
 #
-# ACCEPTANCE CONTRACT (locked before Phase F implementation edits)
+# ACCEPTANCE CONTRACT (validator-remediated before the follow-up implementation edit)
 # F1 GIVEN a persisted booked-vendor `book_movers` response, WHEN moving-day
 #    check-in loads, THEN the stored vendor, estimated low/high range,
 #    and move scope can be parsed; the form shows one optional final-bill money
 #    field. GIVEN no booked vendor (including quote-only or malformed stored
 #    responses), THEN the final-bill question is not rendered or submitted.
+#    JSON booleans are never accepted as numeric low/high/cubicFeet/driveMinutes.
 # F2 GIVEN a signed-in check-in submission, WHEN `submitCheckIn` runs, THEN it
 #    validates the four existing factual answers and an optional positive,
 #    finite final bill, re-reads `users/{uid}/workflowResponses/book_movers`,
