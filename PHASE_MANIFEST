@@ -1,33 +1,37 @@
-# Post-Test Cleanup — Phase E: ISP screen (PERIPHERY)
+# Post-Test Cleanup — Phase F1: Copy inventory dump (PERIPHERY)
 #
-# ACCEPTANCE CONTRACT (locked before implementation)
-# E1.1 GIVEN the successful ISP comparison state has at least three plans,
-#      WHEN it renders, THEN exactly the first three editorially curated plans
-#      by ISPPlan.sortOrder appear as full-width ComparisonCardView cards.
-# E1.2 GIVEN the three curated plan cards render on the target iPhone 17 Pro,
-#      THEN all three fit without scrolling, or the third card clearly peeks;
-#      comparison is vertical and no horizontal carousel/swipe UI exists.
-# E1.3 GIVEN more than three providers are returned, THEN a visible
-#      "See other providers" affordance appears below the three cards and gives
-#      access to every remaining provider without adding more comparison cards
-#      to the main screen.
-# E1.4 GIVEN fewer than three valid plans are returned, THEN the success state
-#      does not render a misleading partial comparison and the existing error
-#      surface offers retry.
-# E1.5 GIVEN a curated or additional provider is chosen, THEN it uses the
-#      existing in-app provider handoff, records the chosen plan, and preserves
-#      the existing completion gate.
+# ACCEPTANCE CONTRACT (locked before inventory generation)
+# F1.1 GIVEN the production iOS source and its runtime data-driven catalogs,
+#      WHEN the inventory is complete, THEN every non-LOCKED user-facing string
+#      literal is represented, including headings, body/helper text, empty
+#      states, buttons, field labels/placeholders, errors, alerts, confirmations,
+#      accessibility copy, and user-visible generated task/flow copy.
+# F1.2 GIVEN an inventory entry, THEN it identifies source file, current 1-based
+#      line, exact current text (preserving interpolation markers), and the
+#      screen/component or runtime context in which the user receives it.
+# F1.3 GIVEN copy explicitly marked LOCKED in source/spec comments, THEN it is
+#      excluded and the excluded source blocks are named in the inventory notes.
+# F1.4 GIVEN implementation-only literals, THEN identifiers, persistence keys,
+#      analytics/log strings, URLs, symbol/asset names, source metadata,
+#      test/preview fixtures, and developer tooling are excluded as non-copy.
+# F1.5 GIVEN Phase F closes, THEN no runtime copy or implementation source is
+#      rewritten; the phase stops after the inventory dump and reports it for a
+#      later verbatim-copy application session.
 #
 # EDIT SITES
 # PHASE_MANIFEST
-# PHASE_E_REPORT.md (new)
-# Peezy 4.0/MainInterface/Views/ComparisonCardView.swift
-# Peezy 4.0/Tasks/Task Cards/SetupInternetFlow.swift
+# COPY_INVENTORY.md (new)
 #
 # READ SITES
-# Peezy 4.0/MainInterface/Models/ISPPlanService.swift
-# Peezy 4.0/MainInterface/Models/ComparisonCardModel.swift
-# Peezy 4.0/Tasks/Task Cards/MoversComparisonView.swift
+# All production Swift files under Peezy 4.0/ (excluding preview/debug-only copy)
+# functions/flowDefinitionsData.json
+# functions/taskCatalogData.json
+# functions/miniAssessmentWorkflows.js
+# functions/workflows.js
+# functions/peezyBrain.js and callable error payload paths
+# functions/providerDirectoryData.json
+# functions/ispPlansData.json
+# functions/vendorsData.json
 # peezy-chip-post-test-cleanup.md
 # peezy-execution-protocol.md
 # peezy-conventions-v2.md
