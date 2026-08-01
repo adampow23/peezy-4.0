@@ -15,6 +15,7 @@ struct BoxReturnView: View {
     @State private var submittedWithPickup = false
     @State private var isSubmitting = false
     @State private var errorMessage: String?
+    @State private var questionIndex = 0
 
     private let service = BoxReturnService()
 
@@ -23,7 +24,12 @@ struct BoxReturnView: View {
             InteractiveBackground()
                 .ignoresSafeArea()
 
-            TaskFlowStack(cardsRemaining: 1, currentIndex: 0) {
+            TaskFlowStack(
+                cardsRemaining: submittedCalibration == nil
+                    ? max(boxReturnQuestions.count - questionIndex, 1)
+                    : 1,
+                currentIndex: submittedCalibration == nil ? questionIndex : 0
+            ) {
                 content
             }
         }
@@ -60,6 +66,22 @@ struct BoxReturnView: View {
         return result
     }
 
+    private enum BoxReturnQuestion {
+        case returnedCount
+        case ranOut
+        case pickup
+    }
+
+    private var boxReturnQuestions: [BoxReturnQuestion] {
+        returnedCount > 0
+            ? [.returnedCount, .ranOut, .pickup]
+            : [.returnedCount, .ranOut]
+    }
+
+    private var currentBoxReturnQuestion: BoxReturnQuestion {
+        boxReturnQuestions[min(questionIndex, boxReturnQuestions.count - 1)]
+    }
+
     @ViewBuilder
     private var content: some View {
         if let submittedCalibration {
@@ -77,90 +99,40 @@ struct BoxReturnView: View {
 
     private func formCard(_ delivered: Int) -> some View {
         VStack(spacing: 0) {
-            TaskFlowHeader(taskTitle: "Box return")
+            TaskFlowHeader(
+                taskTitle: "Box return",
+                showBack: questionIndex > 0,
+                onBack: { questionIndex = max(questionIndex - 1, 0) }
+            )
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    Image(systemName: "shippingbox.and.arrow.backward.fill")
-                        .font(.largeTitle)
-                        .foregroundStyle(PeezyTheme.Colors.deepInk)
-                        .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 20) {
+                Text("Question \(questionIndex + 1) of \(boxReturnQuestions.count)")
+                    .font(.caption.bold())
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("box_return.progress")
 
-                    Text("How many boxes are you returning or recycling?")
-                        .font(.title)
-                        .bold()
-                        .foregroundStyle(PeezyTheme.Colors.deepInk)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .accessibilityIdentifier("box_return.title")
+                boxReturnQuestionContent(delivered: delivered)
 
-                    Text("Your kit included \(delivered) boxes. The count helps us size future kits with less waste.")
-                        .font(.body)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .accessibilityIdentifier("box_return.delivered")
-
-                    Stepper(value: $returnedCount, in: 0...999) {
-                        HStack {
-                            Text("Boxes")
-                                .font(.headline)
-                            Spacer()
-                            Text("\(returnedCount)")
-                                .font(.title2)
-                                .bold()
-                                .monospacedDigit()
-                                .accessibilityIdentifier("box_return.returned_value")
-                        }
-                    }
-                    .padding(16)
-                    .background(.regularMaterial)
-                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    .accessibilityLabel("Boxes returning or recycling")
-                    .accessibilityValue("\(returnedCount)")
-                    .accessibilityIdentifier("box_return.returned_stepper")
-
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("Did you run out of boxes before move day?")
-                            .font(.headline)
-                            .foregroundStyle(PeezyTheme.Colors.deepInk)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .accessibilityIdentifier("box_return.ran_out_question")
-
-                        HStack(spacing: 12) {
-                            ranOutButton("Yes", value: true)
-                            ranOutButton("No", value: false)
-                        }
-                    }
-
-                    Toggle("I'd like Peezy to arrange pickup", isOn: $requestsPickup)
-                        .tint(PeezyTheme.Colors.successGreen)
-                        .disabled(returnedCount == 0)
-                        .accessibilityIdentifier("box_return.pickup_toggle")
-
-                    if requestsPickup {
-                        Text("We'll send the count to the concierge team and follow up about pickup.")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .accessibilityIdentifier("box_return.pickup_note")
-                    }
-
-                    if let errorMessage {
-                        Text(errorMessage)
-                            .font(.footnote)
-                            .foregroundStyle(PeezyTheme.Colors.emotionalRed)
-                            .accessibilityIdentifier("box_return.error_message")
-                    }
+                if let errorMessage {
+                    Text(errorMessage)
+                        .font(.footnote)
+                        .foregroundStyle(PeezyTheme.Colors.emotionalRed)
+                        .accessibilityIdentifier("box_return.error_message")
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 24)
-                .padding(.vertical, 12)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 24)
+            .padding(.top, 28)
+
+            Spacer(minLength: 16)
 
             VStack(spacing: 12) {
                 PeezyAssessmentButton(
-                    isSubmitting ? "Saving…" : "Save box count",
-                    disabled: ranOut == nil || isSubmitting,
-                    action: submit
+                    questionIndex >= boxReturnQuestions.count - 1
+                        ? (isSubmitting ? "Saving…" : "Save box count")
+                        : "Continue",
+                    disabled: (currentBoxReturnQuestion == .ranOut && ranOut == nil) || isSubmitting,
+                    action: advanceBoxReturn
                 )
                 .accessibilityIdentifier("box_return.submit")
 
@@ -175,6 +147,78 @@ struct BoxReturnView: View {
             .padding(.bottom, 20)
         }
         .accessibilityIdentifier("box_return.card")
+    }
+
+    @ViewBuilder
+    private func boxReturnQuestionContent(delivered: Int) -> some View {
+        switch currentBoxReturnQuestion {
+        case .returnedCount:
+            Text("How many boxes are you returning or recycling?")
+                .font(.title.bold())
+                .foregroundStyle(PeezyTheme.Colors.deepInk)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("box_return.title")
+            Text("Your kit included \(delivered) boxes. The count helps us size future kits with less waste.")
+                .font(.body)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("box_return.delivered")
+            Stepper(value: $returnedCount, in: 0...999) {
+                HStack {
+                    Text("Boxes")
+                        .font(.headline)
+                    Spacer()
+                    Text("\(returnedCount)")
+                        .font(.title2.bold())
+                        .monospacedDigit()
+                        .accessibilityIdentifier("box_return.returned_value")
+                }
+            }
+            .padding(16)
+            .background(.regularMaterial)
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .accessibilityLabel("Boxes returning or recycling")
+            .accessibilityValue("\(returnedCount)")
+            .accessibilityIdentifier("box_return.returned_stepper")
+
+        case .ranOut:
+            Text("Did you run out of boxes before move day?")
+                .font(.title.bold())
+                .foregroundStyle(PeezyTheme.Colors.deepInk)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("box_return.ran_out_question")
+            HStack(spacing: 12) {
+                ranOutButton("Yes", value: true)
+                ranOutButton("No", value: false)
+            }
+
+        case .pickup:
+            Text("Would you like Peezy to arrange pickup?")
+                .font(.title.bold())
+                .foregroundStyle(PeezyTheme.Colors.deepInk)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("box_return.pickup_question")
+            HStack(spacing: 12) {
+                pickupButton("Yes", value: true)
+                pickupButton("No", value: false)
+            }
+            .accessibilityIdentifier("box_return.pickup_toggle")
+            if requestsPickup {
+                Text("We'll send the count to the concierge team and follow up about pickup.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("box_return.pickup_note")
+            }
+        }
+    }
+
+    private func advanceBoxReturn() {
+        if questionIndex >= boxReturnQuestions.count - 1 {
+            submit()
+        } else {
+            questionIndex += 1
+        }
     }
 
     private func submittedCard(_ calibration: KitCalibration) -> some View {
@@ -295,6 +339,31 @@ struct BoxReturnView: View {
         .buttonStyle(.plain)
         .accessibilityValue(ranOut == value ? "Selected" : "Not selected")
         .accessibilityIdentifier("box_return.ran_out.\(value ? "yes" : "no")")
+    }
+
+    private func pickupButton(_ label: String, value: Bool) -> some View {
+        Button {
+            requestsPickup = value
+            PeezyHaptics.selection()
+        } label: {
+            Text(label)
+                .font(.headline)
+                .foregroundStyle(PeezyTheme.Colors.deepInk)
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .background(
+                    requestsPickup == value
+                        ? AnyShapeStyle(PeezyTheme.Colors.successGreen.opacity(0.2))
+                        : AnyShapeStyle(.regularMaterial)
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .stroke(requestsPickup == value ? PeezyTheme.Colors.successGreen : .clear, lineWidth: 2)
+                }
+        }
+        .buttonStyle(.plain)
+        .accessibilityValue(requestsPickup == value ? "Selected" : "Not selected")
+        .accessibilityIdentifier("box_return.pickup.\(value ? "yes" : "no")")
     }
 }
 

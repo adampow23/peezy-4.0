@@ -451,23 +451,71 @@ private struct SuppliesKitCustomizeSheet: View {
     let onSave: () -> Void
     let onCancel: () -> Void
 
+    @State private var questionIndex = 0
+
+    private enum KitField: CaseIterable {
+        case small
+        case medium
+        case large
+        case wardrobe
+        case dishPack
+        case tape
+        case paper
+        case wrap
+        case mattressBags
+
+        var label: String {
+            switch self {
+            case .small: "Small boxes"
+            case .medium: "Medium boxes"
+            case .large: "Large boxes"
+            case .wardrobe: "Wardrobe boxes"
+            case .dishPack: "Dish packs"
+            case .tape: "Tape rolls"
+            case .paper: "Paper packs"
+            case .wrap: "Wrap rolls"
+            case .mattressBags: "Mattress bags"
+            }
+        }
+
+        var id: String {
+            switch self {
+            case .small: "small"
+            case .medium: "medium"
+            case .large: "large"
+            case .wardrobe: "wardrobe"
+            case .dishPack: "dish_pack"
+            case .tape: "tape"
+            case .paper: "paper"
+            case .wrap: "wrap"
+            case .mattressBags: "mattress_bags"
+            }
+        }
+    }
+
+    private var currentField: KitField {
+        KitField.allCases[min(questionIndex, KitField.allCases.count - 1)]
+    }
+
     var body: some View {
         NavigationStack {
-            Form {
-                Section("Boxes") {
-                    quantityStepper("Small boxes", value: $kit.small, id: "small")
-                    quantityStepper("Medium boxes", value: $kit.medium, id: "medium")
-                    quantityStepper("Large boxes", value: $kit.large, id: "large")
-                    quantityStepper("Wardrobe boxes", value: $kit.wardrobe, id: "wardrobe")
-                    quantityStepper("Dish packs", value: $kit.dishPack, id: "dish_pack")
-                }
-                Section("Packing materials") {
-                    quantityStepper("Tape rolls", value: $kit.tape, id: "tape")
-                    quantityStepper("Paper packs", value: $kit.paper, id: "paper")
-                    quantityStepper("Wrap rolls", value: $kit.wrap, id: "wrap")
-                    quantityStepper("Mattress bags", value: $kit.mattressBags, id: "mattress_bags")
-                }
-                Section {
+            VStack(alignment: .leading, spacing: 24) {
+                Text("Item \(questionIndex + 1) of \(KitField.allCases.count)")
+                    .font(.caption.bold())
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("kit.customize.progress")
+
+                Text("How many \(currentField.label.lowercased()) do you want?")
+                    .font(.title.bold())
+                    .foregroundStyle(PeezyTheme.Colors.deepInk)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("kit.customize.question.\(currentField.id)")
+
+                quantityStepper(currentField.label, value: binding(for: currentField), id: currentField.id)
+
+                Spacer()
+
+                VStack(spacing: 12) {
                     HStack {
                         Text("Estimated kit")
                         Spacer()
@@ -475,22 +523,56 @@ private struct SuppliesKitCustomizeSheet: View {
                             .bold()
                     }
                     .accessibilityIdentifier("kit.customize.price")
+
+                    PeezyAssessmentButton(
+                        questionIndex == KitField.allCases.count - 1
+                            ? (isSaving ? "Saving…" : "Save")
+                            : "Continue",
+                        disabled: isSaving,
+                        action: advance
+                    )
+                    .accessibilityIdentifier("kit.customize.continue")
                 }
             }
+            .padding(24)
             .navigationTitle("Customize kit")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel", action: onCancel)
                         .accessibilityIdentifier("kit.customize.cancel")
                 }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button(isSaving ? "Saving…" : "Save", action: onSave)
-                        .disabled(isSaving)
-                        .accessibilityIdentifier("kit.customize.save")
+                if questionIndex > 0 {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button("Back") { questionIndex -= 1 }
+                            .disabled(isSaving)
+                            .accessibilityIdentifier("kit.customize.back")
+                    }
                 }
             }
         }
         .accessibilityIdentifier("kit.customize.sheet")
+    }
+
+    private func advance() {
+        if questionIndex == KitField.allCases.count - 1 {
+            onSave()
+        } else {
+            questionIndex += 1
+        }
+    }
+
+    private func binding(for field: KitField) -> Binding<Int> {
+        switch field {
+        case .small: $kit.small
+        case .medium: $kit.medium
+        case .large: $kit.large
+        case .wardrobe: $kit.wardrobe
+        case .dishPack: $kit.dishPack
+        case .tape: $kit.tape
+        case .paper: $kit.paper
+        case .wrap: $kit.wrap
+        case .mattressBags: $kit.mattressBags
+        }
     }
 
     private func quantityStepper(

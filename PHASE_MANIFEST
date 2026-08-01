@@ -1,44 +1,36 @@
-# Post-Test Cleanup — Phase B: Resolver intent (CORE)
+# Post-Test Cleanup — Phase C: One question per screen (PERIPHERY)
 #
 # ACCEPTANCE CONTRACT (locked before implementation)
-# B1.1 GIVEN the same gym/company, WHEN the task-derived intent is `cancel`
-#      versus `transferLocation` or `updateAddress`, THEN resolveProvider receives
-#      that intent and can return distinct, intent-correct paths. The user is
-#      never asked to choose resolver intent.
-# B1.2 GIVEN a resolver requirement, WHEN it is returned or rendered, THEN its
-#      exact HTTPS citation is included in `citations`. Any malformed or uncited
-#      requirement downgrades the response to concierge and no requirement
-#      renders.
-# B1.3 GIVEN a cited notice-period requirement and the identity document's move
-#      date, WHEN the client renders the action, THEN it shows exactly `This one
-#      needs {n} days' notice — do it by {date} to be clear before your move.`
-#      using moveDate minus noticeDays.
-# B1.4 GIVEN two identical company + intent requests, WHEN the second request is
-#      resolved, THEN it hits the company+intent cache. Different intents use
-#      distinct cache documents.
-# B1.5 GIVEN the current task catalog, WHEN provider resolution starts, THEN the
-#      task and move context deterministically map to: financial accounts,
-#      insurance, and vet/pharmacy address paths -> updateAddress; local
-#      memberships -> transferLocation; long-distance memberships -> cancel;
-#      vet/pharmacy current-provider paths -> transferRecords. closeAccount is
-#      accepted by the resolver but currently has no catalog caller.
-# B1.6 GIVEN Phase B is deployed, THEN the only deployment target is
-#      `functions:resolveProvider`.
+# C1.1 GIVEN the mover-refinement questionnaire, WHEN it renders, THEN exactly
+#      one answer control is shown per screen and navigation preserves every
+#      existing conditional field and the final comparison gate.
+# C1.2 GIVEN any other scrolling multi-field form surfaced inside a task flow,
+#      WHEN Phase C closes, THEN every qualifying form in the locked inventory
+#      is converted to one question/field per screen with native back/cancel
+#      behavior preserved for nested sheets.
+# C1.3 GIVEN the complete ScrollView/Form inventory, THEN every excluded screen
+#      is cited with a concrete reason (list/review/comparison/checklist or a
+#      single logical input), and no qualifying multi-field form remains.
+# C1.4 GIVEN a converted flow is exited and resumed, THEN its recorded answer
+#      values still participate in the outer flow's existing persistence model;
+#      no new nested surface can outlive its parent.
+#
+# QUALIFYING INVENTORY
+# Peezy 4.0/Tasks/Task Cards/MoveRefinementView.swift
+# Peezy 4.0/Tasks/Task Cards/MoveCheckInView.swift
+# Peezy 4.0/Tasks/Task Cards/BoxReturnView.swift
+# Peezy 4.0/Tasks/Task Cards/SuppliesKitView.swift (Customize sheet)
+# Peezy 4.0/Inventory/Views/InventoryRoomReviewView.swift (Add Item sheet)
 #
 # EDIT SITES
 # PHASE_MANIFEST
-# PHASE_B_REPORT.md (new)
-# functions/resolveProvider.js
-# functions/validateResolveProvider.js
-# functions/liveValidatePhaseB.js
-# Peezy 4.0/MainInterface/Models/ProviderDirectoryService.swift
-# Peezy 4.0/MainInterface/Models/TaskFlowRouter.swift
-# Peezy 4.0/MainInterface/Models/PeezyV1App.swift
-# Peezy 4.0/MainInterface/Views/ProviderActionCard.swift
-# Peezy 4.0/Tasks/FlowEngine/FlowEngineHarness.swift
-# Peezy 4.0/Tasks/FlowEngine/FlowEngineView.swift
-# Peezy 4.0/Tasks/Task Cards/HandleAutoInsuranceFlow.swift
-# Peezy 4.0/Tasks/Task Cards/HandleHomeInsuranceFlow.swift
+# PHASE_C_REPORT.md (new)
+# Peezy 4.0/Tasks/Task Cards/MoveRefinementView.swift
+# Peezy 4.0/Tasks/Task Cards/MoveCheckInView.swift
+# Peezy 4.0/Tasks/Task Cards/BoxReturnView.swift
+# Peezy 4.0/Tasks/Task Cards/SuppliesKitView.swift
+# Peezy 4.0/Inventory/Views/InventoryRoomReviewView.swift
+# Peezy 4.0/MainInterface/Models/PeezyV1App.swift (DEBUG fixtures only, if needed)
 #
 # READ SITES
 # peezy-chip-post-test-cleanup.md
@@ -46,8 +38,12 @@
 # peezy-conventions-v2.md
 # peezy-v1-architecture.md
 # CLAUDE.md
-# functions/flowDefinitionsData.json
-# functions/providerDirectoryData.json
-# Peezy 4.0/MainInterface/Models/PeezyIdentity.swift
-# Peezy 4.0/MainInterface/Models/UserState.swift
+# Peezy 4.0/Tasks/Task Cards/MoversBookingReviewView.swift
+# Peezy 4.0/Tasks/Task Cards/MoversComparisonView.swift
+# Peezy 4.0/Tasks/Task Cards/PackingReadinessView.swift
+# Peezy 4.0/Tasks/Task Cards/SetupInternetFlow.swift
+# Peezy 4.0/Tasks/Task Card Components/QuoteSelectionFlow.swift
+# Peezy 4.0/Tasks/Task Card Components/TaskFlowBusinessSearchCard.swift
+# Peezy 4.0/Tasks/Task Card Components/TaskFlowConfirmAddressCard.swift
+# Peezy 4.0/Inventory/Views/InventoryRoomHubView.swift
 # SESSION_NOTES.md (session-final write only)

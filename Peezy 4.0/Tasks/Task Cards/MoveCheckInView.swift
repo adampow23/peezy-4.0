@@ -14,6 +14,7 @@ struct MoveCheckInView: View {
     @State private var damaged: Bool?
     @State private var note = ""
     @State private var finalBill = ""
+    @State private var questionIndex = 0
     @State private var isSubmitting = false
     @State private var isSubmitted = false
     @State private var errorMessage: String?
@@ -57,7 +58,10 @@ struct MoveCheckInView: View {
             InteractiveBackground()
                 .ignoresSafeArea()
 
-            TaskFlowStack(cardsRemaining: 1, currentIndex: 0) {
+            TaskFlowStack(
+                cardsRemaining: isSubmitted ? 1 : max(checkInQuestions.count - questionIndex, 1),
+                currentIndex: isSubmitted ? 0 : questionIndex
+            ) {
                 content
             }
         }
@@ -96,6 +100,25 @@ struct MoveCheckInView: View {
         return raw == "true"
     }
 
+    private enum CheckInQuestion: String {
+        case arrival
+        case steady
+        case cost
+        case damage
+        case note
+        case finalBill
+    }
+
+    private var checkInQuestions: [CheckInQuestion] {
+        bookingContext == nil
+            ? [.arrival, .steady, .cost, .damage, .note]
+            : [.arrival, .steady, .cost, .damage, .note, .finalBill]
+    }
+
+    private var currentCheckInQuestion: CheckInQuestion {
+        checkInQuestions[min(questionIndex, checkInQuestions.count - 1)]
+    }
+
     @ViewBuilder
     private var content: some View {
         if isSubmitted {
@@ -113,103 +136,37 @@ struct MoveCheckInView: View {
 
     private var formCard: some View {
         VStack(spacing: 0) {
-            TaskFlowHeader(taskTitle: "Moving-day check-in")
+            TaskFlowHeader(
+                taskTitle: "Moving-day check-in",
+                showBack: questionIndex > 0,
+                onBack: { questionIndex = max(questionIndex - 1, 0) }
+            )
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    Image(systemName: "checkmark.message.fill")
-                        .font(.largeTitle)
-                        .foregroundStyle(PeezyTheme.Colors.deepInk)
-                        .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 20) {
+                Text("Question \(questionIndex + 1) of \(checkInQuestions.count)")
+                    .font(.caption.bold())
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("checkin.progress")
 
-                    Text(bookingContext.map { "How did \($0.vendorName) do?" } ?? "How did moving day go?")
-                        .font(.title)
-                        .bold()
-                        .foregroundStyle(PeezyTheme.Colors.deepInk)
-                        .accessibilityIdentifier("checkin.title")
-
-                    Text("Four facts. No rating games. This is how Peezy follows through.")
-                        .font(.body)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .accessibilityIdentifier("checkin.intro")
-
-                    yesNoQuestion(
-                        "Did they arrive in the window?",
-                        selection: arrivedInWindow,
-                        id: "arrival",
-                        onSelect: { arrivedInWindow = $0 }
-                    )
-                    yesNoQuestion(
-                        "Did the crew work steadily?",
-                        selection: crewWorkedSteadily,
-                        id: "steady",
-                        onSelect: { crewWorkedSteadily = $0 }
-                    )
-                    yesNoQuestion(
-                        "Did anything cost more than quoted?",
-                        selection: costMoreThanQuoted,
-                        id: "cost",
-                        onSelect: { costMoreThanQuoted = $0 }
-                    )
-                    yesNoQuestion(
-                        "Was anything damaged?",
-                        selection: damaged,
-                        id: "damage",
-                        onSelect: { damaged = $0 }
-                    )
-
-                    TextField(
-                        "Anything else we should know? (optional)",
-                        text: $note,
-                        axis: .vertical
-                    )
-                    .lineLimit(3...6)
-                    .textFieldStyle(.roundedBorder)
-                    .accessibilityIdentifier("checkin.note")
-
-                    if let bookingContext {
-                        VStack(alignment: .leading, spacing: 10) {
-                            Text(
-                                "Peezy estimate: \(money(bookingContext.estimatedRange.low))–\(money(bookingContext.estimatedRange.high))"
-                            )
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .accessibilityIdentifier("checkin.estimated_range")
-
-                            TextField("What was the final bill? (optional)", text: $finalBill)
-                                .keyboardType(.decimalPad)
-                                .textFieldStyle(.roundedBorder)
-                                .accessibilityIdentifier("checkin.final_bill")
-
-                            if !isFinalBillValid {
-                                Text("Enter a final bill greater than $0, or leave it blank.")
-                                    .font(.footnote)
-                                    .foregroundStyle(PeezyTheme.Colors.emotionalRed)
-                                    .accessibilityIdentifier("checkin.final_bill_error")
-                            }
-                        }
-                    }
-
-                    if let errorMessage {
-                        Text(errorMessage)
-                            .font(.footnote)
-                            .foregroundStyle(PeezyTheme.Colors.emotionalRed)
-                            .accessibilityIdentifier("checkin.error_message")
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 24)
-                .padding(.vertical, 12)
+                checkInQuestionContent
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 24)
+            .padding(.top, 28)
+
+            Spacer(minLength: 16)
 
             VStack(spacing: 12) {
-                PeezyAssessmentButton(
-                    isSubmitting ? "Saving…" : "Submit check-in",
-                    disabled: !hasAllAnswers || isSubmitting,
-                    action: submit
-                )
-                .accessibilityIdentifier("checkin.submit")
+                if currentCheckInQuestion == .note || currentCheckInQuestion == .finalBill {
+                    PeezyAssessmentButton(
+                        questionIndex == checkInQuestions.count - 1
+                            ? (isSubmitting ? "Saving…" : "Submit check-in")
+                            : "Continue",
+                        disabled: (currentCheckInQuestion == .finalBill && !isFinalBillValid) || isSubmitting,
+                        action: advanceCheckIn
+                    )
+                    .accessibilityIdentifier("checkin.submit")
+                }
 
                 Button("Close", action: onDismiss)
                     .font(.subheadline)
@@ -224,6 +181,99 @@ struct MoveCheckInView: View {
         .accessibilityIdentifier(
             bookingContext == nil ? "checkin.general_card" : "checkin.vendor_card"
         )
+    }
+
+    @ViewBuilder
+    private var checkInQuestionContent: some View {
+        switch currentCheckInQuestion {
+        case .arrival:
+            yesNoQuestion(
+                "Did they arrive in the window?",
+                selection: arrivedInWindow,
+                id: "arrival"
+            ) {
+                arrivedInWindow = $0
+                advanceCheckIn()
+            }
+        case .steady:
+            yesNoQuestion(
+                "Did the crew work steadily?",
+                selection: crewWorkedSteadily,
+                id: "steady"
+            ) {
+                crewWorkedSteadily = $0
+                advanceCheckIn()
+            }
+        case .cost:
+            yesNoQuestion(
+                "Did anything cost more than quoted?",
+                selection: costMoreThanQuoted,
+                id: "cost"
+            ) {
+                costMoreThanQuoted = $0
+                advanceCheckIn()
+            }
+        case .damage:
+            yesNoQuestion(
+                "Was anything damaged?",
+                selection: damaged,
+                id: "damage"
+            ) {
+                damaged = $0
+                advanceCheckIn()
+            }
+        case .note:
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Anything else we should know?")
+                    .font(.title.bold())
+                    .foregroundStyle(PeezyTheme.Colors.deepInk)
+                    .accessibilityIdentifier("checkin.question.note")
+                TextField("Optional note", text: $note, axis: .vertical)
+                    .lineLimit(3...6)
+                    .textFieldStyle(.roundedBorder)
+                    .accessibilityIdentifier("checkin.note")
+            }
+        case .finalBill:
+            VStack(alignment: .leading, spacing: 12) {
+                Text("What was the final bill?")
+                    .font(.title.bold())
+                    .foregroundStyle(PeezyTheme.Colors.deepInk)
+                    .accessibilityIdentifier("checkin.question.final_bill")
+                if let bookingContext {
+                    Text(
+                        "Peezy estimate: \(money(bookingContext.estimatedRange.low))–\(money(bookingContext.estimatedRange.high))"
+                    )
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("checkin.estimated_range")
+                }
+                TextField("Final bill (optional)", text: $finalBill)
+                    .keyboardType(.decimalPad)
+                    .textFieldStyle(.roundedBorder)
+                    .accessibilityIdentifier("checkin.final_bill")
+                if !isFinalBillValid {
+                    Text("Enter a final bill greater than $0, or leave it blank.")
+                        .font(.footnote)
+                        .foregroundStyle(PeezyTheme.Colors.emotionalRed)
+                        .accessibilityIdentifier("checkin.final_bill_error")
+                }
+            }
+        }
+
+        if let errorMessage {
+            Text(errorMessage)
+                .font(.footnote)
+                .foregroundStyle(PeezyTheme.Colors.emotionalRed)
+                .accessibilityIdentifier("checkin.error_message")
+        }
+    }
+
+    private func advanceCheckIn() {
+        if questionIndex >= checkInQuestions.count - 1 {
+            submit()
+        } else {
+            questionIndex += 1
+        }
     }
 
     private var submittedCard: some View {
