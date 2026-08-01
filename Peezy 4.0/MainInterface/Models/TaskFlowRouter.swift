@@ -37,33 +37,63 @@ struct TaskFlowRouter {
         onDismiss: @escaping () -> Void,
         onStatusAction: @escaping (TaskFlowStatusAction) -> Void
     ) -> some View {
+        let resolvedTaskId = taskId ?? ""
+        OutermostTaskFlowContainer(
+            userId: userId,
+            taskId: resolvedTaskId,
+            waitsForExternalAnswerState:
+                CaptureRegistry.registration(flowId: flowId)?.kind == .videoInventory,
+            onDismiss: onDismiss
+        ) { requestExit in
+            routedFlow(
+                for: flowId,
+                userId: userId,
+                taskId: resolvedTaskId,
+                userState: userState,
+                onComplete: onComplete,
+                onDismiss: requestExit,
+                onStatusAction: onStatusAction
+            )
+        }
+    }
+
+    @ViewBuilder
+    private static func routedFlow(
+        for flowId: String,
+        userId: String,
+        taskId: String,
+        userState: UserState?,
+        onComplete: @escaping () -> Void,
+        onDismiss: @escaping () -> Void,
+        onStatusAction: @escaping (TaskFlowStatusAction) -> Void
+    ) -> some View {
         // ── Capture registry (bespoke path; parameterization in Spec 05) ──
         if CaptureRegistry.registration(flowId: flowId)?.kind == .videoInventory {
-            ScanInventoryFlow(userId: userId, onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
+            ScanInventoryFlow(userId: userId, taskId: taskId, onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
         } else {
             switch flowId {
 
         // ── Admin-pushed ──
 
         case "quote_selection":
-            QuoteSelectionFlow(taskId: taskId ?? "", userId: userId, onComplete: onComplete, onDismiss: onDismiss)
+            QuoteSelectionFlow(taskId: taskId, userId: userId, onComplete: onComplete, onDismiss: onDismiss)
         case "admin_memo":
-            AdminMemoFlow(taskId: taskId ?? "", userId: userId, onComplete: onComplete, onDismiss: onDismiss)
+            AdminMemoFlow(taskId: taskId, userId: userId, onComplete: onComplete, onDismiss: onDismiss)
 
         // ── Catalog-v2 in-app tasks ──
 
         case "add_new_address":
-            AddNewAddressFlow(userId: userId, onComplete: onComplete, onDismiss: onDismiss)
+            AddNewAddressFlow(userId: userId, taskId: taskId, onComplete: onComplete, onDismiss: onDismiss)
         case "confirm_move_date":
-            ConfirmMoveDateFlow(userId: userId, currentDate: userState?.moveDate ?? Date(), onComplete: onComplete, onDismiss: onDismiss)
+            ConfirmMoveDateFlow(userId: userId, taskId: taskId, currentDate: userState?.moveDate ?? Date(), onComplete: onComplete, onDismiss: onDismiss)
         case "declutter_intent":
-            DeclutterIntentFlow(userId: userId, onComplete: onComplete, onDismiss: onDismiss)
+            DeclutterIntentFlow(userId: userId, taskId: taskId, onComplete: onComplete, onDismiss: onDismiss)
         case "storage_need":
-            StorageNeedFlow(userId: userId, onComplete: onComplete, onDismiss: onDismiss)
+            StorageNeedFlow(userId: userId, taskId: taskId, onComplete: onComplete, onDismiss: onDismiss)
         case "packing_session":
             PackingSessionView(
                 userId: userId,
-                taskId: taskId ?? "",
+                taskId: taskId,
                 onComplete: onComplete,
                 onDismiss: onDismiss,
                 onStatusAction: onStatusAction
@@ -71,26 +101,28 @@ struct TaskFlowRouter {
         case "supplies_kit":
             SuppliesKitView(
                 userId: userId,
-                taskId: taskId ?? SuppliesKit.taskId,
+                taskId: taskId.isEmpty ? SuppliesKit.taskId : taskId,
                 onDismiss: onDismiss,
                 onStatusAction: onStatusAction
             )
         case "packing_readiness":
             PackingReadinessView(
                 userId: userId,
-                taskId: taskId ?? ReadinessChecklist.taskId,
+                taskId: taskId.isEmpty ? ReadinessChecklist.taskId : taskId,
                 onComplete: onComplete,
                 onDismiss: onDismiss
             )
         case "move_checkin":
             MoveCheckInView(
                 userId: userId,
+                taskId: taskId,
                 onDismiss: onDismiss,
                 onStatusAction: onStatusAction
             )
         case "box_return":
             BoxReturnView(
                 userId: userId,
+                taskId: taskId,
                 onDismiss: onDismiss,
                 onStatusAction: onStatusAction
             )
@@ -98,30 +130,30 @@ struct TaskFlowRouter {
         // ── Swift custom flows (Types 4–6; superseded in Specs 05–06) ──
 
         case "rent_truck":
-            RentTruckFlow(userId: userId, onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
+            RentTruckFlow(userId: userId, taskId: taskId, onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
         case "book_movers":
             FindMoversFlow(
                 userId: userId,
-                taskId: taskId ?? "",
+                taskId: taskId,
                 onComplete: onComplete,
                 onDismiss: onDismiss,
                 onStatusAction: onStatusAction
             )
         case "book_cleaners":
-            FindCleanersFlow(userId: userId, onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
+            FindCleanersFlow(userId: userId, taskId: taskId, onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
         case "setup_internet":
-            SetupInternetFlow(userId: userId, onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
+            SetupInternetFlow(userId: userId, taskId: taskId, onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
         case "sell_items":
-            SellItemsFlow(userId: userId, onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
+            SellItemsFlow(userId: userId, taskId: taskId, onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
         case "remove_items":
-            RemoveItemsFlow(userId: userId, onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
+            RemoveItemsFlow(userId: userId, taskId: taskId, onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
         case "handle_auto_insurance", "update_auto_insurance":
-            HandleAutoInsuranceFlow(userId: userId, onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
+            HandleAutoInsuranceFlow(userId: userId, taskId: taskId, onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
         case "handle_home_insurance",
              "cancel_renters_insurance", "setup_renters_insurance", "transfer_renters_insurance",
              "cancel_condo_insurance", "setup_condo_insurance", "transfer_condo_insurance",
              "cancel_homeowners_insurance", "setup_homeowners_insurance", "transfer_homeowners_insurance":
-            HandleHomeInsuranceFlow(userId: userId, onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
+            HandleHomeInsuranceFlow(userId: userId, taskId: taskId, onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
 
         // ── Data-driven: flowDefinitions → FlowEngineView ──
 
@@ -129,7 +161,7 @@ struct TaskFlowRouter {
             FlowEngineLoaderView(
                 workflowId: flowId,
                 userId: userId,
-                taskId: taskId ?? "",
+                taskId: taskId,
                 inputs: FlowInputs(
                     currentAddress: userState?.currentFullAddress ?? "",
                     newAddress: userState?.newFullAddress ?? "",

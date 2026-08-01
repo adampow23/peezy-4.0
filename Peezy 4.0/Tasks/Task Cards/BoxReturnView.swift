@@ -2,11 +2,13 @@ import SwiftUI
 
 struct BoxReturnView: View {
     let userId: String
+    let taskId: String
     let onDismiss: () -> Void
     let onStatusAction: (TaskFlowStatusAction) -> Void
 
     @State private var deliveredCount: Int?
     @State private var returnedCount = 0
+    @State private var didEditReturnedCount = false
     @State private var ranOut: Bool?
     @State private var requestsPickup = false
     @State private var submittedCalibration: KitCalibration?
@@ -27,11 +29,35 @@ struct BoxReturnView: View {
         }
         .task { await loadDeliveredCount() }
         .onChange(of: returnedCount) { _, newValue in
+            didEditReturnedCount = true
             if newValue == 0 {
                 requestsPickup = false
             }
         }
         .accessibilityIdentifier("box_return.flow")
+        .resumableFlowProgress(
+            path: [submittedCalibration == nil ? "box_return" : "submitted"],
+            answers: progressAnswers
+        ) { restored in
+            if let raw = restored.answers["returned_count"]?.first, let count = Int(raw) {
+                returnedCount = count
+                didEditReturnedCount = true
+            }
+            if let raw = restored.answers["ran_out"]?.first {
+                ranOut = raw == "true"
+            }
+            if let raw = restored.answers["requests_pickup"]?.first {
+                requestsPickup = raw == "true"
+            }
+        }
+    }
+
+    private var progressAnswers: [String: [String]] {
+        var result: [String: [String]] = [:]
+        if didEditReturnedCount { result["returned_count"] = [String(returnedCount)] }
+        if let ranOut { result["ran_out"] = [String(ranOut)] }
+        if requestsPickup { result["requests_pickup"] = ["true"] }
+        return result
     }
 
     @ViewBuilder
@@ -276,6 +302,7 @@ struct BoxReturnView: View {
 #Preview {
     BoxReturnView(
         userId: "preview",
+        taskId: "BOX_RETURN",
         onDismiss: {},
         onStatusAction: { _ in }
     )

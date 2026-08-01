@@ -86,7 +86,12 @@ struct TaskRowHeader: View {
         case .peezyOnIt:
             badge(text: isMatchingVendors ? "Matching vendors" : "Peezy is on it", color: PeezyTheme.Colors.accentBlue)
         case .todo where isSnoozed:
-            badge(text: "Snoozed", color: PeezyTheme.Colors.warningOrange)
+            if let returnDate = task.snoozedUntil {
+                badge(
+                    text: "Returns \(returnDate.formatted(date: .abbreviated, time: .omitted))",
+                    color: PeezyTheme.Colors.warningOrange
+                )
+            }
         default:
             EmptyView()
         }

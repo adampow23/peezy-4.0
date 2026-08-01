@@ -5,6 +5,7 @@ struct RentTruckFlow: View {
     let workflowId = "rent_truck"
 
     let userId: String
+    let taskId: String
     let onComplete: () -> Void
     let onDismiss: () -> Void
     let onStatusAction: (TaskFlowStatusAction) -> Void
@@ -25,6 +26,13 @@ struct RentTruckFlow: View {
             TaskFlowStack(cardsRemaining: totalCards - currentIndex, currentIndex: currentIndex) {
                 cardContent
             }
+        }
+        .resumableFlowProgress(
+            path: ["card.\(currentIndex)"],
+            answers: FlowProgressCoding.encode(answers)
+        ) { restored in
+            currentIndex = min(max(FlowProgressCoding.cardIndex(from: restored.path), 0), totalCards - 1)
+            answers = FlowProgressCoding.decode(restored.answers)
         }
     }
 
@@ -106,6 +114,7 @@ struct RentTruckFlow: View {
 #Preview("Rent Truck Flow") {
     RentTruckFlow(
         userId: "preview-user",
+        taskId: "RENT_TRUCK",
         onComplete: { print("Complete") },
         onDismiss: { print("Dismiss") },
         onStatusAction: { action in print("Status: \(action)") }

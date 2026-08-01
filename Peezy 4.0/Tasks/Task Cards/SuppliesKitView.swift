@@ -14,6 +14,9 @@ struct SuppliesKitView: View {
     @State private var submitted = false
     @State private var didLogOfferView = false
     @State private var errorMessage: String?
+    @State private var hasCustomizedKit = false
+    @State private var didEditCustomization = false
+    @State private var restoredCustomizationValue: String?
 
     private let actionService = TaskActionService()
 
@@ -31,11 +34,18 @@ struct SuppliesKitView: View {
             SuppliesKitCustomizeSheet(
                 kit: Binding(
                     get: { self.draftKit ?? presentedKit },
-                    set: { self.draftKit = $0 }
+                    set: {
+                        self.draftKit = $0
+                        self.didEditCustomization = true
+                    }
                 ),
                 isSaving: isSaving,
                 onSave: saveCustomization,
-                onCancel: { draftKit = nil }
+                onCancel: {
+                    draftKit = nil
+                    didEditCustomization = false
+                    if !hasCustomizedKit { restoredCustomizationValue = nil }
+                }
             )
         }
         .fullScreenCover(isPresented: $showPaywall) {
@@ -47,6 +57,16 @@ struct SuppliesKitView: View {
             }
         }
         .accessibilityIdentifier("kit.flow")
+        .resumableFlowProgress(
+            path: [submitted ? "submitted" : "kit"],
+            answers: customizationProgressAnswers
+        ) { restored in
+            restoredCustomizationValue = restored.answers["kit_customization"]?.first
+            hasCustomizedKit = restoredCustomizationValue != nil
+        }
+        .flowAnswerProbe {
+            isSaving || isSubmitting || hasCustomizedKit || didEditCustomization
+        }
     }
 
     @ViewBuilder
@@ -141,7 +161,9 @@ struct SuppliesKitView: View {
                 .accessibilityIdentifier("kit.order")
 
                 SecondaryActionButton(title: "Customize") {
-                    draftKit = kit
+                    draftKit = restoredCustomizationValue
+                        .flatMap { Self.applyingCustomization($0, to: kit) }
+                        ?? kit
                 }
                 .disabled(isSubmitting || isSaving)
                 .accessibilityIdentifier("kit.customize")
@@ -231,8 +253,12 @@ struct SuppliesKitView: View {
     private func loadKit() async {
         errorMessage = nil
         do {
-            let loadedKit = try await actionService.loadSuppliesKit(userId: userId, taskId: taskId)
+            let loaded = try await actionService.loadSuppliesKitState(userId: userId, taskId: taskId)
+            let loadedKit = restoredCustomizationValue
+                .flatMap { Self.applyingCustomization($0, to: loaded.kit) }
+                ?? loaded.kit
             kit = loadedKit
+            hasCustomizedKit = loaded.wasCustomized || restoredCustomizationValue != nil
             if !didLogOfferView {
                 didLogOfferView = true
                 AnalyticsEvents.kitOfferViewed(itemTotal: itemTotal(loadedKit))
@@ -251,6 +277,9 @@ struct SuppliesKitView: View {
                 try await actionService.updateSuppliesKit(userId: userId, taskId: taskId, kit: draftKit)
                 await MainActor.run {
                     kit = draftKit
+                    restoredCustomizationValue = Self.customizationValue(for: draftKit)
+                    hasCustomizedKit = true
+                    didEditCustomization = false
                     self.draftKit = nil
                     isSaving = false
                 }
@@ -352,6 +381,39 @@ struct SuppliesKitView: View {
 
     private func formattedPrice(_ cents: Int) -> String {
         String(format: "$%.2f", Double(cents) / 100)
+    }
+
+    private var customizationProgressAnswers: [String: [String]] {
+        guard hasCustomizedKit || didEditCustomization,
+              let currentKit = draftKit ?? kit
+        else { return [:] }
+        let value = Self.customizationValue(for: currentKit)
+        return ["kit_customization": [value]]
+    }
+
+    private static func customizationValue(for kit: SuppliesKit) -> String {
+        [
+            kit.small, kit.medium, kit.large, kit.wardrobe, kit.dishPack,
+            kit.tape, kit.paper, kit.wrap, kit.mattressBags
+        ]
+        .map(String.init)
+        .joined(separator: ",")
+    }
+
+    private static func applyingCustomization(_ value: String, to base: SuppliesKit) -> SuppliesKit? {
+        let values = value.split(separator: ",").compactMap { Int($0) }
+        guard values.count == 9 else { return nil }
+        var result = base
+        result.small = values[0]
+        result.medium = values[1]
+        result.large = values[2]
+        result.wardrobe = values[3]
+        result.dishPack = values[4]
+        result.tape = values[5]
+        result.paper = values[6]
+        result.wrap = values[7]
+        result.mattressBags = values[8]
+        return result
     }
 
     private func itemTotal(_ kit: SuppliesKit) -> Int {

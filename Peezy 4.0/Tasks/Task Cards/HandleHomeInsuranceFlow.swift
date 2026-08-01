@@ -24,6 +24,7 @@ struct HandleHomeInsuranceFlow: View {
     let workflowId = "handle_home_insurance"
 
     let userId: String
+    let taskId: String
     let onComplete: () -> Void
     let onDismiss: () -> Void
     let onStatusAction: (TaskFlowStatusAction) -> Void
@@ -159,6 +160,13 @@ struct HandleHomeInsuranceFlow: View {
         }
         .onDisappear {
             providerResolveTask?.cancel()
+        }
+        .resumableFlowProgress(
+            path: ["card.\(currentIndex)"],
+            answers: FlowProgressCoding.encode(answers)
+        ) { restored in
+            currentIndex = min(max(FlowProgressCoding.cardIndex(from: restored.path), 0), totalCards - 1)
+            answers = FlowProgressCoding.decode(restored.answers)
         }
     }
 
@@ -456,6 +464,7 @@ struct HandleHomeInsuranceFlow: View {
 #Preview("Handle Home Insurance") {
     HandleHomeInsuranceFlow(
         userId: "preview-user",
+        taskId: "HANDLE_HOME_INSURANCE",
         onComplete: { print("✅ Complete") },
         onDismiss: { print("⏪ Dismiss") },
         onStatusAction: { action in print("📋 Status: \(action)") }

@@ -101,7 +101,7 @@ struct TasksTabView: View {
 
     private func tabCounts(groups: TaskGrouping.Groups) -> [TaskTab: Int] {
         [
-            .todo: groups.todo.count,
+            .todo: groups.todo.count + groups.snoozed.count,
             .inProgress: groups.userInProgress.count + groups.peezyOnIt.count,
             .done: groups.completed.count
         ]

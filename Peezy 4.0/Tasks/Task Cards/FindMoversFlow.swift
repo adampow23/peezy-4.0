@@ -19,6 +19,9 @@ struct FindMoversFlow: View {
     @State private var model = MoversFlowViewModel()
     @State private var showCapture = false
     @State private var showPaywallGate = false
+    @State private var captureChoice: String?
+    @State private var didPrepare = false
+    @Environment(FlowExitCoordinator.self) private var exitCoordinator
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -33,21 +36,35 @@ struct FindMoversFlow: View {
             }
         }
         .task {
+            let restored = await exitCoordinator.restore()
             await model.prepare(userId: userId, taskId: taskId)
-            showCapture = model.stage == .capture
+            await model.restoreFlowProgress(restored)
+            captureChoice = restored.answers["capture_choice"]?.first
+            didPrepare = true
         }
-        .onChange(of: model.stage) { _, stage in
-            if stage == .capture { showCapture = true }
+        .onChange(of: moversProgressSnapshot) { _, snapshot in
+            guard didPrepare else { return }
+            exitCoordinator.persist(snapshot)
         }
         .fullScreenCover(isPresented: $showCapture) {
             InventoryFlowView(
-                onUserDismiss: { showCapture = false },
+                onUserDismiss: {
+                    showCapture = false
+                    Task {
+                        await model.captureDismissed()
+                        if model.hasInventory { captureChoice = "inventory" }
+                    }
+                },
                 onSubmitted: {
                     showCapture = false
+                    captureChoice = "inventory"
                     Task { await model.captureFinished() }
                 },
                 onLater: { showCapture = false }
             )
+        }
+        .flowAnswerProbe {
+            model.isSubmitting || moversProgressSnapshot.hasRecordedAnswers
         }
         .fullScreenCover(isPresented: $showPaywallGate) {
             PaywallGateSheet(action: .vendorBooking) { subscribed in
@@ -68,7 +85,10 @@ struct FindMoversFlow: View {
         case .capture:
             MoversCaptureCard(
                 onScan: { showCapture = true },
-                onFallback: { Task { await model.useHomeDetailsInstead() } },
+                onFallback: {
+                    captureChoice = "home_details"
+                    Task { await model.useHomeDetailsInstead() }
+                },
                 onDismiss: onDismiss
             )
 
@@ -175,6 +195,14 @@ struct FindMoversFlow: View {
     private func completeFlow() {
         model.markComplete()
         onComplete()
+    }
+
+    private var moversProgressSnapshot: FlowProgressSnapshot {
+        var snapshot = model.flowProgressSnapshot
+        if let captureChoice {
+            snapshot.answers["capture_choice"] = [captureChoice]
+        }
+        return snapshot
     }
 }
 

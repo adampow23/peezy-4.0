@@ -1,76 +1,95 @@
-# Chip Estimate Integrity — Phase G: Duplicate-count diagnostic (CORE)
+# Post-Test Cleanup — Phase A: Blockers + routing (CORE, revised)
 #
-# ACCEPTANCE CONTRACT (G-final, locked before rollback/merge implementation)
-# G1 GIVEN the three-run rejected-prompt evidence, WHEN Phase G closes, THEN the
-#    vision prompt exactly matches `functions/processInventory.js` at commit
-#    `4023ca3`. `SESSION_NOTES.md` records that the prompt was rejected because
-#    it destabilized cube-material identities/counts (armchairs 4→5→5 and the
-#    run-3 credenza omission) to address one duplicated decorative item under
-#    one cubic foot. No second prompt attempt occurs.
-# G2 GIVEN normalized vision items, WHEN two or more entries have exactly the
-#    same deterministic normalized name AND exactly the same normalized
-#    category, THEN post-processing emits one first-occurrence entry with summed
-#    quantity and otherwise retains the first entry's fields. Case, Unicode
-#    compatibility, punctuation, and whitespace normalization are deterministic;
-#    there is no model call, fuzzy matching, or cross-category merge. Unit tests
-#    cover merge, non-merge, order, field retention, and input immutability.
-# G3 GIVEN G1 and G2 pass locally, WHEN deployment runs, THEN the single
-#    sanctioned target is `functions:processInventory`, containing both the
-#    prompt rollback and deterministic merge. No other function/rules/reseed
-#    mutation occurs.
-# G4 GIVEN the final deployed behavior, WHEN the controlled five-frame fixture
-#    runs three times on identical input, THEN all outputs are captured side by
-#    side and the run-to-run variance band is reported specifically for
-#    cube-material categories (`furniture`, `appliance`, `boxes`): identity/count
-#    ranges and total cubic-foot range. One realistic multi-room run is captured.
-#    Those controlled and multi-room artifacts become the NEW regression
-#    baselines; no prior byte-identical baseline existed, and the model migration
-#    to `claude-sonnet-4-6` is recorded.
-# G5 GIVEN the complete Phase G work, WHEN verification runs, THEN the diagnostic
-#    harness unit tests, controlled ground-truth walk, realistic multi-room
-#    output walk, fresh independent validation, and walked repository diffs pass.
-#    Exact bounded live fixture documents/objects are cleaned up; no flow/catalog
-#    reseed or unsanctioned deployment occurs.
-# G6 `SESSION_NOTES.md` is the final repository edit/action of the whole B→G
-#    session. It records the model migration, both new baselines, the duplicate
-#    verdict, whether a prompt/deploy occurred, tests, validators, and diffs.
-# G7 `functions/peezyBrain.js` and model defaults in `functions/.env.example`
-#    pin `claude-sonnet-4-6`. Only deployed Cloud Function exports proven to be
-#    backed by `peezyBrain` may be deployed; if none are live, no deploy occurs.
-#    The negative processInventory regression guard and archival iOS documents
-#    and build logs remain untouched.
+# ACCEPTANCE CONTRACT (locked before implementation)
+# A1.1 GIVEN any routed task flow, WHEN its outermost container renders, THEN a
+#      persistent top-trailing 44pt X with accessibility id `flow.exit` exists.
+#      Nested sheets/covers keep only their native dismissal back to the parent
+#      flow and do not render `flow.exit`.
+# A1.2 GIVEN no answer has been recorded anywhere in the whole routed flow, WHEN
+#      X is tapped, THEN the entire flow and all nested presentation state tear
+#      down immediately and the originating tab is restored. A nested surface
+#      cannot outlive its parent.
+# A1.3 GIVEN at least one answer exists anywhere in the whole flow and the latest
+#      answer-persistence write succeeded, WHEN X is tapped, THEN the exact
+#      confirmation renders: title `Leave this task?`, body `Your answers are
+#      saved. Pick up where you left off anytime.`, buttons `Leave` / `Keep
+#      going`. Keep going preserves state; Leave tears down the whole flow and
+#      returns to its originating tab.
+# A1.4 GIVEN the latest answer-persistence write is pending or failed, WHEN X is
+#      tapped, THEN the dialog cannot claim the answer is saved and instead uses
+#      the exact body `We couldn't save your last answer — check your connection
+#      before leaving.` with buttons `Leave anyway` / `Keep going`. The flow
+#      tracks `lastPersistenceError` at flow scope.
+# A1.5 GIVEN a successful recorded step, WHEN the flow is left and reopened,
+#      THEN resume enters at the outermost saved step with whole-flow answer state
+#      restored, including answers contributed by nested layers.
+# A1.6 GIVEN the scoped flow answer-persistence paths, WHEN Phase A closes, THEN
+#      every encountered `try?` or swallowed `catch` is reported for a future
+#      chip. This phase does not perform a global `try?` audit.
+# A2.1 GIVEN an unauthenticated device where `peezy.explainer.seen` is false,
+#      WHEN AppRootView resolves routing, THEN ExplainerView renders before Auth.
+# A2.2 GIVEN explainer card 5, THEN its body exactly matches the sanctioned signup
+#      copy; completion retains the device-scoped key and routes to Auth without
+#      changing SIWA/AuthViewModel internals.
+# A3.1 GIVEN either frozen-dose completion path, including `.allComplete`, WHEN
+#      the Home stack renders, THEN no completion card/glass chrome exists. The
+#      existing locked `That's today.` / `You're on pace for {moveDate}.` copy is
+#      the stack empty state and get-ahead remains visually secondary. The phase
+#      report cites the deleted `.allComplete` render path.
+# A4.1 GIVEN Tasks contains tasks whose `snoozedUntil` is in the future, WHEN the
+#      tab renders, THEN a separate Snoozed section shows every such task and its
+#      return date; expired or dateless tasks are not classified as snoozed, and
+#      the app retains exactly four tabs.
 #
 # EDIT SITES
 # PHASE_MANIFEST
-# Tests/ProcessInventoryDiagnostic.js
-# Tests/ProcessInventoryDiagnostic.test.js
-# Tests/Fixtures/ProcessInventory/controlled-single-room/fixture.json
-# Tests/Fixtures/ProcessInventory/controlled-single-room/frame_0.jpg
-# Tests/Fixtures/ProcessInventory/controlled-single-room/frame_1.jpg
-# Tests/Fixtures/ProcessInventory/controlled-single-room/frame_2.jpg
-# Tests/Fixtures/ProcessInventory/controlled-single-room/frame_3.jpg
-# Tests/Fixtures/ProcessInventory/controlled-single-room/frame_4.jpg
-# Tests/Fixtures/ProcessInventory/controlled-single-room/baseline.json
-# Tests/Fixtures/ProcessInventory/realistic-multi-room/fixture.json
-# Tests/Fixtures/ProcessInventory/realistic-multi-room/baseline.json
-# functions/processInventory.js
-# functions/tests/processInventoryMerge.test.js
-# functions/peezyBrain.js
-# functions/.env.example
-# functions/tests/peezyBrainModel.test.js
-# SESSION_NOTES.md (session-final write only)
+# PHASE_A_REPORT.md (new)
+# Peezy 4.0/Inventory/Views/InventoryFlowView.swift
+# Peezy 4.0/MainInterface/Models/MoversFlowViewModel.swift
+# Peezy 4.0/MainInterface/Models/PeezyV1App.swift
+# Peezy 4.0/MainInterface/Models/TaskActionService.swift
+# Peezy 4.0/MainInterface/Models/TaskFlowRouter.swift
+# Peezy 4.0/MainInterface/Views/AppRootView.swift
+# Peezy 4.0/MainInterface/Views/Onboarding/ExplainerView.swift
+# Peezy 4.0/MainInterface/Views/PeezyHomeView.swift
+# Peezy 4.0/MainInterface/Views/PeezyMainContainer.swift
+# Peezy 4.0/Menu/PeezySettingsView.swift
+# Peezy 4.0/Tasks/FlowEngine/FlowEngineView.swift
+# Peezy 4.0/Tasks/FlowEngine/InAppTaskFlows.swift
+# Peezy 4.0/Tasks/FlowEngine/FlowExitControl.swift (new)
+# Peezy 4.0/Tasks/FlowEngine/FlowProgressSession.swift (new)
+# Peezy 4.0/Tasks/Store/TaskGrouping.swift
+# Peezy 4.0/Tasks/Task Card Components/AdminMemoFlow.swift
+# Peezy 4.0/Tasks/Task Card Components/QuoteSelectionFlow.swift
+# Peezy 4.0/Tasks/Task Card Components/TaskFlowConfirmDateCard.swift
+# Peezy 4.0/Tasks/Task Cards/BoxReturnView.swift
+# Peezy 4.0/Tasks/Task Cards/FindCleanersFlow.swift
+# Peezy 4.0/Tasks/Task Cards/FindMoversFlow.swift
+# Peezy 4.0/Tasks/Task Cards/HandleAutoInsuranceFlow.swift
+# Peezy 4.0/Tasks/Task Cards/HandleHomeInsuranceFlow.swift
+# Peezy 4.0/Tasks/Task Cards/MoveCheckInView.swift
+# Peezy 4.0/Tasks/Task Cards/PackingReadinessView.swift
+# Peezy 4.0/Tasks/Task Cards/PackingSessionView.swift
+# Peezy 4.0/Tasks/Task Cards/RemoveItemsFlow.swift
+# Peezy 4.0/Tasks/Task Cards/RentTruckFlow.swift
+# Peezy 4.0/Tasks/Task Cards/SellItemsFlow.swift
+# Peezy 4.0/Tasks/Task Cards/SetupInternetFlow.swift
+# Peezy 4.0/Tasks/Task Cards/SuppliesKitView.swift
+# Peezy 4.0/Tasks/Views/TaskRowHeader.swift
+# Peezy 4.0/Tasks/Views/TasksList.swift
+# Peezy 4.0/Tasks/Views/TasksTabView.swift
+# Peezy 4.0/Tasks/Task Cards/ScanInventoryFlow.swift
 #
 # READ SITES
-# peezy-chip-estimate-integrity.md
+# peezy-chip-post-test-cleanup.md
 # peezy-execution-protocol.md
 # peezy-conventions-v2.md
-# CLAUDE.md
 # peezy-v1-architecture.md
-# functions/index.js
-# functions/package.json
-# firebase.json
-# firestore.rules
-# storage.rules
-# Peezy 4.0/Inventory/Models/InventoryModels.swift
-# Peezy 4.0/Inventory/Services/InventoryAPIClient.swift
+# CLAUDE.md
+# Peezy 4.0/Models/PeezyCard.swift
+# Peezy 4.0/MainInterface/Models/PeezyHomeViewModel.swift
+# Peezy 4.0/Inventory/Models/InventorySessionManager.swift
 # Peezy 4.0/Inventory/Services/InventoryStorageService.swift
+# Peezy 4.0/Tasks/FlowEngine/FlowDefinition.swift
+# Peezy 4.0/Tasks/FlowEngine/FlowDefinitionService.swift
+# SESSION_NOTES.md (session-final write only)

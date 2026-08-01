@@ -925,6 +925,7 @@ struct EditMoveDateSheet: View {
 struct EditAddressSheet: View {
     let title: String
     let currentValue: String
+    var onDraftChange: ((String) -> Void)? = nil
     var onSave: (String) -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -1034,6 +1035,9 @@ struct EditAddressSheet: View {
             }
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
+            .onChange(of: searchManager.queryFragment) { _, value in
+                onDraftChange?(value)
+            }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }

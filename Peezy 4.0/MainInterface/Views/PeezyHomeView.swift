@@ -18,6 +18,7 @@ struct PeezyHomeView: View {
 
     var userState: UserState?
     @Binding var focusedTask: PeezyCard?
+    let onTaskFlowDismissed: () -> Void
 
     @EnvironmentObject private var subscriptionManager: SubscriptionManager
     @State private var viewModel = PeezyHomeViewModel()
@@ -41,15 +42,21 @@ struct PeezyHomeView: View {
 
     // MARK: - Initializers
 
-    init(userState: UserState?, focusedTask: Binding<PeezyCard?>) {
+    init(
+        userState: UserState?,
+        focusedTask: Binding<PeezyCard?>,
+        onTaskFlowDismissed: @escaping () -> Void = {}
+    ) {
         self.userState = userState
         self._focusedTask = focusedTask
+        self.onTaskFlowDismissed = onTaskFlowDismissed
     }
 
     #if DEBUG
     init(previewViewModel: PeezyHomeViewModel) {
         self.userState = previewViewModel.userState
         self._focusedTask = .constant(nil)
+        self.onTaskFlowDismissed = {}
         self._viewModel = State(initialValue: previewViewModel)
     }
     #endif
@@ -74,10 +81,8 @@ struct PeezyHomeView: View {
                         returningMidDayCard
                     case .activeTask:
                         activeTaskContent
-                    case .dailyComplete:
-                        dailyCompleteCard
-                    case .allComplete:
-                        allCompleteCard
+                    case .dailyComplete, .allComplete:
+                        dailyCompleteEmptyState
                     }
                 }
                 // Card-exit feel (Spec 03 Phase D): completed card slides out,
@@ -128,6 +133,7 @@ struct PeezyHomeView: View {
         }
         .fullScreenCover(isPresented: showTaskFlowBinding, onDismiss: {
             viewModel.cleanupTaskFlow()
+            onTaskFlowDismissed()
         }) {
             if let flowId = viewModel.taskFlowWorkflowId {
                 TaskFlowRouter.flow(
@@ -136,7 +142,9 @@ struct PeezyHomeView: View {
                     taskId: viewModel.currentTask?.id,
                     userState: viewModel.userState,
                     onComplete: { viewModel.completeTaskFlow() },
-                    onDismiss: { viewModel.dismissTaskFlow() },
+                    onDismiss: {
+                        viewModel.dismissTaskFlow()
+                    },
                     onStatusAction: { action in
                         switch action {
                         case .done: viewModel.statusActionDone()
@@ -343,90 +351,54 @@ struct PeezyHomeView: View {
         }
     }
 
-    // MARK: - Daily Complete Card (no confetti — moved to task cards)
+    // MARK: - Frozen-dose empty state (no card chrome)
 
-    private var dailyCompleteCard: some View {
-        glassCard {
-            VStack(alignment: .leading, spacing: 0) {
-                Spacer()
+    private var dailyCompleteEmptyState: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Spacer()
 
-                VStack(alignment: .leading, spacing: 15) {
-                    Image(systemName: "checkmark.seal.fill")
-                        .font(.system(size: 56))
-                        .foregroundStyle(Color(uiColor: .systemGreen))
+            VStack(alignment: .leading, spacing: 15) {
+                Image(systemName: "checkmark.seal.fill")
+                    .font(.system(size: 56))
+                    .foregroundStyle(Color(uiColor: .systemGreen))
 
-                    // Copy LOCKED (Spec 03 Phase D): "That's today. You're on pace for [move date]."
-                    Text("That's today.")
-                        .font(.system(size: 34, weight: .heavy))
-                        .foregroundStyle(PeezyTheme.Colors.deepInk)
-                        .lineLimit(3)
-                        .minimumScaleFactor(0.5)
+                // Copy LOCKED (Spec 03 Phase D): "That's today. You're on pace for [move date]."
+                Text("That's today.")
+                    .font(.system(size: 34, weight: .heavy))
+                    .foregroundStyle(PeezyTheme.Colors.deepInk)
+                    .lineLimit(3)
+                    .minimumScaleFactor(0.5)
 
-                    Rectangle()
-                        .fill(Color.primary.opacity(0.15))
-                        .frame(width: 50, height: 2)
+                Rectangle()
+                    .fill(Color.primary.opacity(0.15))
+                    .frame(width: 50, height: 2)
 
-                    Text(viewModel.onPaceText)
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.6))
-                        .lineLimit(3)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .accessibilityIdentifier("home.done_today_pace")
+                Text(viewModel.onPaceText)
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.6))
+                    .lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("home.done_today_pace")
+            }
+            .padding(.horizontal, 24)
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Spacer()
+
+            if !viewModel.allActiveTasks.isEmpty {
+                Button(viewModel.currentBatchOffset > 0 ? "Keep going?" : "Want to get ahead?") {
+                    viewModel.getAhead()
                 }
+                .font(.headline)
+                .frame(maxWidth: .infinity, minHeight: 50)
+                .buttonStyle(.bordered)
+                .tint(PeezyTheme.Colors.deepInk)
                 .padding(.horizontal, 24)
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-                Spacer()
-
-                if !viewModel.allActiveTasks.isEmpty {
-                    PeezyAssessmentButton(viewModel.currentBatchOffset > 0 ? "Keep going?" :
-                        "Want to get ahead?") {
-                        viewModel.getAhead()
-                    }
-                    .padding(.horizontal, 24)
-                    .padding(.bottom, 24)
-                    .accessibilityIdentifier("get_ahead_button")
-                }
+                .padding(.bottom, 24)
+                .accessibilityIdentifier("get_ahead_button")
             }
         }
         .accessibilityIdentifier("daily_complete_view")
-    }
-
-    // MARK: - All Complete Card
-
-    private var allCompleteCard: some View {
-        glassCard {
-            VStack(alignment: .leading, spacing: 0) {
-                Spacer()
-
-                VStack(alignment: .leading, spacing: 15) {
-                    Image(systemName: "checkmark.seal.fill")
-                        .font(.system(size: 56))
-                        .foregroundStyle(Color(uiColor: .systemGreen))
-
-                    let name = viewModel.userState?.name ?? ""
-                    Text(name.isEmpty ? "You're all set!" : "You're all set, \(name)!")
-                        .font(.system(size: 34, weight: .heavy))
-                        .foregroundStyle(PeezyTheme.Colors.deepInk)
-                        .lineLimit(2)
-                        .minimumScaleFactor(0.5)
-
-                    Rectangle()
-                        .fill(Color.primary.opacity(0.15))
-                        .frame(width: 50, height: 2)
-
-                    Text(viewModel.allCompleteSubtext)
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.6))
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .padding(.horizontal, 24)
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-                Spacer()
-            }
-        }
-        .accessibilityIdentifier("all_complete_view")
     }
 
     // MARK: - Glass Card Container

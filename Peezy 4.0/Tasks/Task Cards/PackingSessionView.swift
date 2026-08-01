@@ -25,6 +25,15 @@ struct PackingSessionView: View {
         }
         .task { await loadSession() }
         .accessibilityIdentifier("packing.session.flow")
+        .resumableFlowProgress(
+            path: [consequenceLine == nil ? "session" : "completed"],
+            answers: consequenceLine.map { ["packed": [$0]] } ?? [:]
+        ) { restored in
+            consequenceLine = restored.answers["packed"]?.first
+        }
+        .flowAnswerProbe {
+            isSaving || consequenceLine != nil
+        }
     }
 
     @ViewBuilder

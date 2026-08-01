@@ -29,6 +29,7 @@ struct TaskFlowConfirmDateCard: View {
     var confirmLabel: String = "That's right"
     var changeLabel: String = "Update this"
     var showBack: Bool = false
+    var onDraftChange: ((Date) -> Void)? = nil
     let onConfirm: (Date) -> Void
     var onBack: (() -> Void)? = nil
 
@@ -62,6 +63,10 @@ struct TaskFlowConfirmDateCard: View {
         .onAppear {
             confirmedDate = currentDate
             draftDate = currentDate
+        }
+        .onChange(of: currentDate) { _, value in
+            confirmedDate = value
+            draftDate = value
         }
     }
 
@@ -152,6 +157,9 @@ struct TaskFlowConfirmDateCard: View {
             .tint(PeezyTheme.Colors.deepInk)
             .padding(.horizontal, 16)
             .padding(.top, 8)
+            .onChange(of: draftDate) { _, value in
+                onDraftChange?(value)
+            }
 
             Spacer()
 

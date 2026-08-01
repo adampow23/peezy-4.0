@@ -2,7 +2,8 @@ import Foundation
 
 enum TaskGrouping {
     struct Groups: Equatable {
-        var todo: [PeezyCard]              // upcoming + snoozed (snoozed at bottom)
+        var todo: [PeezyCard]
+        var snoozed: [PeezyCard]
         var userInProgress: [PeezyCard]    // "You're on it"
         var peezyOnIt: [PeezyCard]         // "Peezy is on it" — .inProgress, .pending, .matchingInProgress
         var completed: [PeezyCard]
@@ -11,12 +12,18 @@ enum TaskGrouping {
     /// Partitions tasks into tab sections. `now` parameter for testability.
     static func partition(_ tasks: [PeezyCard], now: Date = Date()) -> Groups {
         var todo: [PeezyCard] = []
+        var snoozed: [PeezyCard] = []
         var userInProgress: [PeezyCard] = []
         var peezyOnIt: [PeezyCard] = []
         var completed: [PeezyCard] = []
 
         for task in tasks {
             guard task.status != .skipped else { continue }
+
+            if isSnoozedEffective(task, now: now) {
+                snoozed.append(task)
+                continue
+            }
 
             switch task.status {
             case .completed:
@@ -32,14 +39,13 @@ enum TaskGrouping {
             }
         }
 
-        let upcomingPart = todo.filter { !isSnoozedEffective($0, now: now) }
-            .sorted { a, b in
+        let todoSorted = todo.sorted { a, b in
                 let ua = a.urgencyPercentage ?? 0
                 let ub = b.urgencyPercentage ?? 0
                 if ua != ub { return ua > ub }
                 return a.title < b.title
             }
-        let snoozedPart = todo.filter { isSnoozedEffective($0, now: now) }
+        let snoozedSorted = snoozed
             .sorted { ($0.snoozedUntil ?? .distantFuture) < ($1.snoozedUntil ?? .distantFuture) }
 
         let uipSorted = userInProgress.sorted {
@@ -60,7 +66,8 @@ enum TaskGrouping {
         }
 
         return Groups(
-            todo: upcomingPart + snoozedPart,
+            todo: todoSorted,
+            snoozed: snoozedSorted,
             userInProgress: uipSorted,
             peezyOnIt: peezySorted,
             completed: completedSorted
@@ -68,8 +75,7 @@ enum TaskGrouping {
     }
 
     static func isSnoozedEffective(_ card: PeezyCard, now: Date = Date()) -> Bool {
-        if card.status == .snoozed { return true }
-        if let snoozedUntil = card.snoozedUntil, snoozedUntil > now { return true }
-        return false
+        guard let snoozedUntil = card.snoozedUntil else { return false }
+        return snoozedUntil > now
     }
 }

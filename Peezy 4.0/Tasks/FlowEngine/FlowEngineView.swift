@@ -52,6 +52,8 @@ struct FlowEngineView: View {
     let onDismiss: () -> Void
     let onStatusAction: (TaskFlowStatusAction) -> Void
 
+    @Environment(FlowExitCoordinator.self) private var exitCoordinator
+
     // MARK: - State
 
     /// Visited step ids; last element is the current step. Persisted as flowPath.
@@ -321,7 +323,7 @@ struct FlowEngineView: View {
         guard let nextId, let nextStep = resolvedStep(withId: nextId) else { return }
 
         path.append(nextId)
-        persistProgress(answerKey: nil, values: nil)
+        persistProgress()
 
         // Empty-taskId guard (Phase A validator finding): Firestore's
         // documentWithPath: raises an uncatchable ObjC exception on an empty
@@ -335,7 +337,7 @@ struct FlowEngineView: View {
     private func goBack() {
         guard canGoBack else { return }
         path.removeLast()
-        persistProgress(answerKey: nil, values: nil)
+        persistProgress()
     }
 
     // MARK: - Provider Resolution
@@ -429,16 +431,13 @@ struct FlowEngineView: View {
 
     private func record(_ key: String, _ values: [String]) {
         answers[key] = values
-        persistProgress(answerKey: key, values: values)
+        persistProgress()
     }
 
-    private func persistProgress(answerKey: String?, values: [String]?) {
-        guard !taskId.isEmpty else { return }
-        let id = taskId
-        let snapshot = path
-        Task {
-            await actionService.writeFlowProgress(taskId: id, path: snapshot, answerKey: answerKey, values: values)
-        }
+    private func persistProgress() {
+        exitCoordinator.persist(
+            FlowProgressSnapshot(path: path, answers: answers)
+        )
     }
 
     /// Clears persisted flow state, then fires the terminal callback —
@@ -461,19 +460,25 @@ struct FlowEngineView: View {
             return
         }
 
-        let db = Firestore.firestore()
-        let doc = try? await db.collection("users").document(userId)
-            .collection("tasks").document(taskId).getDocument()
-        let data = doc?.data()
+        let savedProgress = await exitCoordinator.restore()
+        let data: [String: Any]
+        do {
+            let document = try await Firestore.firestore()
+                .collection("users").document(userId)
+                .collection("tasks").document(taskId).getDocument()
+            data = document.data() ?? [:]
+        } catch {
+            print("⚠️ Failed to load flow rows: \(error.localizedDescription)")
+            data = [:]
+        }
 
-        rows = (data?["flowRows"] as? [[String: Any]])?
+        rows = (data["flowRows"] as? [[String: Any]])?
             .compactMap(FlowRow.init(firestoreData:)) ?? []
         resolvedSteps = definition.resolvedSteps(rows: rows)
         let entry = resolvedSteps.first?.id ?? ""
 
-        let savedPath = data?["flowPath"] as? [String] ?? []
-        let savedAnswers = (data?["flowAnswers"] as? [String: Any])?
-            .compactMapValues { $0 as? [String] } ?? [:]
+        let savedPath = savedProgress.path
+        let savedAnswers = savedProgress.answers
 
         // A reseed can rename steps; a trail referencing unknown ids restarts.
         let pathIsValid = !savedPath.isEmpty && savedPath.allSatisfy { resolvedStep(withId: $0) != nil }

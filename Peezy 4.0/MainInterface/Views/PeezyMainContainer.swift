@@ -26,6 +26,7 @@ struct PeezyMainContainer: View {
 
     // Task list → Home navigation: when set, switches to Home and focuses this task
     @State private var focusedTask: PeezyCard? = nil
+    @State private var taskFlowOriginTab: PeezyTab?
 
     // Measured height of the floating tab bar (including its bottom padding)
     @State private var tabBarHeight: CGFloat = 0
@@ -42,13 +43,18 @@ struct PeezyMainContainer: View {
             Group {
                 switch selectedTab {
                 case .home:
-                    PeezyHomeView(userState: userState, focusedTask: $focusedTask)
+                    PeezyHomeView(
+                        userState: userState,
+                        focusedTask: $focusedTask,
+                        onTaskFlowDismissed: restoreTaskFlowOrigin
+                    )
                         .ignoresSafeArea(.keyboard, edges: .bottom)
 
                 case .tasks:
                     TasksTabView(
                         userState: userState,
                         onNavigateToTask: { task in
+                            taskFlowOriginTab = selectedTab
                             focusedTask = task
                             withAnimation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.8)) {
                                 selectedTab = .home
@@ -101,6 +107,14 @@ struct PeezyMainContainer: View {
                     hasLoadedTimeline = true
                 }
             }
+        }
+    }
+
+    private func restoreTaskFlowOrigin() {
+        guard let origin = taskFlowOriginTab else { return }
+        taskFlowOriginTab = nil
+        withAnimation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.8)) {
+            selectedTab = origin
         }
     }
 }

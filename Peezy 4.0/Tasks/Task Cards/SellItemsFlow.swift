@@ -19,6 +19,7 @@ struct SellItemsFlow: View {
     let workflowId = "sell_items"
 
     let userId: String
+    let taskId: String
     let onComplete: () -> Void
     let onDismiss: () -> Void
     let onStatusAction: (TaskFlowStatusAction) -> Void
@@ -44,6 +45,13 @@ struct SellItemsFlow: View {
                 cardContent
             }
 
+        }
+        .resumableFlowProgress(
+            path: ["card.\(currentIndex)"],
+            answers: FlowProgressCoding.encode(answers)
+        ) { restored in
+            currentIndex = min(max(FlowProgressCoding.cardIndex(from: restored.path), 0), totalCards - 1)
+            answers = FlowProgressCoding.decode(restored.answers)
         }
     }
 
@@ -191,6 +199,7 @@ struct SellItemsFlow: View {
 #Preview("Sell Items Flow") {
     SellItemsFlow(
         userId: "preview-user",
+        taskId: "SELL_ITEMS",
         onComplete: { print("✅ Complete") },
         onDismiss: { print("⏪ Dismiss") },
         onStatusAction: { action in print("📋 Status: \(action)") }

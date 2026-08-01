@@ -72,16 +72,17 @@ struct AppRootView: View {
             AppLoadingView()
 
         case .notAuthenticated:
-            AuthView()
-                .environmentObject(authViewModel)
-
-        case .needsAssessment:
             if !explainerSeen {
                 ExplainerView(onFinished: {
                     explainerSeen = true
-                    showAssessment = true
                 })
-            } else if showAssessment {
+            } else {
+                AuthView()
+                    .environmentObject(authViewModel)
+            }
+
+        case .needsAssessment:
+            if showAssessment {
                 AssessmentFlowView(showAssessment: $showAssessment)
             } else {
                 AssessmentIntroView(showAssessment: $showAssessment)

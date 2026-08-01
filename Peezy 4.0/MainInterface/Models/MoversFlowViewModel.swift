@@ -68,6 +68,8 @@ final class MoversFlowViewModel {
     private var inventoryItems: [InventoryItem] = []
     private var unresolvedUnseenRoomCount = 0
     private var assessment: [String: Any] = [:]
+    private var baselineRefinementAnswers: [String: String] = [:]
+    private var hasRefinementBaseline = false
     private let actionService = TaskActionService()
 
     var canCompare: Bool {
@@ -123,6 +125,8 @@ final class MoversFlowViewModel {
         do {
             assessment = try await loadAssessment(userId: userId)
             hydrateRefinementInputs()
+            baselineRefinementAnswers = refinementAnswers
+            hasRefinementBaseline = true
             try await reloadInventory()
             if hasInventory {
                 try await rebuildScope()
@@ -146,6 +150,111 @@ final class MoversFlowViewModel {
             transition(to: .scope)
         } catch {
             fail(error.localizedDescription)
+        }
+    }
+
+    func captureDismissed() async {
+        do {
+            try await reloadInventory()
+            if hasInventory {
+                try await rebuildScope()
+                transition(to: .scope)
+            }
+        } catch {
+            fail(error.localizedDescription)
+        }
+    }
+
+    var flowProgressSnapshot: FlowProgressSnapshot {
+        var recorded: [String: [String]] = hasRefinementBaseline
+            ? refinementAnswers.filter { baselineRefinementAnswers[$0.key] != $0.value }
+                .mapValues { [$0] }
+            : [:]
+        if !requestedArrivalWindow.isEmpty {
+            recorded["requested_arrival_window"] = [requestedArrivalWindow]
+        }
+        if !notes.isEmpty {
+            recorded["notes"] = [notes]
+        }
+        if let selectedQuote {
+            recorded["selected_quote"] = [selectedQuote.id]
+        }
+        switch stage {
+        case .comparison, .booking, .confirmation:
+            recorded["quote_route"] = [isQuoteRequest ? "concierge" : "vendor"]
+        default:
+            break
+        }
+        if let conciergeReason {
+            recorded["concierge_reason"] = [
+                conciergeReason == .longDistance ? "long_distance" : "physical_hours"
+            ]
+        }
+        return FlowProgressSnapshot(
+            path: ["movers.\(stage.rawValue)"],
+            answers: recorded
+        )
+    }
+
+    func restoreFlowProgress(_ snapshot: FlowProgressSnapshot) async {
+        let values = snapshot.answers.compactMapValues(\.first)
+        bedroomsAnswer = values["bedrooms"] ?? bedroomsAnswer
+        destinationBedroomsAnswer = values["destination_bedrooms"] ?? destinationBedroomsAnswer
+        hasStorage = values["has_storage"].map { $0 == "true" } ?? hasStorage
+        storageSize = values["storage_size"] ?? storageSize
+        storageFullness = values["storage_fullness"] ?? storageFullness
+        storageStopOnMovingDay = values["storage_stop"]
+            .map { $0 == "true" } ?? storageStopOnMovingDay
+        storageUnitAddress = values["storage_address"] ?? storageUnitAddress
+        originAccessAnswer = values["origin_access"] ?? originAccessAnswer
+        destinationAccessAnswer = values["destination_access"] ?? destinationAccessAnswer
+        originLongCarry = values["origin_long_carry"].map { $0 == "true" } ?? originLongCarry
+        destinationLongCarry = values["destination_long_carry"]
+            .map { $0 == "true" } ?? destinationLongCarry
+        if let packed = values["packed_status"], let restored = PackedStatus(rawValue: packed) {
+            packedStatus = restored
+        }
+        coveragePreference = values["coverage"] ?? coveragePreference
+        requestedArrivalWindow = values["requested_arrival_window"] ?? requestedArrivalWindow
+        notes = values["notes"] ?? notes
+        if values["quote_route"] == "concierge" {
+            isQuoteRequest = true
+            conciergeReason = values["concierge_reason"] == "physical_hours"
+                ? .physicalHours
+                : .longDistance
+        }
+
+        guard let rawStage = snapshot.path.last?.split(separator: ".").last,
+              let rawValue = Int(rawStage),
+              let restoredStage = MoversFlowStage(rawValue: rawValue),
+              restoredStage != .loading,
+              restoredStage != .failure
+        else { return }
+
+        if restoredStage.rawValue >= MoversFlowStage.scope.rawValue, scope == nil {
+            do {
+                try await rebuildScope()
+            } catch {
+                fail(error.localizedDescription)
+                return
+            }
+        }
+
+        switch restoredStage {
+        case .comparison where isQuoteRequest:
+            stage = .comparison
+        case .comparison:
+            await prepareComparisons()
+        case .booking:
+            guard await restoreSelectedQuote(id: values["selected_quote"]) else { return }
+            stage = .booking
+        case .confirmation where isQuoteRequest:
+            stage = .confirmation
+        case .confirmation:
+            guard await restoreSelectedQuote(id: values["selected_quote"]) else { return }
+            stage = .confirmation
+        default:
+            stage = restoredStage
         }
     }
 
@@ -376,6 +485,24 @@ final class MoversFlowViewModel {
         destinationAccessAnswer = Self.normalizedAccess(assessment["newFloorAccess"] as? String)
     }
 
+    private var refinementAnswers: [String: String] {
+        [
+            "bedrooms": bedroomsAnswer,
+            "destination_bedrooms": destinationBedroomsAnswer,
+            "has_storage": String(hasStorage),
+            "storage_size": storageSize,
+            "storage_fullness": storageFullness,
+            "storage_stop": String(storageStopOnMovingDay),
+            "storage_address": storageUnitAddress,
+            "origin_access": originAccessAnswer,
+            "destination_access": destinationAccessAnswer,
+            "origin_long_carry": String(originLongCarry),
+            "destination_long_carry": String(destinationLongCarry),
+            "packed_status": packedStatus.rawValue,
+            "coverage": coveragePreference
+        ]
+    }
+
     private func loadAssessment(userId: String) async throws -> [String: Any] {
         let snapshot = try await Firestore.firestore().collection("users").document(userId)
             .collection("user_assessments").limit(to: 1).getDocuments()
@@ -423,6 +550,16 @@ final class MoversFlowViewModel {
         quotes = []
         selectedQuote = nil
         transition(to: .comparison)
+    }
+
+    private func restoreSelectedQuote(id selectedQuoteID: String?) async -> Bool {
+        await prepareComparisons()
+        guard stage == .comparison,
+              let selectedQuoteID,
+              let restoredQuote = quotes.first(where: { $0.id == selectedQuoteID })
+        else { return false }
+        selectedQuote = restoredQuote
+        return true
     }
 
     private func fail(_ message: String) {

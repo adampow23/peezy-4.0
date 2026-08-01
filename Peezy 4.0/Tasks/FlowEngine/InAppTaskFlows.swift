@@ -91,11 +91,13 @@ private struct InAppFlowSaving: View {
 
 struct AddNewAddressFlow: View {
     let userId: String
+    let taskId: String
     let onComplete: () -> Void
     let onDismiss: () -> Void
 
     @State private var showSheet = false
     @State private var isSaving = false
+    @State private var addressDraft = ""
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -120,9 +122,19 @@ struct AddNewAddressFlow: View {
 
         }
         .sheet(isPresented: $showSheet) {
-            EditAddressSheet(title: "New Address", currentValue: "") { newValue in
+            EditAddressSheet(
+                title: "New Address",
+                currentValue: addressDraft,
+                onDraftChange: { addressDraft = $0 }
+            ) { newValue in
                 save(raw: newValue)
             }
+        }
+        .resumableFlowProgress(
+            path: ["add_address"],
+            answers: addressDraft.isEmpty ? [:] : ["address_draft": [addressDraft]]
+        ) { restored in
+            addressDraft = restored.answers["address_draft"]?.first ?? ""
         }
     }
 
@@ -170,11 +182,13 @@ struct AddNewAddressFlow: View {
 
 struct ConfirmMoveDateFlow: View {
     let userId: String
+    let taskId: String
     let currentDate: Date
     let onComplete: () -> Void
     let onDismiss: () -> Void
 
     @State private var isSaving = false
+    @State private var restoredDraftDate: Date?
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -189,8 +203,9 @@ struct ConfirmMoveDateFlow: View {
                         TaskFlowConfirmDateCard(
                             taskTitle: "Lock in your move date",
                             question: "Is this the real date?",
-                            currentDate: currentDate,
+                            currentDate: restoredDraftDate ?? currentDate,
                             confirmLabel: "Lock it in",
+                            onDraftChange: { restoredDraftDate = $0 },
                             onConfirm: { date in save(date: date) }
                         )
                     }
@@ -198,6 +213,15 @@ struct ConfirmMoveDateFlow: View {
                 .accessibilityIdentifier("inapp.confirm_move_date")
             }
 
+        }
+        .resumableFlowProgress(
+            path: ["confirm_date"],
+            answers: restoredDraftDate.map {
+                ["move_date_draft": [ISO8601DateFormatter().string(from: $0)]]
+            } ?? [:]
+        ) { restored in
+            guard let raw = restored.answers["move_date_draft"]?.first else { return }
+            restoredDraftDate = ISO8601DateFormatter().date(from: raw)
         }
     }
 
@@ -230,6 +254,7 @@ struct ConfirmMoveDateFlow: View {
 
 struct DeclutterIntentFlow: View {
     let userId: String
+    let taskId: String
     let onComplete: () -> Void
     let onDismiss: () -> Void
 
@@ -267,6 +292,12 @@ struct DeclutterIntentFlow: View {
             }
 
         }
+        .resumableFlowProgress(
+            path: ["declutter_intent"],
+            answers: selected.isEmpty ? [:] : ["declutter_intent": selected.sorted()]
+        ) { restored in
+            selected = Set(restored.answers["declutter_intent"] ?? [])
+        }
     }
 
     private func save(choice: String) {
@@ -296,6 +327,7 @@ struct DeclutterIntentFlow: View {
 
 struct StorageNeedFlow: View {
     let userId: String
+    let taskId: String
     let onComplete: () -> Void
     let onDismiss: () -> Void
 
@@ -330,6 +362,12 @@ struct StorageNeedFlow: View {
                 .accessibilityIdentifier("inapp.storage_need")
             }
 
+        }
+        .resumableFlowProgress(
+            path: ["storage_need"],
+            answers: selected.map { ["storage_need": [$0]] } ?? [:]
+        ) { restored in
+            selected = restored.answers["storage_need"]?.first
         }
     }
 

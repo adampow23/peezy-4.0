@@ -40,7 +40,11 @@ struct PeezyV1App: App {
     @ViewBuilder
     private var rootView: some View {
         #if DEBUG
-        if ProcessInfo.processInfo.arguments.contains("--estimate-integrity-phase-f-booked") {
+        if ProcessInfo.processInfo.arguments.contains("--phase-a-flow-exit-saved") {
+            PhaseASavedExitFixture()
+        } else if ProcessInfo.processInfo.arguments.contains("--phase-a-flow-exit") {
+            PhaseAFlowExitFixture()
+        } else if ProcessInfo.processInfo.arguments.contains("--estimate-integrity-phase-f-booked") {
             EstimateIntegrityPhaseFCheckInFixture(booked: true)
         } else if ProcessInfo.processInfo.arguments.contains("--estimate-integrity-phase-f-general") {
             EstimateIntegrityPhaseFCheckInFixture(booked: false)
@@ -60,6 +64,95 @@ struct PeezyV1App: App {
 }
 
 #if DEBUG
+private struct PhaseASavedExitFixture: View {
+    @State private var isPresented = true
+
+    var body: some View {
+        if isPresented {
+            OutermostTaskFlowContainer(
+                userId: "phase-a-fixture",
+                taskId: "PHASE_A_SAVED_FIXTURE",
+                onDismiss: { isPresented = false }
+            ) { _ in
+                PhaseASavedAnswerContent()
+            }
+        } else {
+            Text("TERMINAL: saved flow dismissed")
+                .accessibilityIdentifier("phase_a.saved_terminal")
+        }
+    }
+}
+
+private struct PhaseASavedAnswerContent: View {
+    @Environment(FlowExitCoordinator.self) private var coordinator
+
+    var body: some View {
+        Text("Saved answer fixture")
+            .task {
+                coordinator.noteExternallyPersistedAnswer(
+                    path: ["saved_step"],
+                    answers: ["saved_step": ["answer"]]
+                )
+            }
+    }
+}
+
+private struct PhaseAFlowExitFixture: View {
+    @State private var routeIndex = 0
+    @State private var completedRoutes: [String] = []
+
+    private let runID = ProcessInfo.processInfo.environment["PHASE_A_RUN_ID"] ?? "default"
+
+    private let routes: [String] = {
+        let raw = ProcessInfo.processInfo.environment["PHASE_A_FLOW_IDS"] ?? "manage_bank"
+        return raw.split(separator: ",").map(String.init)
+    }()
+
+    var body: some View {
+        ZStack {
+            if routeIndex < routes.count {
+                let route = routes[routeIndex]
+                TaskFlowRouter.flow(
+                    for: route,
+                    userId: "phase-a-fixture",
+                    taskId: "PHASE_A_\(runID)_\(route.uppercased())",
+                    userState: nil,
+                    onComplete: { finish(route) },
+                    onDismiss: { finish(route) },
+                    onStatusAction: { _ in finish(route) }
+                )
+                .id(route)
+
+                VStack {
+                    HStack {
+                        Text("ROUTE \(routeIndex + 1)/\(routes.count): \(route)")
+                            .font(.caption2.bold())
+                            .padding(6)
+                            .background(.black.opacity(0.72), in: Capsule())
+                            .foregroundStyle(.white)
+                            .accessibilityIdentifier("phase_a.current_route")
+                        Spacer()
+                    }
+                    Spacer()
+                }
+                .padding(.top, 58)
+                .padding(.leading, 8)
+                .allowsHitTesting(false)
+                .zIndex(200)
+            } else {
+                Text("TERMINAL: dismissed \(completedRoutes.count)/\(routes.count) routes")
+                    .font(.headline)
+                    .accessibilityIdentifier("phase_a.flow_terminal")
+            }
+        }
+    }
+
+    private func finish(_ route: String) {
+        completedRoutes.append(route)
+        routeIndex += 1
+    }
+}
+
 private struct EstimateIntegrityPhaseFCheckInFixture: View {
     let booked: Bool
 
@@ -79,6 +172,7 @@ private struct EstimateIntegrityPhaseFCheckInFixture: View {
     var body: some View {
         MoveCheckInView(
             userId: "phase-f-fixture",
+            taskId: "MOVE_CHECKIN_FIXTURE",
             onDismiss: {},
             onStatusAction: { _ in },
             fixtureBookingContext: bookingContext,

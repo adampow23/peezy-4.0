@@ -9,6 +9,8 @@ struct PackingReadinessView: View {
     @State private var record: ReadinessGateRecord?
     @State private var savingItem: ReadinessItem?
     @State private var errorMessage: String?
+    @State private var hasUnpersistedReadinessAttempt = false
+    @Environment(FlowExitCoordinator.self) private var exitCoordinator
 
     private let actionService = TaskActionService()
 
@@ -23,6 +25,27 @@ struct PackingReadinessView: View {
         }
         .task { await load() }
         .accessibilityIdentifier("readiness.flow")
+        .resumableFlowProgress(
+            path: [record?.checklist.isComplete == true ? "complete" : "checklist"],
+            answers: readinessProgressAnswers
+        ) { _ in }
+        .flowAnswerProbe {
+            savingItem != nil
+                || hasUnpersistedReadinessAttempt
+                || !readinessProgressAnswers.isEmpty
+        }
+    }
+
+    private var readinessProgressAnswers: [String: [String]] {
+        guard let record else { return [:] }
+        return Self.progressAnswers(for: record.checklist)
+    }
+
+    private static func progressAnswers(for checklist: ReadinessChecklist) -> [String: [String]] {
+        let readyItems = ReadinessItem.allCases
+            .filter { checklist[$0] }
+            .map(\.rawValue)
+        return readyItems.isEmpty ? [:] : ["ready_items": readyItems]
     }
 
     @ViewBuilder
@@ -187,17 +210,25 @@ struct PackingReadinessView: View {
         updated.completedAt = updated.checklist.isComplete ? Date() : nil
         savingItem = item
         errorMessage = nil
+        hasUnpersistedReadinessAttempt = true
+        exitCoordinator.noteExternalPersistencePending()
 
         Task {
             do {
                 try await actionService.saveReadinessGate(userId: userId, record: updated)
                 await MainActor.run {
+                    exitCoordinator.noteExternallyPersistedAnswer(
+                        path: [updated.checklist.isComplete ? "complete" : "checklist"],
+                        answers: Self.progressAnswers(for: updated.checklist)
+                    )
+                    hasUnpersistedReadinessAttempt = false
                     record = updated
                     savingItem = nil
                     PeezyHaptics.selection()
                 }
             } catch {
                 await MainActor.run {
+                    exitCoordinator.noteExternalPersistenceFailure(error)
                     errorMessage = error.localizedDescription
                     savingItem = nil
                 }

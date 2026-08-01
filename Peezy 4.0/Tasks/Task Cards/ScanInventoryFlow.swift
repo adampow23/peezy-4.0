@@ -10,36 +10,48 @@ struct ScanInventoryFlow: View {
     let workflowId = "scan_inventory"
 
     let userId: String
+    let taskId: String
     let onComplete: () -> Void
     let onDismiss: () -> Void
     let onStatusAction: (TaskFlowStatusAction) -> Void
 
     @State private var didFireCallback = false
+    @State private var isCheckingDismiss = false
+    @State private var inventoryStatus: InventoryStatus = .loading
+    @State private var hasLocalInventoryAnswers = false
+    @Environment(FlowExitCoordinator.self) private var exitCoordinator
 
-    private enum InventoryStatus {
+    private enum InventoryStatus: Equatable {
+        case loading
         case submitted
         case draft
         case empty
+        case unknown
     }
 
     var body: some View {
         InventoryFlowView(
             onUserDismiss: {
                 // User dismissed without submitting.
-                guard !didFireCallback else { return }
-                didFireCallback = true
+                guard !didFireCallback, !isCheckingDismiss else { return }
+                isCheckingDismiss = true
 
                 // Check once if they actually submitted (edge case: submit -> dismiss happens fast)
                 Task {
                     let status = await checkInventoryStatus()
                     await MainActor.run {
+                        inventoryStatus = status
+                        isCheckingDismiss = false
                         switch status {
                         case .submitted:
                             onComplete()
                         case .draft:
-                            // User saved progress; keep it off today's active queue.
-                            onStatusAction(.inProgress)
-                        case .empty:
+                            exitCoordinator.noteExternallyPersistedAnswer(
+                                path: ["inventory"],
+                                answers: ["inventory": ["draft"]]
+                            )
+                            onDismiss()
+                        case .loading, .empty, .unknown:
                             onDismiss()
                         }
                     }
@@ -55,8 +67,32 @@ struct ScanInventoryFlow: View {
                 guard !didFireCallback else { return }
                 didFireCallback = true
                 onStatusAction(.later)
-            }
+            },
+            onLocalAnswerChange: { hasAnswers in
+                hasLocalInventoryAnswers = hasAnswers
+                exitCoordinator.noteExternalPersistencePending()
+            },
+            dismissesAfterUserAction: false
         )
+        .task {
+            let status = await checkInventoryStatus()
+            inventoryStatus = status
+            if status == .submitted || status == .draft {
+                exitCoordinator.noteExternallyPersistedAnswer(
+                    path: ["inventory"],
+                    answers: ["inventory": [status == .submitted ? "submitted" : "draft"]]
+                )
+            }
+            exitCoordinator.noteExternalAnswerStateReady()
+        }
+        .flowAnswerProbe {
+            switch inventoryStatus {
+            case .submitted, .draft, .unknown, .loading:
+                return true
+            case .empty:
+                return hasLocalInventoryAnswers
+            }
+        }
     }
 
     private func checkInventoryStatus() async -> InventoryStatus {
@@ -72,7 +108,7 @@ struct ScanInventoryFlow: View {
             if status == "draft" { return .draft }
             return .empty
         } catch {
-            return .empty
+            return .unknown
         }
     }
 }
@@ -81,6 +117,7 @@ struct ScanInventoryFlow: View {
 #Preview("Scan my home") {
     ScanInventoryFlow(
         userId: "preview-user",
+        taskId: "SCAN_INVENTORY",
         onComplete: { print("Complete") },
         onDismiss: { print("Dismiss") },
         onStatusAction: { action in print("Status: \(action)") }

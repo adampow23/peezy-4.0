@@ -13,6 +13,8 @@ struct InventoryFlowView: View {
     var onUserDismiss: (() -> Void)? = nil
     var onSubmitted: (() -> Void)? = nil
     var onLater: (() -> Void)? = nil
+    var onLocalAnswerChange: ((Bool) -> Void)? = nil
+    var dismissesAfterUserAction = true
 
     @State private var sessionManager = InventorySessionManager()
     @Environment(\.dismiss) private var dismiss
@@ -23,6 +25,21 @@ struct InventoryFlowView: View {
     @State private var savedItemCount = 0
     @State private var showSubmissionComplete = false
     @State private var pendingLockedView = false
+    @State private var didFinishInitialLoad = false
+    @State private var lastAnswerFingerprint = ""
+
+    private var answerFingerprint: String {
+        let rooms = sessionManager.scannedRooms.map { room in
+            "\(room.id):\(room.items.count)"
+        }
+        let coverage = sessionManager.coverageConfirmedRoomIDs.sorted()
+        return (rooms + coverage).joined(separator: "|")
+    }
+
+    private var hasLocalAnswers: Bool {
+        !sessionManager.scannedRooms.isEmpty
+            || !sessionManager.coverageConfirmedRoomIDs.isEmpty
+    }
 
     var body: some View {
         ZStack {
@@ -32,8 +49,7 @@ struct InventoryFlowView: View {
                     InventoryLockedView(
                         rooms: sessionManager.scannedRooms,
                         onDismiss: {
-                            onUserDismiss?()
-                            dismiss()
+                            closeFlow()
                         }
                     )
                 } else {
@@ -52,8 +68,7 @@ struct InventoryFlowView: View {
                         InventoryRoomHubView(
                             sessionManager: sessionManager,
                             onDismiss: {
-                                onUserDismiss?()
-                                dismiss()
+                                closeFlow()
                             },
                             onSubmitted: {
                                 pendingLockedView = true
@@ -108,8 +123,7 @@ struct InventoryFlowView: View {
                         InventoryRoomHubView(
                             sessionManager: sessionManager,
                             onDismiss: {
-                                onUserDismiss?()
-                                dismiss()
+                                closeFlow()
                             },
                             onSubmitted: {
                                 pendingLockedView = true
@@ -128,6 +142,8 @@ struct InventoryFlowView: View {
         .animation(.spring(response: 0.4, dampingFraction: 0.85), value: sessionManager.stateDescription)
         .task {
             await sessionManager.loadExistingInventory()
+            lastAnswerFingerprint = answerFingerprint
+            didFinishInitialLoad = true
         }
         .alert("Submitted!", isPresented: $showSubmissionComplete) {
             Button("Done") {
@@ -154,6 +170,11 @@ struct InventoryFlowView: View {
                     }
                 }
             }
+        }
+        .onChange(of: answerFingerprint) { _, newValue in
+            guard didFinishInitialLoad, newValue != lastAnswerFingerprint else { return }
+            lastAnswerFingerprint = newValue
+            onLocalAnswerChange?(hasLocalAnswers)
         }
     }
 
@@ -232,7 +253,9 @@ struct InventoryFlowView: View {
 
     private func closeFlow() {
         onUserDismiss?()
-        dismiss()
+        if dismissesAfterUserAction {
+            dismiss()
+        }
     }
 
     // MARK: - Saved Popup

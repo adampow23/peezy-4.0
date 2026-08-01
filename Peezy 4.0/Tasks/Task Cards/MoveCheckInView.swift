@@ -2,6 +2,7 @@ import SwiftUI
 
 struct MoveCheckInView: View {
     let userId: String
+    let taskId: String
     let onDismiss: () -> Void
     let onStatusAction: (TaskFlowStatusAction) -> Void
 
@@ -22,12 +23,14 @@ struct MoveCheckInView: View {
 
     init(
         userId: String,
+        taskId: String,
         onDismiss: @escaping () -> Void,
         onStatusAction: @escaping (TaskFlowStatusAction) -> Void,
         fixtureBookingContext: CheckInBookingContext? = nil,
         fixtureContextLoaded: Bool = false
     ) {
         self.userId = userId
+        self.taskId = taskId
         self.onDismiss = onDismiss
         self.onStatusAction = onStatusAction
         usesFixtureContext = fixtureContextLoaded
@@ -64,6 +67,33 @@ struct MoveCheckInView: View {
             }
         }
         .accessibilityIdentifier("checkin.flow")
+        .resumableFlowProgress(
+            path: [isSubmitted ? "submitted" : "checkin"],
+            answers: progressAnswers
+        ) { restored in
+            arrivedInWindow = Self.decodeBool(restored.answers["arrived_in_window"]?.first)
+            crewWorkedSteadily = Self.decodeBool(restored.answers["crew_worked_steadily"]?.first)
+            costMoreThanQuoted = Self.decodeBool(restored.answers["cost_more_than_quoted"]?.first)
+            damaged = Self.decodeBool(restored.answers["damaged"]?.first)
+            note = restored.answers["note"]?.first ?? ""
+            finalBill = restored.answers["final_bill"]?.first ?? ""
+        }
+    }
+
+    private var progressAnswers: [String: [String]] {
+        var result: [String: [String]] = [:]
+        if let arrivedInWindow { result["arrived_in_window"] = [String(arrivedInWindow)] }
+        if let crewWorkedSteadily { result["crew_worked_steadily"] = [String(crewWorkedSteadily)] }
+        if let costMoreThanQuoted { result["cost_more_than_quoted"] = [String(costMoreThanQuoted)] }
+        if let damaged { result["damaged"] = [String(damaged)] }
+        if !note.isEmpty { result["note"] = [note] }
+        if !finalBill.isEmpty { result["final_bill"] = [finalBill] }
+        return result
+    }
+
+    private static func decodeBool(_ raw: String?) -> Bool? {
+        guard let raw else { return nil }
+        return raw == "true"
     }
 
     @ViewBuilder
@@ -358,6 +388,7 @@ struct MoveCheckInView: View {
 #Preview {
     MoveCheckInView(
         userId: "preview",
+        taskId: "MOVE_CHECKIN",
         onDismiss: {},
         onStatusAction: { _ in }
     )

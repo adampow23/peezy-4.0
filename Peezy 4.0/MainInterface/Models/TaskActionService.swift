@@ -26,21 +26,37 @@ struct TaskActionService {
     /// `flowPath` is the visited step-id trail (last = current step) and
     /// `flowAnswers.{key}` the per-step answer. Same direct-write pattern
     /// as setStage. Cleared on flow terminals via clearFlowState.
-    func writeFlowProgress(taskId: String, path: [String], answerKey: String? = nil, values: [String]? = nil) async {
-        guard let userId = Auth.auth().currentUser?.uid, !taskId.isEmpty else { return }
+    func writeFlowProgress(
+        userId: String,
+        taskId: String,
+        path: [String],
+        answers: [String: [String]]
+    ) async throws {
+        guard !userId.isEmpty, !taskId.isEmpty else {
+            throw FlowProgressPersistenceError.missingIdentity
+        }
         let db = Firestore.firestore()
-        var update: [AnyHashable: Any] = ["flowPath": path]
-        if let answerKey, let values {
-            // FieldPath keeps row-instance keys ("bank_credit_union_1.provider")
-            // as ONE map key — a dotted string literal would nest them.
-            update[FieldPath(["flowAnswers", answerKey])] = values
+        try await db.collection("users").document(userId).collection("tasks")
+            .document(taskId).updateData([
+                "flowPath": path,
+                "flowAnswers": answers
+            ])
+    }
+
+    func loadFlowProgress(userId: String, taskId: String) async throws -> FlowProgressSnapshot {
+        guard !userId.isEmpty, !taskId.isEmpty else {
+            throw FlowProgressPersistenceError.missingIdentity
         }
-        do {
-            try await db.collection("users").document(userId).collection("tasks")
-                .document(taskId).updateData(update)
-        } catch {
-            print("⚠️ Failed to write flow progress: \(error.localizedDescription)")
-        }
+        let document = try await Firestore.firestore()
+            .collection("users").document(userId)
+            .collection("tasks").document(taskId)
+            .getDocument()
+        let data = document.data() ?? [:]
+        return FlowProgressSnapshot(
+            path: data["flowPath"] as? [String] ?? [],
+            answers: (data["flowAnswers"] as? [String: Any])?
+                .compactMapValues { $0 as? [String] } ?? [:]
+        )
     }
 
     /// Removes persisted flow state so the next open starts fresh — fired on
@@ -238,6 +254,23 @@ struct TaskActionService {
             throw PackingPlanPersistenceError.kitNotFound
         }
         return kit
+    }
+
+    func loadSuppliesKitState(
+        userId: String,
+        taskId: String = SuppliesKit.taskId
+    ) async throws -> (kit: SuppliesKit, wasCustomized: Bool) {
+        guard !userId.isEmpty else { throw PackingPlanPersistenceError.kitNotFound }
+        let snapshot = try await Firestore.firestore()
+            .collection("users").document(userId)
+            .collection("tasks").document(taskId)
+            .getDocument()
+        guard let data = snapshot.data(),
+              let rawKit = data["suppliesKit"] as? [String: Any],
+              let kit = decodeSuppliesKit(from: rawKit) else {
+            throw PackingPlanPersistenceError.kitNotFound
+        }
+        return (kit, data["kitCustomizedAt"] != nil)
     }
 
     func updateSuppliesKit(userId: String, taskId: String, kit: SuppliesKit) async throws {

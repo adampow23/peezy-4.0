@@ -26,6 +26,7 @@ struct FindCleanersFlow: View {
     let workflowId = "book_cleaners"
 
     let userId: String
+    let taskId: String
     let onComplete: () -> Void
     let onDismiss: () -> Void
     let onStatusAction: (TaskFlowStatusAction) -> Void
@@ -88,6 +89,13 @@ struct FindCleanersFlow: View {
                 showPaywallGate = false
                 if subscribed { submitAndComplete() }
             }
+        }
+        .resumableFlowProgress(
+            path: ["card.\(currentIndex)"],
+            answers: FlowProgressCoding.encode(answers)
+        ) { restored in
+            currentIndex = min(max(FlowProgressCoding.cardIndex(from: restored.path), 0), totalCards - 1)
+            answers = FlowProgressCoding.decode(restored.answers)
         }
     }
 
@@ -255,6 +263,7 @@ struct FindCleanersFlow: View {
 #Preview("Find Cleaners Flow") {
     FindCleanersFlow(
         userId: "preview-user",
+        taskId: "BOOK_CLEANERS",
         onComplete: { print("✅ Complete") },
         onDismiss: { print("⏪ Dismiss") },
         onStatusAction: { action in print("📋 Status: \(action)") }

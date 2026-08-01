@@ -15,6 +15,7 @@ struct SetupInternetFlow: View {
     let workflowId = "setup_internet"
 
     let userId: String
+    let taskId: String
     let onComplete: () -> Void
     let onDismiss: () -> Void
     let onStatusAction: (TaskFlowStatusAction) -> Void
@@ -49,6 +50,13 @@ struct SetupInternetFlow: View {
         .sheet(item: $safariDestination) { destination in
             ISPPlanSafariView(url: destination.url)
                 .ignoresSafeArea()
+        }
+        .resumableFlowProgress(
+            path: ["card.\(currentIndex)"],
+            answers: openedPlanID.map { ["isp_plan": [$0]] } ?? [:]
+        ) { restored in
+            currentIndex = min(max(FlowProgressCoding.cardIndex(from: restored.path), 0), totalCards - 1)
+            openedPlanID = restored.answers["isp_plan"]?.first
         }
     }
 
@@ -245,6 +253,7 @@ private extension String {
 #Preview("Setup Internet Flow") {
     SetupInternetFlow(
         userId: "preview-user",
+        taskId: "SETUP_INTERNET",
         onComplete: { print("✅ Complete") },
         onDismiss: { print("⏪ Dismiss") },
         onStatusAction: { action in print("📋 Status: \(action)") }

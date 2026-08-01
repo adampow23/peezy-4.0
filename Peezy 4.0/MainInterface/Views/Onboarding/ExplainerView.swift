@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Five-card tap-through shown once, post-auth, pre-assessment.
+/// Five-card tap-through shown once, pre-auth.
 /// Copy is locked per peezy-v1-architecture.md §9. Do not edit strings.
 struct ExplainerView: View {
     let onFinished: () -> Void
@@ -31,7 +31,7 @@ struct ExplainerView: View {
         .init(
             kicker: "FIRST THINGS FIRST",
             title: "A few questions.",
-            body: "They're how Peezy knows what's coming for your move — not someone else's. The more you tell us, the more we can take off your plate."
+            body: "Make an account and we'll build your plan. It takes about a minute — and it's the last time you'll have to think about any of this."
         )
     ]
 

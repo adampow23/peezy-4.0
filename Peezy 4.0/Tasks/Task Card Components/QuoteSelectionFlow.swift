@@ -35,6 +35,7 @@ struct QuoteSelectionFlow: View {
     @State private var taskTitle: String = "Your quotes are ready"
     @State private var quoteCategory: String = ""
     @State private var selectedOption: QuoteOption?
+    @State private var restoredSelectedOptionID: String?
     @State private var isLoading = true
     @State private var isSubmitting = false
     @State private var loadError: String?
@@ -74,6 +75,14 @@ struct QuoteSelectionFlow: View {
         }
         .task {
             await loadQuoteData()
+        }
+        .resumableFlowProgress(
+            path: ["card.\(currentCard)"],
+            answers: selectedOption.map { ["selected_quote": [$0.id]] } ?? [:]
+        ) { restored in
+            currentCard = min(max(FlowProgressCoding.cardIndex(from: restored.path), 0), 2)
+            restoredSelectedOptionID = restored.answers["selected_quote"]?.first
+            selectedOption = quoteOptions.first { $0.id == restoredSelectedOptionID }
         }
     }
 
@@ -331,6 +340,10 @@ struct QuoteSelectionFlow: View {
                     loadError = "No quote options found"
                 }
 
+                if let restoredSelectedOptionID {
+                    selectedOption = quoteOptions.first { $0.id == restoredSelectedOptionID }
+                }
+
                 isLoading = false
             }
         } catch {
@@ -383,7 +396,7 @@ struct QuoteSelectionFlow: View {
 
         } catch {
             print("⚠️ Quote submission error: \(error.localizedDescription)")
-            // Non-fatal — selection is already written to Firestore
+            // Legacy terminal behavior is non-fatal even if either write failed.
         }
 
         await MainActor.run {
