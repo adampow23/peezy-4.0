@@ -25,6 +25,7 @@ struct SetupInternetFlow: View {
     @State private var addressLabel = "Kansas City"
     @State private var openedPlanID: String?
     @State private var safariDestination: ISPPlanSafariDestination?
+    @State private var showsOtherProviders = false
     @State private var isLoading = true
     @State private var isSubmitting = false
     @State private var errorMessage: String?
@@ -34,6 +35,7 @@ struct SetupInternetFlow: View {
         category: "ISPPlans"
     )
     private let totalCards = 2
+    private let curatedPlanLimit = 3
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -50,6 +52,18 @@ struct SetupInternetFlow: View {
         .sheet(item: $safariDestination) { destination in
             ISPPlanSafariView(url: destination.url)
                 .ignoresSafeArea()
+        }
+        .confirmationDialog(
+            "Other internet providers",
+            isPresented: $showsOtherProviders,
+            titleVisibility: .visible
+        ) {
+            ForEach(otherPlans) { plan in
+                Button("\(plan.provider) — \(plan.tier)") {
+                    open(plan)
+                }
+            }
+            Button("Cancel", role: .cancel) {}
         }
         .resumableFlowProgress(
             path: ["card.\(currentIndex)"],
@@ -89,14 +103,17 @@ struct SetupInternetFlow: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: PeezyTheme.Layout.itemSpacing) {
                     Text("Plans for \(addressLabel)")
-                        .font(.title2.bold())
+                        .font(.title3.bold())
                         .foregroundStyle(PeezyTheme.Colors.deepInk)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityIdentifier("internet.address")
 
                     Text("Curated Kansas City-area options. Each provider confirms availability and final terms for your exact address.")
-                        .font(.subheadline)
+                        .font(.caption)
                         .foregroundStyle(.secondary)
+                        .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityIdentifier("internet.coverage_note")
 
@@ -108,13 +125,24 @@ struct SetupInternetFlow: View {
                     } else if let errorMessage {
                         internetError(message: errorMessage)
                     } else {
-                        ForEach(plans) { plan in
+                        ForEach(curatedPlans) { plan in
                             ComparisonCardView(
                                 model: plan.comparisonModel,
                                 isSelected: openedPlanID == plan.id,
                                 labels: .internet,
+                                presentation: .compact,
                                 onSelect: { open(plan) }
                             )
+                        }
+
+                        if !otherPlans.isEmpty {
+                            Button("See other providers") {
+                                showsOtherProviders = true
+                            }
+                            .font(.subheadline.bold())
+                            .foregroundStyle(PeezyTheme.Colors.deepInk)
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                            .accessibilityIdentifier("internet.other_providers")
                         }
                     }
                 }
@@ -171,7 +199,14 @@ struct SetupInternetFlow: View {
         isLoading = true
         errorMessage = nil
         do {
-            plans = try await ISPPlanService().fetchPlans()
+            let fetchedPlans = try await ISPPlanService().fetchPlans()
+            guard fetchedPlans.count >= curatedPlanLimit else {
+                plans = []
+                errorMessage = "We couldn't load internet plans. Check your connection and try again."
+                isLoading = false
+                return
+            }
+            plans = fetchedPlans
             if let address = await IdentityService.shared.loadOrMigrate(userId: userId)?.newAddress {
                 addressLabel = Self.cityAndZIP(from: address)
             } else {
@@ -183,6 +218,14 @@ struct SetupInternetFlow: View {
             errorMessage = "We couldn't load internet plans. Check your connection and try again."
             isLoading = false
         }
+    }
+
+    private var curatedPlans: [ISPPlan] {
+        Array(plans.prefix(curatedPlanLimit))
+    }
+
+    private var otherPlans: [ISPPlan] {
+        Array(plans.dropFirst(curatedPlanLimit))
     }
 
     private func open(_ plan: ISPPlan) {
