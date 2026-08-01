@@ -409,7 +409,8 @@ struct HandleAutoInsuranceFlow: View {
         providerResolveTask = Task { @MainActor in
             let resolution = await ProviderDirectoryService.shared.resolve(
                 name: name,
-                category: "insurance"
+                category: "insurance",
+                intent: .updateAddress
             )
             guard !Task.isCancelled, isResolvingUpdateProvider else { return }
             isResolvingUpdateProvider = false

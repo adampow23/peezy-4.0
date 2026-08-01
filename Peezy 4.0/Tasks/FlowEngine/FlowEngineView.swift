@@ -33,6 +33,7 @@ struct FlowInputs {
     let currentAddress: String
     let newAddress: String
     let moveDate: Date
+    let isLongDistance: Bool
 }
 
 private struct ActiveProviderAction {
@@ -352,12 +353,14 @@ struct FlowEngineView: View {
         providerResolveTask?.cancel()
         resolvingProviderStepId = step.id
         let category = providerCategory(for: step)
-        let kind = providerActionKind
+        let intent = providerIntent(for: step)
+        let kind = ProviderActionKind(intent: intent)
 
         providerResolveTask = Task { @MainActor in
             let resolution = await ProviderDirectoryService.shared.resolve(
                 name: name,
-                category: category
+                category: category,
+                intent: intent
             )
             guard !Task.isCancelled, resolvingProviderStepId == step.id else { return }
             resolvingProviderStepId = nil
@@ -405,14 +408,21 @@ struct FlowEngineView: View {
         case "financial_accounts", "memberships":
             return true
         case "manage_vet", "transfer_pharmacy_records":
-            return step.id == "business_name"
+            return step.id == "business_name" || step.id == "current_business"
         default:
             return false
         }
     }
 
-    private var providerActionKind: ProviderActionKind {
-        definition.workflowId == "memberships" ? .cancellation : .addressChange
+    private func providerIntent(for step: FlowStep) -> ProviderIntent {
+        switch definition.workflowId {
+        case "memberships":
+            return inputs.isLongDistance ? .cancel : .transferLocation
+        case "manage_vet", "transfer_pharmacy_records":
+            return step.id == "current_business" ? .transferRecords : .updateAddress
+        default:
+            return .updateAddress
+        }
     }
 
     private func providerCategory(for step: FlowStep) -> String {

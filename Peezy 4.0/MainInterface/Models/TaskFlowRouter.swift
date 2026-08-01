@@ -165,7 +165,8 @@ struct TaskFlowRouter {
                 inputs: FlowInputs(
                     currentAddress: userState?.currentFullAddress ?? "",
                     newAddress: userState?.newFullAddress ?? "",
-                    moveDate: userState?.moveDate ?? Date()
+                    moveDate: userState?.moveDate ?? Date(),
+                    isLongDistance: userState?.isLongDistance ?? false
                 ),
                 onComplete: onComplete,
                 onDismiss: onDismiss,

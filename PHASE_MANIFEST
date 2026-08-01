@@ -1,84 +1,44 @@
-# Post-Test Cleanup — Phase A: Blockers + routing (CORE, revised)
+# Post-Test Cleanup — Phase B: Resolver intent (CORE)
 #
 # ACCEPTANCE CONTRACT (locked before implementation)
-# A1.1 GIVEN any routed task flow, WHEN its outermost container renders, THEN a
-#      persistent top-trailing 44pt X with accessibility id `flow.exit` exists.
-#      Nested sheets/covers keep only their native dismissal back to the parent
-#      flow and do not render `flow.exit`.
-# A1.2 GIVEN no answer has been recorded anywhere in the whole routed flow, WHEN
-#      X is tapped, THEN the entire flow and all nested presentation state tear
-#      down immediately and the originating tab is restored. A nested surface
-#      cannot outlive its parent.
-# A1.3 GIVEN at least one answer exists anywhere in the whole flow and the latest
-#      answer-persistence write succeeded, WHEN X is tapped, THEN the exact
-#      confirmation renders: title `Leave this task?`, body `Your answers are
-#      saved. Pick up where you left off anytime.`, buttons `Leave` / `Keep
-#      going`. Keep going preserves state; Leave tears down the whole flow and
-#      returns to its originating tab.
-# A1.4 GIVEN the latest answer-persistence write is pending or failed, WHEN X is
-#      tapped, THEN the dialog cannot claim the answer is saved and instead uses
-#      the exact body `We couldn't save your last answer — check your connection
-#      before leaving.` with buttons `Leave anyway` / `Keep going`. The flow
-#      tracks `lastPersistenceError` at flow scope.
-# A1.5 GIVEN a successful recorded step, WHEN the flow is left and reopened,
-#      THEN resume enters at the outermost saved step with whole-flow answer state
-#      restored, including answers contributed by nested layers.
-# A1.6 GIVEN the scoped flow answer-persistence paths, WHEN Phase A closes, THEN
-#      every encountered `try?` or swallowed `catch` is reported for a future
-#      chip. This phase does not perform a global `try?` audit.
-# A2.1 GIVEN an unauthenticated device where `peezy.explainer.seen` is false,
-#      WHEN AppRootView resolves routing, THEN ExplainerView renders before Auth.
-# A2.2 GIVEN explainer card 5, THEN its body exactly matches the sanctioned signup
-#      copy; completion retains the device-scoped key and routes to Auth without
-#      changing SIWA/AuthViewModel internals.
-# A3.1 GIVEN either frozen-dose completion path, including `.allComplete`, WHEN
-#      the Home stack renders, THEN no completion card/glass chrome exists. The
-#      existing locked `That's today.` / `You're on pace for {moveDate}.` copy is
-#      the stack empty state and get-ahead remains visually secondary. The phase
-#      report cites the deleted `.allComplete` render path.
-# A4.1 GIVEN Tasks contains tasks whose `snoozedUntil` is in the future, WHEN the
-#      tab renders, THEN a separate Snoozed section shows every such task and its
-#      return date; expired or dateless tasks are not classified as snoozed, and
-#      the app retains exactly four tabs.
+# B1.1 GIVEN the same gym/company, WHEN the task-derived intent is `cancel`
+#      versus `transferLocation` or `updateAddress`, THEN resolveProvider receives
+#      that intent and can return distinct, intent-correct paths. The user is
+#      never asked to choose resolver intent.
+# B1.2 GIVEN a resolver requirement, WHEN it is returned or rendered, THEN its
+#      exact HTTPS citation is included in `citations`. Any malformed or uncited
+#      requirement downgrades the response to concierge and no requirement
+#      renders.
+# B1.3 GIVEN a cited notice-period requirement and the identity document's move
+#      date, WHEN the client renders the action, THEN it shows exactly `This one
+#      needs {n} days' notice — do it by {date} to be clear before your move.`
+#      using moveDate minus noticeDays.
+# B1.4 GIVEN two identical company + intent requests, WHEN the second request is
+#      resolved, THEN it hits the company+intent cache. Different intents use
+#      distinct cache documents.
+# B1.5 GIVEN the current task catalog, WHEN provider resolution starts, THEN the
+#      task and move context deterministically map to: financial accounts,
+#      insurance, and vet/pharmacy address paths -> updateAddress; local
+#      memberships -> transferLocation; long-distance memberships -> cancel;
+#      vet/pharmacy current-provider paths -> transferRecords. closeAccount is
+#      accepted by the resolver but currently has no catalog caller.
+# B1.6 GIVEN Phase B is deployed, THEN the only deployment target is
+#      `functions:resolveProvider`.
 #
 # EDIT SITES
 # PHASE_MANIFEST
-# PHASE_A_REPORT.md (new)
-# Peezy 4.0/Inventory/Views/InventoryFlowView.swift
-# Peezy 4.0/MainInterface/Models/MoversFlowViewModel.swift
-# Peezy 4.0/MainInterface/Models/PeezyV1App.swift
-# Peezy 4.0/MainInterface/Models/TaskActionService.swift
+# PHASE_B_REPORT.md (new)
+# functions/resolveProvider.js
+# functions/validateResolveProvider.js
+# functions/liveValidatePhaseB.js
+# Peezy 4.0/MainInterface/Models/ProviderDirectoryService.swift
 # Peezy 4.0/MainInterface/Models/TaskFlowRouter.swift
-# Peezy 4.0/MainInterface/Views/AppRootView.swift
-# Peezy 4.0/MainInterface/Views/Onboarding/ExplainerView.swift
-# Peezy 4.0/MainInterface/Views/PeezyHomeView.swift
-# Peezy 4.0/MainInterface/Views/PeezyMainContainer.swift
-# Peezy 4.0/Menu/PeezySettingsView.swift
+# Peezy 4.0/MainInterface/Models/PeezyV1App.swift
+# Peezy 4.0/MainInterface/Views/ProviderActionCard.swift
+# Peezy 4.0/Tasks/FlowEngine/FlowEngineHarness.swift
 # Peezy 4.0/Tasks/FlowEngine/FlowEngineView.swift
-# Peezy 4.0/Tasks/FlowEngine/InAppTaskFlows.swift
-# Peezy 4.0/Tasks/FlowEngine/FlowExitControl.swift (new)
-# Peezy 4.0/Tasks/FlowEngine/FlowProgressSession.swift (new)
-# Peezy 4.0/Tasks/Store/TaskGrouping.swift
-# Peezy 4.0/Tasks/Task Card Components/AdminMemoFlow.swift
-# Peezy 4.0/Tasks/Task Card Components/QuoteSelectionFlow.swift
-# Peezy 4.0/Tasks/Task Card Components/TaskFlowConfirmDateCard.swift
-# Peezy 4.0/Tasks/Task Cards/BoxReturnView.swift
-# Peezy 4.0/Tasks/Task Cards/FindCleanersFlow.swift
-# Peezy 4.0/Tasks/Task Cards/FindMoversFlow.swift
 # Peezy 4.0/Tasks/Task Cards/HandleAutoInsuranceFlow.swift
 # Peezy 4.0/Tasks/Task Cards/HandleHomeInsuranceFlow.swift
-# Peezy 4.0/Tasks/Task Cards/MoveCheckInView.swift
-# Peezy 4.0/Tasks/Task Cards/PackingReadinessView.swift
-# Peezy 4.0/Tasks/Task Cards/PackingSessionView.swift
-# Peezy 4.0/Tasks/Task Cards/RemoveItemsFlow.swift
-# Peezy 4.0/Tasks/Task Cards/RentTruckFlow.swift
-# Peezy 4.0/Tasks/Task Cards/SellItemsFlow.swift
-# Peezy 4.0/Tasks/Task Cards/SetupInternetFlow.swift
-# Peezy 4.0/Tasks/Task Cards/SuppliesKitView.swift
-# Peezy 4.0/Tasks/Views/TaskRowHeader.swift
-# Peezy 4.0/Tasks/Views/TasksList.swift
-# Peezy 4.0/Tasks/Views/TasksTabView.swift
-# Peezy 4.0/Tasks/Task Cards/ScanInventoryFlow.swift
 #
 # READ SITES
 # peezy-chip-post-test-cleanup.md
@@ -86,10 +46,8 @@
 # peezy-conventions-v2.md
 # peezy-v1-architecture.md
 # CLAUDE.md
-# Peezy 4.0/Models/PeezyCard.swift
-# Peezy 4.0/MainInterface/Models/PeezyHomeViewModel.swift
-# Peezy 4.0/Inventory/Models/InventorySessionManager.swift
-# Peezy 4.0/Inventory/Services/InventoryStorageService.swift
-# Peezy 4.0/Tasks/FlowEngine/FlowDefinition.swift
-# Peezy 4.0/Tasks/FlowEngine/FlowDefinitionService.swift
+# functions/flowDefinitionsData.json
+# functions/providerDirectoryData.json
+# Peezy 4.0/MainInterface/Models/PeezyIdentity.swift
+# Peezy 4.0/MainInterface/Models/UserState.swift
 # SESSION_NOTES.md (session-final write only)

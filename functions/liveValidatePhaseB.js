@@ -72,6 +72,17 @@ function assertCitationSafe(payload, label) {
       `${label} URL must exactly match a returned citation`
     );
   }
+  assert.ok(Array.isArray(payload.requirements), `${label} must return a requirements array`);
+  for (const requirement of payload.requirements) {
+    assert.match(requirement.citationUrl, /^https:\/\//, `${label} requirement citation must use HTTPS`);
+    assert.ok(
+      Array.isArray(payload.citations) && payload.citations.some((citation) => citation.url === requirement.citationUrl),
+      `${label} requirement must exactly match a returned citation`
+    );
+    if (requirement.kind === "noticePeriod") {
+      assert.ok(Number.isInteger(requirement.noticeDays) && requirement.noticeDays > 0);
+    }
+  }
 }
 
 async function assertRules(idToken) {
@@ -103,34 +114,79 @@ async function run() {
 
   await assertRules(idToken);
 
-  const unauthenticated = await callResolver({ name: "Wells Fargo", category: "financial" });
+  const unauthenticated = await callResolver({
+    name: "Wells Fargo",
+    category: "financial",
+    intent: "updateAddress"
+  });
   assert.equal(unauthenticated.status, 401, "Unauthenticated resolver calls must be denied");
 
-  const seededResponse = await callResolver({ name: "Wells Fargo", category: "financial" }, idToken);
+  const invalidIntent = await callResolver({
+    name: "Wells Fargo",
+    category: "financial",
+    intent: "invented"
+  }, idToken);
+  assert.equal(invalidIntent.status, 400, "Unknown resolver intents must be rejected");
+
+  const seededResponse = await callResolver({
+    name: "Wells Fargo",
+    category: "financial",
+    intent: "updateAddress"
+  }, idToken);
   assert.equal(seededResponse.status, 200);
   const seeded = seededResponse.body.result;
   assert.equal(seeded.method, "link");
   assertCitationSafe(seeded, "Seeded provider");
   console.log(`✅ Seeded provider: cited ${seeded.method} result (${seeded.name})`);
 
-  const realResponse = await callResolver({ name: "Regions Bank", category: "financial" }, idToken);
+  const request = { name: "Regions Bank", category: "financial", intent: "updateAddress" };
+  const realResponse = await callResolver(request, idToken);
   assert.equal(realResponse.status, 200);
   const real = realResponse.body.result;
   assertCitationSafe(real, "Unseeded real provider");
   assert.notEqual(real.method, "concierge", "Unseeded real provider must resolve at high confidence");
   assert.equal(real.confidence, "high");
 
-  const cachedID = `resolved_${normalize(real.name).slice(0, 80)}`;
+  const cachedID = `resolved_${normalize(real.name).slice(0, 70)}_updateAddress`;
   const cached = await admin.firestore().collection("providerDirectory").doc(cachedID).get();
   assert.ok(cached.exists, "High-confidence resolution must be cached");
   assert.equal(cached.get("source"), "resolved");
+  assert.equal(cached.get("intent"), "updateAddress");
   assert.equal(cached.get("verified"), false);
   assert.ok(cached.get("resolvedAt"), "Cached resolution must include resolvedAt");
   console.log(`✅ Unseeded provider: cited ${real.method} result cached as source=resolved, verified=false (${real.name})`);
 
+  const cachedResponse = await callResolver(request, idToken);
+  assert.equal(cachedResponse.status, 200);
+  const cachedResult = cachedResponse.body.result;
+  for (const field of ["name", "method", "confidence", "url", "phone"]) {
+    assert.equal(cachedResult[field], real[field], `Cached payload must preserve ${field}`);
+  }
+  assert.deepEqual(cachedResult.citations, real.citations);
+  assert.deepEqual(cachedResult.requirements, real.requirements);
+  console.log("✅ Second identical company+intent request returned the cached payload");
+
+  const [gymCancelResponse, gymUpdateResponse] = await Promise.all([
+    callResolver({ name: "Life Time", category: "gym", intent: "cancel" }, idToken),
+    callResolver({ name: "Life Time", category: "gym", intent: "updateAddress" }, idToken)
+  ]);
+  assert.equal(gymCancelResponse.status, 200);
+  assert.equal(gymUpdateResponse.status, 200);
+  const gymCancel = gymCancelResponse.body.result;
+  const gymUpdate = gymUpdateResponse.body.result;
+  assertCitationSafe(gymCancel, "Gym cancellation");
+  assertCitationSafe(gymUpdate, "Gym address update");
+  const pathSignature = (payload) => `${payload.method}:${payload.url || payload.phone || "concierge"}`;
+  assert.notEqual(
+    pathSignature(gymCancel),
+    pathSignature(gymUpdate),
+    "Same-company gym intents must return distinct paths"
+  );
+  console.log(`✅ Same-company gym intents returned distinct paths (${pathSignature(gymCancel)} vs ${pathSignature(gymUpdate)})`);
+
   const [gibberishResponse, fakeResponse] = await Promise.all([
-    callResolver({ name: "Qzxqv Move Account 92741", category: "financial" }, idToken),
-    callResolver({ name: "Moonbeam Account Services 9QZ", category: "financial" }, idToken)
+    callResolver({ name: "Qzxqv Move Account 92741", category: "financial", intent: "updateAddress" }, idToken),
+    callResolver({ name: "Moonbeam Account Services 9QZ", category: "financial", intent: "updateAddress" }, idToken)
   ]);
   for (const [label, response] of [["Gibberish", gibberishResponse], ["Fake brand", fakeResponse]]) {
     assert.equal(response.status, 200);

@@ -44,6 +44,8 @@ struct PeezyV1App: App {
             PhaseASavedExitFixture()
         } else if ProcessInfo.processInfo.arguments.contains("--phase-a-flow-exit") {
             PhaseAFlowExitFixture()
+        } else if ProcessInfo.processInfo.arguments.contains("--phase-b-provider-requirements") {
+            PhaseBProviderRequirementsFixture()
         } else if ProcessInfo.processInfo.arguments.contains("--estimate-integrity-phase-f-booked") {
             EstimateIntegrityPhaseFCheckInFixture(booked: true)
         } else if ProcessInfo.processInfo.arguments.contains("--estimate-integrity-phase-f-general") {
@@ -64,6 +66,46 @@ struct PeezyV1App: App {
 }
 
 #if DEBUG
+private struct PhaseBProviderRequirementsFixture: View {
+    private let citationURL = "https://provider.example/cancellation-policy"
+
+    private var moveDate: Date {
+        Calendar(identifier: .gregorian).date(from: DateComponents(year: 2026, month: 9, day: 30)) ?? Date()
+    }
+
+    var body: some View {
+        ProviderActionCard(
+            taskTitle: "Handle my memberships",
+            resolution: ProviderResolution(
+                providerId: "phase-b-fixture",
+                name: "Example Gym",
+                method: .link,
+                url: URL(string: citationURL),
+                phone: nil,
+                citations: [ProviderCitation(url: citationURL, title: "Official cancellation policy")],
+                requirements: [
+                    ProviderRequirement(
+                        kind: .noticePeriod,
+                        text: "Give 30 days' notice before cancellation.",
+                        noticeDays: 30,
+                        citationUrl: citationURL
+                    )
+                ]
+            ),
+            actionKind: .cancellation,
+            userId: "phase-b-fixture",
+            showBack: false,
+            onDone: {},
+            onBack: {},
+            identityOverride: PeezyIdentity(
+                name: "Phase B",
+                email: "phase-b@example.com",
+                moveDate: moveDate
+            )
+        )
+    }
+}
+
 private struct PhaseASavedExitFixture: View {
     @State private var isPresented = true
 

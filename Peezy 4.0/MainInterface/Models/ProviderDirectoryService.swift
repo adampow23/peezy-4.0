@@ -16,6 +16,27 @@ enum ProviderActionMethod: String, Codable, Equatable {
     case concierge
 }
 
+enum ProviderIntent: String, Codable, Equatable {
+    case cancel
+    case updateAddress
+    case transferLocation
+    case transferRecords
+    case closeAccount
+}
+
+enum ProviderRequirementKind: String, Codable, Equatable {
+    case noticePeriod
+    case deliveryMethod
+    case contractTerms
+}
+
+struct ProviderRequirement: Codable, Equatable {
+    let kind: ProviderRequirementKind
+    let text: String
+    let noticeDays: Int?
+    let citationUrl: String
+}
+
 struct ProviderCitation: Codable, Equatable {
     let url: String
     let title: String
@@ -29,6 +50,7 @@ struct ProviderResolution: Equatable {
     let url: URL?
     let phone: String?
     let citations: [ProviderCitation]
+    let requirements: [ProviderRequirement]
 
     static func concierge(named name: String) -> ProviderResolution {
         ProviderResolution(
@@ -37,7 +59,8 @@ struct ProviderResolution: Equatable {
             method: .concierge,
             url: nil,
             phone: nil,
-            citations: []
+            citations: [],
+            requirements: []
         )
     }
 }
@@ -47,11 +70,36 @@ private struct ProviderDirectoryRecord: Decodable {
     let name: String
     let aliases: [String]
     let category: String
+    let source: String?
+    let intent: ProviderIntent?
     let addressChangeURL: String?
     let cancellationURL: String?
+    let transferLocationURL: String?
+    let transferRecordsURL: String?
+    let closeAccountURL: String?
     let phone: String?
     let method: ProviderActionMethod
     let citations: [ProviderCitation]
+    let requirements: [ProviderRequirement]?
+
+    func url(for intent: ProviderIntent) -> String? {
+        switch intent {
+        case .cancel: cancellationURL
+        case .updateAddress: addressChangeURL
+        case .transferLocation: transferLocationURL
+        case .transferRecords: transferRecordsURL
+        case .closeAccount: closeAccountURL
+        }
+    }
+
+    func supports(_ requestedIntent: ProviderIntent) -> Bool {
+        if source == "resolved" && intent == nil { return false }
+        if let intent { return intent == requestedIntent }
+        switch method {
+        case .link: return url(for: requestedIntent) != nil
+        case .call, .concierge: return true
+        }
+    }
 }
 
 @MainActor
@@ -60,18 +108,19 @@ final class ProviderDirectoryService {
 
     private var directoryCache: [ProviderDirectoryRecord]?
 
-    func resolve(name: String, category: String) async -> ProviderResolution {
+    func resolve(name: String, category: String, intent: ProviderIntent) async -> ProviderResolution {
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmedName.count >= 2 else { return .concierge(named: trimmedName) }
 
-        if let record = await directoryRecord(named: trimmedName, category: category) {
+        if let record = await directoryRecord(named: trimmedName, category: category, intent: intent) {
             return Self.safeResolution(
                 providerId: record.providerId,
                 name: record.name,
                 method: record.method,
-                rawURL: record.addressChangeURL ?? record.cancellationURL,
+                rawURL: record.url(for: intent),
                 phone: record.phone,
                 citations: record.citations,
+                requirements: record.requirements ?? [],
                 fallbackName: trimmedName
             )
         }
@@ -79,7 +128,7 @@ final class ProviderDirectoryService {
         do {
             let result = try await Functions.functions()
                 .httpsCallable("resolveProvider")
-                .call(["name": trimmedName, "category": category])
+                .call(["name": trimmedName, "category": category, "intent": intent.rawValue])
             guard let data = result.data as? [String: Any] else {
                 return .concierge(named: trimmedName)
             }
@@ -89,7 +138,11 @@ final class ProviderDirectoryService {
         }
     }
 
-    private func directoryRecord(named name: String, category: String) async -> ProviderDirectoryRecord? {
+    private func directoryRecord(
+        named name: String,
+        category: String,
+        intent: ProviderIntent
+    ) async -> ProviderDirectoryRecord? {
         let lookupKey = Self.normalize(name)
         guard !lookupKey.isEmpty else { return nil }
 
@@ -111,7 +164,9 @@ final class ProviderDirectoryService {
             let nameMatches = ([record.name] + record.aliases).contains { candidate in
                 Self.normalize(candidate) == lookupKey
             }
-            return nameMatches && Self.categoryFamily(record.category) == Self.categoryFamily(category)
+            return nameMatches &&
+                Self.categoryFamily(record.category) == Self.categoryFamily(category) &&
+                record.supports(intent)
         }
     }
 
@@ -130,6 +185,9 @@ final class ProviderDirectoryService {
                 citedText: item["citedText"] as? String
             )
         }
+        guard let requirements = requirements(from: data["requirements"], citations: citations) else {
+            return .concierge(named: data["name"] as? String ?? fallbackName)
+        }
         return safeResolution(
             providerId: data["providerId"] as? String,
             name: data["name"] as? String ?? fallbackName,
@@ -137,8 +195,44 @@ final class ProviderDirectoryService {
             rawURL: data["url"] as? String,
             phone: data["phone"] as? String,
             citations: citations,
+            requirements: requirements,
             fallbackName: fallbackName
         )
+    }
+
+    private static func requirements(
+        from rawValue: Any?,
+        citations: [ProviderCitation]
+    ) -> [ProviderRequirement]? {
+        guard let rawValue else { return [] }
+        guard let items = rawValue as? [[String: Any]] else { return nil }
+
+        var requirements: [ProviderRequirement] = []
+        for item in items {
+            guard let rawKind = item["kind"] as? String,
+                  let kind = ProviderRequirementKind(rawValue: rawKind),
+                  let text = item["text"] as? String,
+                  !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  let citationUrl = item["citationUrl"] as? String,
+                  citations.contains(where: { $0.url == citationUrl }),
+                  let citationURL = URL(string: citationUrl),
+                  citationURL.scheme?.lowercased() == "https" else { return nil }
+
+            let noticeDays = item["noticeDays"] as? Int
+            if kind == .noticePeriod,
+               !(noticeDays.map { (1...365).contains($0) } ?? false) {
+                return nil
+            }
+            requirements.append(
+                ProviderRequirement(
+                    kind: kind,
+                    text: text,
+                    noticeDays: noticeDays,
+                    citationUrl: citationUrl
+                )
+            )
+        }
+        return requirements
     }
 
     /// The sole client boundary that can construct a URL-bearing resolution.
@@ -150,10 +244,18 @@ final class ProviderDirectoryService {
         rawURL: String?,
         phone: String?,
         citations: [ProviderCitation],
+        requirements: [ProviderRequirement],
         fallbackName: String
     ) -> ProviderResolution {
         let displayName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let safeName = displayName.isEmpty ? fallbackName : displayName
+        guard requirements.allSatisfy({ requirement in
+            citations.contains(where: { $0.url == requirement.citationUrl }) &&
+                URL(string: requirement.citationUrl)?.scheme?.lowercased() == "https" &&
+                (requirement.kind != .noticePeriod || requirement.noticeDays.map { (1...365).contains($0) } == true)
+        }) else {
+            return .concierge(named: safeName)
+        }
 
         switch method {
         case .link:
@@ -169,7 +271,8 @@ final class ProviderDirectoryService {
                 method: .link,
                 url: url,
                 phone: nil,
-                citations: citations
+                citations: citations,
+                requirements: requirements
             )
 
         case .call:
@@ -184,7 +287,8 @@ final class ProviderDirectoryService {
                 method: .call,
                 url: nil,
                 phone: phone,
-                citations: citations
+                citations: citations,
+                requirements: requirements
             )
 
         case .concierge:

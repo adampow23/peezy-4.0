@@ -46,7 +46,8 @@ struct FlowEngineHarness: View {
                     inputs: FlowInputs(
                         currentAddress: env["FLOW_HARNESS_CURRENT_ADDR"] ?? "1842 Oak Park Ave, Kansas City, MO 64108",
                         newAddress: env["FLOW_HARNESS_NEW_ADDR"] ?? "4201 Main St, Denver, CO 80205",
-                        moveDate: harnessMoveDate
+                        moveDate: harnessMoveDate,
+                        isLongDistance: env["FLOW_HARNESS_LONG_DISTANCE"] == "1"
                     ),
                     onComplete: { terminal = "complete" },
                     onDismiss: { terminal = "dismiss" },

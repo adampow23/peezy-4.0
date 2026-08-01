@@ -13,11 +13,27 @@ import UIKit
 enum ProviderActionKind {
     case addressChange
     case cancellation
+    case locationTransfer
+    case recordsTransfer
+    case accountClosure
+
+    init(intent: ProviderIntent) {
+        switch intent {
+        case .cancel: self = .cancellation
+        case .updateAddress: self = .addressChange
+        case .transferLocation: self = .locationTransfer
+        case .transferRecords: self = .recordsTransfer
+        case .closeAccount: self = .accountClosure
+        }
+    }
 
     var noun: String {
         switch self {
         case .addressChange: "address change"
         case .cancellation: "cancellation"
+        case .locationTransfer: "location transfer"
+        case .recordsTransfer: "records transfer"
+        case .accountClosure: "account closure"
         }
     }
 
@@ -27,7 +43,29 @@ enum ProviderActionKind {
             "Hi, I'm calling to update the address on my account to my new address."
         case .cancellation:
             "Hi, I'm calling to cancel my membership. Please confirm the effective date and any final charge."
+        case .locationTransfer:
+            "Hi, I'm calling to transfer my membership to a location near my new address."
+        case .recordsTransfer:
+            "Hi, I'm calling to transfer my records to a new provider. What do you need from me?"
+        case .accountClosure:
+            "Hi, I'm calling to close my account. Please confirm the effective date and any final balance."
         }
+    }
+}
+
+enum ProviderNoticeFormatter {
+    static func line(noticeDays: Int, moveDate: Date, calendar: Calendar = .current) -> String? {
+        guard (1...365).contains(noticeDays),
+              let deadline = calendar.date(byAdding: .day, value: -noticeDays, to: moveDate) else {
+            return nil
+        }
+        let formatter = DateFormatter()
+        formatter.calendar = calendar
+        formatter.locale = .autoupdatingCurrent
+        formatter.timeZone = calendar.timeZone
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .none
+        return "This one needs \(noticeDays) days' notice — do it by \(formatter.string(from: deadline)) to be clear before your move."
     }
 }
 
@@ -39,10 +77,12 @@ struct ProviderActionCard: View {
     let showBack: Bool
     let onDone: () -> Void
     let onBack: () -> Void
+    var identityOverride: PeezyIdentity? = nil
 
     @Environment(\.openURL) private var openURL
     @State private var safariDestination: ProviderSafariDestination?
     @State private var identityDetails = ""
+    @State private var identityMoveDate: Date?
     @State private var copyStatus: String?
 
     var body: some View {
@@ -65,6 +105,10 @@ struct ProviderActionCard: View {
                     .multilineTextAlignment(.center)
 
                 actionContent
+
+                if !resolution.requirements.isEmpty {
+                    requirementsList
+                }
 
                 Button {
                     UIPasteboard.general.string = identityDetails
@@ -113,6 +157,39 @@ struct ProviderActionCard: View {
             ProviderSafariView(url: destination.url)
                 .ignoresSafeArea()
         }
+    }
+
+    private var requirementsList: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            ForEach(resolution.requirements.indices, id: \.self) { index in
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text("•")
+                    Text(resolution.requirements[index].text)
+                }
+                .font(.subheadline)
+                .foregroundStyle(PeezyTheme.Colors.deepInk)
+                .accessibilityIdentifier("provider.requirement.\(index)")
+            }
+
+            if let noticeLine {
+                Text(noticeLine)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(PeezyTheme.Colors.deepInk)
+                    .accessibilityIdentifier("provider.requirement.notice_deadline")
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .background(PeezyTheme.Colors.deepInk.opacity(0.06), in: RoundedRectangle(cornerRadius: 14))
+        .accessibilityIdentifier("provider.requirements")
+    }
+
+    private var noticeLine: String? {
+        guard let moveDate = identityMoveDate,
+              let noticeDays = resolution.requirements.first(where: { $0.kind == .noticePeriod })?.noticeDays else {
+            return nil
+        }
+        return ProviderNoticeFormatter.line(noticeDays: noticeDays, moveDate: moveDate)
     }
 
     private var providerHeader: some View {
@@ -198,12 +275,21 @@ struct ProviderActionCard: View {
     }
 
     private func loadIdentityDetails() async {
+        if let identityOverride {
+            apply(identity: identityOverride)
+            return
+        }
         guard !userId.isEmpty,
               let identity = await IdentityService.shared.loadOrMigrate(userId: userId) else {
             identityDetails = ""
+            identityMoveDate = nil
             return
         }
 
+        apply(identity: identity)
+    }
+
+    private func apply(identity: PeezyIdentity) {
         var lines: [String] = []
         let name = identity.name.trimmingCharacters(in: .whitespacesAndNewlines)
         if !name.isEmpty { lines.append("Name: \(name)") }
@@ -216,6 +302,7 @@ struct ProviderActionCard: View {
             lines.append("Phone: \(phone)")
         }
         identityDetails = lines.joined(separator: "\n")
+        identityMoveDate = identity.moveDate
     }
 }
 
