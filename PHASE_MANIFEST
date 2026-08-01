@@ -1,49 +1,59 @@
-# Post-Test Cleanup — Phase C: One question per screen (PERIPHERY)
+# Post-Test Cleanup — Phase D: Visual system (PERIPHERY)
 #
 # ACCEPTANCE CONTRACT (locked before implementation)
-# C1.1 GIVEN the mover-refinement questionnaire, WHEN it renders, THEN exactly
-#      one answer control is shown per screen and navigation preserves every
-#      existing conditional field and the final comparison gate.
-# C1.2 GIVEN any other scrolling multi-field form surfaced inside a task flow,
-#      WHEN Phase C closes, THEN every qualifying form in the locked inventory
-#      is converted to one question/field per screen with native back/cancel
-#      behavior preserved for nested sheets.
-# C1.3 GIVEN the complete ScrollView/Form inventory, THEN every excluded screen
-#      is cited with a concrete reason (list/review/comparison/checklist or a
-#      single logical input), and no qualifying multi-field form remains.
-# C1.4 GIVEN a converted flow is exited and resumed, THEN its recorded answer
-#      values still participate in the outer flow's existing persistence model;
-#      no new nested surface can outlive its parent.
+# D1.1 GIVEN every reachable assessment input step, WHEN it renders, THEN one
+#      large Lucide icon appears top-center above the headline, sourced by the
+#      step's explicit entry in one constants map; explainer steps do not render
+#      a second hero icon.
+# D1.2 GIVEN every FlowEngine `.decision` step, WHEN it renders, THEN the same
+#      one-icon treatment appears above its question, sourced by workflow + step
+#      ID from that constants map.
+# D1.3 GIVEN the assessment crosses a locked chapter boundary, THEN the tracker
+#      label changes among "Your move", "Your homes", "Your people", and
+#      "Your accounts", and only the question icon/tracker use that chapter's
+#      subtle accent while the screen remains predominantly white.
+# D1.4 GIVEN a chapter is active, THEN its tracker states chapter position
+#      (current of total), retains forward goal-gradient fill behavior, and does
+#      not restore the replaced app-wide flat step bar.
+# D1.5 GIVEN an assessment option is a concrete noun, THEN its tile uses the
+#      centrally mapped Lucide icon; abstract yes/no, flexibility, date, and
+#      quantity choices render without option icons.
+# D1.6 GIVEN a full reachable assessment run on the target simulator, THEN every
+#      question is visually evidenced with no scrolling required to answer, and
+#      each of the four chapter boundaries is evidenced by screenshots.
 #
-# QUALIFYING INVENTORY
-# Peezy 4.0/Tasks/Task Cards/MoveRefinementView.swift
-# Peezy 4.0/Tasks/Task Cards/MoveCheckInView.swift
-# Peezy 4.0/Tasks/Task Cards/BoxReturnView.swift
-# Peezy 4.0/Tasks/Task Cards/SuppliesKitView.swift (Customize sheet)
-# Peezy 4.0/Inventory/Views/InventoryRoomReviewView.swift (Add Item sheet)
+# CHAPTER MAPPING (locked)
+# Your move: userName, moveDate, moveDateType
+# Your homes: current/new home fields plus storage
+# Your people: children, school/daycare, pets, vehicles, service-help questions
+# Your accounts: address-change intro, financial/health/fitness accounts, howHeard
 #
 # EDIT SITES
 # PHASE_MANIFEST
-# PHASE_C_REPORT.md (new)
-# Peezy 4.0/Tasks/Task Cards/MoveRefinementView.swift
-# Peezy 4.0/Tasks/Task Cards/MoveCheckInView.swift
-# Peezy 4.0/Tasks/Task Cards/BoxReturnView.swift
-# Peezy 4.0/Tasks/Task Cards/SuppliesKitView.swift
-# Peezy 4.0/Inventory/Views/InventoryRoomReviewView.swift
-# Peezy 4.0/MainInterface/Models/PeezyV1App.swift (DEBUG fixtures only, if needed)
+# PHASE_D_REPORT.md (new)
+# Peezy 4.0.xcodeproj/project.pbxproj
+# Peezy 4.0.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+# Peezy 4.0/Assessment/PeezyTheme/AssessmentVisualSystem.swift (new)
+# Peezy 4.0/Assessment/AssessmentModels/AssessmentCoordinator.swift
+# Peezy 4.0/Assessment/AssessmentModels/AssessmentFlowView.swift
+# Peezy 4.0/Assessment/AssessmentModels/SelectionTile.swift
+# Peezy 4.0/Assessment/AssessmentModels/MultiSelectTile.swift
+# Peezy 4.0/Assessment/AssessmentViews/Components/Explainertemplate.swift
+# Peezy 4.0/Assessment/AssessmentViews/Components/Singleselecttemplate.swift
+# Peezy 4.0/Assessment/AssessmentViews/Components/Gridselecttemplate.swift
+# Peezy 4.0/Assessment/AssessmentViews/Components/Multiselecttemplate.swift
+# Peezy 4.0/Tasks/FlowEngine/FlowEngineView.swift
+# Peezy 4.0/Tasks/Task Card Components/TaskFlowDecisionCard.swift
 #
 # READ SITES
+# Peezy 4.0/MainInterface/Views/ExplainerView.swift
+# All Assessment question/template/model source files
+# Peezy 4.0/Tasks/FlowEngine/FlowDefinition.swift
+# functions/flowDefinitionsData.json
+# .agents/skills/design/SKILL.md
 # peezy-chip-post-test-cleanup.md
 # peezy-execution-protocol.md
 # peezy-conventions-v2.md
 # peezy-v1-architecture.md
 # CLAUDE.md
-# Peezy 4.0/Tasks/Task Cards/MoversBookingReviewView.swift
-# Peezy 4.0/Tasks/Task Cards/MoversComparisonView.swift
-# Peezy 4.0/Tasks/Task Cards/PackingReadinessView.swift
-# Peezy 4.0/Tasks/Task Cards/SetupInternetFlow.swift
-# Peezy 4.0/Tasks/Task Card Components/QuoteSelectionFlow.swift
-# Peezy 4.0/Tasks/Task Card Components/TaskFlowBusinessSearchCard.swift
-# Peezy 4.0/Tasks/Task Card Components/TaskFlowConfirmAddressCard.swift
-# Peezy 4.0/Inventory/Views/InventoryRoomHubView.swift
 # SESSION_NOTES.md (session-final write only)

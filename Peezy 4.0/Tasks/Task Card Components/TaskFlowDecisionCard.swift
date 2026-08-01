@@ -15,6 +15,7 @@ import SwiftUI
 struct TaskFlowDecisionCard: View {
     let taskTitle: String
     var question: String = "Would you like us to take care of this for you?"
+    var questionIcon: String = "circle-question-mark"
     var yesLabel: String = "Yes"
     var noLabel: String = "No, I got it"
     
@@ -31,6 +32,13 @@ struct TaskFlowDecisionCard: View {
             TaskFlowHeader(taskTitle: taskTitle, showBack: showBack, onBack: onBack)
 
             Spacer()
+
+            PeezyLucideIcon(
+                id: questionIcon,
+                size: 56,
+                color: PeezyTheme.Colors.deepInk.opacity(0.3)
+            )
+            .padding(.bottom, 20)
 
             // Question text
             VStack(alignment: .leading, spacing: 15) {

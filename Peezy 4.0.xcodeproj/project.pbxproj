@@ -16,6 +16,7 @@
 		45D0CA0C2F160200000STRG1 /* FirebaseStorage in Frameworks */ = {isa = PBXBuildFile; productRef = 45D0CA0B2F160200000STRG1 /* FirebaseStorage */; };
 		B3DE11D747EF80D6685EAEBB /* FirebaseCrashlytics in Frameworks */ = {isa = PBXBuildFile; productRef = D8A0062C57C13DFB0845AAA0 /* FirebaseCrashlytics */; };
 		E2FDE08F2185226BFBBE36E6 /* FirebaseAnalytics in Frameworks */ = {isa = PBXBuildFile; productRef = 0A9C99245C2774798F6A1F83 /* FirebaseAnalytics */; };
+		D40000012F90000100000001 /* LucideIcons in Frameworks */ = {isa = PBXBuildFile; productRef = D40000032F90000100000003 /* LucideIcons */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -72,6 +73,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D40000012F90000100000001 /* LucideIcons in Frameworks */,
 				45D0CA082F157FCC00064C3C /* FirebaseFunctions in Frameworks */,
 				45D0CA042F157FCC00064C3C /* FirebaseAuth in Frameworks */,
 				45D0CA062F157FCC00064C3C /* FirebaseFirestore in Frameworks */,
@@ -150,6 +152,7 @@
 			);
 			name = "Peezy 4.0";
 			packageProductDependencies = (
+				D40000032F90000100000003 /* LucideIcons */,
 				45D0CA032F157FCC00064C3C /* FirebaseAuth */,
 				45D0CA052F157FCC00064C3C /* FirebaseFirestore */,
 				45D0CA072F157FCC00064C3C /* FirebaseFunctions */,
@@ -237,6 +240,7 @@
 			mainGroup = 45D0C9882F14D0A500064C3C;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
+				D40000022F90000100000002 /* XCRemoteSwiftPackageReference "lucide-icons-swift" */,
 				45D0C9BB2F1512B300064C3C /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
 				455D7E7A2F1601C700C1BC98 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */,
 			);
@@ -680,6 +684,14 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
+		D40000022F90000100000002 /* XCRemoteSwiftPackageReference "lucide-icons-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/JakubMazur/lucide-icons-swift.git";
+			requirement = {
+				kind = exactVersion;
+				version = 1.28.0;
+			};
+		};
 		455D7E7A2F1601C700C1BC98 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/google/GoogleSignIn-iOS";
@@ -699,6 +711,11 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		D40000032F90000100000003 /* LucideIcons */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D40000022F90000100000002 /* XCRemoteSwiftPackageReference "lucide-icons-swift" */;
+			productName = LucideIcons;
+		};
 		0A9C99245C2774798F6A1F83 /* FirebaseAnalytics */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 45D0C9BB2F1512B300064C3C /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;

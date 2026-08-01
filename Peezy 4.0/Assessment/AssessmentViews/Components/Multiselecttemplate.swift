@@ -103,7 +103,7 @@ struct MultiSelectTemplate: View {
                         ForEach(Array(options.enumerated()), id: \.offset) { index, option in
                             MultiSelectTile(
                                 title: option.0,
-                                icon: option.1,
+                                icon: PeezyQuestionVisuals.optionIcon(for: option.0) ?? option.1,
                                 isSelected: selected.contains(option.0),
                                 onTap: { onToggle(option.0) },
                                 count: counts[option.0] ?? 0,

@@ -103,7 +103,7 @@ struct SingleSelectTemplate: View {
                         ForEach(Array(options.enumerated()), id: \.element) { index, option in
                             SelectionTile(
                                 title: option,
-                                icon: index < icons.count ? icons[index] : nil,
+                                icon: PeezyQuestionVisuals.optionIcon(for: option),
                                 isSelected: selected == option,
                                 onTap: { onSelect(option) }
                             )

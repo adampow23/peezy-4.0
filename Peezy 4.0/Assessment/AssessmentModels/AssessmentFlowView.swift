@@ -66,10 +66,14 @@ struct AssessmentFlowView: View {
         }
     }
     
-    // MARK: - Progress Bar
+    // MARK: - Chapter Tracker
     
     private var progressBar: some View {
-        VStack(spacing: 4) {
+        let step = coordinator.currentNode?.inputStep ?? .userName
+        let chapterProgress = coordinator.chapterProgress(for: step)
+        let chapter = chapterProgress.chapter
+
+        return VStack(spacing: 7) {
             HStack {
                 if coordinator.currentInputStepNumber > 1 {
                     Button {
@@ -81,11 +85,15 @@ struct AssessmentFlowView: View {
                     }
                 }
                 
+                Text(chapter.title)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(chapter.accent)
+
                 Spacer()
-                
-                Text("\(coordinator.currentInputStepNumber) of \(coordinator.totalInputSteps)")
-                    .font(.caption)
-                    .foregroundColor(Color.gray)
+
+                Text("\(chapterProgress.position) of \(chapterProgress.total)")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.45))
             }
             .padding(.horizontal, 24)
             .padding(.top, 8)
@@ -93,19 +101,28 @@ struct AssessmentFlowView: View {
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
                     RoundedRectangle(cornerRadius: 2)
-                        .fill(PeezyTheme.Colors.deepInk.opacity(0.1))
+                        .fill(chapter.accent.opacity(0.12))
                         .frame(height: 4)
 
                     RoundedRectangle(cornerRadius: 2)
-                        .fill(PeezyTheme.Colors.deepInk.opacity(0.4))
-                        .frame(width: geo.size.width * coordinator.progress, height: 4)
-                        .animation(.easeInOut(duration: 0.3), value: coordinator.progress)
+                        .fill(
+                            LinearGradient(
+                                colors: [chapter.accent.opacity(0.45), chapter.accent],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .frame(width: geo.size.width * chapterProgress.fraction, height: 4)
+                        .animation(.easeInOut(duration: 0.3), value: chapterProgress.fraction)
                 }
             }
             .frame(height: 4)
             .padding(.horizontal, 24)
             .padding(.bottom, 8)
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(chapter.title), question \(chapterProgress.position) of \(chapterProgress.total)")
+        .accessibilityIdentifier("assessment.chapter.\(chapter.rawValue)")
     }
     
     // MARK: - Question Routing
@@ -121,6 +138,17 @@ struct AssessmentFlowView: View {
                     ReflectBackBanner(text: reflectText)
                         .transition(.opacity.combined(with: .move(edge: .top)))
                 }
+
+                PeezyLucideIcon(
+                    id: PeezyQuestionVisuals.assessmentIcon(for: step),
+                    size: 54,
+                    color: PeezyQuestionVisuals.chapter(for: step).accent.opacity(0.78)
+                )
+                .frame(maxWidth: .infinity)
+                .padding(.top, 10)
+                .padding(.bottom, 2)
+                .accessibilityIdentifier("assessment.questionIcon.\(step.rawValue)")
+
                 questionContent(for: step)
             }
         }

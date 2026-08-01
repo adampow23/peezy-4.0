@@ -151,6 +151,21 @@ class AssessmentCoordinator: ObservableObject {
         guard totalInputSteps > 0 else { return 0 }
         return Double(currentInputStepNumber) / Double(totalInputSteps)
     }
+
+    /// Chapter-local position for the chaptered tracker. The live sequence is
+    /// used so branching questions are counted only when they are reachable.
+    func chapterProgress(for step: AssessmentInputStep) -> AssessmentChapterProgress {
+        let chapter = PeezyQuestionVisuals.chapter(for: step)
+        let chapterSteps = sequence.compactMap(\.inputStep).filter {
+            PeezyQuestionVisuals.chapter(for: $0) == chapter
+        }
+        let position = (chapterSteps.firstIndex(of: step) ?? 0) + 1
+        return AssessmentChapterProgress(
+            chapter: chapter,
+            position: position,
+            total: max(chapterSteps.count, 1)
+        )
+    }
     
     // MARK: - Init
     

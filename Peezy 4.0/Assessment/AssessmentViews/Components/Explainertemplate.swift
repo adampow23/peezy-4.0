@@ -58,15 +58,6 @@ struct ExplainerTemplate: View {
 
                 Spacer()
 
-                // ── ICON ──
-                Image(systemName: icon)
-                    .font(.system(size: iconSize, weight: .semibold))
-                    .foregroundColor(iconColor)
-                    .opacity(showIcon ? 1 : 0)
-                    .scaleEffect(showIcon ? 1 : 0.5)
-                    .animation(.spring(response: 0.5, dampingFraction: 0.7), value: showIcon)
-                    .padding(.bottom, iconBottomPad)
-
                 // ── HEADER ──
                 Text(header)
                 // UX Fix: Standardized to .heavy weight to match all primary titles
@@ -104,7 +95,6 @@ struct ExplainerTemplate: View {
         }
         .contentShape(Rectangle())
         .onAppear {
-            withAnimation { showIcon = true }
             revealButton()
         }
     }

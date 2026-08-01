@@ -170,6 +170,10 @@ struct FlowEngineView: View {
             TaskFlowDecisionCard(
                 taskTitle: definition.taskTitle,
                 question: step.question ?? "Would you like us to take care of this for you?",
+                questionIcon: PeezyQuestionVisuals.flowIcon(
+                    workflowID: definition.workflowId,
+                    stepID: step.id
+                ),
                 timeSaved: step.timeSaved ?? "~1 hr",
                 showBack: canGoBack,
                 onPeezy: {

@@ -16,13 +16,13 @@ struct MultiSelectTile: View {
     var body: some View {
         HStack(spacing: 16) {
             // Icon on left
-            Image(systemName: icon)
-                .font(.system(size: 24))
-                .foregroundColor(
-                    isSelected
-                        ? PeezyTheme.Colors.lightBase
-                        : PeezyTheme.Colors.deepInk.opacity(0.12)
-                )
+            PeezyLucideIcon(
+                id: icon,
+                size: 24,
+                color: isSelected
+                    ? PeezyTheme.Colors.lightBase
+                    : PeezyTheme.Colors.deepInk.opacity(0.22)
+            )
                 .frame(width: 32)
 
             // Text in center

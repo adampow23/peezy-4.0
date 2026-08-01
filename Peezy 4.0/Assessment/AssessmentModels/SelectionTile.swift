@@ -28,13 +28,13 @@ struct SelectionTile: View {
         }) {
             VStack(spacing: 16) {
                 if let icon = icon {
-                    Image(systemName: icon)
-                        .font(.system(size: 48))
-                        .foregroundColor(
-                            isSelected
-                                ? PeezyTheme.Colors.lightBase
-                                : PeezyTheme.Colors.deepInk.opacity(0.12)
-                        )
+                    PeezyLucideIcon(
+                        id: icon,
+                        size: 44,
+                        color: isSelected
+                            ? PeezyTheme.Colors.lightBase
+                            : PeezyTheme.Colors.deepInk.opacity(0.22)
+                    )
                         .scaleEffect(isSelected ? 1.05 : 1.0)
                         .animation(.spring(response: 0.5, dampingFraction: 0.5), value: isSelected)
                 }
