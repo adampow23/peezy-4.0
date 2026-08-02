@@ -5,7 +5,7 @@
 import SwiftUI
 
 struct AnyKids: View {
-    let header      = "Will any children be making the move with you?"
+    let header      = "Any kids making the move with you?"
     let subtext     : String? = nil
     let options     = ["Yes", "No"]
     let icons       = ["hand.thumbsup.fill", "hand.thumbsdown.fill"]

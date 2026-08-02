@@ -43,7 +43,7 @@ struct SignUpView: View {
                             .font(PeezyTheme.Typography.largeTitle)
                             .foregroundColor(PeezyTheme.Colors.deepInk)
 
-                        Text("Sign up to get started with Peezy")
+                    Text("Make your account — your plan is next.")
                             .font(PeezyTheme.Typography.callout)
                             .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.6))
                     }

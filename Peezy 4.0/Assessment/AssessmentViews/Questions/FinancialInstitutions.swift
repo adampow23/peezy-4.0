@@ -2,8 +2,8 @@ import SwiftUI
 
 struct FinancialInstitutions: View {
 
-    let header      = "Let's start with finance related accounts you might have."
-    let subtext     : String? = "Tap once for each that you have an account with - if you have more than one of any, each tap will add a new task for you."
+    let header      = "First up: the money accounts."
+    let subtext     : String? = "Tap everything you have. More than one of something? Tap it once per account — we track each one separately."
     let buttonText  = "Continue"
 
     // OPTIONS — must match taskCatalogData.json condition values EXACTLY

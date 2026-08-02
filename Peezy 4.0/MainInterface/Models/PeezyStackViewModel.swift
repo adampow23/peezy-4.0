@@ -482,7 +482,7 @@ final class PeezyStackViewModel {
     ) -> String {
         // No tasks - all caught up
         if totalTasks == 0 {
-            return "All clear! I'll let you know when something comes up."
+            return "All clear! We'll let you know when something comes up."
         }
 
         // Single task - eager, helpful tone

@@ -15,8 +15,8 @@
 		45D0CA0A2F160200000GSIN1 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = 45D0CA092F160200000GSIN1 /* GoogleSignIn */; };
 		45D0CA0C2F160200000STRG1 /* FirebaseStorage in Frameworks */ = {isa = PBXBuildFile; productRef = 45D0CA0B2F160200000STRG1 /* FirebaseStorage */; };
 		B3DE11D747EF80D6685EAEBB /* FirebaseCrashlytics in Frameworks */ = {isa = PBXBuildFile; productRef = D8A0062C57C13DFB0845AAA0 /* FirebaseCrashlytics */; };
-		E2FDE08F2185226BFBBE36E6 /* FirebaseAnalytics in Frameworks */ = {isa = PBXBuildFile; productRef = 0A9C99245C2774798F6A1F83 /* FirebaseAnalytics */; };
 		D40000012F90000100000001 /* LucideIcons in Frameworks */ = {isa = PBXBuildFile; productRef = D40000032F90000100000003 /* LucideIcons */; };
+		E2FDE08F2185226BFBBE36E6 /* FirebaseAnalytics in Frameworks */ = {isa = PBXBuildFile; productRef = 0A9C99245C2774798F6A1F83 /* FirebaseAnalytics */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -47,22 +47,16 @@
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		45D0C9932F14D0A500064C3C /* Peezy 4.0 */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-			);
 			path = "Peezy 4.0";
 			sourceTree = "<group>";
 		};
 		45D0C9A12F14D0A600064C3C /* Peezy 4.0Tests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-			);
 			path = "Peezy 4.0Tests";
 			sourceTree = "<group>";
 		};
 		45D0C9AB2F14D0A600064C3C /* Peezy 4.0UITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-			);
 			path = "Peezy 4.0UITests";
 			sourceTree = "<group>";
 		};
@@ -684,14 +678,6 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
-		D40000022F90000100000002 /* XCRemoteSwiftPackageReference "lucide-icons-swift" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/JakubMazur/lucide-icons-swift.git";
-			requirement = {
-				kind = exactVersion;
-				version = 1.28.0;
-			};
-		};
 		455D7E7A2F1601C700C1BC98 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/google/GoogleSignIn-iOS";
@@ -708,14 +694,17 @@
 				minimumVersion = 12.7.0;
 			};
 		};
+		D40000022F90000100000002 /* XCRemoteSwiftPackageReference "lucide-icons-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/JakubMazur/lucide-icons-swift.git";
+			requirement = {
+				kind = exactVersion;
+				version = 1.28.0;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		D40000032F90000100000003 /* LucideIcons */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = D40000022F90000100000002 /* XCRemoteSwiftPackageReference "lucide-icons-swift" */;
-			productName = LucideIcons;
-		};
 		0A9C99245C2774798F6A1F83 /* FirebaseAnalytics */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 45D0C9BB2F1512B300064C3C /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
@@ -745,6 +734,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 45D0C9BB2F1512B300064C3C /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
 			productName = FirebaseStorage;
+		};
+		D40000032F90000100000003 /* LucideIcons */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D40000022F90000100000002 /* XCRemoteSwiftPackageReference "lucide-icons-swift" */;
+			productName = LucideIcons;
 		};
 		D8A0062C57C13DFB0845AAA0 /* FirebaseCrashlytics */ = {
 			isa = XCSwiftPackageProductDependency;

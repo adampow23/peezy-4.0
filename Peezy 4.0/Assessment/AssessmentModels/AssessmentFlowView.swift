@@ -202,9 +202,6 @@ struct AssessmentFlowView: View {
         case .healthcareProviders:   HealthcareProviders()
         case .fitnessWellness:       FitnessWellness()
 
-        // --- Wrap-up ---
-        case .howHeard:              HowHeard()
-
         default:                     EmptyView()
         }
     }

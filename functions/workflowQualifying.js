@@ -153,7 +153,7 @@ const WORKFLOW_QUALIFYING = {
     ],
     recap: {
       title: "Here's what we're removing:",
-      closing: "I'll get you quotes from haulers who can handle this. Usually within a few hours.",
+      closing: "We'll get you quotes from haulers who can handle this. Usually within a few hours.",
       button: "Get Quotes"
     },
     matching: {
@@ -311,8 +311,8 @@ const WORKFLOW_QUALIFYING = {
     ],
     questionCount: 6,
     recap: {
-      title: "Got it — I'll find the best option",
-      closing: "Based on your answers, I'll match you with the right service to get these items taken care of.",
+      title: "Got it — we'll find the best option",
+      closing: "Based on your answers, we'll match you with the right service to get these items taken care of.",
       button: "Find my options"
     }
   },
@@ -369,7 +369,7 @@ const WORKFLOW_QUALIFYING = {
     questionCount: 3,
     recap: {
       title: "Nice — let's get these sold",
-      closing: "I'll put together a game plan based on what you're selling and where.",
+      closing: "We'll put together a game plan based on what you're selling and where.",
       button: "Get my selling plan"
     }
   },

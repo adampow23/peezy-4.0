@@ -269,7 +269,7 @@ struct HandleHomeInsuranceFlow: View {
             TaskFlowSummaryCard(
                 taskTitle: taskTitle,
                 bodyText: "We'll reach out to \(providerName) and get your address updated.",
-                subtext: "Response times are typically 24–48 hours.",
+                subtext: "Expect word back within 24–48 hours.",
                 showBack: true,
                 onPrimary: { submitAndComplete() },
                 onBack: { goBack() }
@@ -313,7 +313,7 @@ struct HandleHomeInsuranceFlow: View {
             TaskFlowSummaryCard(
                 taskTitle: taskTitle,
                 bodyText: switchSummaryText,
-                subtext: "Response times are typically 24–48 hours.",
+                subtext: "Expect word back within 24–48 hours.",
                 showBack: true,
                 onPrimary: { submitAndComplete() },
                 onBack: { goBack() }

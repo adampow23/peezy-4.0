@@ -12,7 +12,6 @@ const { getWorkflowQualifying, submitWorkflowAnswers } = require('./getWorkflowQ
 const { processInventory } = require('./processInventory');
 const { packageInventory } = require('./packageInventory');
 const { validateSubscription } = require('./validateSubscription');
-const { joinWaitlist } = require('./joinWaitlist');
 const { notifyAdmin } = require('./notifyAdmin');
 const { resolveProvider } = require('./resolveProvider');
 const { submitCheckIn } = require('./submitCheckIn');
@@ -115,7 +114,7 @@ exports.peezyRespond = onRequest(
       if (!contentCheck.valid) {
         console.error('Content not properly loaded:', contentCheck.checks);
         res.status(500).json({
-          text: "I'm having trouble loading my knowledge base. Try again in a moment.",
+          text: "We're having trouble loading our knowledge base. Try again in a moment.",
           error: true,
           retryable: true
         });
@@ -129,7 +128,7 @@ exports.peezyRespond = onRequest(
       if (!checkRateLimit(userId)) {
         console.warn('Rate limit exceeded for user:', userId);
         res.status(429).json({
-          text: "You're moving fast! Give me a moment to catch up. Try again in a few seconds.",
+          text: "You're moving fast! Give us a moment to catch up. Try again in a few seconds.",
           error: true,
           retryable: true,
           _meta: { rateLimited: true }
@@ -191,7 +190,7 @@ exports.peezyRespond = onRequest(
 
       // Return graceful error
       res.status(500).json({
-        text: "Something went sideways on my end. Mind trying that again?",
+        text: "Something went sideways on our end. Mind trying that again?",
         error: true,
         retryable: true,
         _meta: {
@@ -367,9 +366,9 @@ function buildBriefingPrompt(userState, tasks) {
  */
 function generateFallbackBriefing(userState, taskCount) {
   if (taskCount === 0) {
-    return "All clear! I'll let you know when something comes up.";
+    return "All clear! We'll let you know when something comes up.";
   } else if (taskCount === 1) {
-    return "Just one thing today - need your input so I can take care of it for you.";
+    return "Just one thing today - need your input so we can take care of it for you.";
   } else if (taskCount === 2) {
     return "Couple things for you today - shouldn't take long!";
   } else {
@@ -659,7 +658,6 @@ exports.submitWorkflowAnswers = submitWorkflowAnswers;
 exports.validateSubscription = validateSubscription;
 exports.processInventory = processInventory;
 exports.packageInventory = packageInventory;
-exports.joinWaitlist = joinWaitlist;
 exports.resolveProvider = resolveProvider;
 exports.submitCheckIn = submitCheckIn;
 

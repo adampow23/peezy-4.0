@@ -127,7 +127,7 @@ struct DatePickerTemplate: View {
     @Previewable @State var date = Date()
     DatePickerTemplate(
         header: "When's the big day?",
-        subtext: "I'll build your timeline around this date.",
+        subtext: "We'll build your timeline around this date.",
         date: $date,
         buttonText: "Continue",
         onContinue: { print("Date: \(date)") }

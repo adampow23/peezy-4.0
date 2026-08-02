@@ -4,7 +4,7 @@ import SwiftUI
 // (extra cube volume, Spec 05) — not a task trigger. Branches to storageSize
 // and storageFullness when Yes.
 struct HasStorage: View {
-    let header      = "Are there any items in storage that will be making the move as well?"
+    let header      = "Anything in a storage unit making the move too?"
     let subtext     : String? = nil
     let options     = ["Yes", "No"]
     let icons       = ["hand.thumbsup.fill", "hand.thumbsdown.fill"]

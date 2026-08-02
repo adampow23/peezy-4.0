@@ -74,7 +74,6 @@ const ASSESSMENT_DATA = {
     financialCounts: { "Bank Account": 1, "Credit Card": 1 },
     healthcareCounts: { "Primary Care Doctor": 1, "Dentist": 1, "Health Insurance": 1 },
     fitnessCounts: { "Gym": 1 },
-    howHeard: "Friend",
     referralCode: "",
     promoCode: "",
     moveDistance: "Local",

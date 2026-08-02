@@ -24,7 +24,7 @@ const MINI_ASSESSMENT_WORKFLOWS = {
     intro: {
       title: "Financial Institutions",
       subtitle: "Let's make sure all your financial accounts get your new address.",
-      instruction: "Swipe right if you have an account, left if you don't. We'll ask for names after."
+      instruction: "Tap yes for each account you have — we'll grab names after."
     },
     
     questions: [
@@ -111,7 +111,7 @@ const MINI_ASSESSMENT_WORKFLOWS = {
     intro: {
       title: "Healthcare Providers",
       subtitle: "Let's update your healthcare providers with your new address.",
-      instruction: "Swipe right if you have this, left if you don't."
+      instruction: "Tap yes for everything you have — no if you don't."
     },
     
     questions: [
@@ -201,8 +201,8 @@ const MINI_ASSESSMENT_WORKFLOWS = {
     
     intro: {
       title: "Insurance Policies",
-      subtitle: "Insurance companies need your new address - rates can change by location!",
-      instruction: "Swipe right if you have this coverage, left if you don't."
+      subtitle: "Insurers need the new address — rates change by ZIP.",
+      instruction: "Tap yes for everything you have — no if you don't."
     },
     
     questions: [
@@ -271,7 +271,7 @@ const MINI_ASSESSMENT_WORKFLOWS = {
     intro: {
       title: "Fitness & Wellness",
       subtitle: "Let's identify memberships that need to be transferred or canceled.",
-      instruction: "Swipe right if you have this membership, left if you don't."
+      instruction: "Tap yes for everything you have — no if you don't."
     },
     
     questions: [
@@ -361,7 +361,7 @@ const MINI_ASSESSMENT_WORKFLOWS = {
     intro: {
       title: "Memberships",
       subtitle: "Let's catch any memberships that need your new address.",
-      instruction: "Swipe right if you have this, left if you don't."
+      instruction: "Tap yes for everything you have — no if you don't."
     },
     
     questions: [
@@ -446,8 +446,8 @@ const MINI_ASSESSMENT_WORKFLOWS = {
     
     intro: {
       title: "Subscriptions & Delivery",
-      subtitle: "Let's make sure nothing gets delivered to your old address!",
-      instruction: "Swipe right if you subscribe to this, left if you don't."
+      subtitle: "Let's make sure nothing keeps landing at the old address.",
+      instruction: "Tap yes for everything you have — no if you don't."
     },
     
     questions: [

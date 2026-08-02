@@ -427,3 +427,165 @@ All remaining launch and maintenance work is tracked only in
   `functions:submitCheckIn` and scoped `functions:processInventory` deployments.
   Flow/catalog data did not change, so no reseed ran. This SESSION_NOTES block
   is the final repository edit/action of the session.
+
+## Post-Test Cleanup chip — Phase A halted at final retry gate (2026-08-01)
+
+### What the spec/protocol left ambiguous
+
+- A1.6 said to report every `try?` or swallowed `catch` encountered in flow
+  answer-persistence paths, but did not define the transitive call-graph
+  boundary. Validation progressively extended that boundary from the new
+  progress writer and flow terminals into identity migration, payload
+  serialization, persisted-answer decoding, and finally add-address geocoding.
+- A future audit criterion should lock its closure before implementation: name
+  the root entry points, state whether readback/context derivation is included,
+  and require a preflight `try?`/`catch` inventory over that exact closure.
+  This avoids spending bounded functional retry budget on an expanding
+  reporting-only perimeter.
+
+### What surprised us
+
+- Generic flow-progress writes and nested domain writes formed two persistence
+  timelines. Without generation invalidation, an older generic completion could
+  clear a newer readiness-write error and falsely produce the saved-answer
+  dialog. External pending/failure/success now supersedes and cancels the older
+  generic chain head.
+- Mover confirmation restoration needed to rebuild vendor comparisons and
+  resolve the saved quote ID, not merely restore the outer enum stage; otherwise
+  confirmation lost the vendor name.
+- Sixty-seven Swift sources had been evicted by iCloud. Xcode frontends blocked
+  at zero CPU until those dataless files were hydrated; the same candidate then
+  built successfully without a code change.
+
+### Implementation and validation ledger
+
+- The session began with the requested `git checkout -- .`; tracked state was
+  verified clean before the fresh Phase A implementation. The user-owned
+  untracked chip documents were preserved.
+- Functional validation passes A1.1–A1.5 and A2–A4. The simulator exercised all
+  21 routed flow families with exactly one outer `flow.exit`, native nested
+  dismissal, immediate known-empty exit, exact saved/unsaved dialogs, Keep
+  going, full teardown, originating-tab restoration, and onboarding routing.
+- The final candidate prevents stale generic persistence completions from
+  overwriting newer external failure state, restores mover vendor booking and
+  confirmation dependencies, removes the `.allComplete` card render path, and
+  classifies future-dated snoozes before visible status buckets.
+- The iPhone 17 Pro / iOS 26.5 simulator build completed with
+  `** BUILD SUCCEEDED **`. `project.pbxproj` remained diff-clean. No commit and
+  no remote deployment were made.
+
+### Stop reason and proposed documentation edit
+
+- The final validator failed only A1.6 because the report omitted
+  `IdentityService.swift:178`, where add-address persistence encounters a
+  swallowed geocoding failure and continues without derived distance/interstate
+  data. Under the two-attempt rule, Phase A halts here even though all functional
+  acceptance lines pass.
+- Phase A remains uncommitted for human review; Phases B–F did not start, and
+  `functions:resolveProvider` was not deployed.
+- Add an execution-protocol template for audit acceptance lines containing:
+  `ROOT ENTRY POINTS`, `TRANSITIVE DEPENDENCY DEPTH`, `INCLUDED READBACKS`, and
+  `EXCLUDED NON-PERSISTENCE FALLBACKS`. Require that manifest before writer work
+  begins. This SESSION_NOTES block is the final repository edit/action of the
+  halted session.
+
+## Post-Test Cleanup chip — Phases A–F completed (2026-08-01)
+
+This completion block supersedes the preceding halted-state block.
+
+### A1.6 correction and final validation
+
+- `PHASE_A_REPORT.md` now includes the swallowed geocoding failure at
+  `IdentityService.swift:178` in the bounded flow-persistence/identity audit.
+- Only A1.6 was rerun after that report correction. The fresh validator
+  reconciled all 77 `try?`/`catch` hits across the report's three categories,
+  with no unmatched or misclassified hit, and returned PASS.
+- Phase A's launch-blocking exit behavior remained functionally green across
+  all 21 routed flow families: one outer exit, native nested dismissal,
+  whole-flow answer-state evaluation, persistence-honest saved/unsaved dialog,
+  full nested teardown, and outermost-step resume.
+
+### Phase and commit ledger
+
+- Phase A — `63576e61db8c27608c1acb99a0229e254d9d4539` — post-test cleanup,
+  including the deleted `.allComplete` card render path.
+- Phase B — `b267f676dda3b7b82e4b25f0b215db8767343f3c` — resolver intent and
+  validation. The only deployment was the sanctioned `functions:resolveProvider`.
+- Phase C — `24310c4b6d82356d48bcb7733c758ae1ceb36c26` — scrolling flow forms
+  converted to stepped questions.
+- Phase D — `0814f680578a4e1e235009a90988c45583901055` — chaptered Lucide
+  assessment visuals.
+- Phase E — `66ca63c247a3f632ee3ba0c7a46e807408f232f0` — compact ISP plan
+  comparison.
+- Phase F — `bb56324dc143c3d7e6490a08403787ec38d919d2` — copy inventory dump.
+
+### Validation and close ledger
+
+- Phase A's fresh A1.6 validator passed; the simulator/build evidence remained
+  green. Phase B's live validator passed after deploying only
+  `functions:resolveProvider`.
+- Phase D passed D1.1–D1.6 independently with 27 simulator screenshots. Phase E
+  passed E1.1–E1.5 independently; its Release build ended `BUILD SUCCEEDED`,
+  and the iPhone 17 Pro screenshot showed all three compact cards plus the top
+  of the additional-provider affordance.
+- Phase F passed F1.1–F1.5 independently. `COPY_INVENTORY.md` contains 1,968
+  entries across 153 sections: 1,281 Swift literals from 138 files and 687
+  runtime-data literals from 15 files. The inventory has clean five-field
+  source rows, no duplicate exact entries, no named LOCKED-block hits, and no
+  runtime-source modification.
+- Phase F stopped after the inventory dump. No copy rewrite was undertaken.
+  This completion block is the final repository edit/action of the session and
+  remains outside the Phase F commit.
+
+## Peezy copy rewrite — G1–G4 close-out (2026-08-02)
+
+### Application and data changes
+
+- Applied G1–G4 and every targeted table replacement verbatim. Coordinator/view
+  duplicates were changed together, including two live duplicates discovered
+  during simulator verification (`AnyKids` and `HasVehicles`). No neighboring
+  copy was rewritten.
+- Removed the approved referral question from the coordinator, flow view,
+  question view, assessment data model/reset, visual map, and test profile.
+  Production grep now returns zero `howHeard`/`HowHeard` references.
+- Repaired the disk-full-corrupted Functions dependency tree with the approved
+  quarantine + `npm ci` path. `firebase-functions@7.0.3` is installed, the
+  Functions entry point and mini-assessment module load cleanly, and
+  `flowDefinitionsData.json` parses cleanly.
+- Deployed `functions:getWorkflowQualifying`, reseeded 47 catalog tasks and 25
+  flow definitions, and deployed `functions:peezyRespond` for the final G1
+  fallback corrections. The post-reseed read-back reports 47 deployed tasks,
+  zero ghosts, and zero missing tasks.
+
+### Build and simulator verification
+
+- The final iPhone 17 Pro / iOS 26.3 simulator `xcodebuild` completed with exit
+  code 0 while Xcode.app remained closed. The only warning was the existing
+  Crashlytics build phase lacking declared outputs.
+- Completed the full assessment on the corrected build. The Accounts chapter
+  ended at question 4 of 4 and advanced directly to generation; the referral
+  screen is gone and the chapter count dropped by one. The generated plan
+  contained 14 personalized tasks.
+- Completed one managed-provider path for a bank account through its summary;
+  the live screen rendered `Expect word back within 24–48 hours.`
+- Ran the mover path from capture through ten refinement questions and three-way
+  price comparison. The changed capture screen rendered the exact new copy. A
+  subscription gate appeared only after selecting a mover; no purchase was made.
+- G4 finding: the live mini-assessment interaction is tap-based. Account rows
+  expose tappable add/remove controls and Continue; no swipe gesture rendered,
+  so there is no live swipe-design bug to report.
+- Twenty-one simulator screenshots are committed under
+  `artifacts/copy-rewrite-screenshots/`, including assessment, no-referral count,
+  generation/ready, mover, and managed-provider evidence.
+
+### Final verification ledger
+
+- Local production audit: 266 Swift/JavaScript/JSON files scanned, zero exact
+  OLD-string hits, zero old G4 swipe-pattern hits, zero referral identifiers,
+  and zero active first-person-singular narrator fallbacks.
+- Deployed read-back: 25 Firestore flow definitions and all six callable
+  mini-assessment workflows contain zero exact OLD strings and zero old G4
+  swipe patterns. The six callable instructions read back with the required
+  `Tap yes...` wording.
+- `git diff --check` passed. This SESSION_NOTES block is the final file edit of
+  the session before staging it and creating the requested all-worktree commit.

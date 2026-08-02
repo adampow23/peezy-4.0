@@ -202,7 +202,7 @@ struct ConfirmMoveDateFlow: View {
                     } else {
                         TaskFlowConfirmDateCard(
                             taskTitle: "Lock in your move date",
-                            question: "Is this the real date?",
+                            question: "Is this date locked in now?",
                             currentDate: restoredDraftDate ?? currentDate,
                             confirmLabel: "Lock it in",
                             onDraftChange: { restoredDraftDate = $0 },

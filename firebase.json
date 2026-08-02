@@ -25,6 +25,10 @@
       "firebase.json",
       "**/.*",
       "**/node_modules/**"
+    ],
+    "redirects": [
+      { "source": "/privacy**", "destination": "https://peezymove.com/privacy", "type": 301 },
+      { "source": "/terms**",   "destination": "https://peezymove.com/terms",   "type": 301 }
     ]
   }
 }

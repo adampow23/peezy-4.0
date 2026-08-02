@@ -265,7 +265,7 @@
         "id": "summary",
         "kind": "summary",
         "body": "We'll contact the utility providers to set up service at your new address before you arrive.",
-        "subtext": "Response times are typically 24–48 hours."
+        "subtext": "Expect word back within 24–48 hours."
       },
       {
         "id": "tip",
@@ -318,7 +318,7 @@
         "id": "summary",
         "kind": "summary",
         "body": "We'll contact each provider to schedule shutoffs at your current address after you move out.",
-        "subtext": "Response times are typically 24–48 hours."
+        "subtext": "Expect word back within 24–48 hours."
       },
       {
         "id": "tip",
@@ -371,7 +371,7 @@
         "id": "summary",
         "kind": "summary",
         "body": "We'll contact each provider to transfer service to your new address with no overlap in billing.",
-        "subtext": "Response times are typically 24–48 hours."
+        "subtext": "Expect word back within 24–48 hours."
       },
       {
         "id": "tip",
@@ -451,7 +451,7 @@
         "id": "update_summary",
         "kind": "summary",
         "body": "We'll reach out to your vet and get your address updated.",
-        "subtext": "Response times are typically 24–48 hours."
+        "subtext": "Expect word back within 24–48 hours."
       },
       {
         "id": "update_tip",
@@ -514,7 +514,7 @@
         "id": "find_summary",
         "kind": "summary",
         "body": "We'll help find you a new vet near your new place.",
-        "subtext": "Response times are typically 24–48 hours.",
+        "subtext": "Expect word back within 24–48 hours.",
         "bodyVariants": [
           {
             "when": {
@@ -609,7 +609,7 @@
         "id": "update_summary",
         "kind": "summary",
         "body": "We'll reach out to your pharmacy and get your address updated.",
-        "subtext": "Response times are typically 24–48 hours."
+        "subtext": "Expect word back within 24–48 hours."
       },
       {
         "id": "update_tip",
@@ -672,7 +672,7 @@
         "id": "find_summary",
         "kind": "summary",
         "body": "We'll help find you a new pharmacy near your new place.",
-        "subtext": "Response times are typically 24–48 hours.",
+        "subtext": "Expect word back within 24–48 hours.",
         "bodyVariants": [
           {
             "when": {
@@ -803,7 +803,7 @@
           "parking": "a truck-sized loading spot",
           "elevator": "the service elevator window"
         },
-        "subtext": "Response times are typically 24–48 hours."
+        "subtext": "Expect word back within 24–48 hours."
       },
       {
         "id": "tip",
@@ -866,7 +866,7 @@
           "parking": "a truck-sized spot",
           "elevator": "the service elevator window"
         },
-        "subtext": "Response times are typically 24–48 hours."
+        "subtext": "Expect word back within 24–48 hours."
       },
       {
         "id": "tip",
@@ -994,7 +994,7 @@
         "id": "summary",
         "kind": "summary",
         "body": "We'll reach out to each office and get your records moving.",
-        "subtext": "Response times are typically 24–48 hours."
+        "subtext": "Expect word back within 24–48 hours."
       },
       {
         "id": "tip",
@@ -1067,7 +1067,7 @@
         "id": "summary",
         "kind": "summary",
         "body": "We'll reach out to each of them and get your address updated.",
-        "subtext": "Response times are typically 24–48 hours."
+        "subtext": "Expect word back within 24–48 hours."
       },
       {
         "id": "tip",
@@ -1145,7 +1145,7 @@
         "id": "summary",
         "kind": "summary",
         "body": "We'll contact each of them — cancellations, transfers, and address updates handled.",
-        "subtext": "Response times are typically 24–48 hours."
+        "subtext": "Expect word back within 24–48 hours."
       },
       {
         "id": "tip",
@@ -1191,7 +1191,7 @@
         "id": "summary",
         "kind": "summary",
         "body": "We'll scout units near your new place and come back with the best options.",
-        "subtext": "Response times are typically 24–48 hours."
+        "subtext": "Expect word back within 24–48 hours."
       },
       {
         "id": "tip",

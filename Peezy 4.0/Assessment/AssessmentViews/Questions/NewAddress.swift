@@ -7,7 +7,7 @@ struct NewAddress: View {
     // ═══════════════════════════════════════════
 
     let header      = "What's the new address?"
-    let subtext     : String? = "I'll use this to get utilities, internet, and everything else set up before you walk in."
+    let subtext     : String? = "Same deal — this is how utilities, internet, and everything else get set up before you walk in."
     let placeholder = "Start typing your address"
     let buttonText  = "Continue"
 

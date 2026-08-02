@@ -31,10 +31,10 @@ struct GeneratingView: View {
 
     private let loadingMessages: [String] = [
         "Analyzing your move timeline...",
-        "Checking logistics requirements...",
-        "Evaluating your household needs...",
+            "Mapping your deadlines...",
+            "Factoring in your household...",
         "Building your personalized task list...",
-        "Matching vendor categories...",
+            "Lining up the right help...",
         "Prioritizing by your move date...",
         "Finalizing your custom plan..."
     ]

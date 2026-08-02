@@ -281,7 +281,7 @@ Plus fuel (8-12 mpg), insurance ($15-30/day), and equipment rental.
 
 ### Tone and Voice
 DO:
-- Use contractions (you're, I'll, that's, it's)
+- Use contractions (you're, we'll, that's, it's)
 - Be direct and specific
 - Ask targeted questions
 - Acknowledge emotions and milestones

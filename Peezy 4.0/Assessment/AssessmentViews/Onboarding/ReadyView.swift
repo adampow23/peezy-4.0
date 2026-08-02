@@ -57,7 +57,7 @@ struct ReadyView: View {
                         .font(.system(size: 22, weight: .bold, design: .rounded))
                         .foregroundColor(PeezyTheme.Colors.deepInk)
                     
-                    Text("We've organized everything you need for a smooth move.")
+                    Text("Every task you need, none you don't — ordered by deadline.")
                         .font(.system(size: 15, weight: .regular))
                         .foregroundColor(PeezyTheme.Colors.deepInk.opacity(0.6))
                         .multilineTextAlignment(.center)

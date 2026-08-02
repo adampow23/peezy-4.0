@@ -76,8 +76,6 @@ enum AssessmentInputStep: String, Hashable {
     case healthcareProviders
     case fitnessWellness
 
-    // Wrap-up
-    case howHeard
 }
 
 // MARK: - Assessment Node
@@ -325,9 +323,6 @@ class AssessmentCoordinator: ObservableObject {
         addStep(.healthcareProviders)
         addStep(.fitnessWellness)
 
-        // Wrap-up
-        addStep(.howHeard)
-
         sequence = nodes
 
         // Update watermark for progress bar stability
@@ -398,7 +393,7 @@ class AssessmentCoordinator: ObservableObject {
 
         case .moveDate:
             return InputContext(
-                header: "When are we moving? If it's not 100% official yet, just drop your best guess below!",
+                header: "When are we moving? Not official yet? Your best guess works.",
                 subheader: nil
             )
 
@@ -414,7 +409,7 @@ class AssessmentCoordinator: ObservableObject {
         case .currentRentOrOwn:
             return InputContext(
                 header: "Alright, let's talk about your current place. Are you renting or do you own?",
-                subheader: "This helps me figure out things like lease breaks, security deposits, or listing prep."
+                subheader: "This tells us whether we're dealing with lease stuff, deposits, or listing prep."
             )
             
         case .currentDwellingType:
@@ -426,12 +421,12 @@ class AssessmentCoordinator: ObservableObject {
         case .currentAddress:
             return InputContext(
                 header: "What's the address?",
-                subheader: "I'll use this for mail forwarding, utilities, change of address—all the stuff you'd normally have to chase down yourself."
+                subheader: "This powers your mail forwarding, utilities, address changes — all the stuff you'd normally chase down yourself."
             )
             
         case .currentFloorAccess:
             return InputContext(
-                header: "What's access like?",
+                header: "What's the access like?",
                 subheader: nil
             )
 
@@ -470,12 +465,12 @@ class AssessmentCoordinator: ObservableObject {
         case .newAddress:
             return InputContext(
                 header: "What's the new address?",
-                subheader: "Same deal—I'll use it to get utilities, internet, and everything else set up before you even walk in the door."
+                subheader: "Same deal — this is how utilities, internet, and everything else get set up before you walk in."
             )
             
         case .newFloorAccess:
             return InputContext(
-                header: "What's access like?",
+                header: "What's the access like?",
                 subheader: nil
             )
 
@@ -487,7 +482,7 @@ class AssessmentCoordinator: ObservableObject {
 
         case .hasStorage:
             return InputContext(
-                header: "Are there any items in storage that will be making the move as well?",
+                header: "Anything in a storage unit making the move too?",
                 subheader: nil
             )
 
@@ -519,7 +514,7 @@ class AssessmentCoordinator: ObservableObject {
 
         case .anyKids:
             return InputContext(
-                header: "Will any children be making the move with you?",
+                header: "Any kids making the move with you?",
                 subheader: nil
             )
 
@@ -543,7 +538,7 @@ class AssessmentCoordinator: ObservableObject {
 
         case .hasVehicles:
             return InputContext(
-                header: "Will any vehicles be moving with you?",
+                header: "Any vehicles coming along?",
                 subheader: nil
             )
 
@@ -552,7 +547,7 @@ class AssessmentCoordinator: ObservableObject {
         case .servicesIntro:
             return InputContext(
                 header: "Now let's talk about any professional help you might need.",
-                subheader: "We'll ask about services you're planning to hire or even just interested in receiving quotes from — movers, packers, cleaners, and more."
+                subheader: "Movers, packers, cleaners — tell us who you're hiring, or just curious about, and we'll line up the quotes."
             )
 
         case .hireMovers:
@@ -576,12 +571,12 @@ class AssessmentCoordinator: ObservableObject {
         case .wantToSell:
             return InputContext(
                 header: "Are you planning to sell any of those items?",
-                subheader: "We can assist with that process as well as plan b if they don't sell."
+                subheader: "We'll help you sell — with a plan B ready for anything that doesn't."
             )
 
         case .hireCleaners:
             return InputContext(
-                header: "And for the final deep clean of your current home, would you like to get some quotes for professional cleaners?",
+                header: "Want quotes for the final deep clean of your current place?",
                 subheader: nil
             )
             
@@ -590,34 +585,29 @@ class AssessmentCoordinator: ObservableObject {
         case .addressChangeIntro:
             return InputContext(
                 header: "Time to make sure everyone knows where to find you.",
-                subheader: "You'll need to update your address with certain companies. We can help with that — and if you need to cancel something or find a new provider in your area, we've got you covered."
+                subheader: "Banks, doctors, memberships — they all need your new address. We'll handle the updates, the cancellations, and finding new ones near you."
             )
 
         case .financialInstitutions:
             return InputContext(
-                header: "Let's start with finance related accounts you might have.",
-                subheader: "Tap once for each that you have an account with - if you have more than one of any, each tap will add a new task for you."
+                header: "First up: the money accounts.",
+                subheader: "Tap everything you have. More than one of something? Tap it once per account — we track each one separately."
             )
 
         case .healthcareProviders:
             return InputContext(
                 header: "Now for any health-related accounts?",
-                subheader: "Tap once for each that you have an account with - if you have more than one of any, each tap will add a new task for you."
+                subheader: "Tap everything you have. More than one of something? Tap it once per account — we track each one separately."
             )
 
         case .fitnessWellness:
             return InputContext(
-                header: "And lastly, do you have any wellness-related memberships?",
-                subheader: "Tap once for each that you have an account with - if you have more than one of any, each tap will add a new task for you."
+                header: "Last one: any gyms, studios, or wellness memberships?",
+                subheader: "Tap everything you have. More than one of something? Tap it once per account — we track each one separately."
             )
 
         // --- WRAP-UP ---
 
-        case .howHeard:
-            return InputContext(
-                header: "Before we get to the fun stuff, we'd love to know what put Peezy on your radar?",
-                subheader: nil
-            )
         }
     }
     

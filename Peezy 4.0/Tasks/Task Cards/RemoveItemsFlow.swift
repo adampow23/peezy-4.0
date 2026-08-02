@@ -166,7 +166,7 @@ struct RemoveItemsFlow: View {
             TaskFlowSummaryCard(
                 taskTitle: taskTitle,
                 bodyText: "We'll find the best option for your items and get it scheduled.",
-                subtext: "Response times are typically 24–48 hours.",
+                subtext: "Expect word back within 24–48 hours.",
                 showBack: true,
                 onPrimary: { submitAndComplete() },
                 onBack: { goBack() }

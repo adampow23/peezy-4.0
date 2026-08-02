@@ -7,7 +7,7 @@ struct CurrentAddress: View {
     // ═══════════════════════════════════════════
 
     let header      = "What's the current address?"
-    let subtext     : String? = "I'll use this for mail forwarding, utilities, and more."
+    let subtext     : String? = "This powers your mail forwarding, utilities, address changes — all the stuff you'd normally chase down yourself."
     let placeholder = "Start typing your address"
     let buttonText  = "Continue"
 

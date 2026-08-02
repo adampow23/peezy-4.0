@@ -139,7 +139,7 @@ struct QuoteSelectionFlow: View {
                     .fill(Color.black.opacity(0.15))
                     .frame(width: 50, height: 2)
 
-                Text("Tap an option to select it. You can always change your mind.")
+                Text("Tap one. You can change your mind anytime.")
                     .font(.system(size: 14, weight: .medium))
                     .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.4))
             }

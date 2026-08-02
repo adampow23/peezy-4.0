@@ -2,8 +2,8 @@ import SwiftUI
 
 struct FitnessWellness: View {
 
-    let header      = "And lastly, do you have any wellness-related memberships?"
-    let subtext     : String? = "Tap once for each that you have an account with - if you have more than one of any, each tap will add a new task for you."
+    let header      = "Last one: any gyms, studios, or wellness memberships?"
+    let subtext     : String? = "Tap everything you have. More than one of something? Tap it once per account — we track each one separately."
     let buttonText  = "Continue"
 
     // OPTIONS — must match taskCatalogData.json condition values EXACTLY

@@ -52,7 +52,7 @@ struct AssessmentIntroView: View {
                 HStack(spacing: 8) {
                     Image(systemName: "clock")
                         .font(.system(size: 14))
-                    Text("Just a quick 90 second setup")
+                    Text("A few minutes of questions — then we take it from here.")
                         .font(.system(size: 14, weight: .medium))
                 }
                 .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.5))

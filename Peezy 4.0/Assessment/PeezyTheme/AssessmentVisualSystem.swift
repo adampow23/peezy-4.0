@@ -76,8 +76,6 @@ enum PeezyQuestionVisuals {
         "assessment.financialInstitutions": "landmark",
         "assessment.healthcareProviders": "stethoscope",
         "assessment.fitnessWellness": "dumbbell",
-        "assessment.howHeard": "message-circle-question-mark",
-
         "flow.setup_utilities.handling": "plug-zap",
         "flow.cancel_utilities.handling": "plug-zap",
         "flow.transfer_utilities.handling": "plug-zap",
@@ -158,7 +156,7 @@ enum PeezyQuestionVisuals {
              .hasDeclutter, .wantToSell, .hireCleaners:
             .people
         case .addressChangeIntro, .financialInstitutions, .healthcareProviders,
-             .fitnessWellness, .howHeard:
+             .fitnessWellness:
             .accounts
         }
     }

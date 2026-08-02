@@ -73,7 +73,6 @@ class AssessmentDataManager: ObservableObject {
     @Published var fitnessDetails: [String: String] = [:]
     
     // MARK: - Attribution
-    @Published var howHeard: String = ""
     @Published var referralCode: String = ""
     @Published var promoCode: String = ""
     
@@ -203,7 +202,6 @@ class AssessmentDataManager: ObservableObject {
         data["fitnessDetails"] = fitnessDetails
         
         // Attribution
-        data["howHeard"] = howHeard
         data["referralCode"] = referralCode
         data["promoCode"] = promoCode
         
@@ -347,7 +345,6 @@ class AssessmentDataManager: ObservableObject {
         financialDetails = [:]
         healthcareDetails = [:]
         fitnessDetails = [:]
-        howHeard = ""
         referralCode = ""
         promoCode = ""
         moveDistance = ""

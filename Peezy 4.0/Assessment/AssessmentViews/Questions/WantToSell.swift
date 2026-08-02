@@ -5,7 +5,7 @@ import SwiftUI
 // REMOVE_ITEMS (No) together with hasDeclutter=Yes.
 struct WantToSell: View {
     let header      = "Are you planning to sell any of those items?"
-    let subtext     : String? = "We can assist with that process as well as plan b if they don't sell."
+    let subtext     : String? = "We'll help you sell — with a plan B ready for anything that doesn't."
     let options     = ["Yes", "No"]
     let icons       = ["hand.thumbsup.fill", "hand.thumbsdown.fill"]
 

@@ -257,7 +257,7 @@ const TONE_AND_VOICE = `
 ## TONE AND VOICE
 
 ### DO
-- Use contractions: "you're", "I'll", "that's", "it's", "don't", "won't"
+- Use contractions: "you're", "we'll", "that's", "it's", "don't", "won't"
 - Be direct and specific
 - Acknowledge emotions and milestones
 - Use their name occasionally (not every message)

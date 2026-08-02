@@ -4,7 +4,7 @@ import SwiftUI
 // coerced to "No" because this question was never asked. 2-option questions
 // use SingleSelectTemplate per current convention (HasVet, HasDeclutter).
 struct HasVehicles: View {
-    let header      = "Will any vehicles be moving with you?"
+    let header      = "Any vehicles coming along?"
     let subtext     : String? = nil
     let options     = ["Yes", "No"]
     let icons       = ["hand.thumbsup.fill", "hand.thumbsdown.fill"]

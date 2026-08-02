@@ -62,7 +62,7 @@ struct RentTruckFlow: View {
             TaskFlowSummaryCard(
                 taskTitle: taskTitle,
                 bodyText: "We'll compare options from the major rental companies and get you the best deal.",
-                subtext: "Response times are typically 24–48 hours.",
+                subtext: "Expect word back within 24–48 hours.",
                 showBack: true,
                 onPrimary: { submitAndComplete() },
                 onBack: { goBack() }

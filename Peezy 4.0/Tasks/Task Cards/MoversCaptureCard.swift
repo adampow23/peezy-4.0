@@ -27,7 +27,7 @@ struct MoversCaptureCard: View {
                     .bold()
                     .foregroundStyle(PeezyTheme.Colors.deepInk)
 
-                Text("A room-by-room scan gives every company the same scope. If video isn't an option, home details still produce a wider estimate range.")
+                Text("A quick scan gives every company the exact same job to price. No video? Home details work too — the range is just wider.")
                     .font(.body)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

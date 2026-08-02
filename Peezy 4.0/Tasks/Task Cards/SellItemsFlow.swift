@@ -123,7 +123,7 @@ struct SellItemsFlow: View {
             TaskFlowSummaryCard(
                 taskTitle: taskTitle,
                 bodyText: "We'll put together a selling plan based on what you've got and where to list it.",
-                subtext: "Response times are typically 24–48 hours.",
+                subtext: "Expect word back within 24–48 hours.",
                 showBack: true,
                 onPrimary: { submitAndComplete() },
                 onBack: { goBack() }

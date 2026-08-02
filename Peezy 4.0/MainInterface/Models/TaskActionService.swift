@@ -655,7 +655,7 @@ struct TaskActionService {
             "urgencyPercentage": 99,
             "estHours": 0.1,
             "tips": "Tap each item as it becomes ready. Nothing here blocks your move.",
-            "whyNeeded": "A final readiness record protects the estimate and explains avoidable overages.",
+            "whyNeeded": "This record is what keeps your estimate honest if move day runs long.",
             "dueDate": Timestamp(date: scheduledDate),
             "status": preservedStatus ?? "Upcoming",
             "selfServiceOnly": true,
