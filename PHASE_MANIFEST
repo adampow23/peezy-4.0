@@ -1,45 +1,5 @@
-# Post-Test Cleanup — Phase F1: Copy inventory dump (PERIPHERY)
-#
-# ACCEPTANCE CONTRACT (locked before inventory generation)
-# F1.1 GIVEN the production iOS source and its runtime data-driven catalogs,
-#      WHEN the inventory is complete, THEN every non-LOCKED user-facing string
-#      literal is represented, including headings, body/helper text, empty
-#      states, buttons, field labels/placeholders, errors, alerts, confirmations,
-#      accessibility copy, and user-visible generated task/flow copy.
-# F1.2 GIVEN an inventory entry, THEN it identifies source file, current 1-based
-#      line, exact current text (preserving interpolation markers), and the
-#      screen/component or runtime context in which the user receives it.
-# F1.3 GIVEN copy explicitly marked LOCKED in source/spec comments, THEN it is
-#      excluded and the excluded source blocks are named in the inventory notes.
-# F1.4 GIVEN implementation-only literals, THEN identifiers, persistence keys,
-#      analytics/log strings, URLs, symbol/asset names, source metadata,
-#      test/preview fixtures, and developer tooling are excluded as non-copy.
-# F1.5 GIVEN Phase F closes, THEN no runtime copy or implementation source is
-#      rewritten; the phase stops after the inventory dump and reports it for a
-#      later verbatim-copy application session.
-#
-# EDIT SITES
-# PHASE_MANIFEST
-# COPY_INVENTORY.md (new)
-#
-# READ SITES
-# All production Swift files under Peezy 4.0/ (excluding preview/debug-only copy)
-# functions/flowDefinitionsData.json
-# functions/taskCatalogData.json
-# functions/miniAssessmentWorkflows.js
-# functions/workflows.js
-# functions/peezyBrain.js and callable error payload paths
-# functions/providerDirectoryData.json
-# functions/ispPlansData.json
-# functions/vendorsData.json
-# peezy-chip-post-test-cleanup.md
-# peezy-execution-protocol.md
-# peezy-conventions-v2.md
-# peezy-v1-architecture.md
-# CLAUDE.md
-# SESSION_NOTES.md (session-final write only)
-
-# Doctor session follow-up (2026-08-02): stale-reference fix after HowHeard deletion
-# EDIT SITES
-# Peezy 4.0/Assessment/PeezyTheme/AssessmentVisualSystem.swift
-Peezy 4.0/Assessment/PeezyTheme/AssessmentVisualSystem.swift
+# Day 1 Launch Audits — READ-ONLY on all source
+# Active spec: DAY1_AUDITS_SPEC.md
+# Writable paths: audit_reports/ ONLY
+# Trustproof run (peezy-trustproof-run.md) is PAUSED — do not execute
+# its contract. It resumes after launch week.

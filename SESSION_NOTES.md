@@ -589,3 +589,69 @@ This completion block supersedes the preceding halted-state block.
   `Tap yes...` wording.
 - `git diff --check` passed. This SESSION_NOTES block is the final file edit of
   the session before staging it and creating the requested all-worktree commit.
+
+---
+
+## Session: Trustproof Run — Full-App Exit-Risk Audit (2026-08-03)
+
+Scope executed: peezy-trustproof-run.md Phases 1–4. READ-ONLY honored — zero
+source changes; outputs are TRUSTPROOF_LEDGER.md, this block, and an updated
+PHASE_MANIFEST. Six parallel read-only subsystem audits + a live simulator pass
+(fresh build of 64aa5b2, test account at T-2) + independent re-verification of
+every stop-ship-level claim before it entered the ledger.
+
+### What the run doc got wrong / left ambiguous
+
+1. **The pilot paywall findings (F-001..F-005) do not exist anywhere findable.**
+   Not in any repo file, not in any prior Claude Code session transcript. Per
+   execution-protocol §2 the slots were re-derived from code and marked
+   `[NEEDS CLARIFICATION]` in the ledger header. Doc fix: either commit the
+   pilot output as a file next to the skill, or drop the import instruction.
+2. **"Induce failures cheaply (airplane mode)" conflicts with autonomous runs.**
+   Cutting the host network kills the session driving the test. Offline findings
+   are code-cited and flagged conservative in the ledger. Doc fix: note that
+   network-loss induction needs an attended session or a proxy harness.
+3. **The run doc's moment list omits the support-chat send moment** (only "who
+   answers" is implied via manual-MVP). It produced a HIGH/SILENT finding
+   (F-064). Worth adding explicitly to any rerun.
+
+### What surprised (worth conventions-v2 lines)
+
+- **`SMS notify not configured` is load-bearing on more paths than L01 implies.**
+  L01 frames it as the check-in flag SMS; the same absent `ADAM_NOTIFY_NUMBER`
+  silently no-ops booking, kit, and quote notifications in
+  getWorkflowQualifying.js — with no adminNotifications fallback on those paths
+  (unlike index.js's notifyAdmin callers). Conventions line suggestion: "The
+  getWorkflowQualifying notify family writes no durable admin record; do not
+  treat notifyAdmin's record-first behavior as universal."
+- **FlowEngineView completes on submission error by design** (":537-545 — old
+  screens completed on error too"). That inherited comment now guards the single
+  worst trust path in the app (answers deleted + fake success behind a paywall).
+  Any future spec touching the engine should treat that catch block as a bug,
+  not a compatibility contract.
+- **The Tasks tab shows date-gated post-move tasks pre-move** (sim-verified
+  MOVE_CHECKIN in To-Do at T-2). `surfaceAfterDaysPastMove` gates only the dose.
+  Conventions doc reads as if the gate is universal; it is not.
+- **ToastOverlay is mounted below fullScreenCover flows**, so every in-flow
+  error toast in the codebase is invisible. Multiple agents found "error
+  handling" that exists but cannot render.
+
+### Proposed doc edits
+
+- CLAUDE.md / conventions-v2 "Contract facts": add the notify-family caveat and
+  the dose-vs-Tasks-tab gating distinction above.
+- LAUNCH_CHECKLIST: L01's blast radius should name booking/kit/quote paths, not
+  only the flag SMS; consider a new gate for the FlowEngine error-completion
+  behavior (ledger S3) since it invalidates the "durable Firestore record"
+  contract claim from the client side (answers are deleted client-side on error
+  before any record exists).
+- peezy-trustproof.skill: pilot findings should ship inside the skill bundle as
+  a data file so future runs can import rather than re-derive.
+
+### Evidence trail
+
+Ledger: TRUSTPROOF_LEDGER.md (6 stop-ship clusters, ~60 findings, fence
+tensions, accepted-as-is, observability adds, cosmetics appendix). Simulator
+screenshots live in the session transcript. Spot-check re-verifications:
+FlowEngineView.swift:537-545, TasksStore.swift:31-32, functions/.env key names +
+getWorkflowQualifying.js:317-326/347-351, PeezyHomeViewModel.swift:309-324.
