@@ -151,7 +151,7 @@
       {
         "id": "info",
         "kind": "info",
-        "body": "Set up USPS mail forwarding online ($1.10 fee). Takes effect in 7-10 business days — do this 2 weeks before move day. Forwarding applies to the whole household, not individuals.",
+        "body": "Set up mail forwarding through the official USPS change-of-address page. Choose the start date, verify who is moving, and update any senders USPS does not cover.",
         "next": "status"
       },
       {
@@ -264,8 +264,8 @@
       {
         "id": "summary",
         "kind": "summary",
-        "body": "We'll contact the utility providers to set up service at your new address before you arrive.",
-        "subtext": "Expect word back within 24–48 hours."
+        "body": "Your utility setup list is ready: each provider, the number to call, and what to ask so service starts before you arrive.",
+        "subtext": "Use the confirmed address when you open each provider's official setup path."
       },
       {
         "id": "tip",
@@ -317,8 +317,8 @@
       {
         "id": "summary",
         "kind": "summary",
-        "body": "We'll contact each provider to schedule shutoffs at your current address after you move out.",
-        "subtext": "Expect word back within 24–48 hours."
+        "body": "Your utility shutoff list is ready: each provider, the number to call, and the script for ending service after move-out.",
+        "subtext": "Confirm the final service date and keep each confirmation number."
       },
       {
         "id": "tip",
@@ -370,8 +370,8 @@
       {
         "id": "summary",
         "kind": "summary",
-        "body": "We'll contact each provider to transfer service to your new address with no overlap in billing.",
-        "subtext": "Expect word back within 24–48 hours."
+        "body": "Your transfer list is ready: each provider, their number, and the script for a no-overlap switch.",
+        "subtext": "Confirm both service dates and keep each confirmation number."
       },
       {
         "id": "tip",
@@ -450,8 +450,8 @@
       {
         "id": "update_summary",
         "kind": "summary",
-        "body": "We'll reach out to your vet and get your address updated.",
-        "subtext": "Expect word back within 24–48 hours."
+        "body": "Your vet update is ready — here's the clinic contact and exactly what to say when you update your address.",
+        "subtext": "Have your pet's name and the new address ready."
       },
       {
         "id": "update_tip",
@@ -466,7 +466,7 @@
       {
         "id": "handling_cancel",
         "kind": "decision",
-        "question": "Want help transferring your records?",
+        "question": "Want a records-transfer checklist?",
         "next": "current_business",
         "branches": [
           {
@@ -490,7 +490,7 @@
       {
         "id": "handling_find",
         "kind": "decision",
-        "question": "Would you like help finding a new vet near your new place?",
+        "question": "Want current vet options near your new place, with sources?",
         "next": "find_summary",
         "branches": [
           {
@@ -513,21 +513,21 @@
       {
         "id": "find_summary",
         "kind": "summary",
-        "body": "We'll help find you a new vet near your new place.",
-        "subtext": "Expect word back within 24–48 hours.",
+        "body": "Your vet options are ready — here's each clinic, its contact details, and what to ask before choosing.",
+        "subtext": "Compare availability, services, and records-transfer requirements at each clinic.",
         "bodyVariants": [
           {
             "when": {
               "handling_cancel": "peezy",
               "handling_find": "peezy"
             },
-            "body": "We'll transfer your records and help find you a new vet."
+            "body": "Your vet plan is ready — use the records-request script with your current clinic, then compare the sourced options near your new place."
           },
           {
             "when": {
               "handling_cancel": "peezy"
             },
-            "body": "We'll transfer your records. You're all set to find a new one on your own."
+            "body": "Your records-transfer checklist is ready — here's what to request from your current vet before you choose a new one."
           }
         ]
       },
@@ -608,8 +608,8 @@
       {
         "id": "update_summary",
         "kind": "summary",
-        "body": "We'll reach out to your pharmacy and get your address updated.",
-        "subtext": "Expect word back within 24–48 hours."
+        "body": "Your pharmacy update is ready — here's the pharmacy contact and exactly what to say when you update your address.",
+        "subtext": "Have your prescription numbers and new address ready."
       },
       {
         "id": "update_tip",
@@ -624,7 +624,7 @@
       {
         "id": "handling_cancel",
         "kind": "decision",
-        "question": "Want help transferring your prescriptions?",
+        "question": "Want a prescription-transfer checklist?",
         "next": "current_business",
         "branches": [
           {
@@ -648,7 +648,7 @@
       {
         "id": "handling_find",
         "kind": "decision",
-        "question": "Would you like help finding a new pharmacy near your new place?",
+        "question": "Want current pharmacy options near your new place, with sources?",
         "next": "find_summary",
         "branches": [
           {
@@ -671,21 +671,21 @@
       {
         "id": "find_summary",
         "kind": "summary",
-        "body": "We'll help find you a new pharmacy near your new place.",
-        "subtext": "Expect word back within 24–48 hours.",
+        "body": "Your pharmacy options are ready — here's each location, its contact details, and what to ask before choosing.",
+        "subtext": "Compare hours, prescription availability, and transfer requirements at each pharmacy.",
         "bodyVariants": [
           {
             "when": {
               "handling_cancel": "peezy",
               "handling_find": "peezy"
             },
-            "body": "We'll transfer your prescriptions and help find you a new pharmacy."
+            "body": "Your pharmacy plan is ready — use the transfer script with your current pharmacy, then compare the sourced options near your new place."
           },
           {
             "when": {
               "handling_cancel": "peezy"
             },
-            "body": "We'll transfer your prescriptions. You're all set to find a new one on your own."
+            "body": "Your prescription-transfer checklist is ready — here's what to ask your current pharmacy before you choose a new one."
           }
         ]
       },
@@ -798,12 +798,12 @@
       {
         "id": "summary",
         "kind": "summary",
-        "body": "We'll contact your current building and reserve {rowsList} for move day.",
+        "body": "Here's the reservation script for your current building — what to book ({rowsList}) and the questions that prevent move-day surprises.",
         "rowLabels": {
           "parking": "a truck-sized loading spot",
           "elevator": "the service elevator window"
         },
-        "subtext": "Expect word back within 24–48 hours."
+        "subtext": "Confirm the date, access window, fees, insurance requirements, and written approval."
       },
       {
         "id": "tip",
@@ -861,12 +861,12 @@
       {
         "id": "summary",
         "kind": "summary",
-        "body": "We'll contact your new building and reserve {rowsList} for move day.",
+        "body": "Here's the reservation script for your new building — what to book ({rowsList}) and the questions that prevent move-day surprises.",
         "rowLabels": {
           "parking": "a truck-sized spot",
           "elevator": "the service elevator window"
         },
-        "subtext": "Expect word back within 24–48 hours."
+        "subtext": "Confirm the date, access window, fees, insurance requirements, and written approval."
       },
       {
         "id": "tip",
@@ -901,7 +901,7 @@
         "id": "devices",
         "kind": "info",
         "infoTitle": "Return every device",
-        "body": "A missing $5 fob can cost $200 in lock-change charges. Photograph everything you're returning the moment you hand it over.",
+        "body": "A missing return item can trigger replacement or lock-change charges. Photograph every key and fob the moment you hand it over.",
         "next": "status"
       },
       {
@@ -993,8 +993,8 @@
       {
         "id": "summary",
         "kind": "summary",
-        "body": "We'll reach out to each office and get your records moving.",
-        "subtext": "Expect word back within 24–48 hours."
+        "body": "Your medical-records list is ready — here's each office, its contact details, and the records-request script.",
+        "subtext": "Ask how each office sends records and whether it requires a signed release."
       },
       {
         "id": "tip",
@@ -1066,8 +1066,8 @@
       {
         "id": "summary",
         "kind": "summary",
-        "body": "We'll reach out to each of them and get your address updated.",
-        "subtext": "Expect word back within 24–48 hours."
+        "body": "Your financial-account list is ready — here's each contact and exactly where to update your address.",
+        "subtext": "Confirm mailing and billing addresses, then keep each update confirmation."
       },
       {
         "id": "tip",
@@ -1144,8 +1144,8 @@
       {
         "id": "summary",
         "kind": "summary",
-        "body": "We'll contact each of them — cancellations, transfers, and address updates handled.",
-        "subtext": "Expect word back within 24–48 hours."
+        "body": "Your membership list is ready — here's each contact and the script for cancellations, transfers, or address updates.",
+        "subtext": "Check notice requirements and keep written confirmation."
       },
       {
         "id": "tip",
@@ -1172,7 +1172,7 @@
       {
         "id": "handling",
         "kind": "decision",
-        "question": "Want us to find you the right unit?",
+        "question": "Want current storage options near your new place, with sources?",
         "timeSaved": "~1.5 hrs",
         "stage": "capture",
         "next": "summary",
@@ -1190,8 +1190,8 @@
       {
         "id": "summary",
         "kind": "summary",
-        "body": "We'll scout units near your new place and come back with the best options.",
-        "subtext": "Expect word back within 24–48 hours."
+        "body": "Your storage research is ready — compare sourced options near your new place by availability, unit size, access, and current terms.",
+        "subtext": "Confirm the final price, fees, and move-in terms directly before you reserve."
       },
       {
         "id": "tip",

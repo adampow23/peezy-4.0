@@ -2,13 +2,10 @@
 //  SetupInternetFlow.swift
 //  Peezy 4.0
 //
-//  Curated KC-area internet comparison with an attributed-link-ready handoff.
-//  Address-level serviceability remains a v1.1 provider/API responsibility.
+//  Exact-address internet setup guidance until live provider research ships.
 //
 
 import SwiftUI
-import SafariServices
-import OSLog
 
 struct SetupInternetFlow: View {
     let taskTitle = "Set up my internet"
@@ -21,22 +18,11 @@ struct SetupInternetFlow: View {
     let onStatusAction: (TaskFlowStatusAction) -> Void
 
     @State private var currentIndex = 0
-    @State private var plans: [ISPPlan] = []
     @State private var addressLabel = "Kansas City"
-    @State private var openedPlanID: String?
-    @State private var safariDestination: ISPPlanSafariDestination?
-    @State private var showsOtherProviders = false
-    @State private var isLoading = true
     @State private var isSubmitting = false
-    @State private var errorMessage: String?
     @State private var submissionError: String?
 
-    private let logger = Logger(
-        subsystem: Bundle.main.bundleIdentifier ?? "Peezy",
-        category: "ISPPlans"
-    )
     private let totalCards = 2
-    private let curatedPlanLimit = 3
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -48,30 +34,13 @@ struct SetupInternetFlow: View {
             }
         }
         .task(id: userId) {
-            await loadPlansAndAddress()
-        }
-        .sheet(item: $safariDestination) { destination in
-            ISPPlanSafariView(url: destination.url)
-                .ignoresSafeArea()
-        }
-        .confirmationDialog(
-            "Other internet providers",
-            isPresented: $showsOtherProviders,
-            titleVisibility: .visible
-        ) {
-            ForEach(otherPlans) { plan in
-                Button("\(plan.provider) — \(plan.tier)") {
-                    open(plan)
-                }
-            }
-            Button("Cancel", role: .cancel) {}
+            await loadAddress()
         }
         .resumableFlowProgress(
             path: ["card.\(currentIndex)"],
-            answers: openedPlanID.map { ["isp_plan": [$0]] } ?? [:]
+            answers: [:]
         ) { restored in
             currentIndex = min(max(FlowProgressCoding.cardIndex(from: restored.path), 0), totalCards - 1)
-            openedPlanID = restored.answers["isp_plan"]?.first
         }
     }
 
@@ -86,14 +55,14 @@ struct SetupInternetFlow: View {
             )
 
         case 1:
-            comparisonCard
+            guidanceCard
 
         default:
             EmptyView()
         }
     }
 
-    private var comparisonCard: some View {
+    private var guidanceCard: some View {
         VStack(spacing: 0) {
             TaskFlowHeader(
                 taskTitle: taskTitle,
@@ -103,161 +72,106 @@ struct SetupInternetFlow: View {
 
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: PeezyTheme.Layout.itemSpacing) {
-                    Text("Plans for \(addressLabel)")
+                    Text("Internet checklist for \(addressLabel)")
                         .font(.title3.bold())
                         .foregroundStyle(PeezyTheme.Colors.deepInk)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityIdentifier("internet.address")
 
-                    Text("Curated Kansas City-area options. Each provider confirms availability and final terms for your exact address.")
-                        .font(.caption)
+                    Text("Availability and terms change by address. Confirm each item on the provider's official site or by phone before ordering.")
+                        .font(.subheadline)
                         .foregroundStyle(.secondary)
-                        .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityIdentifier("internet.coverage_note")
 
-                    if isLoading {
-                        ProgressView("Loading plans…")
-                            .frame(maxWidth: .infinity, minHeight: 88)
-                            .tint(PeezyTheme.Colors.deepInk)
-                            .accessibilityIdentifier("internet.loading")
-                    } else if let errorMessage {
-                        internetError(message: errorMessage)
-                    } else {
-                        ForEach(curatedPlans) { plan in
-                            ComparisonCardView(
-                                model: plan.comparisonModel,
-                                isSelected: openedPlanID == plan.id,
-                                labels: .internet,
-                                presentation: .compact,
-                                onSelect: { open(plan) }
-                            )
-                        }
+                    guidanceRow(
+                        icon: "mappin.and.ellipse",
+                        title: "Check your exact address",
+                        body: "Confirm service availability, the final monthly price, equipment and installation fees, data limits, contract terms, and offer eligibility."
+                    )
 
-                        if !otherPlans.isEmpty {
-                            Button("See other providers") {
-                                showsOtherProviders = true
-                            }
-                            .font(.subheadline.bold())
-                            .foregroundStyle(PeezyTheme.Colors.deepInk)
-                            .frame(maxWidth: .infinity, minHeight: 44)
-                            .accessibilityIdentifier("internet.other_providers")
-                        }
-                    }
+                    guidanceRow(
+                        icon: "calendar.badge.clock",
+                        title: "Order ahead",
+                        body: "Order service two to three weeks before move day. Choose an activation date before you need it, then confirm equipment delivery or the technician window."
+                    )
+
+                    guidanceRow(
+                        icon: "shippingbox.and.arrow.backward",
+                        title: "Ask about self-install",
+                        body: "If the home is pre-wired, ask whether it qualifies for self-install. Compare the timing and all current fees with provider installation."
+                    )
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, PeezyTheme.Layout.verticalSpacing)
             }
             .scrollIndicators(.hidden)
 
-            if !plans.isEmpty {
-                if let submissionError {
-                    Text(submissionError)
-                        .font(.footnote)
-                        .foregroundStyle(PeezyTheme.Colors.emotionalRed)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 24)
-                        .padding(.bottom, 8)
-                        .accessibilityIdentifier("internet.submission_error")
-                }
-
-                PeezyAssessmentButton(
-                    isSubmitting ? "Saving…" : (submissionError == nil ? "I checked availability" : "Try again"),
-                    disabled: openedPlanID == nil || isSubmitting,
-                    action: submitAndComplete
-                )
-                .accessibilityHint("Available after opening a provider plan")
-                .accessibilityIdentifier("internet.complete")
-                .padding(.horizontal, 24)
-                .padding(.bottom, 24)
+            if let submissionError {
+                Text(submissionError)
+                    .font(.footnote)
+                    .foregroundStyle(PeezyTheme.Colors.emotionalRed)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 24)
+                    .padding(.bottom, 8)
+                    .accessibilityIdentifier("internet.submission_error")
             }
+
+            PeezyAssessmentButton(
+                isSubmitting ? "Saving…" : (submissionError == nil ? "Save my checklist" : "Try again"),
+                disabled: isSubmitting,
+                action: submitAndComplete
+            )
+            .accessibilityIdentifier("internet.complete")
+            .padding(.horizontal, 24)
+            .padding(.bottom, 24)
         }
-        .accessibilityIdentifier("internet.comparison")
+        .accessibilityIdentifier("internet.guidance")
     }
 
-    private func internetError(message: String) -> some View {
-        VStack(spacing: PeezyTheme.Layout.verticalSpacing) {
-            Image(systemName: "wifi.exclamationmark")
-                .font(.title)
+    private func guidanceRow(icon: String, title: String, body: String) -> some View {
+        HStack(alignment: .top, spacing: 14) {
+            Image(systemName: icon)
+                .font(.headline)
                 .foregroundStyle(PeezyTheme.Colors.deepInk)
+                .frame(width: 24)
                 .accessibilityHidden(true)
 
-            Text(message)
-                .font(.body)
-                .foregroundStyle(PeezyTheme.Colors.deepInk)
-                .multilineTextAlignment(.center)
-                .accessibilityIdentifier("internet.error_message")
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.headline)
+                    .foregroundStyle(PeezyTheme.Colors.deepInk)
 
-            Button("Try again") {
-                Task { await loadPlansAndAddress() }
+                Text(body)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            .font(.headline)
-            .frame(maxWidth: .infinity, minHeight: 44)
-            .buttonStyle(.bordered)
-            .tint(PeezyTheme.Colors.deepInk)
-            .accessibilityIdentifier("internet.retry")
         }
         .padding(PeezyTheme.Layout.cardPadding)
         .frame(maxWidth: .infinity)
         .background(Color.white.opacity(0.62), in: .rect(cornerRadius: PeezyTheme.Layout.cornerRadius))
-        .accessibilityIdentifier("internet.error")
+        .accessibilityElement(children: .combine)
     }
 
     @MainActor
-    private func loadPlansAndAddress() async {
-        isLoading = true
-        errorMessage = nil
-        do {
-            let fetchedPlans = try await ISPPlanService().fetchPlans()
-            guard fetchedPlans.count >= curatedPlanLimit else {
-                plans = []
-                errorMessage = "We couldn't load internet plans. Check your connection and try again."
-                isLoading = false
-                return
-            }
-            plans = fetchedPlans
-            if let address = await IdentityService.shared.loadOrMigrate(userId: userId)?.newAddress {
-                addressLabel = Self.cityAndZIP(from: address)
-            } else {
-                addressLabel = "Kansas City"
-            }
-            isLoading = false
-        } catch {
-            plans = []
-            errorMessage = "We couldn't load internet plans. Check your connection and try again."
-            isLoading = false
+    private func loadAddress() async {
+        if let address = await IdentityService.shared.loadOrMigrate(userId: userId)?.newAddress {
+            addressLabel = Self.cityAndZIP(from: address)
+        } else {
+            addressLabel = "Kansas City"
         }
-    }
-
-    private var curatedPlans: [ISPPlan] {
-        Array(plans.prefix(curatedPlanLimit))
-    }
-
-    private var otherPlans: [ISPPlan] {
-        Array(plans.dropFirst(curatedPlanLimit))
-    }
-
-    private func open(_ plan: ISPPlan) {
-        openedPlanID = plan.id
-        if plan.affiliateURL == ISPPlan.affiliatePending {
-            logger.notice("Open item: affiliate URL pending for \(plan.id, privacy: .public); using provider URL")
-        }
-        safariDestination = ISPPlanSafariDestination(url: plan.preferredURL)
     }
 
     private func submitAndComplete() {
-        guard !isSubmitting,
-              let openedPlanID,
-              let selectedPlan = plans.first(where: { $0.id == openedPlanID }) else { return }
+        guard !isSubmitting else { return }
         isSubmitting = true
         submissionError = nil
 
         var workflowAnswers = WorkflowAnswers(workflowId: workflowId)
         workflowAnswers.answers = [
-            "isp_plan": [selectedPlan.id],
-            "isp_provider": [selectedPlan.provider]
+            "internet_guidance": ["reviewed"],
+            "internet_address": [addressLabel]
         ]
 
         Task {
@@ -288,31 +202,12 @@ struct SetupInternetFlow: View {
         let locality = [address.city, address.state]
             .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
             .joined(separator: ", ")
-        return [locality, address.zip]
+        let label: String = [locality, address.zip]
             .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
             .joined(separator: " ")
             .trimmingCharacters(in: .whitespacesAndNewlines)
-            .nilIfEmpty ?? "Kansas City"
+        return label.isEmpty ? "Kansas City" : label
     }
-}
-
-private struct ISPPlanSafariDestination: Identifiable {
-    let id = UUID()
-    let url: URL
-}
-
-private struct ISPPlanSafariView: UIViewControllerRepresentable {
-    let url: URL
-
-    func makeUIViewController(context: Context) -> SFSafariViewController {
-        SFSafariViewController(url: url)
-    }
-
-    func updateUIViewController(_ uiViewController: SFSafariViewController, context: Context) {}
-}
-
-private extension String {
-    var nilIfEmpty: String? { isEmpty ? nil : self }
 }
 
 #if DEBUG

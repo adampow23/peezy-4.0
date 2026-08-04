@@ -68,10 +68,10 @@
     "taskType": "survey",
     "workflowId": "setup_internet",
     "conditions": {},
-    "desc": "Order service 2-3 weeks ahead. Ask for self-install if your home is pre-wired — it saves $50-100 and a technician window.",
+    "desc": "Protect your first workday from an outage: order service 2-3 weeks ahead, confirm exact-address availability, and ask whether self-install is available.",
     "estHours": 1.5,
     "estPeezy": "90 secs",
-    "tips": "Self-install saves $50-100 — confirm your address qualifies first.",
+    "tips": "If your home is pre-wired, compare self-install timing and current fees with a technician appointment.",
     "urgencyPercentage": 81,
     "whyNeeded": "Without it, you're tethering work calls to your phone for days."
   },
@@ -149,7 +149,7 @@
     "actionType": "workflow",
     "taskType": "survey",
     "conditions": {},
-    "desc": "File a USPS change of address ($1.10 verification fee). First-class mail forwards free for 12 months from your start date.",
+    "desc": "Keep important mail from landing at your old address: file through the official USPS change-of-address page and verify the start date and household members.",
     "estHours": 0.5,
     "estPeezy": "30 secs",
     "tips": "Marketing mail and magazines don't forward — update senders directly.",
@@ -470,7 +470,7 @@
         "Rent"
       ]
     },
-    "desc": "Quote online with Lemonade, State Farm, or your auto insurer. Most policies run $15-30/month and bind in under ten minutes.",
+    "desc": "Protect your belongings and satisfy lease requirements: compare current coverage and terms from licensed insurers, then bind a policy for move-in day.",
     "estHours": 1,
     "estPeezy": "1 min",
     "tips": "Bundle with auto insurance — usually saves 5-15% on both.",
@@ -915,7 +915,7 @@
   },
   {
     "taskId": "STORAGE_UNIT",
-    "title": "Line up your storage unit",
+    "title": "Choose your storage unit",
     "actionCategory": "book-schedule",
     "category": "services",
     "actionType": "workflow",
@@ -926,10 +926,10 @@
         "Yes"
       ]
     },
-    "desc": "We'll find units near your new place with real availability and move-in specials before move day.",
+    "desc": "Avoid sold-out or inconvenient storage: compare current, sourced options near your new place, then confirm availability and terms directly.",
     "estHours": 2,
     "estPeezy": "1 min",
-    "tips": "Book two weeks out — first-month-free deals go to early reservations.",
+    "tips": "Reserve early, and confirm every promotion and move-in term before paying.",
     "urgencyPercentage": 65,
     "whyNeeded": "Sold-out units near the new place mean storing across town."
   },
@@ -987,7 +987,7 @@
         ""
       ]
     },
-    "desc": "One tap: planning to sell or donate before the move? We'll line up the right help.",
+    "desc": "Move less and lower the packing load: choose what to sell or donate, then use a step-by-step plan for each item.",
     "estHours": 0.1,
     "estPeezy": "10 secs",
     "tips": "Every unsold item becomes a box you pay to move.",
@@ -1008,12 +1008,12 @@
         ""
       ]
     },
-    "desc": "Will everything fit — or might you need a unit? One tap and we'll handle the rest.",
+    "desc": "Know before move day whether it all fits — and what a unit near you actually costs.",
     "estHours": 0.1,
     "estPeezy": "10 secs",
     "tips": "Units near new builds sell out first — early answers get options.",
     "urgencyPercentage": 87,
-    "whyNeeded": "Storage found on move day costs double and sits across town."
+    "whyNeeded": "Waiting until move day can leave only inconvenient or unsuitable options."
   },
   {
     "taskId": "MOVE_CHECKIN",
@@ -1026,12 +1026,12 @@
     "selfServiceOnly": true,
     "conditions": {},
     "surfaceAfterDaysPastMove": 1,
-    "desc": "Four factual questions help Peezy hold moving partners accountable and improve the experience for everyone.",
+    "desc": "Protect your own record of moving day: capture arrival, pace, final price, and damage while details are fresh.",
     "estHours": 0.1,
     "estPeezy": "1 min",
     "tips": "Stick to what happened — arrival, pace, price, and damage.",
     "urgencyPercentage": 99,
-    "whyNeeded": "Fresh facts are how good vendors earn trust and bad behavior gets addressed."
+    "whyNeeded": "Fresh facts give you a clear record for reviews, claims, or disputes."
   },
   {
     "taskId": "BOX_RETURN",
@@ -1044,10 +1044,10 @@
     "selfServiceOnly": true,
     "conditions": {},
     "surfaceAfterDaysPastMove": 7,
-    "desc": "Count the boxes leaving your home so Peezy can tune future kits and help arrange pickup if you want it.",
+    "desc": "Reduce waste and improve future kit estimates: count what left your home, then choose a local donation, reuse, or recycling option.",
     "estHours": 0.1,
     "estPeezy": "30 secs",
-    "tips": "Flatten clean boxes before recycling or pickup.",
+    "tips": "Flatten clean boxes before donation or recycling, and keep wet or damaged cardboard separate.",
     "urgencyPercentage": 90,
     "whyNeeded": "Returned counts reduce waste and make the next kit estimate sharper."
   }
