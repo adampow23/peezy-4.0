@@ -16,7 +16,6 @@
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
 const nodemailer = require('nodemailer');
-const { notifyAdmin } = require('./notifyAdmin');
 
 const ADMIN_EMAIL = 'adam@peezymove.com';
 
@@ -207,15 +206,6 @@ exports.packageInventory = onCall(
 
       await db.collection('admin').doc('inventoryPackages')
         .collection('packages').add(packageData);
-
-      // Notify admin via SMS + backup log
-      notifyAdmin({
-        type: 'inventory_submitted',
-        userId,
-        title: 'Inventory submitted for review',
-        summary: 'User submitted their room inventory. Check dashboard for full item list.',
-        details: {}
-      }).catch(err => console.error('notifyAdmin failed:', err.message));
 
       console.log(`packageInventory: sent package for user ${userId} (${assessment.userName})`);
       return { success: true };

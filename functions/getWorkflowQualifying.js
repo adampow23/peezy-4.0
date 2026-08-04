@@ -8,7 +8,6 @@
 
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
-const twilio = require('twilio');
 const { WORKFLOW_QUALIFYING } = require('./workflowQualifying');
 const { MINI_ASSESSMENT_WORKFLOWS } = require('./miniAssessmentWorkflows');
 
@@ -278,11 +277,6 @@ const submitWorkflowAnswers = onCall(
           console.warn(`Could not update task status for ${workflowId} (task may not exist):`, updateErr.message);
         }
         
-        // Booking and kit notifications are direct, best-effort Twilio SMS.
-        // Full submissions remain in Firestore; texts stay decision-sized.
-        await notifyMoverSubmission(workflowId, answers);
-        await notifySuppliesKitSubmission(workflowId, answers);
-
         return {
           success: true,
           status: 'matching_in_progress'
@@ -311,141 +305,8 @@ const getMiniAssessmentTypes = onCall(
   }
 );
 
-async function notifyMoverSubmission(workflowId, answers) {
-  if (workflowId !== 'book_movers') return;
-
-  const accountSid = process.env.TWILIO_ACCOUNT_SID;
-  const authToken = process.env.TWILIO_AUTH_TOKEN;
-  const fromNumber = process.env.TWILIO_FROM_NUMBER;
-  const notifyNumber = process.env.ADAM_NOTIFY_NUMBER;
-
-  if (!accountSid || !authToken || !fromNumber || !notifyNumber ||
-      accountSid === 'placeholder_will_set_later') {
-    console.warn('SMS notify not configured');
-    return;
-  }
-
-  try {
-    const client = twilio(accountSid, authToken);
-    await client.messages.create({
-      body: buildMoverNotificationBody(answers),
-      from: fromNumber,
-      to: notifyNumber
-    });
-    console.log('Mover submission SMS sent');
-  } catch (err) {
-    console.error('SMS notify failed:', err.message);
-  }
-}
-
-async function notifySuppliesKitSubmission(workflowId, answers) {
-  if (workflowId !== 'supplies_kit') return;
-
-  const accountSid = process.env.TWILIO_ACCOUNT_SID;
-  const authToken = process.env.TWILIO_AUTH_TOKEN;
-  const fromNumber = process.env.TWILIO_FROM_NUMBER;
-  const notifyNumber = process.env.ADAM_NOTIFY_NUMBER;
-
-  if (!accountSid || !authToken || !fromNumber || !notifyNumber ||
-      accountSid === 'placeholder_will_set_later') {
-    console.warn('SMS notify not configured');
-    return;
-  }
-
-  try {
-    const client = twilio(accountSid, authToken);
-    await client.messages.create({
-      body: buildKitNotificationBody(answers),
-      from: fromNumber,
-      to: notifyNumber
-    });
-    console.log('Kit order SMS sent');
-  } catch (err) {
-    console.error('SMS notify failed:', err.message);
-  }
-}
-
-function buildMoverNotificationBody(answers) {
-  const identity = parsedAnswerObject(answers, 'identity');
-  const estimate = parsedAnswerObject(answers, 'estimate');
-  const vendor = parsedAnswerObject(answers, 'chosen_vendor');
-  const firstName = String(identity.name || 'Customer').trim().split(/\s+/)[0];
-  const originCity = String(identity.currentAddress?.city || 'Origin');
-  const destCity = String(identity.newAddress?.city || 'Destination');
-  const date = normalizedMoveDate(identity.moveDate);
-
-  if (firstAnswer(answers, 'quoteRequest') === 'true') {
-    return `PEEZY QUOTE REQ: ${firstName}, ${originCity}→${destCity}, ${date}.`;
-  }
-
-  const vendorName = String(vendor.name || 'Vendor pending');
-  const low = normalizedMoney(estimate.low);
-  const high = normalizedMoney(estimate.high);
-  return `PEEZY BOOKING: ${firstName}, ${originCity}→${destCity}, ${date}, ${vendorName}, est $${low}–$${high}.`;
-}
-
-function buildKitNotificationBody(answers) {
-  const identity = parsedAnswerObject(answers, 'identity');
-  const kit = parsedAnswerObject(answers, 'kit');
-  const firstName = String(identity.name || 'Customer').trim().split(/\s+/)[0];
-  const city = String(identity.newAddress?.city || identity.currentAddress?.city || 'City pending');
-  const date = normalizedMoveDate(identity.moveDate);
-  const dollars = normalizedCents(kit.totalPriceCents);
-  const summary = [
-    `${normalizedCount(kit.small)}S`,
-    `${normalizedCount(kit.medium)}M`,
-    `${normalizedCount(kit.large)}L`,
-    `${normalizedCount(kit.wardrobe)}W`,
-    `${normalizedCount(kit.mattressBags)}MB`
-  ].join('/');
-  return `PEEZY KIT ORDER: ${firstName}, ${city}, ${date}, ${summary}, $${dollars}.`;
-}
-
-function answerMap(answers) {
-  if (answers?.answers && typeof answers.answers === 'object') return answers.answers;
-  return answers && typeof answers === 'object' ? answers : {};
-}
-
-function firstAnswer(answers, key) {
-  const value = answerMap(answers)[key];
-  if (Array.isArray(value)) return String(value[0] ?? '');
-  return String(value ?? '');
-}
-
-function parsedAnswerObject(answers, key) {
-  try {
-    const parsed = JSON.parse(firstAnswer(answers, key));
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
-  } catch (_) {
-    return {};
-  }
-}
-
-function normalizedMoveDate(value) {
-  const raw = String(value || '').trim();
-  const isoDay = raw.match(/^\d{4}-\d{2}-\d{2}/)?.[0];
-  return isoDay || 'date pending';
-}
-
-function normalizedMoney(value) {
-  const number = Number(value);
-  return Number.isFinite(number) ? Math.round(number).toString() : 'pending';
-}
-
-function normalizedCount(value) {
-  const number = Number(value);
-  return Number.isFinite(number) ? Math.max(0, Math.round(number)).toString() : '0';
-}
-
-function normalizedCents(value) {
-  const number = Number(value);
-  return Number.isFinite(number) ? (Math.max(0, number) / 100).toFixed(2) : 'pending';
-}
-
 module.exports = {
   getWorkflowQualifying,
   submitWorkflowAnswers,
-  getMiniAssessmentTypes,
-  buildMoverNotificationBody,
-  buildKitNotificationBody
+  getMiniAssessmentTypes
 };

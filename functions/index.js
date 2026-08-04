@@ -4,7 +4,6 @@
  */
 
 const { onRequest, onCall, HttpsError } = require('firebase-functions/v2/https');
-const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { setGlobalOptions } = require('firebase-functions/v2');
 const admin = require('firebase-admin');
 const { generateResponse, validateContentLoaded } = require('./peezyBrain');
@@ -12,7 +11,6 @@ const { getWorkflowQualifying, submitWorkflowAnswers } = require('./getWorkflowQ
 const { processInventory } = require('./processInventory');
 const { packageInventory } = require('./packageInventory');
 const { validateSubscription } = require('./validateSubscription');
-const { notifyAdmin } = require('./notifyAdmin');
 const { resolveProvider } = require('./resolveProvider');
 const { submitCheckIn } = require('./submitCheckIn');
 
@@ -29,7 +27,7 @@ const rateLimitMap = new Map();
 const RATE_LIMIT_WINDOW = 60000; // 1 minute
 const RATE_LIMIT_MAX = 10; // 10 requests per minute
 const FIRST_SUPPORT_AUTO_ACK_ID = 'first-message-auto-acknowledgment';
-const FIRST_SUPPORT_AUTO_ACK_TEXT = "Hey! Thanks for reaching out. We'll get back to you within a few hours during business hours (9am-6pm CT). For urgent issues, reply 'URGENT' and we'll prioritize.";
+const FIRST_SUPPORT_AUTO_ACK_TEXT = 'Thanks for reaching out — Peezy will answer here. For account or billing issues, email support@peezymove.com.';
 
 /**
  * Check rate limit for a user
@@ -66,141 +64,6 @@ function sanitizeForLogging(data) {
     daysUntilMove: data.userState?.daysUntilMove
   };
 }
-
-/**
- * Main peezyRespond Cloud Function
- *
- * Expected input (POST body):
- * {
- *   message: string,
- *   conversationHistory: Message[],
- *   userState: UserState,
- *   currentTaskId?: string,
- *   requestType?: "chat" | "card_action" | "initial_load"
- * }
- *
- * Returns:
- * {
- *   text: string,
- *   suggestedActions?: Action[],
- *   stateUpdates?: Partial<UserState>,
- *   internalNotes?: object,
- *   cards?: CardData[]
- * }
- */
-exports.peezyRespond = onRequest(
-  {
-    timeoutSeconds: 30,
-    memory: '512MiB',
-    cors: true  // Enable CORS for all origins (adjust in production if needed)
-  },
-  async (req, res) => {
-    const startTime = Date.now();
-
-    // Only accept POST requests
-    if (req.method !== 'POST') {
-      res.status(405).json({ error: 'Method not allowed' });
-      return;
-    }
-
-    const data = req.body;
-
-    try {
-      // Log request (sanitized)
-      console.log('peezyRespond called:', sanitizeForLogging(data));
-
-      // Validate content is loaded
-      const contentCheck = validateContentLoaded();
-      if (!contentCheck.valid) {
-        console.error('Content not properly loaded:', contentCheck.checks);
-        res.status(500).json({
-          text: "We're having trouble loading our knowledge base. Try again in a moment.",
-          error: true,
-          retryable: true
-        });
-        return;
-      }
-
-      // Get user ID for rate limiting
-      const userId = data.userState?.userId || 'anonymous';
-
-      // Check rate limit
-      if (!checkRateLimit(userId)) {
-        console.warn('Rate limit exceeded for user:', userId);
-        res.status(429).json({
-          text: "You're moving fast! Give us a moment to catch up. Try again in a few seconds.",
-          error: true,
-          retryable: true,
-          _meta: { rateLimited: true }
-        });
-        return;
-      }
-
-      // Handle different request types
-      const requestType = data.requestType || 'chat';
-      let response;
-
-      if (requestType === 'initial_load') {
-        // Initial load - generate briefing and cards based on user state
-        response = await generateInitialLoadResponse(data);
-      } else {
-        // Regular chat or card action
-        response = await generateResponse({
-          message: data.message || '',
-          conversationHistory: data.conversationHistory || [],
-          userState: data.userState || {},
-          currentTask: data.currentTaskId,
-          sessionMetadata: data.sessionMetadata || {
-            sessionId: `session-${Date.now()}`,
-            messageCount: (data.conversationHistory?.length || 0) + 1,
-            firstMessageAt: new Date().toISOString()
-          }
-        });
-      }
-
-      // Log response stats (no content)
-      const duration = Date.now() - startTime;
-      console.log('peezyRespond completed:', {
-        userId,
-        requestType,
-        duration,
-        responseLength: response.text?.length,
-        cardsReturned: response.cards?.length || 0,
-        hasStateUpdates: !!response.stateUpdates && Object.keys(response.stateUpdates).length > 0,
-        vendorsSurfaced: response.internalNotes?.vendorsSurfaced?.length || 0,
-        error: response.error || false
-      });
-
-      // Add metadata
-      response._meta = {
-        duration,
-        timestamp: new Date().toISOString()
-      };
-
-      res.status(200).json(response);
-
-    } catch (error) {
-      const duration = Date.now() - startTime;
-
-      console.error('peezyRespond error:', {
-        message: error.message,
-        stack: error.stack,
-        duration
-      });
-
-      // Return graceful error
-      res.status(500).json({
-        text: "Something went sideways on our end. Mind trying that again?",
-        error: true,
-        retryable: true,
-        _meta: {
-          duration,
-          errorType: 'unhandled'
-        }
-      });
-    }
-  }
-);
 
 /**
  * Generate response for initial_load request type
@@ -368,7 +231,7 @@ function generateFallbackBriefing(userState, taskCount) {
   if (taskCount === 0) {
     return "All clear! We'll let you know when something comes up.";
   } else if (taskCount === 1) {
-    return "Just one thing today - need your input so we can take care of it for you.";
+    return "Just one thing today — open it for the details and your next step.";
   } else if (taskCount === 2) {
     return "Couple things for you today - shouldn't take long!";
   } else {
@@ -410,39 +273,6 @@ exports.requestConcierge = onCall(
       status: 'pending'
     });
 
-    const webhookUrl = process.env.NOTIFICATION_WEBHOOK_URL;
-    if (webhookUrl) {
-      fetch(webhookUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: 'concierge_request',
-          taskId: taskId || '',
-          taskTitle: taskTitle || '',
-          taskCategory: taskCategory || '',
-          userId: userId || '',
-          userName: userName || '',
-          currentAddress: currentAddress || '',
-          newAddress: newAddress || '',
-          moveDate: moveDate || '',
-          moveDistance: moveDistance || '',
-          requestedAt: new Date().toISOString(),
-          status: 'pending'
-        })
-      }).catch(err => console.error('Concierge webhook failed:', err.message));
-    } else {
-      console.warn('NOTIFICATION_WEBHOOK_URL not configured');
-    }
-
-    // Notify admin via SMS + backup log
-    notifyAdmin({
-      type: 'concierge_request',
-      userId: userId || '',
-      title: taskTitle || 'New task request',
-      summary: `Action needed: ${taskTitle}\nCategory: ${taskCategory || 'General'}`,
-      details: { taskId, taskTitle, taskCategory, currentAddress, newAddress, moveDate, moveDistance }
-    }).catch(err => console.error('notifyAdmin failed:', err.message));
-
     return { success: true };
   }
 );
@@ -469,37 +299,6 @@ exports.submitTaskFlow = onCall(
       status: 'pending'
     });
 
-    const webhookUrl = process.env.NOTIFICATION_WEBHOOK_URL;
-    if (webhookUrl) {
-      fetch(webhookUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: 'task_flow_submission',
-          userId: userId || '',
-          userName: userName || '',
-          taskId: taskId || '',
-          taskTitle: taskTitle || '',
-          taskType: taskType || '',
-          confirmedFields: confirmedFields || {},
-          transferChoice: transferChoice || null,
-          submittedAt: new Date().toISOString(),
-          status: 'pending'
-        })
-      }).catch(err => console.error('Task flow webhook failed:', err.message));
-    } else {
-      console.warn('NOTIFICATION_WEBHOOK_URL not configured');
-    }
-
-    // Notify admin via SMS + backup log
-    notifyAdmin({
-      type: 'task_flow',
-      userId: userId || '',
-      title: taskTitle || 'Task submitted',
-      summary: `Type: ${taskType || 'unknown'}\n${transferChoice ? 'Choice: ' + transferChoice : ''}`,
-      details: { taskId, taskTitle, taskType, confirmedFields, transferChoice }
-    }).catch(err => console.error('notifyAdmin failed:', err.message));
-
     return { success: true };
   }
 );
@@ -510,7 +309,7 @@ exports.submitTaskFlow = onCall(
 exports.submitSupportMessage = onCall(
   { region: 'us-central1', timeoutSeconds: 10, memory: '256MiB' },
   async (request) => {
-    const { userId, userName, messageId, text } = request.data;
+    const { userId } = request.data;
     const resolvedUserId = request.auth?.uid || userId;
 
     if (resolvedUserId) {
@@ -542,34 +341,6 @@ exports.submitSupportMessage = onCall(
     } else {
       console.warn('Support auto-acknowledgment skipped: missing userId');
     }
-
-    const webhookUrl = process.env.NOTIFICATION_WEBHOOK_URL;
-    if (webhookUrl) {
-      fetch(webhookUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: 'support_message',
-          userId: userId || '',
-          userName: userName || '',
-          messageId: messageId || '',
-          text: text || '',
-          sentAt: new Date().toISOString()
-        })
-      }).catch(err => console.error('Support message webhook failed:', err.message));
-    } else {
-      console.warn('NOTIFICATION_WEBHOOK_URL not configured');
-    }
-
-    // Notify admin via SMS + backup log — URGENT
-    notifyAdmin({
-      type: 'support_message',
-      userId: userId || '',
-      title: 'Support message',
-      summary: text || '(empty message)',
-      details: { messageId, text },
-      urgency: 'high'
-    }).catch(err => console.error('notifyAdmin failed:', err.message));
 
     return { success: true };
   }
@@ -660,43 +431,3 @@ exports.processInventory = processInventory;
 exports.packageInventory = packageInventory;
 exports.resolveProvider = resolveProvider;
 exports.submitCheckIn = submitCheckIn;
-
-/**
- * Notification health check — runs hourly.
- * Alerts Adam if any notifications are still pending + undelivered after 24 hours.
- */
-exports.notificationHealthCheck = onSchedule(
-  { schedule: 'every 1 hours', region: 'us-central1', memory: '256MiB' },
-  async () => {
-    const db = admin.firestore();
-
-    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-
-    const stale = await db.collection('adminNotifications')
-      .where('status', '==', 'pending')
-      .where('smsDelivered', '==', false)
-      .where('createdAt', '<=', admin.firestore.Timestamp.fromDate(oneDayAgo))
-      .limit(10)
-      .get();
-
-    if (!stale.empty) {
-      const count = stale.size;
-      console.warn(`[HealthCheck] Found ${count} undelivered notifications older than 24h`);
-
-      try {
-        const twilioClient = require('twilio')(
-          process.env.TWILIO_ACCOUNT_SID,
-          process.env.TWILIO_AUTH_TOKEN
-        );
-
-        await twilioClient.messages.create({
-          body: `⚠️ PEEZY ALERT: ${count} notification(s) from the past 24h were never delivered via SMS. Check the dashboard immediately.`,
-          from: process.env.TWILIO_FROM_NUMBER,
-          to: process.env.ADMIN_PHONE_NUMBER
-        });
-      } catch (err) {
-        console.error('[HealthCheck] Failed to send alert SMS:', err.message);
-      }
-    }
-  }
-);
