@@ -13,6 +13,7 @@ struct TaskDetailView: View {
     let onDismiss: () -> Void
 
     @State private var model: TaskDetailViewModel
+    @State private var isTaskChatPresented = false
 
     init(
         userId: String,
@@ -72,6 +73,27 @@ struct TaskDetailView: View {
         }
         .onDisappear {
             model.stop()
+        }
+        .sheet(isPresented: $isTaskChatPresented) {
+            if let task = model.task {
+                NavigationStack {
+                    PeezyChatView(
+                        surface: .task(
+                            taskId: task.catalogTaskId,
+                            title: task.title
+                        )
+                    )
+                    .toolbar {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button("Done") {
+                                isTaskChatPresented = false
+                            }
+                            .foregroundStyle(PeezyTheme.Colors.deepInk)
+                        }
+                    }
+                }
+                .presentationDragIndicator(.visible)
+            }
         }
     }
 
@@ -287,10 +309,11 @@ struct TaskDetailView: View {
             TaskDetailFooterButton(
                 title: "Chat",
                 systemImage: "message.fill",
-                isEnabled: false,
-                action: {}
+                action: {
+                    isTaskChatPresented = true
+                }
             )
-            .accessibilityHint("Task chat is not available yet")
+            .accessibilityHint("Opens chat about this task")
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
