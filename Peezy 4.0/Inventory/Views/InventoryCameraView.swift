@@ -10,6 +10,7 @@
 
 import SwiftUI
 import AVFoundation
+import FirebaseAuth
 import UIKit
 
 struct InventoryCameraView: View {
@@ -18,6 +19,9 @@ struct InventoryCameraView: View {
     let onCancel: () -> Void
 
     @State private var viewModel = RoomCaptureViewModel()
+    @State private var showScanCoaching: Bool
+
+    private let coachingPreferenceKey: String
 
     // Animation state
     @State private var isRecordButtonPressed = false
@@ -32,22 +36,53 @@ struct InventoryCameraView: View {
         "Keep panning slowly..."
     ]
 
+    init(
+        roomName: String,
+        onComplete: @escaping ([ExtractedFrame]) -> Void,
+        onCancel: @escaping () -> Void
+    ) {
+        self.roomName = roomName
+        self.onComplete = onComplete
+        self.onCancel = onCancel
+
+        let accountID = Auth.auth().currentUser?.uid ?? "anonymous"
+        let preferenceKey = "inventory.scanCoaching.seen.\(accountID)"
+        coachingPreferenceKey = preferenceKey
+        _showScanCoaching = State(
+            initialValue: !UserDefaults.standard.bool(forKey: preferenceKey)
+        )
+    }
+
     var body: some View {
         ZStack {
-            switch viewModel.permissionState {
-            case .authorized:
-                authorizedCameraContent
-            case .denied, .restricted:
-                cameraPermissionDeniedView
-            case .notDetermined:
-                permissionLoadingView
+            if showScanCoaching {
+                InventoryScanCoachingView(onStart: dismissCoaching)
+                    .transition(.opacity)
+            } else {
+                switch viewModel.permissionState {
+                case .authorized:
+                    authorizedCameraContent
+                case .denied, .restricted:
+                    cameraPermissionDeniedView
+                case .notDetermined:
+                    permissionLoadingView
+                }
             }
         }
         .onAppear {
-            viewModel.checkCameraPermission()
+            if !showScanCoaching {
+                viewModel.checkCameraPermission()
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
-            viewModel.checkCameraPermission()
+            if !showScanCoaching {
+                viewModel.checkCameraPermission()
+            }
+        }
+        .onChange(of: showScanCoaching) { _, isShowing in
+            if !isShowing {
+                viewModel.checkCameraPermission()
+            }
         }
         .onChange(of: viewModel.extractedFrames.count) { _, count in
             if count > 0 && !viewModel.isProcessingFrames {
@@ -290,9 +325,23 @@ struct InventoryCameraView: View {
 
             Spacer()
 
-            // Balance spacer
-            Color.clear
-                .frame(width: 36, height: 36)
+            Button {
+                showScanCoaching = true
+            } label: {
+                Image(systemName: "info.circle.fill")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.6))
+                    .frame(width: 36, height: 36)
+                    .background(.regularMaterial)
+                    .clipShape(Circle())
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(viewModel.isRecording || viewModel.isProcessingFrames)
+            .opacity(viewModel.isRecording || viewModel.isProcessingFrames ? 0.4 : 1.0)
+            .accessibilityLabel("Scanning tips")
+            .accessibilityIdentifier("inventory.camera.coaching")
         }
         .padding(.horizontal, 20)
         .padding(.top, 8)
@@ -459,6 +508,13 @@ struct InventoryCameraView: View {
         guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
         if UIApplication.shared.canOpenURL(url) {
             UIApplication.shared.open(url)
+        }
+    }
+
+    private func dismissCoaching() {
+        UserDefaults.standard.set(true, forKey: coachingPreferenceKey)
+        withAnimation(.easeOut(duration: 0.2)) {
+            showScanCoaching = false
         }
     }
 
