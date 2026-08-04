@@ -199,7 +199,7 @@ struct PeezySettingsView: View {
                 deleteAccount()
             }
         } message: {
-            Text("This will permanently delete your account, all your tasks, and all your data. This cannot be undone.\n\nIf you have an active subscription, please cancel it first in your Apple ID settings.")
+            Text(accountDeletionMessage)
         }
         .alert("Account deletion failed", isPresented: $showDeleteErrorAlert) {
             Button("OK", role: .cancel) { }
@@ -366,14 +366,16 @@ struct PeezySettingsView: View {
 
                 Divider().background(deepInk.opacity(0.06))
 
-                settingsRow(icon: "creditcard", label: "Manage Subscription", color: PeezyTheme.Colors.infoBlue) {
-                    if let url = URL(string: "https://apps.apple.com/account/subscriptions") {
-                        UIApplication.shared.open(url)
+                if !hasActiveMovePass {
+                    settingsRow(icon: "creditcard", label: "Manage Subscription", color: PeezyTheme.Colors.infoBlue) {
+                        if let url = URL(string: "https://apps.apple.com/account/subscriptions") {
+                            UIApplication.shared.open(url)
+                        }
                     }
-                }
-                .accessibilityIdentifier("settings_manage_subscription")
+                    .accessibilityIdentifier("settings_manage_subscription")
 
-                Divider().background(deepInk.opacity(0.06))
+                    Divider().background(deepInk.opacity(0.06))
+                }
 
                 settingsRow(icon: "arrow.triangle.2.circlepath", label: "Restore purchases", color: deepInk.opacity(0.4)) {
                     Task {
@@ -395,8 +397,8 @@ struct PeezySettingsView: View {
         switch subscriptionManager.subscriptionStatus {
         case .trial:
             return "Free Trial Active"
-        case .subscribed:
-            return "Peezy Premium"
+        case .subscribed(let productId, _):
+            return isMovePass(productId) ? "Peezy Move Pass" : "Peezy Premium"
         case .expired:
             return "Subscription Expired"
         case .revoked:
@@ -413,34 +415,52 @@ struct PeezySettingsView: View {
             let daysLeft = Calendar.current.dateComponents([.day], from: Date(), to: expires).day ?? 0
             return "\(planName) plan — trial ends in \(daysLeft) day\(daysLeft == 1 ? "" : "s")"
         case .subscribed(let productId, let expires):
+            if isMovePass(productId) {
+                return "Access through \(mediumFormattedDate(expires))"
+            }
             let planName = planLabel(for: productId)
             return "\(planName) plan — renews \(formattedDate(expires))"
         case .expired:
-            return "Resubscribe to access all features"
+            return "Get a Move Pass to access all features"
         default:
             return ""
         }
     }
 
     private func planLabel(for productId: String) -> String {
-        guard let id = SubscriptionManager.ProductID(rawValue: productId),
-              let product = subscriptionManager.product(for: id),
-              let subscription = product.subscription else {
+        guard let id = SubscriptionManager.ProductID(rawValue: productId) else {
             return "Subscription"
         }
 
-        switch subscription.subscriptionPeriod.unit {
-        case .day:
-            return "Subscription"
-        case .week:
+        switch id {
+        case .move:
+            return "Move Pass"
+        case .weekly:
             return "Weekly"
-        case .month:
-            return "Monthly"
-        case .year:
+        case .annual:
             return "Yearly"
-        @unknown default:
-            return "Subscription"
         }
+    }
+
+    private var hasActiveMovePass: Bool {
+        switch subscriptionManager.subscriptionStatus {
+        case .trial(let productId, _), .subscribed(let productId, _):
+            return isMovePass(productId)
+        default:
+            return false
+        }
+    }
+
+    private func isMovePass(_ productId: String) -> Bool {
+        SubscriptionManager.ProductID(rawValue: productId) == .move
+    }
+
+    private var accountDeletionMessage: String {
+        let warning = "This will permanently delete your account, all your tasks, and all your data. This cannot be undone."
+        if hasActiveMovePass {
+            return "\(warning)\n\nYour Move Pass access ends with your account."
+        }
+        return "\(warning)\n\nIf you have an active subscription, please cancel it first in your Apple ID settings."
     }
 
     // MARK: - Inventory Section
@@ -727,6 +747,12 @@ struct PeezySettingsView: View {
     private func formattedDate(_ date: Date) -> String {
         let fmt = DateFormatter()
         fmt.dateStyle = .long
+        return fmt.string(from: date)
+    }
+
+    private func mediumFormattedDate(_ date: Date) -> String {
+        let fmt = DateFormatter()
+        fmt.dateStyle = .medium
         return fmt.string(from: date)
     }
     
