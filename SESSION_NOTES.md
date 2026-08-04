@@ -655,3 +655,124 @@ tensions, accepted-as-is, observability adds, cosmetics appendix). Simulator
 screenshots live in the session transcript. Spot-check re-verifications:
 FlowEngineView.swift:537-545, TasksStore.swift:31-32, functions/.env key names +
 getWorkflowQualifying.js:317-326/347-351, PeezyHomeViewModel.swift:309-324.
+
+---
+
+## Day 2 — Phase 10: Verification sweep (2026-08-04)
+
+Scope: Phase 10 only. No production source or explicitly deferred file was
+changed. The exact launch-gate commands from `DAY2_BUILD_SPEC.md` were run from
+the project root; their results follow.
+
+### Launch-gate grep results
+
+1. `grep -rn "NOTIFICATION_WEBHOOK_URL\|notifyAdmin" functions/*.js`
+
+   Exit 0. Output was confined to the self-contained legacy module:
+
+   ```text
+   functions/notifyAdmin.js:2: * notifyAdmin — Central admin notification module
+   functions/notifyAdmin.js:23:async function notifyAdmin({ type, userId, title, summary, details, urgency = 'normal' }) {
+   functions/notifyAdmin.js:49:    console.error('[notifyAdmin] Failed to lookup user:', err.message);
+   functions/notifyAdmin.js:76:    console.error('[notifyAdmin] CRITICAL — Failed to write adminNotification:', err.message);
+   functions/notifyAdmin.js:89:      console.warn('[notifyAdmin] Twilio not configured — SMS skipped');
+   functions/notifyAdmin.js:123:    console.error('[notifyAdmin] SMS failed:', err.message);
+   functions/notifyAdmin.js:128:module.exports = { notifyAdmin };
+   ```
+
+   There are no matches in a live Functions entry point or call site. The local
+   CommonJS export is not exported as a deployed callable/trigger by `index.js`.
+
+2. `grep -rni "pinky\|money back\|money-back\|concierge" "Peezy 4.0" functions/*.json functions/index.js`
+
+   Exit 0 with 89 raw matches, all `concierge` implementation identifiers,
+   persisted enum values, comments, accessibility IDs, previews/harness code,
+   provider-directory method values, or legacy `requestConcierge` server
+   identifiers/comments in `functions/index.js`. There were zero
+   `pinky`, `money back`, or `money-back` matches and zero rendered strings that
+   contain any of the four forbidden terms. Result: zero user-visible hits.
+
+3. `grep -rni "trial\|weekly\|annual\|renew" "Peezy 4.0/MainInterface/Views/Paywall" "Peezy 4.0/Menu/PeezySettingsView.swift"`
+
+   Exit 0. Output:
+
+   ```text
+   Peezy 4.0/MainInterface/Views/Paywall/PaywallGateView.swift:5://  Single-screen paywall for the six-month, non-renewing Peezy Move Pass.
+   Peezy 4.0/MainInterface/Views/Paywall/PaywallGateView.swift:118:                        Text("One-time payment charged to your Apple ID at confirmation of purchase. Includes 6 months of Peezy Move Pass access. This is not an auto-renewing subscription — access ends automatically and nothing renews.")
+   Peezy 4.0/MainInterface/Views/Paywall/PaywallValueView.swift:59:                    Text("One-time payment · Nothing renews")
+   Peezy 4.0/Menu/PeezySettingsView.swift:407:        case .trial:
+   Peezy 4.0/Menu/PeezySettingsView.swift:408:            return "Free Trial Active"
+   Peezy 4.0/Menu/PeezySettingsView.swift:422:        case .trial(let productId, let expires):
+   Peezy 4.0/Menu/PeezySettingsView.swift:425:            return "\(planName) plan — trial ends in \(daysLeft) day\(daysLeft == 1 ? "" : "s")"
+   Peezy 4.0/Menu/PeezySettingsView.swift:431:            return "\(planName) plan — renews \(formattedDate(expires))"
+   Peezy 4.0/Menu/PeezySettingsView.swift:447:        case .weekly:
+   Peezy 4.0/Menu/PeezySettingsView.swift:448:            return "Weekly"
+   Peezy 4.0/Menu/PeezySettingsView.swift:449:        case .annual:
+   Peezy 4.0/Menu/PeezySettingsView.swift:456:        case .trial(let productId, _), .subscribed(let productId, _):
+   ```
+
+   The paywall matches are explicit non-renewing disclosures. Settings matches
+   are the grandfathered legacy receipt-state labels and enum cases; the live
+   Move Pass path remained a one-time purchase with a fixed six-month access
+   window and no renewal.
+
+4. `grep -rn '\$[0-9]' --include='*.swift' "Peezy 4.0"`
+
+   Exit 0 with 237 raw matching lines. Swift closure shorthand (`$0`) accounts
+   for 232 of them, including lines that separately format dynamic values. The
+   only five user-visible literal-dollar matches were the Audit D `KEEP`
+   exceptions:
+
+   ```text
+   Peezy 4.0/Tasks/Task Cards/MoveCheckInView.swift:255:                    Text("Enter a final bill greater than $0, or leave it blank.")
+   Peezy 4.0/Tasks/Task Cards/SellItemsFlow.swift:96:                option1: FlowOption(id: "under_500", label: "Under $500", icon: "dollarsign.circle"),
+   Peezy 4.0/Tasks/Task Cards/SellItemsFlow.swift:97:                option2: FlowOption(id: "500_2000", label: "$500 – $2,000", icon: "dollarsign.circle.fill"),
+   Peezy 4.0/Tasks/Task Cards/SellItemsFlow.swift:98:                option3: FlowOption(id: "2000_5000", label: "$2,000 – $5,000", icon: "banknote"),
+   Peezy 4.0/Tasks/Task Cards/SellItemsFlow.swift:99:                option4: FlowOption(id: "over_5000", label: "$5,000+", icon: "banknote.fill"),
+   ```
+
+5. `grep -rn "We'll\|we'll" functions/flowDefinitionsData.json functions/taskCatalogData.json`
+
+   Exit 1 with no output. Result: zero execution promises in either authoritative
+   Functions data inventory.
+
+### Build and clean-install simulator pass
+
+- `xcodebuild -project "Peezy 4.0.xcodeproj" -scheme "Peezy 4.0" -sdk iphonesimulator -destination "platform=iOS Simulator,name=iPhone 17 Pro" build`
+  completed with exit 0 and `** BUILD SUCCEEDED **` against iOS 26.5.
+- Shut down the prior simulator, booted the exact iPhone 17 Pro / iOS 26.5
+  destination, uninstalled `peezy.Peezy-4-0`, installed the new Debug build,
+  and launched it. The simulator Keychain retained an earlier Firebase session
+  across uninstall, so that session was signed out before creating a new
+  synthetic account.
+- The fresh account completed the full assessment and generated 14 personalized
+  tasks. The free task list exposed titles and due dates; opening `Scan your
+  home` presented the Move Pass value screen and purchase gate.
+- Relaunched through the shared Xcode scheme so `Configuration.storekit` was
+  attached. The localized StoreKit display price loaded, the system sheet
+  identified a one-time charge and explicitly said the test purchase would not
+  charge, and the Xcode-environment sandbox purchase succeeded.
+- After purchase confirmation, the paywall dismissed directly into `Scan my
+  home`. Result: clean-install assessment → list → locked task → sandbox
+  purchase → task unlock **PASS**, with the entitlement behaving as a
+  non-renewing six-month Move Pass.
+
+### Launch-blocking copy observed during the required live pass
+
+The simulator pass exposed three reachable copy violations that the prescribed
+greps do not fully cover:
+
+- Assessment services intro: `we'll line up the quotes` promises Peezy
+  execution (`AssessmentCoordinator.swift:550`; duplicated in
+  `Servicesintro.swift:11`).
+- Paywall value screen: `The research done for you. Your home scanned. The
+  right truck the first time. A packing plan built around your date.` promises
+  execution/outcomes, while the wrong-sized-truck/cupholder comparison makes an
+  unsupported reference-cost claim (`PaywallValueView.swift:39,45`).
+- Purchase gate: `Six months of Peezy doing the work.` directly violates the
+  equip-and-inform rule (`PaywallGateView.swift:56`).
+
+Phase 10 is a verification-and-recording phase, and the assessment source files
+are outside its named write scope, so none of these earlier-phase defects was
+edited here. Overall launch-gate result: **BLOCKED on reachable copy** despite
+the successful build, non-renewing purchase, and task unlock.
