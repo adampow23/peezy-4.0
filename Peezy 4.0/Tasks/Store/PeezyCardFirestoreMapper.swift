@@ -44,6 +44,8 @@ enum PeezyCardFirestoreMapper {
             id: document.documentID,
             type: cardType,
             title: data["title"] as? String ?? "Untitled Task",
+            // Retained for the gated task-detail renderer; free list rows do
+            // not render this catalog description.
             subtitle: data["desc"] as? String ?? "",
             colorName: colorNameForPriority(priority),
             taskId: taskId,

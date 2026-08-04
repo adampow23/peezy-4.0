@@ -215,7 +215,16 @@ struct PeezySettingsView: View {
             Text(restoreMessage ?? "")
         }
         .fullScreenCover(isPresented: $showInventoryScanner) {
-            InventoryFlowView()
+            if PaywallPolicy.requiresMovePass(for: .scanner),
+               !subscriptionManager.isSubscribed {
+                PaywallGateSheet(surface: .scanner) { subscribed in
+                    if !subscribed {
+                        showInventoryScanner = false
+                    }
+                }
+            } else {
+                InventoryFlowView()
+            }
         }
     }
     

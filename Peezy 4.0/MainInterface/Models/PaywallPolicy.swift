@@ -2,89 +2,103 @@
 //  PaywallPolicy.swift
 //  Peezy 4.0
 //
-//  Paywall timing option (c) — LOCKED (architecture §10, Spec 04 Phase D).
-//  Soft dismissible offer post-assessment (CompletionFlowView, untouched) +
-//  hard gate at the moments only Peezy can deliver: vendor booking (BOOK
-//  stage on SPINE flows), the supplies-kit one-tap order (when it exists),
-//  and concierge execution (flow submissions that put Peezy to work).
-//  Free tier untouched: assessment, daily dose, self-service paths,
-//  inventory scan, packing plan.
-//
-//  This file hosts the ONE sanctioned second PaywallGateView call site
-//  (PaywallGateSheet). SubscriptionManager and PaywallGateView themselves
-//  are COMPLIANCE-frozen — consulted, never modified.
+//  The free tier is the personalized task list. Opening any task substance
+//  or entering a task-adjacent tool requires an active Move Pass.
 //
 
 import SwiftUI
 
-/// The actions Peezy+ gates. Everything a checklist can do stays free;
-/// everything only Peezy can do is behind the gate.
-enum PaywallGatedAction {
-    /// BOOK-stage transition on a SPINE flow (movers, cleaners quotes).
-    case vendorBooking
-    /// A flow submission that puts Peezy to work on the user's behalf
-    /// (resolver/concierge summaries — "we'll reach out to...").
-    case conciergeSubmission
-    /// Supplies-kit one-tap order (lands with the packing plan).
-    case suppliesKitOrder
+enum MovePassSurface {
+    case task
+    case scanner
+    case packing
+    case supplies
+    case research
 
-    var analyticsTrigger: AnalyticsEvents.PaywallTrigger {
+    fileprivate var analyticsTrigger: AnalyticsEvents.PaywallTrigger {
         switch self {
-        case .vendorBooking: .book
-        case .conciergeSubmission: .concierge
-        case .suppliesKitOrder: .kit
+        case .task:
+            return .postAssessment
+        case .scanner, .packing, .research:
+            return .concierge
+        case .supplies:
+            return .kit
         }
     }
 }
 
 enum PaywallPolicy {
-
-    /// The single gating function (architecture §10). Consulted at stage
-    /// transitions / submission moments.
-    static func requiresSubscription(for action: PaywallGatedAction) -> Bool {
-        switch action {
-        case .vendorBooking, .conciergeSubmission, .suppliesKitOrder:
+    /// The task list is the complete free tier. All task substance and every
+    /// task-adjacent tool named here requires Move Pass access.
+    static func requiresMovePass(for surface: MovePassSurface) -> Bool {
+        switch surface {
+        case .task, .scanner, .packing, .supplies, .research:
             return true
         }
     }
-
-    /// True when the action may proceed for this user right now.
-    static func allows(_ action: PaywallGatedAction) -> Bool {
-        !requiresSubscription(for: action) || SubscriptionManager.shared.isSubscribed
-    }
 }
 
-// MARK: - Gate presentation (the sanctioned second call site)
-
-/// Full-screen wrapper around PaywallGateView for the hard gate. Presented
-/// over a flow when a gated action is attempted unsubscribed. Dismissal
-/// returns to the flow; if the user subscribed inside the paywall, the
-/// pending action re-fires.
+/// Presents the value screen before the StoreKit purchase screen. Callers
+/// decide whether a dismissal returns to the originating surface or opens it
+/// after entitlement state has updated.
 struct PaywallGateSheet: View {
-    let action: PaywallGatedAction
-    /// Called on dismiss; `true` when the user is subscribed on the way out.
+    let surface: MovePassSurface
     let onFinished: (Bool) -> Void
+
+    @ObservedObject private var subscriptionManager = SubscriptionManager.shared
+    @State private var stage: Stage = .value
     @State private var presentedAt: Date?
 
+    private enum Stage {
+        case value
+        case purchase
+    }
+
     var body: some View {
-        PaywallGateView(onDismiss: {
-            let subscribed = SubscriptionManager.shared.isSubscribed
-            if subscribed, let presentedAt {
-                Task {
-                    await AnalyticsEvents.recordNewPaywallConversion(
-                        trigger: action.analyticsTrigger,
-                        presentedAt: presentedAt
-                    )
+        ZStack(alignment: .topTrailing) {
+            switch stage {
+            case .value:
+                PaywallValueView {
+                    withAnimation(.easeInOut(duration: 0.25)) {
+                        stage = .purchase
+                    }
                 }
+                .transition(.opacity)
+
+                Button {
+                    finish()
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 24))
+                        .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.15))
+                        .padding()
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Close")
+                .accessibilityIdentifier("paywall_value_dismiss_button")
+
+            case .purchase:
+                PaywallGateView(onDismiss: finish)
+                    .environmentObject(subscriptionManager)
+                    .transition(.opacity)
             }
-            onFinished(subscribed)
-        })
-        .environmentObject(SubscriptionManager.shared)
+        }
         .onAppear {
             guard presentedAt == nil else { return }
             presentedAt = Date()
-            AnalyticsEvents.paywallViewed(trigger: action.analyticsTrigger)
+            AnalyticsEvents.paywallViewed(trigger: surface.analyticsTrigger)
         }
         .accessibilityIdentifier("paywall.gate_sheet")
+    }
+
+    private func finish() {
+        let subscribed = subscriptionManager.isSubscribed
+        if subscribed {
+            AnalyticsEvents.paywallConverted(
+                trigger: surface.analyticsTrigger,
+                productId: SubscriptionManager.ProductID.move.rawValue
+            )
+        }
+        onFinished(subscribed)
     }
 }

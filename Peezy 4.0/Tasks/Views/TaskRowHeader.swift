@@ -22,7 +22,7 @@ struct TaskRowHeader: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 titleRow
-                subtitleText
+                timingText
                 badgeRow
             }
         }
@@ -68,14 +68,23 @@ struct TaskRowHeader: View {
     }
 
     @ViewBuilder
-    private var subtitleText: some View {
-        if !task.subtitle.isEmpty && !isCompleted {
-            Text(task.subtitle)
+    private var timingText: some View {
+        if let dueDate = task.dueDate, !isCompleted {
+            Text(dueDateLabel(for: dueDate))
                 .font(PeezyTheme.Typography.callout)
                 .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.5))
-                .lineSpacing(4)
-                .lineLimit(isExpanded ? nil : 2)
+                .lineLimit(1)
         }
+    }
+
+    private func dueDateLabel(for dueDate: Date) -> String {
+        if Calendar.current.isDateInToday(dueDate) {
+            return "Due today"
+        }
+        if Calendar.current.isDateInTomorrow(dueDate) {
+            return "Due tomorrow"
+        }
+        return "Due \(dueDate.formatted(date: .abbreviated, time: .omitted))"
     }
 
     @ViewBuilder

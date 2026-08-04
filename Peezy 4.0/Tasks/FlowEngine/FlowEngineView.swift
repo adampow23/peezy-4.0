@@ -71,9 +71,6 @@ struct FlowEngineView: View {
     @State private var resolvingProviderStepId: String?
     @State private var activeProviderAction: ActiveProviderAction?
     @State private var providerResolveTask: Task<Void, Never>?
-    /// Hard paywall gate (option (c), Spec 04 Phase D): raised when an
-    /// unsubscribed user reaches a gated submission.
-    @State private var showPaywallGate = false
 
     private let actionService = TaskActionService()
 
@@ -101,12 +98,6 @@ struct FlowEngineView: View {
         }
         .onDisappear {
             providerResolveTask?.cancel()
-        }
-        .fullScreenCover(isPresented: $showPaywallGate) {
-            PaywallGateSheet(action: .conciergeSubmission) { subscribed in
-                showPaywallGate = false
-                if subscribed { submitAndComplete() }
-            }
         }
     }
 
@@ -509,12 +500,6 @@ struct FlowEngineView: View {
 
     private func submitAndComplete() {
         guard !isSubmitting else { return }
-        // Peezy working on the user's behalf is Peezy+ — the hard gate
-        // (self-service paths never reach this function and stay free).
-        guard PaywallPolicy.allows(.conciergeSubmission) else {
-            showPaywallGate = true
-            return
-        }
         isSubmitting = true
 
         var workflowAnswers = WorkflowAnswers(workflowId: definition.workflowId)

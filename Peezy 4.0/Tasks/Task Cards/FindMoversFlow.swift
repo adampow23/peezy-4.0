@@ -18,9 +18,9 @@ struct FindMoversFlow: View {
 
     @State private var model = MoversFlowViewModel()
     @State private var showCapture = false
-    @State private var showPaywallGate = false
     @State private var captureChoice: String?
     @State private var didPrepare = false
+    @ObservedObject private var subscriptionManager = SubscriptionManager.shared
     @Environment(FlowExitCoordinator.self) private var exitCoordinator
 
     var body: some View {
@@ -47,30 +47,33 @@ struct FindMoversFlow: View {
             exitCoordinator.persist(snapshot)
         }
         .fullScreenCover(isPresented: $showCapture) {
-            InventoryFlowView(
-                onUserDismiss: {
-                    showCapture = false
-                    Task {
-                        await model.captureDismissed()
-                        if model.hasInventory { captureChoice = "inventory" }
+            if PaywallPolicy.requiresMovePass(for: .scanner),
+               !subscriptionManager.isSubscribed {
+                PaywallGateSheet(surface: .scanner) { subscribed in
+                    if !subscribed {
+                        showCapture = false
                     }
-                },
-                onSubmitted: {
-                    showCapture = false
-                    captureChoice = "inventory"
-                    Task { await model.captureFinished() }
-                },
-                onLater: { showCapture = false }
-            )
+                }
+            } else {
+                InventoryFlowView(
+                    onUserDismiss: {
+                        showCapture = false
+                        Task {
+                            await model.captureDismissed()
+                            if model.hasInventory { captureChoice = "inventory" }
+                        }
+                    },
+                    onSubmitted: {
+                        showCapture = false
+                        captureChoice = "inventory"
+                        Task { await model.captureFinished() }
+                    },
+                    onLater: { showCapture = false }
+                )
+            }
         }
         .flowAnswerProbe {
             model.isSubmitting || moversProgressSnapshot.hasRecordedAnswers
-        }
-        .fullScreenCover(isPresented: $showPaywallGate) {
-            PaywallGateSheet(action: .vendorBooking) { subscribed in
-                showPaywallGate = false
-                if subscribed { model.showBooking() }
-            }
         }
     }
 
@@ -155,11 +158,7 @@ struct FindMoversFlow: View {
 
     private func selectQuote(_ quote: MoversVendorQuote) {
         model.select(quote)
-        if PaywallPolicy.allows(.vendorBooking) {
-            model.showBooking()
-        } else {
-            showPaywallGate = true
-        }
+        model.showBooking()
     }
 
     private var conciergeQuoteCard: some View {

@@ -10,7 +10,6 @@ struct SuppliesKitView: View {
     @State private var draftKit: SuppliesKit?
     @State private var isSaving = false
     @State private var isSubmitting = false
-    @State private var showPaywall = false
     @State private var submitted = false
     @State private var didLogOfferView = false
     @State private var errorMessage: String?
@@ -18,9 +17,24 @@ struct SuppliesKitView: View {
     @State private var didEditCustomization = false
     @State private var restoredCustomizationValue: String?
 
+    @ObservedObject private var subscriptionManager = SubscriptionManager.shared
     private let actionService = TaskActionService()
 
+    @ViewBuilder
     var body: some View {
+        if PaywallPolicy.requiresMovePass(for: .supplies),
+           !subscriptionManager.isSubscribed {
+            PaywallGateSheet(surface: .supplies) { subscribed in
+                if !subscribed {
+                    onDismiss()
+                }
+            }
+        } else {
+            kitFlow
+        }
+    }
+
+    private var kitFlow: some View {
         ZStack {
             InteractiveBackground()
                 .ignoresSafeArea()
@@ -47,14 +61,6 @@ struct SuppliesKitView: View {
                     if !hasCustomizedKit { restoredCustomizationValue = nil }
                 }
             )
-        }
-        .fullScreenCover(isPresented: $showPaywall) {
-            PaywallGateSheet(action: .suppliesKitOrder) { subscribed in
-                showPaywall = false
-                if subscribed {
-                    Task { await submitOrder() }
-                }
-            }
         }
         .accessibilityIdentifier("kit.flow")
         .resumableFlowProgress(
@@ -294,11 +300,7 @@ struct SuppliesKitView: View {
 
     private func orderTapped() {
         errorMessage = nil
-        if PaywallPolicy.allows(.suppliesKitOrder) {
-            Task { await submitOrder() }
-        } else {
-            showPaywall = true
-        }
+        Task { await submitOrder() }
     }
 
     private func submitOrder() async {

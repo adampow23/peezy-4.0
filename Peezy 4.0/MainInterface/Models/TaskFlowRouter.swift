@@ -38,22 +38,24 @@ struct TaskFlowRouter {
         onStatusAction: @escaping (TaskFlowStatusAction) -> Void
     ) -> some View {
         let resolvedTaskId = taskId ?? ""
-        OutermostTaskFlowContainer(
-            userId: userId,
-            taskId: resolvedTaskId,
-            waitsForExternalAnswerState:
-                CaptureRegistry.registration(flowId: flowId)?.kind == .videoInventory,
-            onDismiss: onDismiss
-        ) { requestExit in
-            routedFlow(
-                for: flowId,
+        MovePassProtectedTaskFlow(onDismiss: onDismiss) {
+            OutermostTaskFlowContainer(
                 userId: userId,
                 taskId: resolvedTaskId,
-                userState: userState,
-                onComplete: onComplete,
-                onDismiss: requestExit,
-                onStatusAction: onStatusAction
-            )
+                waitsForExternalAnswerState:
+                    CaptureRegistry.registration(flowId: flowId)?.kind == .videoInventory,
+                onDismiss: onDismiss
+            ) { requestExit in
+                routedFlow(
+                    for: flowId,
+                    userId: userId,
+                    taskId: resolvedTaskId,
+                    userState: userState,
+                    onComplete: onComplete,
+                    onDismiss: requestExit,
+                    onStatusAction: onStatusAction
+                )
+            }
         }
     }
 
@@ -173,6 +175,35 @@ struct TaskFlowRouter {
                 onStatusAction: onStatusAction
             )
             }
+        }
+    }
+}
+
+private struct MovePassProtectedTaskFlow<Content: View>: View {
+    let onDismiss: () -> Void
+    let content: () -> Content
+
+    @ObservedObject private var subscriptionManager = SubscriptionManager.shared
+
+    init(
+        onDismiss: @escaping () -> Void,
+        @ViewBuilder content: @escaping () -> Content
+    ) {
+        self.onDismiss = onDismiss
+        self.content = content
+    }
+
+    @ViewBuilder
+    var body: some View {
+        if PaywallPolicy.requiresMovePass(for: .task),
+           !subscriptionManager.isSubscribed {
+            PaywallGateSheet(surface: .task) { subscribed in
+                if !subscribed {
+                    onDismiss()
+                }
+            }
+        } else {
+            content()
         }
     }
 }

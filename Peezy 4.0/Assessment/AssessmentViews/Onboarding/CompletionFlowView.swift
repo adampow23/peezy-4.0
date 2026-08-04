@@ -6,8 +6,7 @@
 //    Stage 1 — GeneratingView (polls generated task count)
 //    Stage 2 — ReadyView (checkmark + "See Your Custom Plan")
 //    Stage 3 — SummaryView (confetti + task count + "Let's Get Started")
-//    Stage 4 — PaywallGateView (single-screen subscription paywall)
-//              → Skipped entirely for users with an active subscription
+//              → Opens the free personalized task list
 //
 //  Presented via .fullScreenCover from AssessmentFlowView when coordinator.isComplete = true.
 //  Only one stage renders at a time via a switch — no overlapping ZStacks.
@@ -18,7 +17,6 @@ import SwiftUI
 struct CompletionFlowView: View {
 
     @ObservedObject var coordinator: AssessmentCoordinator
-    @EnvironmentObject private var subscriptionManager: SubscriptionManager
 
     // MARK: - Stage Machine
 
@@ -26,7 +24,6 @@ struct CompletionFlowView: View {
         case generating = 0
         case ready = 1
         case summary = 2
-        case paywallGate = 3
 
         static func < (lhs: Stage, rhs: Stage) -> Bool {
             lhs.rawValue < rhs.rawValue
@@ -37,26 +34,12 @@ struct CompletionFlowView: View {
     @State private var stage: Stage = .generating
     @State private var taskCount: Int = 0
     @State private var showContent = true
-    @State private var paywallPresentedAt: Date?
 
     /// Ensures stage can only advance forward, never go back.
     private func advanceStage(to newStage: Stage) {
         guard newStage.rawValue > stage.rawValue else { return }
         withAnimation(reduceMotion ? .easeOut(duration: 0.3) : .easeInOut(duration: 0.5)) {
             stage = newStage
-        }
-    }
-
-    /// Called from SummaryView when the user taps "Let's Get Started".
-    /// Active subscribers bypass the paywall entirely; everyone else
-    /// advances to the paywall gate.
-    private func handleSummaryGetStarted() {
-        if subscriptionManager.isSubscribed {
-            routeToMainApp()
-        } else {
-            paywallPresentedAt = Date()
-            AnalyticsEvents.paywallViewed(trigger: .postAssessment)
-            advanceStage(to: .paywallGate)
         }
     }
 
@@ -93,26 +76,10 @@ struct CompletionFlowView: View {
                             userName: coordinator.dataManager.userName,
                             taskCount: taskCount,
                             onGetStarted: {
-                                handleSummaryGetStarted()
+                                routeToMainApp()
                             }
                         )
                         .transition(stageTransition)
-
-                    case .paywallGate:
-                        PaywallGateView(onDismiss: {
-                            if subscriptionManager.isSubscribed,
-                               let paywallPresentedAt {
-                                Task {
-                                    await AnalyticsEvents.recordNewPaywallConversion(
-                                        trigger: .postAssessment,
-                                        presentedAt: paywallPresentedAt
-                                    )
-                                }
-                            }
-                            routeToMainApp()
-                        })
-                        .environmentObject(subscriptionManager)
-                        .transition(paywallTransition)
                     }
                 }
                 // Attaching the ID forces SwiftUI to treat each stage change as a distinct view replacement, triggering the transitions.
@@ -126,14 +93,6 @@ struct CompletionFlowView: View {
 
     private var stageTransition: AnyTransition {
         .opacity
-    }
-
-    // Traditional slide for paywall flows
-    private var paywallTransition: AnyTransition {
-        .asymmetric(
-            insertion: .move(edge: .trailing).combined(with: .opacity),
-            removal: .move(edge: .leading).combined(with: .opacity)
-        )
     }
 
     // MARK: - Route to Main App
