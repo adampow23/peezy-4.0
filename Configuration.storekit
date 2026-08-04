@@ -11,7 +11,21 @@
   },
   "identifier" : "863F73C5",
   "nonRenewingSubscriptions" : [
-
+    {
+      "displayPrice" : "49.99",
+      "familyShareable" : false,
+      "internalID" : "046687F9-D305-4BAC-83E1-C2EB1AB4E20A",
+      "localizations" : [
+        {
+          "description" : "6 months of full Peezy access. One payment. No renewal.",
+          "displayName" : "Peezy Move Pass",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "peezy.plus.move",
+      "referenceName" : "Peezy Move Pass",
+      "type" : "NonRenewingSubscription"
+    }
   ],
   "products" : [
 
