@@ -17,6 +17,7 @@ import SwiftUI
 import Combine
 import StoreKit
 import FirebaseAuth
+import FirebaseFirestore
 
 @MainActor
 class SubscriptionManager: ObservableObject {
@@ -28,9 +29,16 @@ class SubscriptionManager: ObservableObject {
     // MARK: - Product Identifiers
 
     enum ProductID: String, CaseIterable {
+        /// The only product sold. Non-renewing subscription, 6-month access.
+        case move = "peezy.plus.move"
+        /// Legacy — no longer sold. Kept permanently so existing subscribers
+        /// retain access (grandfathered). Do not remove.
         case weekly = "peezy.plus.weekly"
         case annual = "peezy.plus.annual"
     }
+
+    /// Client-computed access term: StoreKit does not manage non-renewing duration.
+    static let movePassTermMonths = 6
 
     // MARK: - Computed Subscription State
 
@@ -132,9 +140,9 @@ class SubscriptionManager: ObservableObject {
             let productIDs = ProductID.allCases.map(\.rawValue)
             let storeProducts = try await Product.products(for: Set(productIDs))
 
-            // Sort: annual first (highlighted plan)
+            // Sort: Move Pass first (the only product currently sold).
             products = storeProducts.sorted { p1, _ in
-                p1.id == ProductID.annual.rawValue
+                p1.id == ProductID.move.rawValue
             }
 
             isLoaded = true
@@ -222,15 +230,16 @@ class SubscriptionManager: ObservableObject {
     // MARK: - Subscription Status
 
     func updateSubscriptionStatus() async {
-        var foundActive = false
+        var foundEntitlement = false
 
+        // Step 1: Preserve legacy auto-renewable access for grandfathered users.
         for await result in Transaction.currentEntitlements {
             guard case .verified(let transaction) = result else { continue }
             guard transaction.productType == .autoRenewable else { continue }
 
             if transaction.revocationDate != nil {
                 subscriptionStatus = .revoked
-                foundActive = true
+                foundEntitlement = true
                 break
             }
 
@@ -252,11 +261,57 @@ class SubscriptionManager: ObservableObject {
                     expirationDate: expirationDate
                 )
             }
-            foundActive = true
+            foundEntitlement = true
             break
         }
 
-        if !foundActive {
+        // Step 2: Finished non-renewing transactions are absent from
+        // currentEntitlements, so inspect the latest Move Pass transaction.
+        if !foundEntitlement,
+           let result = await Transaction.latest(for: ProductID.move.rawValue),
+           case .verified(let transaction) = result,
+           transaction.revocationDate == nil,
+           let expirationDate = movePassExpirationDate(for: transaction) {
+            if expirationDate > Date() {
+                subscriptionStatus = .subscribed(
+                    productId: transaction.productID,
+                    expirationDate: expirationDate
+                )
+            } else {
+                subscriptionStatus = .expired
+            }
+            foundEntitlement = true
+        }
+
+        // Step 3: Gift codes grant the same Move Pass entitlement through the
+        // user document. The server-side write path ships separately.
+        if !foundEntitlement, let uid = Auth.auth().currentUser?.uid {
+            do {
+                let snapshot = try await Firestore.firestore()
+                    .collection("users")
+                    .document(uid)
+                    .getDocument()
+
+                if let subscription = snapshot.data()?["subscription"] as? [String: Any],
+                   subscription["source"] as? String == "giftCode",
+                   let expirationDate = (subscription["expirationDate"] as? Timestamp)?.dateValue(),
+                   expirationDate > Date() {
+                    subscriptionStatus = .subscribed(
+                        productId: ProductID.move.rawValue,
+                        expirationDate: expirationDate
+                    )
+                    foundEntitlement = true
+                }
+            } catch {
+                #if DEBUG
+                print("Gift-code entitlement lookup failed: \(error)")
+                #endif
+                subscriptionStatus = .notSubscribed
+                return
+            }
+        }
+
+        if !foundEntitlement {
             // Check if we were previously active → now expired
             switch subscriptionStatus {
             case .trial, .subscribed:
@@ -310,10 +365,22 @@ class SubscriptionManager: ObservableObject {
         await product.subscription?.isEligibleForIntroOffer ?? false
     }
 
+    private func movePassExpirationDate(for transaction: StoreKit.Transaction) -> Date? {
+        guard transaction.productID == ProductID.move.rawValue else { return nil }
+        return Calendar.current.date(
+            byAdding: .month,
+            value: Self.movePassTermMonths,
+            to: transaction.purchaseDate
+        )
+    }
+
     // MARK: - Server Sync
 
     private func syncToServer(transaction: StoreKit.Transaction) async {
         guard let uid = Auth.auth().currentUser?.uid else { return }
+
+        let expirationDate = transaction.expirationDate
+            ?? movePassExpirationDate(for: transaction)
 
         let payload: [String: Any] = [
             "userId": uid,
@@ -321,7 +388,7 @@ class SubscriptionManager: ObservableObject {
             "originalTransactionId": String(transaction.originalID),
             "transactionId": String(transaction.id),
             "purchaseDate": ISO8601DateFormatter().string(from: transaction.purchaseDate),
-            "expirationDate": transaction.expirationDate.map {
+            "expirationDate": expirationDate.map {
                 ISO8601DateFormatter().string(from: $0)
             } ?? "",
             "environment": transaction.environment.rawValue,
