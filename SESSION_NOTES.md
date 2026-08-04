@@ -868,3 +868,191 @@ Overall Phase 7 result: build, clean-install assessment, gate, sandbox purchase,
 three research modes, and Box Return pass. Launch verification remains
 **BLOCKED** on the two out-of-phase model literals, missing `peezyChat`
 deployment, and absent research token-usage logging.
+
+---
+
+## Day 4 — Phase 6: Verification sweep + Thursday calibration protocol (2026-08-04)
+
+Scope: Phase 6 only. The only repository writes are this verification ledger
+and `THURSDAY_CALIBRATION.md`. No production source or explicitly deferred file
+was changed. Phase 6 cites no specific audit row; `audit_reports/AUDIT_A_REPORT.md`
+was read in full before verification.
+
+### Static verification
+
+1. Model-literal sweep outside seeders:
+
+   ```sh
+   rg -n 'claude-[0-9A-Za-z.-]+' functions --glob '*.js' \
+     --glob '!seed*.js' --glob '!peezy-brain-ralph/**'
+   ```
+
+   Exit 1 with zero matching lines. **PASS.** The only deployable Functions
+   model values are read from config; the seeder remains the permitted source
+   of pinned values.
+
+2. Entitlement call-site sweep:
+
+   ```sh
+   rg -n 'await requireMovePass\(request\.auth\.uid\)' \
+     functions/processInventory.js functions/peezyChat.js \
+     functions/researchTask.js
+   ```
+
+   Exit 0 with exactly three call sites:
+
+   ```text
+   functions/researchTask.js:603
+   functions/peezyChat.js:378
+   functions/processInventory.js:179
+   ```
+
+   Each call follows the authentication rejection and precedes input parsing or
+   task work. **PASS.**
+
+3. Day 4 source-copy sweep. The retired service term is assembled from two
+   fragments so this ledger does not add another source-string hit:
+
+   ```sh
+   retired_service_term='con''cierge'
+   base=$(git rev-parse 436ad9c^)
+   git diff --name-only -z "$base"..HEAD |
+     while IFS= read -r -d '' file; do
+       case "$file" in
+         *.swift|*.js) test -f "$file" && printf '%s\0' "$file" ;;
+       esac
+     done |
+     xargs -0 rg -n -i "${retired_service_term}|we['’]ll"
+   ```
+
+   Exit 0 with 23 lines in four Day 4-touched source/test files. The contraction
+   arm has zero matches. The retired-service arm remains in compatibility
+   aliases in `FindMoversFlow.swift`, an old enum assertion in
+   `EstimateIntegrityPhaseCTests.swift`, legacy callable and collection names
+   in `functions/index.js`, and provider fallback values and prompt text in
+   `functions/resolveProvider.js`. **FAIL.** These files are outside Phase 6's
+   write scope, so the raw-string gate was not rewritten or waived.
+
+4. JavaScript checks and tests:
+
+   ```sh
+   node --check <each Day 4-touched top-level Functions JavaScript file>
+   node --test functions/tests/*.test.js
+   ```
+
+   Syntax checks completed with exit 0. The test run passed 20 of 20 tests with
+   zero failures. **PASS.**
+
+5. Deployed callable inventory:
+
+   ```sh
+   firebase functions:list --json | jq -r '.result[].id' | sort |
+     rg '^(peezyChat|processInventory|redeemGiftCode|researchTask)$'
+   ```
+
+   Exit 0 and all four required callables were present. **PASS.**
+
+### Build
+
+```sh
+xcodebuild -project "Peezy 4.0.xcodeproj" -scheme "Peezy 4.0" \
+  -sdk iphonesimulator \
+  -destination "platform=iOS Simulator,name=iPhone 17 Pro" build
+```
+
+The build log contains `** BUILD SUCCEEDED **` for the iPhone 17 Pro simulator
+destination. **PASS.** The command wrapper's later attempt to assign zsh's
+reserved `status` parameter exited nonzero; the underlying `xcodebuild` process
+and log completed successfully.
+
+### Production config and rules preflight
+
+An Admin SDK read of the required config inventory returned:
+
+```text
+appConfig/ai: present
+appConfig/anchors: present
+appConfig/cubeSheet: present
+appConfig/trucks: present
+appConfig/supplyRates: MISSING
+appConfig/packing: MISSING
+```
+
+The checked-in Firestore rules have authenticated read matches for user data,
+task catalog, flow definitions, vendor cards, and provider directories, but no
+authenticated read match for `appConfig/{document=**}`. The signed-in simulator
+therefore received `Missing or insufficient permissions` when the client read
+config. This blocks truck, supplies, and packing-plan acceptance even for the
+config documents that exist. No seed or rules mutation was performed in this
+verification-only phase.
+
+### Simulator pass
+
+Device: iPhone 17 Pro simulator, iOS 26.4.1. A clean synthetic account completed
+the minimum assessment fixture needed for the Phase 6 surfaces. Test-only task,
+inventory, and entitlement fixtures were written under that account; no
+production user data was used.
+
+#### Gift redemption and Move Pass reference model
+
+- A newly minted gift code redeemed through the app. Server readback showed the
+  code as redeemed by the test user and a future six-month subscription
+  expiration using the same ISO-string shape as subscription validation.
+  Server transaction: **PASS**.
+- Reusing the same code rendered `This code was already used`. **PASS**.
+- The app dismissed the paywall after a successful gift response, but scanner
+  access remained gated; after relaunch the gift access was still absent.
+  **FAIL.** `SubscriptionManager.swift:295-298` recognizes only a Firestore
+  `Timestamp`, while both gift redemption and subscription validation persist
+  `expirationDate` as an ISO string. This client file is outside Phase 6.
+- The shared Xcode scheme's StoreKit test purchase rendered a dynamic localized
+  price and one-time-charge disclosure, granted a future six-month Move Pass,
+  unlocked the scanner, and remained visible after relaunch. **PASS.** No
+  auto-renewable behavior was introduced or assumed.
+- A separate clean no-entitlement account called `researchTask` and received
+  HTTP 403 / `PERMISSION_DENIED` / `Move Pass required`. Server denial:
+  **PASS**.
+
+#### Truck, cost, packing, and supplies
+
+- The mover scope loaded the scan-based two-bedroom total as approximately 900
+  cubic feet. The wide, quote-dependent long-distance guidance rendered without
+  a fixed dollar claim. **PASS** for the cost boundary presentation.
+- Truck guidance rendered its bounded unavailable state because the signed-in
+  client could not read `appConfig/trucks`. No tier recommendation could be
+  judged. **BLOCKED** by Firestore config read permissions.
+- The packing-supplies flow rendered `Couldn't load your kit` and `Missing or
+  insufficient permissions.` No quantities or total rendered. **BLOCKED** by
+  config read permissions and the absent `appConfig/supplyRates` document.
+- A packing-plan before/after comparison could not run against the deployed
+  config. **BLOCKED** by config read permissions and the absent
+  `appConfig/packing` document.
+
+#### Research and chat after enforcement
+
+- The entitled research request passed authentication and the Move Pass guard,
+  reached the provider, then rendered `Peezy couldn't finish this research.`
+- The entitled task chat accepted and sent a message, passed the Move Pass
+  guard, reached the provider, then rendered the bounded retry error.
+- Function logs identify the common downstream cause as insufficient provider
+  credit. The no-entitlement request was denied before provider work.
+
+Entitlement enforcement behaves correctly, but successful research and chat
+responses are **BLOCKED** by external provider credit and are not green for this
+sweep.
+
+### Thursday handoff
+
+`THURSDAY_CALIBRATION.md` defines the physical-iPhone, real-room procedure for
+item reality, per-item cubes, all truck tiers, cost guidance, packing-plan
+sequencing, and supplies quantities. Its correction table maps every permitted
+calibration to an exact `appConfig`, `vendors/{vendorId}.rateCard`, or nested
+field. Observations without a valid data field are explicit stop conditions;
+they cannot be hidden as unrelated config edits.
+
+Overall Phase 6 result: build, syntax/tests, model-config sweep, entitlement
+call sites, deployed callable inventory, gift server transaction, duplicate
+gift error, StoreKit non-renewing access, no-entitlement denial, and wide cost
+guidance pass. Launch verification remains **BLOCKED** on the raw retired-term
+source sweep, gift ISO-date client decoding, missing config documents, absent
+client read permission for `appConfig`, and insufficient provider credit.
