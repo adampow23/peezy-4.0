@@ -13,6 +13,7 @@ const { validateSubscription } = require('./validateSubscription');
 const { resolveProvider } = require('./resolveProvider');
 const { researchTask } = require('./researchTask');
 const { submitCheckIn } = require('./submitCheckIn');
+const { redeemGiftCode } = require('./entitlement');
 
 // Set global options
 setGlobalOptions({ maxInstances: 10 });
@@ -204,3 +205,4 @@ exports.resolveProvider = resolveProvider;
 exports.researchTask = researchTask;
 exports.peezyChat = peezyChat;
 exports.submitCheckIn = submitCheckIn;
+exports.redeemGiftCode = redeemGiftCode;

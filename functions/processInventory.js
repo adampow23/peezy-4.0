@@ -8,6 +8,7 @@ const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
 const Anthropic = require('@anthropic-ai/sdk');
 const { getAIConfig } = require('./aiConfig');
+const { requireMovePass } = require('./entitlement');
 
 const INVENTORY_CONFIG_PATHS = {
   anchors: 'appConfig/anchors',
@@ -175,6 +176,7 @@ exports.processInventory = onCall(
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'Must be authenticated');
     }
+    await requireMovePass(request.auth.uid);
     console.log('processInventory: auth valid, uid =', request.auth.uid);
 
     // 2. Extract parameters

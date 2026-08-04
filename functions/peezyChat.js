@@ -3,6 +3,7 @@ const admin = require("firebase-admin");
 const Anthropic = require("@anthropic-ai/sdk");
 const { getAIConfig } = require("./aiConfig");
 const { buildChatSystemPrompt } = require("./systemPrompt");
+const { requireMovePass } = require("./entitlement");
 
 const HISTORY_LIMIT = 20;
 const MAX_MESSAGE_LENGTH = 8000;
@@ -374,6 +375,7 @@ const peezyChat = onCall(
     if (!request.auth) {
       throw new HttpsError("unauthenticated", "Must be authenticated");
     }
+    await requireMovePass(request.auth.uid);
 
     const { surface, taskId, message } = validateInput(request.data);
     const db = admin.firestore();

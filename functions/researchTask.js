@@ -2,6 +2,7 @@ const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const admin = require("firebase-admin");
 const Anthropic = require("@anthropic-ai/sdk");
 const { getAIConfig } = require("./aiConfig");
+const { requireMovePass } = require("./entitlement");
 
 const RESEARCH_SYSTEM_PROMPT = `You are Peezy's research engine. You produce a decision-ready brief for ONE
 moving task for ONE specific person, using their real situation. You are built
@@ -599,6 +600,7 @@ const researchTask = onCall(
     if (!request.auth) {
       throw new HttpsError("unauthenticated", "Must be authenticated");
     }
+    await requireMovePass(request.auth.uid);
 
     const { taskId, force, prefs } = validateInput(request.data);
     const db = admin.firestore();
