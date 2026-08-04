@@ -66,6 +66,7 @@ final class InventorySessionManager {
 
     enum SubmissionStatus: String {
         case draft
+        case processing
         case submitted
     }
 
@@ -503,40 +504,51 @@ final class InventorySessionManager {
         self.submissionStatus = .draft
     }
 
-    /// Final submit — saves progress and locks the inventory.
+    /// Final submit — persists every generated output before locking inventory.
     func submitFinal() async throws {
         guard let userId else {
             throw InventoryError.notAuthenticated
         }
 
         let db = Firestore.firestore()
-        let batch = db.batch()
-
-        addRoomWrites(to: batch, db: db, userId: userId)
-
         let metaRef = db.collection("users").document(userId)
             .collection("inventory").document("_metadata")
-        var metadata: [String: Any] = [
-            "submissionStatus": SubmissionStatus.submitted.rawValue,
-            "submittedAt": Timestamp(date: Date())
+
+        var processingMetadata: [String: Any] = [
+            "submissionStatus": SubmissionStatus.processing.rawValue,
+            "updatedAt": Timestamp(date: Date())
         ]
-        metadata.merge(
+        processingMetadata.merge(
             InventoryCoverage.metadata(confirmedRoomIDs: coverageConfirmedRoomIDs),
             uniquingKeysWith: { _, new in new }
         )
-        batch.setData(metadata, forDocument: metaRef, merge: true)
-
+        let batch = db.batch()
+        addRoomWrites(to: batch, db: db, userId: userId)
+        batch.setData(processingMetadata, forDocument: metaRef, merge: true)
         try await batch.commit()
+        self.submissionStatus = .processing
 
         guard let identity = await IdentityService.shared.loadOrMigrate(userId: userId),
               let moveDate = identity.moveDate else {
             throw PackingPlanPersistenceError.missingMoveDate
         }
+
         try await TaskActionService().generatePackingPlan(
             userId: userId,
             rooms: scannedRooms,
             moveDate: moveDate
         )
+
+        var submittedMetadata: [String: Any] = [
+            "submissionStatus": SubmissionStatus.submitted.rawValue,
+            "submittedAt": Timestamp(date: Date()),
+            "updatedAt": Timestamp(date: Date())
+        ]
+        submittedMetadata.merge(
+            InventoryCoverage.metadata(confirmedRoomIDs: coverageConfirmedRoomIDs),
+            uniquingKeysWith: { _, new in new }
+        )
+        try await metaRef.setData(submittedMetadata, merge: true)
 
         self.submissionStatus = .submitted
         let cubicFeet = allItems

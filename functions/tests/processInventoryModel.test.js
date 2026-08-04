@@ -7,9 +7,11 @@ const test = require("node:test");
 
 const processInventoryPath = path.resolve(__dirname, "../processInventory.js");
 
-test("processInventory uses the available Spec 07 Anthropic model", () => {
+test("processInventory reads its Anthropic model from AI config", () => {
   const source = fs.readFileSync(processInventoryPath, "utf8");
 
-  assert.match(source, /model:\s*['"]claude-sonnet-4-6['"]/);
-  assert.doesNotMatch(source, /claude-sonnet-4-20250514/);
+  assert.match(source, /const \{ getAIConfig \} = require\(['"]\.\/aiConfig['"]\);/);
+  assert.match(source, /const inventoryModel = await getAIConfig\(['"]inventoryModel['"]\);/);
+  assert.match(source, /model:\s*inventoryModel/);
+  assert.doesNotMatch(source, /model:\s*['"]claude-/);
 });

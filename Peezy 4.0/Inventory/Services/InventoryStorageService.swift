@@ -73,17 +73,26 @@ final class InventoryStorageService {
             print("[InventoryUpload] frame[\(index)] uploading \(jpegData.count) bytes to \(storagePath)")
             #endif
 
-            do {
-                _ = try await storageRef.putDataAsync(jpegData, metadata: metadata)
-                uploadedCount += 1
-                #if DEBUG
-                print("[InventoryUpload] frame[\(index)] uploaded successfully")
-                #endif
-            } catch {
-                #if DEBUG
-                print("[InventoryUpload] frame[\(index)] upload FAILED: \(error.localizedDescription)")
-                #endif
+            var uploaded = false
+            for attempt in 0...1 {
+                do {
+                    _ = try await storageRef.putDataAsync(jpegData, metadata: metadata)
+                    uploaded = true
+                    #if DEBUG
+                    print("[InventoryUpload] frame[\(index)] uploaded successfully")
+                    #endif
+                    break
+                } catch {
+                    #if DEBUG
+                    if attempt == 0 {
+                        print("[InventoryUpload] frame[\(index)] upload failed; retrying once: \(error.localizedDescription)")
+                    } else {
+                        print("[InventoryUpload] frame[\(index)] upload FAILED after retry: \(error.localizedDescription)")
+                    }
+                    #endif
+                }
             }
+            if uploaded { uploadedCount += 1 }
 
             completedCount += 1
             uploadProgress = Double(completedCount) / Double(totalCount)

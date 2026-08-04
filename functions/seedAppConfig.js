@@ -13,6 +13,7 @@ const aiConfig = {
   researchModel: "claude-sonnet-4-6",
   chatModel: "claude-sonnet-4-6",
   inventoryModel: "claude-sonnet-4-6",
+  resolverModel: "claude-sonnet-4-6",
   maxSearchesPerBrief: 5,
   briefMaxTokens: 4096
 };
@@ -23,7 +24,7 @@ async function seedAppConfig() {
   }
 
   const document = admin.firestore().doc(AI_CONFIG_PATH);
-  await document.set(aiConfig);
+  await document.set(aiConfig, { merge: true });
 
   const snapshot = await document.get();
   const stored = snapshot.data();

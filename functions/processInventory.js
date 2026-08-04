@@ -7,6 +7,7 @@
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
 const Anthropic = require('@anthropic-ai/sdk');
+const { getAIConfig } = require('./aiConfig');
 
 // Lazy-init Anthropic client (same pattern as peezyBrain.js)
 let anthropic = null;
@@ -20,6 +21,15 @@ function getAnthropicClient() {
     anthropic = new Anthropic({ apiKey });
   }
   return anthropic;
+}
+
+function logTokenUsage(response) {
+  console.log(JSON.stringify({
+    event: 'anthropic_usage',
+    function: 'processInventory',
+    inputTokens: response?.usage?.input_tokens ?? null,
+    outputTokens: response?.usage?.output_tokens ?? null
+  }));
 }
 
 function normalizedInventoryName(value) {
@@ -77,11 +87,8 @@ exports.processInventory = onCall(
     // 2. Extract parameters
     const { userId, sessionId, roomName, frameCount } = request.data;
     console.log('processInventory: params', { userId, sessionId, roomName, frameCount });
-    if (!userId || !sessionId || !roomName || frameCount == null) {
+    if (!userId || !sessionId || !roomName) {
       throw new HttpsError('invalid-argument', 'Missing required fields');
-    }
-    if (frameCount < 1) {
-      throw new HttpsError('invalid-argument', 'frameCount must be at least 1');
     }
 
     // 3. Verify requesting user matches userId (security)
@@ -97,26 +104,40 @@ exports.processInventory = onCall(
 
     try {
       // 4. Download frames from Storage
-      console.log('processInventory: downloading', frameCount, 'frames');
-      const framePromises = [];
-      for (let i = 0; i < frameCount; i++) {
-        const filePath = `inventory/${userId}/${sessionId}/frame_${i}.jpg`;
-        framePromises.push(
-          bucket.file(filePath).download().then(([buffer]) => ({
-            index: i,
-            base64: buffer.toString('base64')
-          }))
-        );
+      const framePrefix = `inventory/${userId}/${sessionId}/`;
+      const [listedFiles] = await bucket.getFiles({ prefix: framePrefix });
+      const frameFiles = listedFiles
+        .filter((file) => file.name !== framePrefix && !file.name.endsWith('/'))
+        .sort((left, right) => left.name.localeCompare(right.name));
+
+      if (frameCount !== frameFiles.length) {
+        console.warn('processInventory: frame count mismatch', {
+          reportedFrameCount: frameCount ?? null,
+          listedFrameCount: frameFiles.length,
+          sessionId
+        });
       }
-      const frames = await Promise.all(framePromises);
-      frames.sort((a, b) => a.index - b.index);
+      if (frameFiles.length === 0) {
+        throw new Error('No uploaded frames found');
+      }
+
+      console.log('processInventory: downloading listed frames', frameFiles.map((file) => file.name));
+      const frames = await Promise.all(frameFiles.map(async (file, position) => {
+        const [buffer] = await file.download();
+        const indexMatch = file.name.match(/frame_(\d+)\.jpg$/);
+        return {
+          index: indexMatch ? Number(indexMatch[1]) : position,
+          name: file.name,
+          base64: buffer.toString('base64')
+        };
+      }));
       console.log('processInventory: downloaded', frames.length, 'frames, sizes:', frames.map(f => f.base64.length));
 
       // 5. Build Claude API request with multi-image input
-      const imageContent = frames.map((frame, idx) => ([
+      const imageContent = frames.map((frame) => ([
         {
           type: 'text',
-          text: `[Frame ${idx}]`
+          text: `[Frame ${frame.index}]`
         },
         {
           type: 'image',
@@ -129,8 +150,8 @@ exports.processInventory = onCall(
       ])).flat();
 
       const prompt = `You are analyzing photos of a room in someone's home to create a moving inventory.
-These ${frameCount} images show the same room (${roomName}) from different angles during a slow pan.
-Each image is labeled [Frame 0], [Frame 1], etc.
+These ${frames.length} images show the same room (${roomName}) from different angles during a slow pan.
+Each image is labeled with its storage frame index.
 
 INSTRUCTIONS:
 
@@ -180,8 +201,9 @@ Each object must have exactly these fields:
 }`;
 
       const client = getAnthropicClient();
+      const inventoryModel = await getAIConfig('inventoryModel');
       const response = await client.messages.create({
-        model: 'claude-sonnet-4-6',
+        model: inventoryModel,
         max_tokens: 4096,
         messages: [{
           role: 'user',
@@ -191,6 +213,7 @@ Each object must have exactly these fields:
           ]
         }]
       });
+      logTokenUsage(response);
 
       // 6. Parse response — extract JSON from text content
       const textContent = response.content.find(c => c.type === 'text');
@@ -241,7 +264,7 @@ Each object must have exactly these fields:
         let frameIndex = null;
         if (item.frameIndex != null && !isNaN(Number(item.frameIndex))) {
           const fi = Math.round(Number(item.frameIndex));
-          if (fi >= 0 && fi < frameCount) {
+          if (frames.some((frame) => frame.index === fi)) {
             frameIndex = fi;
           }
         }

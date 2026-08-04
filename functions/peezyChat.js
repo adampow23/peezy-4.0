@@ -26,6 +26,16 @@ const APP_FACTS = Object.freeze({
 
 let anthropicClient = null;
 
+function logTokenUsage(response, surface) {
+  console.log(JSON.stringify({
+    event: "anthropic_usage",
+    function: "peezyChat",
+    surface,
+    inputTokens: response?.usage?.input_tokens ?? null,
+    outputTokens: response?.usage?.output_tokens ?? null
+  }));
+}
+
 function getAnthropicClient() {
   if (!anthropicClient) {
     const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -334,7 +344,7 @@ function withTimeout(operation) {
   }
 }
 
-async function generateAssistantText({ model, context, messages }) {
+async function generateAssistantText({ model, context, messages, surface }) {
   const response = await withTimeout(getAnthropicClient().messages.create({
     model,
     max_tokens: CHAT_MAX_TOKENS,
@@ -342,6 +352,7 @@ async function generateAssistantText({ model, context, messages }) {
     system: buildChatSystemPrompt(context),
     messages
   }));
+  logTokenUsage(response, surface);
 
   if (response.stop_reason === "refusal") {
     throw new Error("Chat request was refused");
@@ -394,7 +405,8 @@ const peezyChat = onCall(
       const text = await generateAssistantText({
         model: requireChatModel(configuredModel),
         context,
-        messages
+        messages,
+        surface
       });
 
       const assistantMessageRef = messagesRef.doc();

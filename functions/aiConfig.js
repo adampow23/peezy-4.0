@@ -7,6 +7,7 @@ const EXPECTED_KEYS = [
   "researchModel",
   "chatModel",
   "inventoryModel",
+  "resolverModel",
   "maxSearchesPerBrief",
   "briefMaxTokens"
 ];

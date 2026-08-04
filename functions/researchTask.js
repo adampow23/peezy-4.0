@@ -53,6 +53,17 @@ const TRAILING_URL_PUNCTUATION = /[.,;:!?\]\)}]+$/;
 
 let anthropicClient = null;
 
+function logTokenUsage(response, researchScope, continuation) {
+  console.log(JSON.stringify({
+    event: "anthropic_usage",
+    function: "researchTask",
+    researchScope,
+    continuation,
+    inputTokens: response?.usage?.input_tokens ?? null,
+    outputTokens: response?.usage?.output_tokens ?? null
+  }));
+}
+
 function getAnthropicClient() {
   if (!anthropicClient) {
     const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -506,6 +517,7 @@ async function completeModelTurn({
     }
 
     const response = await client.messages.create(request);
+    logTokenUsage(response, researchScope, continuation);
     collectSearchResultURLs(response, allowedURLs);
 
     if (response.stop_reason !== "pause_turn") {

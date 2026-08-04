@@ -8,6 +8,7 @@
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const admin = require("firebase-admin");
 const Anthropic = require("@anthropic-ai/sdk");
+const { getAIConfig } = require("./aiConfig");
 
 const VALID_METHODS = new Set(["link", "call", "concierge"]);
 const VALID_CONFIDENCE = new Set(["high", "medium", "low"]);
@@ -257,7 +258,7 @@ function parseSearchResponse(response) {
   return safePayload({ ...parsed, citations }, parsed.name);
 }
 
-async function searchOfficialProvider(name, category, intent) {
+async function searchOfficialProvider(name, category, intent, resolverModel) {
   const client = getAnthropicClient();
   const prompt = `Find the official path to ${INTENT_SEARCH_LABELS[intent]} for the provider named exactly ${JSON.stringify(name)} in category ${JSON.stringify(category)}. The required intent is exactly ${JSON.stringify(intent)}.
 
@@ -280,7 +281,7 @@ Use method link and confidence high only when you fetched the exact official act
   }];
   const messages = [{ role: "user", content: prompt }];
   const baseRequest = {
-    model: process.env.ANTHROPIC_MODEL || "claude-sonnet-4-6",
+    model: resolverModel,
     max_tokens: 1000,
     temperature: 0,
     tools
@@ -349,7 +350,10 @@ async function resolveProviderRequest(name, category, intent, dependencies = {})
     const record = await lookup(name, category, intent);
     if (record) return directoryRecordPayload(record, name, intent);
 
-    const searched = await withTimeout(Promise.resolve().then(() => search(name, category, intent)), timeoutMs);
+    const searched = await withTimeout(
+      Promise.resolve().then(() => search(name, category, intent, dependencies.resolverModel)),
+      timeoutMs
+    );
     const safe = safePayload(searched, name);
     if (safe.confidence !== "high" || safe.method === "concierge") {
       return conciergePayload(safe.name, safe.citations);
@@ -380,7 +384,8 @@ const resolveProvider = onCall(
     if (name.length < 2 || !category || !VALID_INTENTS.has(intent)) {
       throw new HttpsError("invalid-argument", "name, category, and valid intent are required");
     }
-    return resolveProviderRequest(name, category, intent);
+    const resolverModel = await getAIConfig("resolverModel");
+    return resolveProviderRequest(name, category, intent, { resolverModel });
   }
 );
 
