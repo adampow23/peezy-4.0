@@ -776,3 +776,5 @@ Phase 10 is a verification-and-recording phase, and the assessment source files
 are outside its named write scope, so none of these earlier-phase defects was
 edited here. Overall launch-gate result: **BLOCKED on reachable copy** despite
 the successful build, non-renewing purchase, and task unlock.
+
+ARCHITECT RULING: copy tone rule clarified — banned: promises of action outside the app (contact/arrange/book/line up); allowed: accurate descriptions of in-app software behavior (research/scan/plan/recommend). Phase 10 violations 2 and 3 ruled false positives under this distinction; violation 1 fixed this session.

@@ -8,7 +8,7 @@ struct ServicesIntro: View {
 
     let icon        = "hammer.fill"
     let header      = "Time to talk services."
-    let subtext     : String? = "Movers, packers, cleaners — tell us who you're hiring, or just curious about, and we'll line up the quotes."
+    let subtext     : String? = "Movers, packers, cleaners — tell us who you're hiring or just curious about, so you'll know exactly which quotes to get — and what to ask for."
     let buttonText  = "Continue"
 
     // ═══════════════════════════════════════════
