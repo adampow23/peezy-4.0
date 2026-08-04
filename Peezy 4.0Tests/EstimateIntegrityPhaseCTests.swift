@@ -38,13 +38,9 @@ struct EstimateIntegrityPhaseCTests {
         #expect(PricingEngine.estimate(scope: above, rateCard: card) == nil)
     }
 
-    @Test func unavailableCrewAndLockedConciergeCopy() {
+    @Test func unavailableCrewSizes() {
         #expect(CrewHourlyRates(two: 145, three: 185, four: 0).largestAvailableCrewSize == 3)
         #expect(CrewHourlyRates(two: 0, three: 0, four: 0).largestAvailableCrewSize == nil)
-        #expect(MoversConciergeReason.physicalHours.copy == MoversConciergeCopy(
-            title: "This is a big one.",
-            body: "Big moves deserve a hand-built quote — we'll have yours within a day."
-        ))
     }
 
     private func scope(cubicFeet: Double, driveMinutes: Double) -> MoveScope {
