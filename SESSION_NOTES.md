@@ -778,3 +778,93 @@ edited here. Overall launch-gate result: **BLOCKED on reachable copy** despite
 the successful build, non-renewing purchase, and task unlock.
 
 ARCHITECT RULING: copy tone rule clarified — banned: promises of action outside the app (contact/arrange/book/line up); allowed: accurate descriptions of in-app software behavior (research/scan/plan/recommend). Phase 10 violations 2 and 3 ruled false positives under this distinction; violation 1 fixed this session.
+
+---
+
+## Day 3 — Phase 7: Verification sweep (2026-08-04)
+
+Scope: Phase 7 only. No production source or explicitly deferred file was
+changed. Phase 7 cites no audit-report section. Static checks, a signed Debug
+build, and the clean-install simulator sweep were run from the project root.
+
+### Static verification
+
+1. `grep -rn "claude-" functions/*.js "Peezy 4.0" | grep -v seedAppConfig`
+
+   Exit 0, so the gate is **not clean**. The broad command also finds historical
+   documents and build logs. Restricting the same check to executable Functions
+   source leaves two literal-model matches: `functions/processInventory.js:184`
+   and `functions/resolveProvider.js:283`. Both files are outside Phase 7; the
+   inventory migration is explicitly deferred, so neither was edited.
+
+2. `rg -n 'https?://|www\.|URL\(string:|web_search|request\.tools|\.tools\s*=' functions/peezyChat.js "Peezy 4.0/MainInterface/Views/SupportChatView.swift"`
+
+   Exit 1 with no output. The chat callable and client path contain no URL
+   construction, web-search tool, or request-tools configuration.
+
+3. `grep -n -A3 -B2 'if (!request.auth)' functions/researchTask.js functions/peezyChat.js`
+
+   Exit 0. `researchTask.js:587` and `peezyChat.js:363` both reject requests
+   without `request.auth`.
+
+4. `node --check functions/researchTask.js` and
+   `node --check functions/peezyChat.js`
+
+   Both completed with exit 0.
+
+5. `firebase functions:list --json | jq -r '.result[].id' | sort | rg '^(peezyChat|researchTask)$'`
+
+   Exit 0 with only `researchTask`. The Phase 6 `peezyChat` callable is not
+   deployed, which blocks successful responses from either live chat surface.
+
+### Build and clean-install simulator sweep
+
+- A normally signed Debug simulator build for iPhone 17 Pro / iOS 26.4.1
+  completed with exit 0 and `** BUILD SUCCEEDED **`. An initial diagnostic
+  build with signing disabled produced a Firebase Keychain-access error during
+  account creation; rebuilding with the standard simulator signing identity
+  removed that error.
+- Uninstalled `peezy.Peezy-4-0`, installed the signed build, launched it, and
+  created a new synthetic Firebase account. The account completed the full
+  assessment and generated 19 personalized tasks.
+- Opening a locked task presented the Move Pass value screen and purchase gate.
+  Relaunching from the shared Xcode scheme attached `Configuration.storekit`.
+  The localized StoreKit price loaded, the system sheet identified a one-time
+  charge and testing-only/no-charge confirmation, and the sandbox purchase
+  succeeded. The paywall dismissed into the task. Result: assessment → gate →
+  non-renewing Move Pass purchase **PASS**.
+- Web generation: `SCHOOL_TRANSFER` produced a personalized brief with six
+  visible source buttons and a `What could go wrong` section. **PASS**.
+- Reasoning generation: `SCHEDULE_TIME_OFF_WORK` produced a personalized brief
+  with no sources and a `What could go wrong` section. **PASS**.
+- Preference generation: `BOOK_MOVERS` required and retained all three selected
+  preferences (careful handling, a few days of date flexibility, and fragile or
+  high-value items), then produced a cited brief with a `What could go wrong`
+  section. **PASS**.
+- Task-scoped chat and global chat both rendered, accepted a message, cleared
+  the composer, and displayed the bounded retry error. Successful AI responses
+  are **BLOCKED** because `peezyChat` is absent from the deployed callable
+  inventory.
+- Box Return used a controlled synthetic-account fixture matching the Day 2
+  prerequisite contract: `workflowResponses/supplies_kit` contained a 15-box
+  kit, and a due-now `BOX_RETURN` task was added because the clean account's
+  move date had not reached the catalog's seven-days-past-move surface rule.
+  The flow read `Your kit included 15 boxes`, accepted 1 returned box plus
+  `did not run out`, saved successfully, and rendered `1 of 15 boxes recorded`.
+  Firestore readback showed `kitCalibration.delivered = 15`, `returned = 1`,
+  and `ranOut = false`. **PASS**.
+
+### Cost sanity
+
+`firebase functions:log --only researchTask --lines 500 | rg -i
+'"usage"|input_tokens|output_tokens|inputTokens|outputTokens'` exited 1 with no
+output after the three live generations. The deployed callable logs invocation
+verification but no provider token-usage fields; the Phase 7 source review also
+confirmed that `response.usage` is not logged. The requested web-brief token
+count is therefore **NOT OBSERVABLE** without a change outside this verification
+phase. No estimate was fabricated.
+
+Overall Phase 7 result: build, clean-install assessment, gate, sandbox purchase,
+three research modes, and Box Return pass. Launch verification remains
+**BLOCKED** on the two out-of-phase model literals, missing `peezyChat`
+deployment, and absent research token-usage logging.
