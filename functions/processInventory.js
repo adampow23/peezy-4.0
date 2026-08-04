@@ -9,6 +9,14 @@ const admin = require('firebase-admin');
 const Anthropic = require('@anthropic-ai/sdk');
 const { getAIConfig } = require('./aiConfig');
 
+const INVENTORY_CONFIG_PATHS = {
+  anchors: 'appConfig/anchors',
+  cubeSheet: 'appConfig/cubeSheet'
+};
+const VALID_CATEGORIES = ['furniture', 'electronics', 'boxes', 'appliance', 'decor', 'other'];
+const VALID_SIZES = ['small', 'medium', 'large', 'oversized'];
+const VALID_TIERS = ['furniture', 'boxable'];
+
 // Lazy-init Anthropic client (same pattern as peezyBrain.js)
 let anthropic = null;
 
@@ -30,6 +38,91 @@ function logTokenUsage(response) {
     inputTokens: response?.usage?.input_tokens ?? null,
     outputTokens: response?.usage?.output_tokens ?? null
   }));
+}
+
+function buildCubeRowLookup(rows) {
+  if (!Array.isArray(rows) || rows.length === 0) {
+    throw new Error('Cube sheet config has no rows');
+  }
+
+  const lookup = new Map();
+  for (const row of rows) {
+    if (!row || typeof row.key !== 'string' || typeof row.category !== 'string') {
+      throw new Error('Cube sheet config contains an invalid row');
+    }
+
+    const low = Number(row.low);
+    const typical = Number(row.typical);
+    const high = Number(row.high);
+    const numericValueCount = [low, typical, high].filter(Number.isFinite).length;
+
+    // The source sheet contains one cross-reference row ("Piano (any)")
+    // rather than a numeric range. It remains in the injected sheet as
+    // guidance, while only complete numeric rows are selectable item types.
+    if (numericValueCount === 0) {
+      continue;
+    }
+    if (numericValueCount !== 3 || low > typical || typical > high) {
+      throw new Error(`Cube sheet config has an invalid range for ${row.key}`);
+    }
+
+    const numericRow = { ...row, low, typical, high };
+    const existing = lookup.get(row.key);
+    if (
+      existing &&
+      (existing.low !== low || existing.typical !== typical || existing.high !== high)
+    ) {
+      throw new Error(`Cube sheet config has conflicting ranges for ${row.key}`);
+    }
+    lookup.set(row.key, numericRow);
+  }
+
+  if (lookup.size === 0) {
+    throw new Error('Cube sheet config has no numeric rows');
+  }
+  return lookup;
+}
+
+async function readInventorySizingConfig(db) {
+  const [anchorsSnapshot, cubeSheetSnapshot] = await Promise.all([
+    db.doc(INVENTORY_CONFIG_PATHS.anchors).get(),
+    db.doc(INVENTORY_CONFIG_PATHS.cubeSheet).get()
+  ]);
+
+  if (!anchorsSnapshot.exists || !cubeSheetSnapshot.exists) {
+    throw new Error('Inventory config missing — run node seedCubeSheet.js');
+  }
+
+  const anchorRows = anchorsSnapshot.data()?.anchors;
+  const cubeSheetConfig = cubeSheetSnapshot.data() || {};
+  if (!Array.isArray(anchorRows) || anchorRows.length === 0) {
+    throw new Error('Anchor config has no rows');
+  }
+  for (const anchor of anchorRows) {
+    if (
+      !anchor ||
+      typeof anchor.name !== 'string' ||
+      typeof anchor.standardDimension !== 'string'
+    ) {
+      throw new Error('Anchor config contains an invalid row');
+    }
+  }
+
+  const unknownSizeTypical = {};
+  for (const size of VALID_SIZES) {
+    const value = Number(cubeSheetConfig.unknownSizeTypical?.[size]);
+    if (!Number.isFinite(value) || value <= 0) {
+      throw new Error(`Cube sheet config has no unknown fallback for ${size}`);
+    }
+    unknownSizeTypical[size] = value;
+  }
+
+  return {
+    anchorRows,
+    cubeRows: cubeSheetConfig.rows,
+    cubeRowLookup: buildCubeRowLookup(cubeSheetConfig.rows),
+    unknownSizeTypical
+  };
 }
 
 function normalizedInventoryName(value) {
@@ -149,45 +242,39 @@ exports.processInventory = onCall(
         }
       ])).flat();
 
-      const prompt = `You are analyzing photos of a room in someone's home to create a moving inventory.
-These ${frames.length} images show the same room (${roomName}) from different angles during a slow pan.
-Each image is labeled with its storage frame index.
+      const {
+        anchorRows,
+        cubeRows,
+        cubeRowLookup,
+        unknownSizeTypical
+      } = await readInventorySizingConfig(db);
 
-INSTRUCTIONS:
+      const systemPrompt = `You analyze room walkthrough frames to create a moving inventory.
+These ${frames.length} labeled frames are one continuous walkthrough of one room named ${JSON.stringify(roomName)}, not separate rooms or separate inventories.
 
-1. Identify EVERY visible item in the room — furniture, appliances, electronics, decor, books, kitchenware, clothing, boxes, and all smaller items.
+PASS 1 — FIND SIZE ANCHORS
+Before inventorying, identify the visible reference objects from INJECTED_ANCHORS and use their known dimensions to judge relative item size. Do not return a separate anchor payload. If a movable anchor object is present, include that physical item exactly once in Pass 2.
 
-2. Classify each item into one of two tiers:
-   - "furniture": Items movers handle individually. Furniture, large appliances, TVs, exercise equipment, musical instruments, large mirrors/art — anything too big for a standard moving box.
-   - "boxable": Items that get packed into boxes. Books, kitchen items, small decor, toiletries, clothing, small electronics, office supplies, etc. Group similar small items together (e.g. "Books (approx 50)" not 50 separate book entries, "Kitchen plates and bowls" not individual plates).
+INJECTED_ANCHORS:
+${JSON.stringify(anchorRows)}
 
-3. Do NOT double-count items visible from multiple angles — deduplicate carefully.
+PASS 2 — INVENTORY THE ROOM
+1. Identify every physical item exactly once across all frames. Track physical identity across adjacent and non-adjacent frames so another angle of the same item never creates another entry. Record every labeled frame where each item appears in frameIndices. Identical small boxable objects may share one entry with quantity equal to the physical count.
+2. Set type to an exact key from INJECTED_CUBE_SHEET_ROWS that has numeric low, typical, and high values. The nonnumeric "Piano (any)" row is cross-reference guidance; choose the matching specific piano key. If no numeric row fits, set type to "unknown" and give the item a concise free-text name.
+3. Set sizeEstimate to small, medium, large, or oversized. Set cubicFeet per unit within the selected row's inclusive [low, high] range, placing it inside that range by comparing the item with the Pass 1 anchors. Fixed-cube box rows require their exact cube.
+4. Classify tier as "furniture" when movers handle the item individually, including furniture, large appliances, TVs, exercise equipment, musical instruments, and large mirrors or art. Classify tier as "boxable" for items packed into boxes. Group only genuinely interchangeable small boxable objects.
+5. Set category to furniture, electronics, boxes, appliance, decor, or other. Also return quantity, isFragile, isHighValue, and confidence from 0.0 to 1.0 for every entry.
+6. For furniture entries, set frameIndex to the labeled frame where the item is clearest and boundingBox to normalized 0.0–1.0 coordinates in that frame. For boxable entries, set frameIndex and boundingBox to null.
+7. Include uncertain items with lower confidence. Do not omit an item merely because identification is uncertain.
+8. Ignore walls, floors, ceilings, doors, windows, and built-in fixtures such as cabinets, countertops, and closet shelving.
 
-4. For EVERY item, estimate its cubic footage per unit. Use these reference points:
-   - Single book: 0.08 cu ft
-   - Coffee maker: 0.5 cu ft
-   - Kitchen pots/pans set: 2.0 cu ft
-   - Set of dishes/plates: 1.5 cu ft
-   - Microwave: 3.0 cu ft
-   - Nightstand: 6.0 cu ft
-   - Dresser: 20.0 cu ft
-   - Sofa (3-seat): 45.0 cu ft
-   - King bed frame + mattress: 65.0 cu ft
-   Use your judgment for items not listed.
+INJECTED_CUBE_SHEET_ROWS:
+${JSON.stringify(cubeRows)}
 
-5. For "furniture" tier items ONLY: provide the frame index (0-based) where the item is most clearly visible, and a bounding box as normalized coordinates (0.0 to 1.0) marking where the item appears in that frame. Format: {"x": left, "y": top, "width": w, "height": h}.
-
-6. For "boxable" tier items: frameIndex and boundingBox should be null.
-
-7. When uncertain about what an item is, INCLUDE it with a lower confidence score. The user will review.
-
-8. Ignore: walls, floors, ceilings, doors, windows, built-in fixtures (cabinets, countertops, closet shelving).
-
-Return ONLY a valid JSON array. No markdown, no explanation, no preamble, no backticks.
-
-Each object must have exactly these fields:
+Return only a valid JSON array with no markdown, explanation, preamble, or backticks. Each object must have exactly these fields:
 {
   "name": "string",
+  "type": "exact injected cube-sheet key|unknown",
   "category": "furniture|electronics|boxes|appliance|decor|other",
   "tier": "furniture|boxable",
   "quantity": 1,
@@ -195,9 +282,10 @@ Each object must have exactly these fields:
   "cubicFeet": 0.0,
   "isFragile": false,
   "isHighValue": false,
-  "confidence": 0.0-1.0,
-  "frameIndex": null or 0-based integer,
-  "boundingBox": null or {"x":0.0,"y":0.0,"width":0.0,"height":0.0}
+  "confidence": 0.0,
+  "frameIndices": [0],
+  "frameIndex": null,
+  "boundingBox": null
 }`;
 
       const client = getAnthropicClient();
@@ -205,11 +293,15 @@ Each object must have exactly these fields:
       const response = await client.messages.create({
         model: inventoryModel,
         max_tokens: 4096,
+        system: systemPrompt,
         messages: [{
           role: 'user',
           content: [
             ...imageContent,
-            { type: 'text', text: prompt }
+            {
+              type: 'text',
+              text: 'Create the inventory for the labeled walkthrough frames.'
+            }
           ]
         }]
       });
@@ -239,10 +331,6 @@ Each object must have exactly these fields:
       }
 
       // 7. Validate and normalize each item
-      const validCategories = ['furniture', 'electronics', 'boxes', 'appliance', 'decor', 'other'];
-      const validSizes = ['small', 'medium', 'large', 'oversized'];
-      const validTiers = ['furniture', 'boxable'];
-
       const normalizedItems = rawItems.map((item, idx) => {
         // Normalize bounding box if present
         let boundingBox = null;
@@ -269,25 +357,76 @@ Each object must have exactly these fields:
           }
         }
 
+        const frameIndices = Array.isArray(item.frameIndices)
+          ? [...new Set(item.frameIndices
+            .map((value) => Math.round(Number(value)))
+            .filter((value) => frames.some((frame) => frame.index === value)))]
+            .sort((left, right) => left - right)
+          : [];
+        if (frameIndex !== null && !frameIndices.includes(frameIndex)) {
+          frameIndices.push(frameIndex);
+          frameIndices.sort((left, right) => left - right);
+        }
+
+        const requestedType = String(item.type || '').trim();
+        const cubeRow = cubeRowLookup.get(requestedType);
+        const type = cubeRow ? requestedType : 'unknown';
+        const sizeEstimate = VALID_SIZES.includes(item.sizeEstimate)
+          ? item.sizeEstimate
+          : 'medium';
+
+        let cubicFeet;
+        let adjusted = false;
+        if (cubeRow) {
+          const reportedCubicFeet = Number(item.cubicFeet);
+          cubicFeet = Number.isFinite(reportedCubicFeet)
+            ? Math.min(cubeRow.high, Math.max(cubeRow.low, reportedCubicFeet))
+            : cubeRow.typical;
+          adjusted = !Number.isFinite(reportedCubicFeet) || cubicFeet !== reportedCubicFeet;
+
+          if (adjusted) {
+            console.warn(JSON.stringify({
+              event: 'inventory_cube_adjusted',
+              function: 'processInventory',
+              sessionId,
+              itemIndex: idx,
+              type,
+              reportedCubicFeet: Number.isFinite(reportedCubicFeet)
+                ? reportedCubicFeet
+                : null,
+              cubicFeet,
+              low: cubeRow.low,
+              high: cubeRow.high
+            }));
+          }
+        } else {
+          cubicFeet = unknownSizeTypical[sizeEstimate];
+        }
+
         return {
           id: `${sessionId}-item-${idx}`,
           name: String(item.name || 'Unknown Item'),
-          category: validCategories.includes(item.category) ? item.category : 'other',
-          tier: validTiers.includes(item.tier) ? item.tier : 'boxable',
+          type,
+          category: VALID_CATEGORIES.includes(item.category) ? item.category : 'other',
+          tier: VALID_TIERS.includes(item.tier) ? item.tier : 'boxable',
           quantity: Math.max(1, Math.round(Number(item.quantity) || 1)),
-          sizeEstimate: validSizes.includes(item.sizeEstimate) ? item.sizeEstimate : 'medium',
-          cubicFeet: Math.max(0, Number(item.cubicFeet) || 0),
+          sizeEstimate,
+          cubicFeet,
           isFragile: Boolean(item.isFragile),
           isHighValue: Boolean(item.isHighValue),
           confidence: Math.min(1, Math.max(0, Number(item.confidence) || 0.5)),
-          frameIndex: frameIndex,
-          boundingBox: boundingBox,
-          roomName: roomName,
+          uncertain: !cubeRow,
+          adjusted,
+          frameIndices,
+          frameIndex,
+          boundingBox,
+          roomName,
           shouldMove: true,
           notes: ''
         };
       });
       const items = mergeExactInventoryItems(normalizedItems);
+      items.sort((left, right) => Number(right.uncertain) - Number(left.uncertain));
 
       // 8. Update Firestore session document
       await sessionRef.update({
