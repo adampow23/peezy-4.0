@@ -12,6 +12,7 @@ const { processInventory } = require('./processInventory');
 const { packageInventory } = require('./packageInventory');
 const { validateSubscription } = require('./validateSubscription');
 const { resolveProvider } = require('./resolveProvider');
+const { researchTask } = require('./researchTask');
 const { submitCheckIn } = require('./submitCheckIn');
 
 // Set global options
@@ -430,4 +431,5 @@ exports.validateSubscription = validateSubscription;
 exports.processInventory = processInventory;
 exports.packageInventory = packageInventory;
 exports.resolveProvider = resolveProvider;
+exports.researchTask = researchTask;
 exports.submitCheckIn = submitCheckIn;
