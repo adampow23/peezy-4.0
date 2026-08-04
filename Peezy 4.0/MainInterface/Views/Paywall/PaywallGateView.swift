@@ -2,21 +2,19 @@
 //  PaywallGateView.swift
 //  Peezy 4.0
 //
-//  Single-screen paywall. Apple Guideline 3.1.2 compliance:
-//  - Free trial copy gated by isEligibleForIntroOffer per Apple's 2026 guidance
-//  - Purchase button disabled during purchase to prevent tap-spam
-//  - Restore Purchases reachable here and in Settings
+//  Single-screen paywall for the six-month, non-renewing Peezy Move Pass.
+//  The StoreKit product provides the localized price shown to the user.
 //
 
 import SwiftUI
 import StoreKit
-import UIKit
+import FirebaseFunctions
 
 struct PaywallGateView: View {
     @EnvironmentObject private var subscriptionManager: SubscriptionManager
     let onDismiss: () -> Void
 
-    @State private var selectedPlan: SubscriptionManager.ProductID = .annual
+    @State private var isShowingGiftCodeRedeem = false
 
     var body: some View {
         ZStack {
@@ -44,41 +42,36 @@ struct PaywallGateView: View {
                     VStack(alignment: .leading, spacing: 24) {
                         // MARK: - Hero section
                         VStack(alignment: .leading, spacing: 8) {
-                            Text("ASSESSMENT COMPLETE")
+                            Text("PEEZY MOVE PASS")
                                 .font(.system(size: 12, weight: .black, design: .rounded))
                                 .tracking(1.5)
                                 .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.5))
 
-                            Text("Let us handle the\nheavy lifting.")
+                            Text("One price.\nYour whole move.")
                                 .font(.system(size: 34, weight: .heavy))
                                 .foregroundStyle(PeezyTheme.Colors.deepInk)
                                 .lineSpacing(2)
                                 .fixedSize(horizontal: false, vertical: true)
 
-                            Text("Moving costs the average person 25+ hours of stress. Upgrade to Peezy+ and get:")
+                            Text("Six months of Peezy doing the work.\nNo subscription. Nothing to cancel.\nIt just ends when your move does.")
                                 .font(.system(size: 16, weight: .medium))
                                 .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.7))
                                 .lineSpacing(4)
                                 .padding(.top, 4)
                         }
 
-                        // MARK: - Feature checklist (Apple 3.1.2 compliance)
+                        // MARK: - Feature checklist
                         VStack(alignment: .leading, spacing: 16) {
                             featureRow("Personalized moving plan built from your assessment")
-                            featureRow("Most tasks, done for you. The rest, walked through step-by-step")
                             featureRow("AI inventory scanner for every room")
                             featureRow("Daily task stream so nothing slips through the cracks")
-                            featureRow("Priority support via in-app chat")
                             featureRow("Plan updates as your move evolves")
                         }
                         .padding(.vertical, 8)
 
-                        // MARK: - Pricing cards
-                        HStack(spacing: 12) {
-                            pricingCard(plan: .annual)
-                            pricingCard(plan: .weekly)
-                        }
-                        .padding(.top, 8)
+                        // MARK: - Price
+                        movePassPriceCard
+                            .padding(.top, 8)
                     }
                     .padding(.horizontal, 24)
 
@@ -87,9 +80,8 @@ struct PaywallGateView: View {
                     // MARK: - CTA and footer
                     VStack(spacing: 16) {
                         PeezyAssessmentButton(ctaLabel) {
-                            purchaseSelected()
+                            purchaseMovePass()
                         }
-                        .animation(.none, value: selectedPlan)
                         .disabled(isPurchaseDisabled)
                         .opacity(isPurchaseDisabled ? 0.5 : 1.0)
                         .accessibilityIdentifier("paywall_purchase_button")
@@ -97,10 +89,7 @@ struct PaywallGateView: View {
                         // Tertiary actions
                         HStack(spacing: 12) {
                             Button {
-                                Task {
-                                    guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene else { return }
-                                    try? await AppStore.presentOfferCodeRedeemSheet(in: windowScene)
-                                }
+                                isShowingGiftCodeRedeem = true
                             } label: {
                                 Text("Redeem a code").underline()
                             }
@@ -125,8 +114,8 @@ struct PaywallGateView: View {
                         .font(.system(size: 12, weight: .regular))
                         .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.4))
 
-                        // Subscription terms
-                        Text("Payment will be charged to your Apple ID account at confirmation of purchase. Subscription automatically renews unless cancelled at least 24 hours before the end of the current period. Manage subscriptions in Settings > Apple ID > Subscriptions.")
+                        // Move Pass terms
+                        Text("One-time payment charged to your Apple ID at confirmation of purchase. Includes 6 months of Peezy Move Pass access. This is not an auto-renewing subscription — access ends automatically and nothing renews.")
                             .font(.system(size: 11))
                             .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.3))
                             .multilineTextAlignment(.center)
@@ -148,50 +137,23 @@ struct PaywallGateView: View {
                 }
             }
         }
-        .task {
-            // Refresh trial eligibility on appear in case products loaded
-            // after the manager's initial check, or eligibility changed
-            // since last refresh.
-            await subscriptionManager.refreshTrialEligibility()
+        .sheet(isPresented: $isShowingGiftCodeRedeem) {
+            GiftCodeRedeemSheet {
+                isShowingGiftCodeRedeem = false
+                onDismiss()
+            }
+            .environmentObject(subscriptionManager)
         }
     }
 
     // MARK: - Computed UI State
 
-    /// Disable purchase button during in-flight purchase OR before products load.
-    /// Prevents tap-spam triggering multiple StoreKit purchase calls.
     private var isPurchaseDisabled: Bool {
-        subscriptionManager.isPurchasing || !subscriptionManager.isLoaded
+        subscriptionManager.isPurchasing || subscriptionManager.product(for: .move) == nil
     }
 
-    /// CTA label respects:
-    /// - in-flight purchase ("Processing...")
-    /// - selected plan
-    /// - trial eligibility (per Apple 2026 guidance, hide trial copy from
-    ///   users who have already consumed the introductory offer)
     private var ctaLabel: String {
-        if subscriptionManager.isPurchasing {
-            return "Processing..."
-        }
-
-        if selectedPlan == .annual {
-            // Show trial copy ONLY if the product offers a free trial AND
-            // the current Apple ID is eligible for it.
-            if subscriptionManager.isEligibleForAnnualTrial,
-               let product = subscriptionManager.product(for: .annual),
-               let intro = product.subscription?.introductoryOffer,
-               intro.paymentMode == .freeTrial {
-                let days = intro.period.value
-                return "Start \(days)-Day Free Trial"
-            }
-            // Ineligible or no trial configured → straight subscribe copy.
-            let price = subscriptionManager.product(for: .annual)?.displayPrice ?? ""
-            return price.isEmpty ? "Subscribe Yearly" : "Subscribe for \(price)/yr"
-        } else {
-            // Weekly never has a trial.
-            let price = subscriptionManager.product(for: .weekly)?.displayPrice ?? ""
-            return price.isEmpty ? "Subscribe Weekly" : "Subscribe for \(price)/wk"
-        }
+        subscriptionManager.isPurchasing ? "Processing..." : "Get the Move Pass"
     }
 
     // MARK: - Feature Row
@@ -211,102 +173,45 @@ struct PaywallGateView: View {
         }
     }
 
-    // MARK: - Pricing Card
+    // MARK: - Price Card
 
-    private func pricingCard(plan: SubscriptionManager.ProductID) -> some View {
-        let isSelected = selectedPlan == plan
-        let product = subscriptionManager.product(for: plan)
-        let price = product?.displayPrice ?? "—"
+    private var movePassPriceCard: some View {
+        VStack(spacing: 8) {
+            Text(subscriptionManager.product(for: .move)?.displayPrice ?? "—")
+                .font(.system(size: 40, weight: .heavy))
+                .foregroundStyle(PeezyTheme.Colors.deepInk)
+                .minimumScaleFactor(0.7)
 
-        let title: String = plan == .annual ? "Yearly" : "Weekly"
-        let duration: String = plan == .annual ? "/ yr" : "/ wk"
-        let subtext: String = pricingCardSubtext(for: plan, product: product)
-        let badge: String? = plan == .annual ? "BEST VALUE" : nil
+            Text("Founding price — locked for early users")
+                .font(.system(size: 14, weight: .bold))
+                .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.75))
+                .multilineTextAlignment(.center)
 
-        let identifier = plan == .annual ? "paywall_plan_annual" : "paywall_plan_weekly"
-
-        return Button(action: {
-            PeezyHaptics.light()
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                selectedPlan = plan
-            }
-        }) {
-            VStack(spacing: 6) {
-                Text(title)
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundStyle(isSelected ? PeezyTheme.Colors.deepInk : PeezyTheme.Colors.deepInk.opacity(0.5))
-
-                HStack(alignment: .firstTextBaseline, spacing: 2) {
-                    Text(price)
-                        .font(.system(size: 22, weight: .heavy))
-                        .foregroundStyle(isSelected ? PeezyTheme.Colors.deepInk : PeezyTheme.Colors.deepInk.opacity(0.5))
-                        .minimumScaleFactor(0.7)
-                    Text(duration)
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundStyle(isSelected ? PeezyTheme.Colors.deepInk.opacity(0.6) : PeezyTheme.Colors.deepInk.opacity(0.3))
-                }
-
-                Text(subtext)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(isSelected ? PeezyTheme.Colors.deepInk.opacity(0.6) : PeezyTheme.Colors.deepInk.opacity(0.4))
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .padding(.vertical, 20)
-            .padding(.horizontal, 8)
-            .frame(maxWidth: .infinity)
-            .background(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(isSelected ? Color.white : Color.clear)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(isSelected ? PeezyTheme.Colors.deepInk : PeezyTheme.Colors.deepInk.opacity(0.1),
-                            lineWidth: isSelected ? 2 : 1)
-            )
-            .overlay(
-                Group {
-                    if let badge = badge {
-                        Text(badge)
-                            .font(.system(size: 10, weight: .black, design: .rounded))
-                            .tracking(1)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 4)
-                            .background(PeezyTheme.Colors.deepInk)
-                            .foregroundStyle(.white)
-                            .clipShape(Capsule())
-                            .offset(y: -12)
-                    }
-                },
-                alignment: .top
-            )
-            .shadow(color: isSelected ? PeezyTheme.Colors.deepInk.opacity(0.15) : Color.clear, radius: 10, x: 0, y: 4)
-            .scaleEffect(isSelected ? 1.0 : 0.98)
+            Text("One-time payment · 6 months of access")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.5))
+                .multilineTextAlignment(.center)
         }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier(identifier)
-    }
-
-    /// Returns the small text under the price on each pricing card.
-    /// Annual: shows trial copy ONLY when the user is eligible.
-    /// Weekly: never mentions a trial.
-    private func pricingCardSubtext(for plan: SubscriptionManager.ProductID, product: Product?) -> String {
-        if plan == .annual {
-            if subscriptionManager.isEligibleForAnnualTrial,
-               let intro = product?.subscription?.introductoryOffer,
-               intro.paymentMode == .freeTrial {
-                let days = intro.period.value
-                return "\(days)-day free trial"
-            }
-            return "Billed yearly"
-        }
-        return "Billed weekly"
+        .padding(.vertical, 24)
+        .padding(.horizontal, 16)
+        .frame(maxWidth: .infinity)
+        .background(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(.ultraThinMaterial)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(PeezyTheme.Colors.deepInk.opacity(0.12), lineWidth: 1)
+        )
+        .shadow(color: PeezyTheme.Colors.deepInk.opacity(0.12), radius: 14, x: 0, y: 6)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("paywall_move_pass_price")
     }
 
     // MARK: - Purchase
 
-    private func purchaseSelected() {
-        guard let product = subscriptionManager.product(for: selectedPlan) else { return }
+    private func purchaseMovePass() {
+        guard let product = subscriptionManager.product(for: .move) else { return }
         Task {
             let result = await subscriptionManager.purchase(product)
             if case .success = result {
@@ -316,7 +221,120 @@ struct PaywallGateView: View {
     }
 }
 
-#Preview("Live (annual selected)") {
+private struct GiftCodeRedeemSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var subscriptionManager: SubscriptionManager
+
+    let onRedeemed: () -> Void
+
+    @State private var code = ""
+    @State private var isSubmitting = false
+    @State private var errorMessage: String?
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                InteractiveBackground()
+                    .ignoresSafeArea()
+
+                VStack(alignment: .leading, spacing: 20) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Redeem a gift code")
+                            .font(.system(size: 28, weight: .heavy))
+                            .foregroundStyle(PeezyTheme.Colors.deepInk)
+
+                        Text("Enter your code to add Move Pass access to this account.")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.65))
+                    }
+
+                    TextField("Gift code", text: $code)
+                        .textInputAutocapitalization(.characters)
+                        .autocorrectionDisabled()
+                        .font(.system(size: 17, weight: .semibold, design: .rounded))
+                        .padding(16)
+                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .stroke(PeezyTheme.Colors.deepInk.opacity(0.12), lineWidth: 1)
+                        )
+                        .disabled(isSubmitting)
+                        .accessibilityIdentifier("gift_code_text_field")
+
+                    if let errorMessage {
+                        Text(errorMessage)
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(.red)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier("gift_code_error")
+                    }
+
+                    PeezyAssessmentButton(isSubmitting ? "Redeeming..." : "Redeem code") {
+                        redeemCode()
+                    }
+                    .disabled(isSubmitDisabled)
+                    .opacity(isSubmitDisabled ? 0.5 : 1.0)
+                    .accessibilityIdentifier("gift_code_submit_button")
+
+                    Spacer()
+                }
+                .padding(24)
+            }
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        dismiss()
+                    }
+                    .disabled(isSubmitting)
+                }
+            }
+        }
+        .presentationDetents([.medium])
+        .interactiveDismissDisabled(isSubmitting)
+    }
+
+    private var trimmedCode: String {
+        code.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var isSubmitDisabled: Bool {
+        isSubmitting || trimmedCode.isEmpty
+    }
+
+    private func redeemCode() {
+        guard !trimmedCode.isEmpty else { return }
+
+        isSubmitting = true
+        errorMessage = nil
+
+        Task {
+            do {
+                let result = try await Functions.functions()
+                    .httpsCallable("redeemGiftCode")
+                    .call(["code": trimmedCode])
+
+                if let response = result.data as? [String: Any],
+                   response["success"] as? Bool == false {
+                    errorMessage = response["message"] as? String
+                        ?? response["error"] as? String
+                        ?? "That code could not be redeemed."
+                    isSubmitting = false
+                    return
+                }
+
+                await subscriptionManager.updateSubscriptionStatus()
+                isSubmitting = false
+                dismiss()
+                onRedeemed()
+            } catch {
+                errorMessage = error.localizedDescription
+                isSubmitting = false
+            }
+        }
+    }
+}
+
+#Preview("Move Pass") {
     PaywallGateView(onDismiss: {})
         .environmentObject(SubscriptionManager.shared)
 }
