@@ -16,6 +16,9 @@ struct TypewriterText: View {
     var pauseDuration: TimeInterval = 1.5
     var font: Font = .body
     var foregroundColor: Color = .primary
+    var repeatsPhrases: Bool = true
+    var textAlignment: TextAlignment = .center
+    var showsCursor: Bool = true
     
     // MARK: - State
     
@@ -35,11 +38,11 @@ struct TypewriterText: View {
     // MARK: - Body
     
     var body: some View {
-        Text(displayedText + (cursorVisible ? "|" : " "))
+        Text(displayedText + cursor)
             .font(font)
             .foregroundColor(foregroundColor)
-            .multilineTextAlignment(.center)
-            .accessibilityLabel(phrases[currentPhraseIndex])
+            .multilineTextAlignment(textAlignment)
+            .accessibilityLabel(currentPhrase)
             .onAppear {
                 startAnimation()
             }
@@ -51,6 +54,7 @@ struct TypewriterText: View {
     // MARK: - Animation Logic
     
     private func startAnimation() {
+        guard !phrases.isEmpty else { return }
         timer?.invalidate()
         cursorVisible = true
         
@@ -62,16 +66,23 @@ struct TypewriterText: View {
     }
     
     private func handleTick() {
-        let currentPhrase = phrases[currentPhraseIndex]
+        guard !phrases.isEmpty else { return }
+        let phrase = phrases[currentPhraseIndex]
         
         switch phase {
         case .typing:
-            if displayedText.count < currentPhrase.count {
-                let index = currentPhrase.index(currentPhrase.startIndex, offsetBy: displayedText.count)
-                displayedText.append(currentPhrase[index])
+            if displayedText.count < phrase.count {
+                let index = phrase.index(phrase.startIndex, offsetBy: displayedText.count)
+                displayedText.append(phrase[index])
             } else {
-                phase = .pausing
-                schedulePause()
+                if repeatsPhrases {
+                    phase = .pausing
+                    schedulePause()
+                } else {
+                    timer?.invalidate()
+                    timer = nil
+                    cursorVisible = false
+                }
             }
             
         case .pausing:
@@ -148,6 +159,16 @@ struct TypewriterText: View {
         timer = nil
         cursorTimer?.invalidate()
         cursorTimer = nil
+    }
+
+    private var currentPhrase: String {
+        guard phrases.indices.contains(currentPhraseIndex) else { return "" }
+        return phrases[currentPhraseIndex]
+    }
+
+    private var cursor: String {
+        guard showsCursor else { return "" }
+        return cursorVisible ? "|" : " "
     }
 }
 

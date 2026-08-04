@@ -39,11 +39,14 @@ struct TaskFlowRouter {
     ) -> some View {
         let resolvedTaskId = taskId ?? ""
         MovePassProtectedTaskFlow(onDismiss: onDismiss) {
-            OutermostTaskFlowContainer(
+            UniversalTaskRoute(
                 userId: userId,
                 taskId: resolvedTaskId,
+                flowId: flowId,
                 waitsForExternalAnswerState:
                     CaptureRegistry.registration(flowId: flowId)?.kind == .videoInventory,
+                onComplete: onComplete,
+                onSnooze: { onStatusAction(.later) },
                 onDismiss: onDismiss
             ) { requestExit in
                 routedFlow(
@@ -170,6 +173,64 @@ struct TaskFlowRouter {
             }
         }
     }
+}
+
+private struct UniversalTaskRoute<FlowContent: View>: View {
+    let userId: String
+    let taskId: String
+    let flowId: String
+    let waitsForExternalAnswerState: Bool
+    let onComplete: () -> Void
+    let onSnooze: () -> Void
+    let onDismiss: () -> Void
+    private let flowContent: (@escaping () -> Void) -> FlowContent
+
+    @State private var isShowingFlow = false
+
+    init(
+        userId: String,
+        taskId: String,
+        flowId: String,
+        waitsForExternalAnswerState: Bool,
+        onComplete: @escaping () -> Void,
+        onSnooze: @escaping () -> Void,
+        onDismiss: @escaping () -> Void,
+        @ViewBuilder flowContent: @escaping (@escaping () -> Void) -> FlowContent
+    ) {
+        self.userId = userId
+        self.taskId = taskId
+        self.flowId = flowId
+        self.waitsForExternalAnswerState = waitsForExternalAnswerState
+        self.onComplete = onComplete
+        self.onSnooze = onSnooze
+        self.onDismiss = onDismiss
+        self.flowContent = flowContent
+    }
+
+    @ViewBuilder
+    var body: some View {
+        if isShowingFlow {
+            OutermostTaskFlowContainer(
+                userId: userId,
+                taskId: taskId,
+                waitsForExternalAnswerState: waitsForExternalAnswerState,
+                onDismiss: onDismiss
+            ) { requestExit in
+                flowContent(requestExit)
+            }
+        } else {
+            TaskDetailView(
+                userId: userId,
+                taskDocumentId: taskId,
+                fallbackFlowId: flowId,
+                onStart: { isShowingFlow = true },
+                onComplete: onComplete,
+                onSnooze: onSnooze,
+                onDismiss: onDismiss
+            )
+        }
+    }
+
 }
 
 private struct MovePassProtectedTaskFlow<Content: View>: View {
