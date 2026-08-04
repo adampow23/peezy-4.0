@@ -6,6 +6,36 @@
     "category": "moving",
     "actionType": "workflow",
     "taskType": "survey",
+    "researchScope": "web",
+    "researchPrefs": [
+      {
+        "id": "top_priority",
+        "question": "What matters most when you choose a mover?",
+        "options": [
+          "Lowest total cost",
+          "Soonest confirmed date",
+          "Careful handling"
+        ]
+      },
+      {
+        "id": "date_flexibility",
+        "question": "How flexible is your move date?",
+        "options": [
+          "The date is fixed",
+          "A few days flexible",
+          "A week or more flexible"
+        ]
+      },
+      {
+        "id": "handling_priority",
+        "question": "Which items need the most attention?",
+        "options": [
+          "Standard household items",
+          "Fragile or high-value items",
+          "Heavy or oversized items"
+        ]
+      }
+    ],
     "workflowId": "book_movers",
     "conditions": {
       "hireMovers": [
@@ -26,6 +56,36 @@
     "category": "services",
     "actionType": "workflow",
     "taskType": "survey",
+    "researchScope": "web",
+    "researchPrefs": [
+      {
+        "id": "top_priority",
+        "question": "What matters most when you choose a cleaner?",
+        "options": [
+          "Lowest total cost",
+          "Soonest available time",
+          "Most thorough clean"
+        ]
+      },
+      {
+        "id": "cleaning_timing",
+        "question": "When should the cleaning happen?",
+        "options": [
+          "The day movers leave",
+          "The next day",
+          "Any day that week"
+        ]
+      },
+      {
+        "id": "cleaning_scope",
+        "question": "How much cleaning do you need?",
+        "options": [
+          "Empty-home basics",
+          "A full deep clean",
+          "Deep clean with appliances"
+        ]
+      }
+    ],
     "workflowId": "book_cleaners",
     "conditions": {
       "hireCleaners": [
@@ -46,6 +106,36 @@
     "category": "moving",
     "actionType": "workflow",
     "taskType": "survey",
+    "researchScope": "web",
+    "researchPrefs": [
+      {
+        "id": "top_priority",
+        "question": "What matters most for your truck rental?",
+        "options": [
+          "Lowest total cost",
+          "Closest pickup",
+          "Most flexible return"
+        ]
+      },
+      {
+        "id": "pickup_flexibility",
+        "question": "How fixed is your pickup time?",
+        "options": [
+          "A specific hour",
+          "Any time that day",
+          "A nearby day works"
+        ]
+      },
+      {
+        "id": "truck_need",
+        "question": "What is your main truck concern?",
+        "options": [
+          "Enough cargo space",
+          "Easy driving",
+          "Towing or extra equipment"
+        ]
+      }
+    ],
     "workflowId": "rent_truck",
     "conditions": {
       "wantsTruckRental": [
@@ -66,6 +156,36 @@
     "category": "utilities",
     "actionType": "workflow",
     "taskType": "survey",
+    "researchScope": "web",
+    "researchPrefs": [
+      {
+        "id": "top_priority",
+        "question": "What matters most for your internet service?",
+        "options": [
+          "Lowest monthly cost",
+          "Fastest available speed",
+          "Earliest setup"
+        ]
+      },
+      {
+        "id": "setup_timing",
+        "question": "When do you need service working?",
+        "options": [
+          "By move-in day",
+          "Within the first week",
+          "My timing is flexible"
+        ]
+      },
+      {
+        "id": "internet_use",
+        "question": "Which best matches your household?",
+        "options": [
+          "Light browsing and email",
+          "Remote work and streaming",
+          "Gaming or many heavy users"
+        ]
+      }
+    ],
     "workflowId": "setup_internet",
     "conditions": {},
     "desc": "Protect your first workday from an outage: order service 2-3 weeks ahead, confirm exact-address availability, and ask whether self-install is available.",
@@ -82,6 +202,7 @@
     "category": "packing",
     "actionType": "workflow",
     "taskType": "survey",
+    "researchScope": "reasoning",
     "workflowId": "sell_items",
     "conditions": {
       "hasDeclutter": [
@@ -105,6 +226,36 @@
     "category": "packing",
     "actionType": "workflow",
     "taskType": "survey",
+    "researchScope": "web",
+    "researchPrefs": [
+      {
+        "id": "top_priority",
+        "question": "What matters most for removing these items?",
+        "options": [
+          "Lowest total cost",
+          "Soonest pickup",
+          "Donation or reuse"
+        ]
+      },
+      {
+        "id": "pickup_timing",
+        "question": "How soon do the items need to go?",
+        "options": [
+          "On a fixed date",
+          "Within one week",
+          "My timing is flexible"
+        ]
+      },
+      {
+        "id": "load_type",
+        "question": "What makes up most of the load?",
+        "options": [
+          "Furniture",
+          "Appliances or heavy items",
+          "Boxes and mixed household items"
+        ]
+      }
+    ],
     "workflowId": "remove_items",
     "conditions": {
       "hasDeclutter": [
@@ -128,6 +279,7 @@
     "category": "pets",
     "actionType": "workflow",
     "taskType": "survey",
+    "researchScope": "web",
     "workflowId": "manage_vet",
     "conditions": {
       "hasVet": [
@@ -148,6 +300,7 @@
     "category": "administrative",
     "actionType": "workflow",
     "taskType": "survey",
+    "researchScope": "web",
     "conditions": {},
     "desc": "Keep important mail from landing at your old address: file through the official USPS change-of-address page and verify the start date and household members.",
     "estHours": 0.5,
@@ -164,6 +317,7 @@
     "category": "administrative",
     "actionType": "off-app",
     "taskType": "provide_info",
+    "researchScope": "reasoning",
     "selfServiceOnly": true,
     "conditions": {},
     "desc": "Request 2-3 days minimum: one for packing, moving day, and one to recover. Submit at least four weeks ahead.",
@@ -180,6 +334,7 @@
     "category": "administrative",
     "actionType": "off-app",
     "taskType": "provide_info",
+    "researchScope": "reasoning",
     "selfServiceOnly": true,
     "conditions": {},
     "desc": "Update your home address with HR. If you crossed state lines, also update your work-state W-4 — addresses and taxes are tracked separately.",
@@ -196,6 +351,7 @@
     "category": "utilities",
     "actionType": "workflow",
     "taskType": "survey",
+    "researchScope": "web",
     "conditions": {
       "moveDistance": [
         "Long Distance"
@@ -216,6 +372,7 @@
     "category": "utilities",
     "actionType": "workflow",
     "taskType": "survey",
+    "researchScope": "web",
     "conditions": {
       "moveDistance": [
         "Long Distance"
@@ -236,6 +393,7 @@
     "category": "utilities",
     "actionType": "workflow",
     "taskType": "survey",
+    "researchScope": "web",
     "conditions": {
       "moveDistance": [
         "Local"
@@ -256,6 +414,7 @@
     "category": "children",
     "actionType": "workflow",
     "taskType": "survey",
+    "researchScope": "web",
     "conditions": {
       "childrenInSchool": [
         "Yes"
@@ -279,6 +438,7 @@
     "category": "children",
     "actionType": "workflow",
     "taskType": "survey",
+    "researchScope": "web",
     "conditions": {
       "childrenInDaycare": [
         "Yes"
@@ -302,6 +462,7 @@
     "category": "children",
     "actionType": "workflow",
     "taskType": "survey",
+    "researchScope": "reasoning",
     "conditions": {
       "childrenInDaycare": [
         "Yes"
@@ -325,6 +486,7 @@
     "category": "health",
     "actionType": "workflow",
     "taskType": "survey",
+    "researchScope": "web",
     "conditions": {
       "healthcareProviders": [
         "Pharmacy"
@@ -348,6 +510,7 @@
     "category": "insurance",
     "actionType": "workflow",
     "taskType": "survey",
+    "researchScope": "web",
     "conditions": {
       "hasVehicles": [
         "Yes"
@@ -368,6 +531,7 @@
     "category": "insurance",
     "actionType": "workflow",
     "taskType": "survey",
+    "researchScope": "web",
     "conditions": {
       "newDwellingType": [
         "Apartment",
@@ -392,6 +556,7 @@
     "category": "insurance",
     "actionType": "workflow",
     "taskType": "survey",
+    "researchScope": "web",
     "conditions": {
       "newRentOrOwn": [
         "Own"
@@ -415,6 +580,7 @@
     "category": "insurance",
     "actionType": "workflow",
     "taskType": "survey",
+    "researchScope": "web",
     "conditions": {
       "newDwellingType": [
         "Condo"
@@ -439,6 +605,7 @@
     "category": "insurance",
     "actionType": "workflow",
     "taskType": "survey",
+    "researchScope": "web",
     "conditions": {
       "newDwellingType": [
         "House"
@@ -462,6 +629,7 @@
     "category": "insurance",
     "actionType": "workflow",
     "taskType": "survey",
+    "researchScope": "web",
     "conditions": {
       "currentRentOrOwn": [
         "Own"
@@ -485,6 +653,7 @@
     "category": "insurance",
     "actionType": "workflow",
     "taskType": "survey",
+    "researchScope": "web",
     "conditions": {
       "currentDwellingType": [
         "Condo"
@@ -508,6 +677,7 @@
     "category": "insurance",
     "actionType": "workflow",
     "taskType": "survey",
+    "researchScope": "web",
     "conditions": {
       "currentRentOrOwn": [
         "Own"
@@ -537,6 +707,7 @@
     "category": "insurance",
     "actionType": "workflow",
     "taskType": "survey",
+    "researchScope": "web",
     "conditions": {
       "currentRentOrOwn": [
         "Rent"
@@ -561,6 +732,7 @@
     "actionType": "in-app-inventory",
     "workflowId": "scan_inventory",
     "taskType": "provide_info",
+    "researchScope": "none",
     "selfServiceOnly": true,
     "conditions": {},
     "desc": "Pan your camera slowly across each room. Peezy's AI identifies furniture, appliances, and large items in about 20 seconds per room.",
@@ -577,6 +749,7 @@
     "category": "packing",
     "actionType": "off-app",
     "taskType": "provide_info",
+    "researchScope": "reasoning",
     "selfServiceOnly": true,
     "conditions": {},
     "desc": "Empty the contents, unplug it, prop the doors open, and lay towels underneath. Plan 24-48 hours before move day.",
@@ -593,6 +766,7 @@
     "category": "services",
     "actionType": "off-app",
     "taskType": "provide_info",
+    "researchScope": "reasoning",
     "selfServiceOnly": true,
     "conditions": {
       "hireCleaners": [
@@ -613,6 +787,7 @@
     "category": "services",
     "actionType": "off-app",
     "taskType": "provide_info",
+    "researchScope": "reasoning",
     "selfServiceOnly": true,
     "conditions": {
       "hireCleaners": [
@@ -633,6 +808,7 @@
     "category": "insurance",
     "actionType": "workflow",
     "taskType": "survey",
+    "researchScope": "web",
     "conditions": {
       "currentRentOrOwn": [
         "Own"
@@ -660,6 +836,7 @@
     "category": "administrative",
     "actionType": "off-app",
     "taskType": "provide_info",
+    "researchScope": "web",
     "selfServiceOnly": true,
     "conditions": {
       "isInterstate": [
@@ -680,6 +857,7 @@
     "category": "administrative",
     "actionType": "off-app",
     "taskType": "provide_info",
+    "researchScope": "web",
     "selfServiceOnly": true,
     "conditions": {
       "isInterstate": [
@@ -705,6 +883,7 @@
     "category": "moving-day",
     "actionType": "workflow",
     "taskType": "survey",
+    "researchScope": "reasoning",
     "workflowId": "reserve_access_old",
     "conditions": {
       "currentDwellingType": [
@@ -740,6 +919,7 @@
     "category": "moving-day",
     "actionType": "workflow",
     "taskType": "survey",
+    "researchScope": "reasoning",
     "workflowId": "reserve_access_new",
     "conditions": {
       "newDwellingType": [
@@ -775,6 +955,7 @@
     "category": "administrative",
     "actionType": "off-app",
     "taskType": "provide_info",
+    "researchScope": "reasoning",
     "selfServiceOnly": true,
     "conditions": {
       "currentRentOrOwn": [
@@ -795,6 +976,7 @@
     "category": "family",
     "actionType": "workflow",
     "taskType": "survey",
+    "researchScope": "web",
     "workflowId": "school_transfer",
     "conditions": {
       "childrenInSchool": [
@@ -818,6 +1000,7 @@
     "category": "health",
     "actionType": "workflow",
     "taskType": "survey",
+    "researchScope": "web",
     "workflowId": "medical_records",
     "conditions": {
       "healthcareProviders": [
@@ -850,6 +1033,7 @@
     "category": "finance",
     "actionType": "workflow",
     "taskType": "survey",
+    "researchScope": "reasoning",
     "workflowId": "financial_accounts",
     "conditions": {
       "financialInstitutions": [
@@ -884,6 +1068,7 @@
     "category": "fitness",
     "actionType": "workflow",
     "taskType": "survey",
+    "researchScope": "reasoning",
     "workflowId": "memberships",
     "conditions": {
       "fitnessWellness": [
@@ -920,6 +1105,36 @@
     "category": "services",
     "actionType": "workflow",
     "taskType": "survey",
+    "researchScope": "web",
+    "researchPrefs": [
+      {
+        "id": "top_priority",
+        "question": "What matters most when you choose storage?",
+        "options": [
+          "Lowest total cost",
+          "Closest location",
+          "Climate control and security"
+        ]
+      },
+      {
+        "id": "move_in_timing",
+        "question": "When do you need the unit?",
+        "options": [
+          "On a fixed date",
+          "Within one week",
+          "My timing is flexible"
+        ]
+      },
+      {
+        "id": "storage_need",
+        "question": "What is your main storage need?",
+        "options": [
+          "Standard household items",
+          "Temperature-sensitive items",
+          "A vehicle or oversized items"
+        ]
+      }
+    ],
     "workflowId": "storage_unit",
     "conditions": {
       "storageNeeded": [
@@ -940,6 +1155,7 @@
     "category": "administrative",
     "actionType": "in-app",
     "taskType": "provide_info",
+    "researchScope": "none",
     "selfServiceOnly": true,
     "conditions": {
       "newAddressPending": [
@@ -960,6 +1176,7 @@
     "category": "administrative",
     "actionType": "in-app",
     "taskType": "provide_info",
+    "researchScope": "none",
     "selfServiceOnly": true,
     "conditions": {
       "moveDatePending": [
@@ -980,6 +1197,7 @@
     "category": "packing",
     "actionType": "in-app",
     "taskType": "provide_info",
+    "researchScope": "reasoning",
     "selfServiceOnly": true,
     "conditions": {
       "hasDeclutter": [
@@ -1001,6 +1219,7 @@
     "category": "services",
     "actionType": "in-app",
     "taskType": "provide_info",
+    "researchScope": "reasoning",
     "selfServiceOnly": true,
     "conditions": {
       "storageNeeded": [
@@ -1022,6 +1241,7 @@
     "category": "moving",
     "actionType": "in-app",
     "taskType": "survey",
+    "researchScope": "none",
     "workflowId": "move_checkin",
     "selfServiceOnly": true,
     "conditions": {},
@@ -1040,6 +1260,7 @@
     "category": "packing",
     "actionType": "in-app",
     "taskType": "survey",
+    "researchScope": "web",
     "workflowId": "box_return",
     "selfServiceOnly": true,
     "conditions": {},

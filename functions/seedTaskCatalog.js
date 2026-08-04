@@ -104,7 +104,8 @@ async function seedCollection() {
         actionCategory: task.actionCategory,
         category: task.category,
         actionType: task.actionType,
-      taskType: task.taskType || "provide_info",
+        taskType: task.taskType || "provide_info",
+        researchScope: task.researchScope,
         conditions: task.conditions, // stored as map: { key: [values] }
         desc: task.desc,
         estHours: task.estHours,
@@ -118,6 +119,10 @@ async function seedCollection() {
       // Only include workflowId if present (workflow tasks only)
       if (task.workflowId) {
         doc.workflowId = task.workflowId;
+      }
+
+      if (task.researchPrefs) {
+        doc.researchPrefs = task.researchPrefs;
       }
 
       // Include selfServiceOnly flag (defaults to false if absent)
