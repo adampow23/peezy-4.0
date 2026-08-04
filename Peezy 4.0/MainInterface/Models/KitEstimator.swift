@@ -1,7 +1,114 @@
 import Foundation
 
-/// Placeholder retail assumptions. LOCKED-pending-calibration: the box-return
-/// loop and signed supplier rate card replace these values, not UI literals.
+nonisolated struct SupplyRates: Codable, Equatable {
+    let smallBoxCents: Int
+    let mediumBoxCents: Int
+    let largeBoxCents: Int
+    let xlBoxCents: Int
+    let dishPackCents: Int
+    let wardrobeCents: Int
+    let pictureCartonCents: Int
+    let packingPaper10lbCents: Int
+    let bubbleRollCents: Int
+    let tapeRollCents: Int
+    let mattressBagCents: Int
+    let stretchWrapCents: Int
+    let markerCents: Int
+
+    init?(configData data: [String: Any]) {
+        guard let smallBoxCents = Self.cents(fromDollarValue: data["smallBox"]),
+              let mediumBoxCents = Self.cents(fromDollarValue: data["mediumBox"]),
+              let largeBoxCents = Self.cents(fromDollarValue: data["largeBox"]),
+              let xlBoxCents = Self.cents(fromDollarValue: data["xlBox"]),
+              let dishPackCents = Self.cents(fromDollarValue: data["dishPack"]),
+              let wardrobeCents = Self.cents(fromDollarValue: data["wardrobe"]),
+              let pictureCartonCents = Self.cents(fromDollarValue: data["pictureCarton"]),
+              let packingPaper10lbCents = Self.cents(fromDollarValue: data["packingPaper10lb"]),
+              let bubbleRollCents = Self.cents(fromDollarValue: data["bubbleRoll"]),
+              let tapeRollCents = Self.cents(fromDollarValue: data["tapeRoll"]),
+              let mattressBagCents = Self.cents(fromDollarValue: data["mattressBag"]),
+              let stretchWrapCents = Self.cents(fromDollarValue: data["stretchWrap"]),
+              let markerCents = Self.cents(fromDollarValue: data["marker"])
+        else { return nil }
+
+        self.smallBoxCents = smallBoxCents
+        self.mediumBoxCents = mediumBoxCents
+        self.largeBoxCents = largeBoxCents
+        self.xlBoxCents = xlBoxCents
+        self.dishPackCents = dishPackCents
+        self.wardrobeCents = wardrobeCents
+        self.pictureCartonCents = pictureCartonCents
+        self.packingPaper10lbCents = packingPaper10lbCents
+        self.bubbleRollCents = bubbleRollCents
+        self.tapeRollCents = tapeRollCents
+        self.mattressBagCents = mattressBagCents
+        self.stretchWrapCents = stretchWrapCents
+        self.markerCents = markerCents
+    }
+
+    init?(persistedCents data: [String: Any]) {
+        guard let smallBoxCents = Self.nonnegativeInt(data["smallBox"]),
+              let mediumBoxCents = Self.nonnegativeInt(data["mediumBox"]),
+              let largeBoxCents = Self.nonnegativeInt(data["largeBox"]),
+              let xlBoxCents = Self.nonnegativeInt(data["xlBox"]),
+              let dishPackCents = Self.nonnegativeInt(data["dishPack"]),
+              let wardrobeCents = Self.nonnegativeInt(data["wardrobe"]),
+              let pictureCartonCents = Self.nonnegativeInt(data["pictureCarton"]),
+              let packingPaper10lbCents = Self.nonnegativeInt(data["packingPaper10lb"]),
+              let bubbleRollCents = Self.nonnegativeInt(data["bubbleRoll"]),
+              let tapeRollCents = Self.nonnegativeInt(data["tapeRoll"]),
+              let mattressBagCents = Self.nonnegativeInt(data["mattressBag"]),
+              let stretchWrapCents = Self.nonnegativeInt(data["stretchWrap"]),
+              let markerCents = Self.nonnegativeInt(data["marker"])
+        else { return nil }
+
+        self.smallBoxCents = smallBoxCents
+        self.mediumBoxCents = mediumBoxCents
+        self.largeBoxCents = largeBoxCents
+        self.xlBoxCents = xlBoxCents
+        self.dishPackCents = dishPackCents
+        self.wardrobeCents = wardrobeCents
+        self.pictureCartonCents = pictureCartonCents
+        self.packingPaper10lbCents = packingPaper10lbCents
+        self.bubbleRollCents = bubbleRollCents
+        self.tapeRollCents = tapeRollCents
+        self.mattressBagCents = mattressBagCents
+        self.stretchWrapCents = stretchWrapCents
+        self.markerCents = markerCents
+    }
+
+    var persistedCents: [String: Int] {
+        [
+            "smallBox": smallBoxCents,
+            "mediumBox": mediumBoxCents,
+            "largeBox": largeBoxCents,
+            "xlBox": xlBoxCents,
+            "dishPack": dishPackCents,
+            "wardrobe": wardrobeCents,
+            "pictureCarton": pictureCartonCents,
+            "packingPaper10lb": packingPaper10lbCents,
+            "bubbleRoll": bubbleRollCents,
+            "tapeRoll": tapeRollCents,
+            "mattressBag": mattressBagCents,
+            "stretchWrap": stretchWrapCents,
+            "marker": markerCents
+        ]
+    }
+
+    private static func cents(fromDollarValue value: Any?) -> Int? {
+        guard let dollars = (value as? NSNumber)?.doubleValue,
+              dollars.isFinite,
+              dollars >= 0
+        else { return nil }
+        return Int((dollars * 100).rounded())
+    }
+
+    private static func nonnegativeInt(_ value: Any?) -> Int? {
+        guard let result = (value as? NSNumber)?.intValue, result >= 0 else { return nil }
+        return result
+    }
+}
+
 enum KitConstants {
     static let headroomPercent = 12
     static let headroomMultiplier = 1.12
@@ -14,15 +121,6 @@ enum KitConstants {
     static let smallBoxesPerPaperPack = 5
     static let mixedBoxesPerWrapRoll = 8
 
-    static let smallBoxPriceCents = 200
-    static let mediumBoxPriceCents = 275
-    static let largeBoxPriceCents = 400
-    static let wardrobePriceCents = 1_600
-    static let dishPackPriceCents = 1_500
-    static let tapePriceCents = 400
-    static let paperPriceCents = 1_200
-    static let wrapPriceCents = 1_800
-    static let mattressBagPriceCents = 800
 }
 
 struct KitInventoryItem: Equatable {
@@ -71,19 +169,20 @@ struct SuppliesKit: Codable, Equatable, Identifiable {
     var wrap: Int
     var mattressBags: Int
     var deliveryBy: Date?
+    let supplyRates: SupplyRates
 
     var totalBoxes: Int { small + medium + large + wardrobe + dishPack }
 
     var totalPriceCents: Int {
-        small * KitConstants.smallBoxPriceCents
-            + medium * KitConstants.mediumBoxPriceCents
-            + large * KitConstants.largeBoxPriceCents
-            + wardrobe * KitConstants.wardrobePriceCents
-            + dishPack * KitConstants.dishPackPriceCents
-            + tape * KitConstants.tapePriceCents
-            + paper * KitConstants.paperPriceCents
-            + wrap * KitConstants.wrapPriceCents
-            + mattressBags * KitConstants.mattressBagPriceCents
+        small * supplyRates.smallBoxCents
+            + medium * supplyRates.mediumBoxCents
+            + large * supplyRates.largeBoxCents
+            + wardrobe * supplyRates.wardrobeCents
+            + dishPack * supplyRates.dishPackCents
+            + tape * supplyRates.tapeRollCents
+            + paper * supplyRates.packingPaper10lbCents
+            + wrap * supplyRates.bubbleRollCents
+            + mattressBags * supplyRates.mattressBagCents
     }
 
     var itemizedSummary: String {
@@ -113,7 +212,10 @@ enum KitEstimator {
         case small, medium, large
     }
 
-    static func estimate(items: [KitInventoryItem]) -> SuppliesKit {
+    static func estimate(
+        items: [KitInventoryItem],
+        supplyRates: SupplyRates
+    ) -> SuppliesKit {
         let movingItems = items.filter { $0.quantity > 0 }
         let boxable = movingItems.filter { $0.tier.lowercased() != "furniture" }
 
@@ -164,7 +266,8 @@ enum KitEstimator {
             paper: paper,
             wrap: wrap,
             mattressBags: bedCount,
-            deliveryBy: nil
+            deliveryBy: nil,
+            supplyRates: supplyRates
         )
     }
 

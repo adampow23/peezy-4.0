@@ -11,7 +11,9 @@ const { isDeepStrictEqual } = require("node:util");
 const CONFIG_PATHS = {
   anchors: "appConfig/anchors",
   cubeSheet: "appConfig/cubeSheet",
-  trucks: "appConfig/trucks"
+  trucks: "appConfig/trucks",
+  supplyRates: "appConfig/supplyRates",
+  packing: "appConfig/packing"
 };
 
 const anchors = {
@@ -239,10 +241,55 @@ const trucks = {
   }
 };
 
+const supplyRates = {
+  smallBox: 1.75,
+  mediumBox: 2.20,
+  largeBox: 2.75,
+  xlBox: 3.60,
+  dishPack: 9.50,
+  wardrobe: 14.00,
+  pictureCarton: 8.00,
+  packingPaper10lb: 14.00,
+  bubbleRoll: 22.00,
+  tapeRoll: 4.00,
+  mattressBag: 10.00,
+  stretchWrap: 16.00,
+  marker: 2.00
+};
+
+const packing = {
+  targetSessionMinutes: 40,
+  minimumSessionMinutes: 20,
+  cubicFeetPerHour: 45,
+  boxEquivalentCubicFeet: 3,
+  moveDayBufferDays: 1,
+  suppliesDeliveryBufferDays: 2,
+  behindPaceSessionsPerDay: 1.5,
+  minimumRoomMinutesByType: {
+    kitchen: 150,
+    garage: 120,
+    bedroom: 60,
+    bathroom: 30
+  },
+  sequencingWeights: {
+    storageSeasonal: 0,
+    decorBooks: 1,
+    guestSpare: 2,
+    garage: 3,
+    secondaryBedroom: 4,
+    kitchenNonEssentials: 5,
+    primaryBedroom: 6,
+    bathrooms: 7,
+    kitchenEssentials: 8
+  }
+};
+
 const configDocuments = [
   { path: CONFIG_PATHS.anchors, data: anchors },
   { path: CONFIG_PATHS.cubeSheet, data: cubeSheet },
-  { path: CONFIG_PATHS.trucks, data: trucks }
+  { path: CONFIG_PATHS.trucks, data: trucks },
+  { path: CONFIG_PATHS.supplyRates, data: supplyRates },
+  { path: CONFIG_PATHS.packing, data: packing }
 ];
 
 async function seedCubeSheet() {
@@ -282,4 +329,11 @@ if (require.main === module) {
   });
 }
 
-module.exports = { anchors, cubeSheet, trucks, seedCubeSheet };
+module.exports = {
+  anchors,
+  cubeSheet,
+  trucks,
+  supplyRates,
+  packing,
+  seedCubeSheet
+};

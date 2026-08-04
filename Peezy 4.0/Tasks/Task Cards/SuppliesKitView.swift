@@ -127,11 +127,18 @@ struct SuppliesKitView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                     .accessibilityIdentifier("kit.items")
 
-                    Text("Estimated kit: \(formattedPrice(kit.totalPriceCents))")
-                        .font(.title3)
-                        .bold()
-                        .foregroundStyle(PeezyTheme.Colors.deepInk)
-                        .accessibilityIdentifier("kit.price")
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Estimated total: \(formattedPrice(kit.totalPriceCents))")
+                            .font(.title3)
+                            .bold()
+                            .foregroundStyle(PeezyTheme.Colors.deepInk)
+
+                        Text("Estimated at typical retail — prices vary.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityIdentifier("kit.price")
 
                     if let deliveryBy = kit.deliveryBy {
                         Text("Deliver by \(deliveryBy.formatted(date: .abbreviated, time: .omitted)) — before your first packing session.")
@@ -518,12 +525,20 @@ private struct SuppliesKitCustomizeSheet: View {
                 Spacer()
 
                 VStack(spacing: 12) {
-                    HStack {
-                        Text("Estimated kit")
-                        Spacer()
-                        Text(String(format: "$%.2f", Double(kit.totalPriceCents) / 100))
-                            .bold()
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text("Estimated total")
+                            Spacer()
+                            Text(String(format: "$%.2f", Double(kit.totalPriceCents) / 100))
+                                .bold()
+                        }
+
+                        Text("Estimated at typical retail — prices vary.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityElement(children: .combine)
                     .accessibilityIdentifier("kit.customize.price")
 
                     PeezyAssessmentButton(

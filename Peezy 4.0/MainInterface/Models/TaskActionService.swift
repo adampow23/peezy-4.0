@@ -141,7 +141,14 @@ struct TaskActionService {
         today: Date = Date()
     ) async throws -> PackingPlan {
         guard !userId.isEmpty else { throw PackingPlanPersistenceError.missingUser }
-        let previous = try await loadPackingPlan(userId: userId)
+        async let previousRequest = loadPackingPlan(userId: userId)
+        async let packingConfigurationRequest = loadPackingConfiguration()
+        async let supplyRatesRequest = loadSupplyRates()
+        let (previous, packingConfiguration, supplyRates) = try await (
+            previousRequest,
+            packingConfigurationRequest,
+            supplyRatesRequest
+        )
         let inputs = rooms.map { room in
             PackingRoomInput(
                 name: room.name,
@@ -162,30 +169,39 @@ struct TaskActionService {
             rooms: inputs,
             moveDate: moveDate,
             today: today,
+            configuration: packingConfiguration,
             preserving: previous
         )
-        var suppliesKit = KitEstimator.estimate(items: rooms.flatMap { room in
-            room.items.filter(\.shouldMove).map { item in
-                KitInventoryItem(
-                    name: item.name,
-                    category: item.category,
-                    roomName: room.name,
-                    tier: item.tier,
-                    sizeEstimate: item.sizeEstimate,
-                    quantity: item.quantity,
-                    cubicFeet: item.cubicFeet,
-                    isFragile: item.isFragile
-                )
-            }
-        })
+        var suppliesKit = KitEstimator.estimate(
+            items: rooms.flatMap { room in
+                room.items.filter(\.shouldMove).map { item in
+                    KitInventoryItem(
+                        name: item.name,
+                        category: item.category,
+                        roomName: room.name,
+                        tier: item.tier,
+                        sizeEstimate: item.sizeEstimate,
+                        quantity: item.quantity,
+                        cubicFeet: item.cubicFeet,
+                        isFragile: item.isFragile
+                    )
+                }
+            },
+            supplyRates: supplyRates
+        )
         if let firstSessionDate = plan.sessions.map(\.scheduledDate).min() {
             suppliesKit.deliveryBy = Calendar.current.date(
                 byAdding: .day,
-                value: -2,
+                value: -packingConfiguration.suppliesDeliveryBufferDays,
                 to: firstSessionDate
             )
         }
-        try await persist(plan, suppliesKit: suppliesKit, userId: userId)
+        try await persist(
+            plan,
+            suppliesKit: suppliesKit,
+            userId: userId,
+            packingConfiguration: packingConfiguration
+        )
         if previous == nil {
             AnalyticsEvents.packingPlanCreated()
         }
@@ -228,9 +244,18 @@ struct TaskActionService {
             return
         }
 
-        let reflowed = PackingPlanEngine.reflowIfNeeded(current, today: today)
+        let configuration = try await loadPackingConfiguration()
+        let reflowed = PackingPlanEngine.reflowIfNeeded(
+            current,
+            today: today,
+            configuration: configuration
+        )
         if reflowed != current {
-            try await persist(reflowed, userId: userId)
+            try await persist(
+                reflowed,
+                userId: userId,
+                packingConfiguration: configuration
+            )
         }
     }
 
@@ -244,13 +269,14 @@ struct TaskActionService {
 
     func loadSuppliesKit(userId: String, taskId: String = SuppliesKit.taskId) async throws -> SuppliesKit {
         guard !userId.isEmpty else { throw PackingPlanPersistenceError.kitNotFound }
+        let currentRates = try await loadSupplyRates()
         let snapshot = try await Firestore.firestore()
             .collection("users").document(userId)
             .collection("tasks").document(taskId)
             .getDocument()
         guard let data = snapshot.data(),
               let rawKit = data["suppliesKit"] as? [String: Any],
-              let kit = decodeSuppliesKit(from: rawKit) else {
+              let kit = decodeSuppliesKit(from: rawKit, currentRates: currentRates) else {
             throw PackingPlanPersistenceError.kitNotFound
         }
         return kit
@@ -261,13 +287,14 @@ struct TaskActionService {
         taskId: String = SuppliesKit.taskId
     ) async throws -> (kit: SuppliesKit, wasCustomized: Bool) {
         guard !userId.isEmpty else { throw PackingPlanPersistenceError.kitNotFound }
+        let currentRates = try await loadSupplyRates()
         let snapshot = try await Firestore.firestore()
             .collection("users").document(userId)
             .collection("tasks").document(taskId)
             .getDocument()
         guard let data = snapshot.data(),
               let rawKit = data["suppliesKit"] as? [String: Any],
-              let kit = decodeSuppliesKit(from: rawKit) else {
+              let kit = decodeSuppliesKit(from: rawKit, currentRates: currentRates) else {
             throw PackingPlanPersistenceError.kitNotFound
         }
         return (kit, data["kitCustomizedAt"] != nil)
@@ -454,7 +481,8 @@ struct TaskActionService {
     private func persist(
         _ plan: PackingPlan,
         suppliesKit: SuppliesKit? = nil,
-        userId: String
+        userId: String,
+        packingConfiguration: PackingConfiguration
     ) async throws {
         let db = Firestore.firestore()
         let taskCollection = db.collection("users").document(userId).collection("tasks")
@@ -487,7 +515,10 @@ struct TaskActionService {
         }
 
         let previousReadiness = existingById[ReadinessChecklist.taskId]
-        let readinessDate = readinessScheduledDate(moveDate: plan.moveDate)
+        let readinessDate = readinessScheduledDate(
+            moveDate: plan.moveDate,
+            configuration: packingConfiguration
+        )
         batch.setData(
             readinessTaskData(
                 scheduledDate: readinessDate,
@@ -504,7 +535,10 @@ struct TaskActionService {
             let resolvedKit: SuppliesKit
             if previousData?["kitCustomizedAt"] != nil,
                let rawKit = previousData?["suppliesKit"] as? [String: Any],
-               var customized = decodeSuppliesKit(from: rawKit) {
+               var customized = decodeSuppliesKit(
+                   from: rawKit,
+                   currentRates: suppliesKit.supplyRates
+               ) {
                 customized.deliveryBy = suppliesKit.deliveryBy
                 resolvedKit = customized
             } else {
@@ -520,6 +554,30 @@ struct TaskActionService {
             batch.deleteDocument(taskCollection.document("BUY_PACKING_SUPPLIES"))
         }
         try await batch.commit()
+    }
+
+    private func loadPackingConfiguration() async throws -> PackingConfiguration {
+        let snapshot = try await Firestore.firestore()
+            .collection("appConfig").document("packing")
+            .getDocument()
+        guard let data = snapshot.data(),
+              let configuration = PackingConfiguration(firestoreData: data)
+        else {
+            throw PackingPlanPersistenceError.configurationUnavailable("packing")
+        }
+        return configuration
+    }
+
+    private func loadSupplyRates() async throws -> SupplyRates {
+        let snapshot = try await Firestore.firestore()
+            .collection("appConfig").document("supplyRates")
+            .getDocument()
+        guard let data = snapshot.data(),
+              let rates = SupplyRates(configData: data)
+        else {
+            throw PackingPlanPersistenceError.configurationUnavailable("supply rates")
+        }
+        return rates
     }
 
     private func loadStoredInventory(userId: String) async throws -> [ScannedRoom] {
@@ -556,10 +614,17 @@ struct TaskActionService {
             .collection("readiness").document("current")
     }
 
-    private func readinessScheduledDate(moveDate: Date) -> Date {
+    private func readinessScheduledDate(
+        moveDate: Date,
+        configuration: PackingConfiguration
+    ) -> Date {
         let calendar = Calendar.current
         let moveDay = calendar.startOfDay(for: moveDate)
-        return calendar.date(byAdding: .day, value: -1, to: moveDay) ?? moveDay
+        return calendar.date(
+            byAdding: .day,
+            value: -configuration.moveDayBufferDays,
+            to: moveDay
+        ) ?? moveDay
     }
 
     private func packingPlanData(_ plan: PackingPlan) -> [String: Any] {
@@ -748,7 +813,8 @@ struct TaskActionService {
             "wrap": kit.wrap,
             "mattressBags": kit.mattressBags,
             "headroomPercent": KitConstants.headroomPercent,
-            "totalPriceCents": kit.totalPriceCents
+            "totalPriceCents": kit.totalPriceCents,
+            "supplyRatesCents": kit.supplyRates.persistedCents
         ]
         if let deliveryBy = kit.deliveryBy {
             data["deliveryBy"] = Timestamp(date: deliveryBy)
@@ -756,9 +822,14 @@ struct TaskActionService {
         return data
     }
 
-    private func decodeSuppliesKit(from data: [String: Any]) -> SuppliesKit? {
+    private func decodeSuppliesKit(
+        from data: [String: Any],
+        currentRates: SupplyRates
+    ) -> SuppliesKit? {
         let keys = ["small", "medium", "large", "wardrobe", "dishPack", "tape", "paper", "wrap", "mattressBags"]
         guard keys.allSatisfy({ data[$0] is NSNumber }) else { return nil }
+        let persistedRates = (data["supplyRatesCents"] as? [String: Any])
+            .flatMap(SupplyRates.init(persistedCents:))
         return SuppliesKit(
             small: (data["small"] as? NSNumber)?.intValue ?? 0,
             medium: (data["medium"] as? NSNumber)?.intValue ?? 0,
@@ -769,7 +840,8 @@ struct TaskActionService {
             paper: (data["paper"] as? NSNumber)?.intValue ?? 0,
             wrap: (data["wrap"] as? NSNumber)?.intValue ?? 0,
             mattressBags: (data["mattressBags"] as? NSNumber)?.intValue ?? 0,
-            deliveryBy: (data["deliveryBy"] as? Timestamp)?.dateValue()
+            deliveryBy: (data["deliveryBy"] as? Timestamp)?.dateValue(),
+            supplyRates: persistedRates ?? currentRates
         )
     }
 
@@ -791,14 +863,16 @@ struct TaskActionService {
         guard let taskId = data["taskId"] as? String,
               let sessionKey = data["sessionKey"] as? String,
               let roomLabel = data["roomLabel"] as? String,
-              let scheduledDate = data["scheduledDate"] as? Timestamp else { return nil }
+              let scheduledDate = data["scheduledDate"] as? Timestamp,
+              let estMinutes = (data["estMinutes"] as? NSNumber)?.intValue
+        else { return nil }
         return PackingSession(
             taskId: taskId,
             sessionKey: sessionKey,
             sourceKeys: data["sourceKeys"] as? [String] ?? [sessionKey],
             rooms: data["rooms"] as? [String] ?? [roomLabel],
             roomLabel: roomLabel,
-            estMinutes: (data["estMinutes"] as? NSNumber)?.intValue ?? PackingConstants.targetSessionMinutes,
+            estMinutes: estMinutes,
             scheduledDate: scheduledDate.dateValue(),
             itemSummary: data["itemSummary"] as? [String] ?? [],
             isFirstNightBag: data["isFirstNightBag"] as? Bool ?? false,
@@ -814,6 +888,7 @@ enum PackingPlanPersistenceError: LocalizedError {
     case sessionNotFound
     case kitNotFound
     case readinessNotFound
+    case configurationUnavailable(String)
 
     var errorDescription: String? {
         switch self {
@@ -822,6 +897,8 @@ enum PackingPlanPersistenceError: LocalizedError {
         case .sessionNotFound: return "That packing session is no longer available."
         case .kitNotFound: return "That packing supplies kit is no longer available."
         case .readinessNotFound: return "That moving-day readiness check is no longer available."
+        case .configurationUnavailable(let name):
+            return "The latest \(name) configuration could not be loaded. Try again when you're online."
         }
     }
 }

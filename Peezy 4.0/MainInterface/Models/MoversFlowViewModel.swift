@@ -8,26 +8,32 @@ import FirebaseFirestore
 import Foundation
 import Observation
 
-struct MoversConciergeCopy: Equatable {
+struct MoversResearchGuidanceCopy: Equatable {
     let title: String
     let body: String
+    let rangeLabel: String
+    let researchPointer: String
 }
 
-enum MoversConciergeReason: Equatable {
+enum MoversEstimateBoundaryReason: Equatable {
     case longDistance
     case physicalHours
 
-    var copy: MoversConciergeCopy {
+    var copy: MoversResearchGuidanceCopy {
         switch self {
         case .longDistance:
-            MoversConciergeCopy(
-                title: "A custom quote for the long haul",
-                body: "Long-distance moves get a hand-built quote from us — you'll have it within a day."
+            MoversResearchGuidanceCopy(
+                title: "Long-distance mover costs have a wide range",
+                body: "Route, shipment weight, dates, access, and service level can move the total substantially.",
+                rangeLabel: "Wide — quote-dependent",
+                researchPointer: "Compare at least three FMCSA-registered movers. Ask for a written binding or not-to-exceed estimate, every access or specialty fee, and what can change the total."
             )
         case .physicalHours:
-            MoversConciergeCopy(
-                title: "This is a big one.",
-                body: "Big moves deserve a hand-built quote — we'll have yours within a day."
+            MoversResearchGuidanceCopy(
+                title: "This move is beyond a standard local estimate",
+                body: "A large load, complex access, or specialty handling makes the range wider than a standard local quote.",
+                rangeLabel: "Wide — scope-dependent",
+                researchPointer: "Compare at least three movers that can staff the load. Ask each one for its crew plan, a written range, included specialty handling, and what can change the total."
             )
         }
     }
@@ -44,8 +50,8 @@ final class MoversFlowViewModel {
     private(set) var errorMessage: String?
     private(set) var isSubmitting = false
     private(set) var hasInventory = false
-    private(set) var isQuoteRequest = false
-    private(set) var conciergeReason: MoversConciergeReason?
+    private(set) var isResearchGuidance = false
+    private(set) var estimateBoundaryReason: MoversEstimateBoundaryReason?
 
     var bedroomsAnswer = "1 Bedroom"
     var destinationBedroomsAnswer = "1 Bedroom"
@@ -84,6 +90,14 @@ final class MoversFlowViewModel {
         return "~\(Int(scope.cubicFeet.rounded())) cu ft"
     }
 
+    var totalCubicFeet: Double {
+        scope?.cubicFeet ?? 0
+    }
+
+    var moveDistanceMiles: Double? {
+        identity?.moveDistanceMiles
+    }
+
     var homeSummary: String {
         bedroomsAnswer.isEmpty ? "Home details pending" : bedroomsAnswer
     }
@@ -102,8 +116,8 @@ final class MoversFlowViewModel {
         scope?.cubeSource == .inventoryScan ? "your scan" : "home details"
     }
 
-    var conciergeCopy: MoversConciergeCopy {
-        (conciergeReason ?? .longDistance).copy
+    var researchGuidanceCopy: MoversResearchGuidanceCopy {
+        (estimateBoundaryReason ?? .longDistance).copy
     }
 
     func prepare(userId: String, taskId: String) async {
@@ -181,13 +195,13 @@ final class MoversFlowViewModel {
         }
         switch stage {
         case .comparison, .booking, .confirmation:
-            recorded["quote_route"] = [isQuoteRequest ? "concierge" : "vendor"]
+            recorded["quote_route"] = [isResearchGuidance ? "research_guidance" : "vendor"]
         default:
             break
         }
-        if let conciergeReason {
-            recorded["concierge_reason"] = [
-                conciergeReason == .longDistance ? "long_distance" : "physical_hours"
+        if let estimateBoundaryReason {
+            recorded["estimate_boundary_reason"] = [
+                estimateBoundaryReason == .longDistance ? "long_distance" : "physical_hours"
             ]
         }
         return FlowProgressSnapshot(
@@ -217,9 +231,9 @@ final class MoversFlowViewModel {
         coveragePreference = values["coverage"] ?? coveragePreference
         requestedArrivalWindow = values["requested_arrival_window"] ?? requestedArrivalWindow
         notes = values["notes"] ?? notes
-        if values["quote_route"] == "concierge" {
-            isQuoteRequest = true
-            conciergeReason = values["concierge_reason"] == "physical_hours"
+        if values["quote_route"] == "research_guidance" {
+            isResearchGuidance = true
+            estimateBoundaryReason = values["estimate_boundary_reason"] == "physical_hours"
                 ? .physicalHours
                 : .longDistance
         }
@@ -241,15 +255,15 @@ final class MoversFlowViewModel {
         }
 
         switch restoredStage {
-        case .comparison where isQuoteRequest:
+        case .comparison where isResearchGuidance:
             stage = .comparison
         case .comparison:
             await prepareComparisons()
         case .booking:
             guard await restoreSelectedQuote(id: values["selected_quote"]) else { return }
             stage = .booking
-        case .confirmation where isQuoteRequest:
-            stage = .confirmation
+        case .confirmation where isResearchGuidance:
+            stage = .comparison
         case .confirmation:
             guard await restoreSelectedQuote(id: values["selected_quote"]) else { return }
             stage = .confirmation
@@ -284,8 +298,8 @@ final class MoversFlowViewModel {
             try await rebuildScope()
             guard let scope, let identity else { throw FlowError.missingScope }
 
-            if PricingEngine.quoteRoute(moveDistanceMiles: identity.moveDistanceMiles) == .conciergeQuote {
-                routeToConcierge(reason: .longDistance)
+            if PricingEngine.quoteRoute(moveDistanceMiles: identity.moveDistanceMiles) != .instantComparison {
+                routeToResearchGuidance(reason: .longDistance)
                 return
             }
 
@@ -296,13 +310,13 @@ final class MoversFlowViewModel {
             if PricingEngine.quoteRoute(
                 scope: scope,
                 largestAvailableCrewSize: largestAvailableCrewSize
-            ) == .conciergeQuote {
-                routeToConcierge(reason: .physicalHours)
+            ) != .instantComparison {
+                routeToResearchGuidance(reason: .physicalHours)
                 return
             }
 
-            isQuoteRequest = false
-            conciergeReason = nil
+            isResearchGuidance = false
+            estimateBoundaryReason = nil
             let eligibleVendors = try await vendorsWithinRadius(activeVendors, identity: identity)
             let prepared = eligibleVendors.compactMap { vendor -> MoversVendorQuote? in
                 guard let estimate = PricingEngine.estimate(
@@ -366,41 +380,6 @@ final class MoversFlowViewModel {
             transition(to: .confirmation)
         } catch {
             errorMessage = "We couldn't send the booking request. Nothing was booked—please try again. \(error.localizedDescription)"
-        }
-    }
-
-    func submitQuoteRequest() async {
-        guard !isSubmitting,
-              isQuoteRequest,
-              let identity,
-              let scope
-        else { return }
-
-        isSubmitting = true
-        errorMessage = nil
-        defer { isSubmitting = false }
-
-        let payload = MoversBookingPayload(
-            identity: identity,
-            scope: scope,
-            quote: nil,
-            quoteRequest: true,
-            requestedArrivalWindow: requestedArrivalWindow.trimmingCharacters(in: .whitespacesAndNewlines),
-            notes: notes.trimmingCharacters(in: .whitespacesAndNewlines)
-        )
-        var workflowAnswers = WorkflowAnswers(workflowId: "book_movers")
-        workflowAnswers.answers = payload.workflowAnswers()
-
-        do {
-            let response = try await WorkflowService().submitAnswers(
-                workflowId: "book_movers",
-                answers: workflowAnswers,
-                userId: userId
-            )
-            guard response.success else { throw FlowError.submissionRejected }
-            transition(to: .confirmation)
-        } catch {
-            errorMessage = "We couldn't send the quote request. Nothing was submitted—please try again. \(error.localizedDescription)"
         }
     }
 
@@ -544,9 +523,9 @@ final class MoversFlowViewModel {
         Task { await actionService.setStage(taskId: id, stage: taskStage) }
     }
 
-    private func routeToConcierge(reason: MoversConciergeReason) {
-        isQuoteRequest = true
-        conciergeReason = reason
+    private func routeToResearchGuidance(reason: MoversEstimateBoundaryReason) {
+        isResearchGuidance = true
+        estimateBoundaryReason = reason
         quotes = []
         selectedQuote = nil
         transition(to: .comparison)

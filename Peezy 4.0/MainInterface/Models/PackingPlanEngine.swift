@@ -60,17 +60,16 @@ struct PackingCompletion: Equatable {
 /// Pure reverse-scheduling engine for the inventory-derived packing plan.
 enum PackingPlanEngine {
 
-    private enum RoomBucket: Int {
-        // LOCKED order (Spec 06 Phase A).
-        case storageSeasonal = 0
-        case decorBooks = 1
-        case guestSpare = 2
-        case garage = 3
-        case secondaryBedroom = 4
-        case kitchenNonEssentials = 5
-        case primaryBedroom = 6
-        case bathrooms = 7
-        case kitchenEssentials = 8
+    private enum RoomBucket: String {
+        case storageSeasonal
+        case decorBooks
+        case guestSpare
+        case garage
+        case secondaryBedroom
+        case kitchenNonEssentials
+        case primaryBedroom
+        case bathrooms
+        case kitchenEssentials
     }
 
     private struct DraftSession {
@@ -92,17 +91,22 @@ enum PackingPlanEngine {
         moveDate: Date,
         today: Date,
         calendar: Calendar = .current,
+        configuration: PackingConfiguration,
         preserving previousPlan: PackingPlan? = nil
     ) -> PackingPlan {
         let startToday = calendar.startOfDay(for: today)
         let startMoveDate = calendar.startOfDay(for: moveDate)
         let endDate = max(
-            calendar.date(byAdding: .day, value: -1, to: startMoveDate) ?? startToday,
+            calendar.date(
+                byAdding: .day,
+                value: -configuration.moveDayBufferDays,
+                to: startMoveDate
+            ) ?? startToday,
             startToday
         )
 
-        var drafts = roomDrafts(from: rooms)
-        drafts.append(firstNightDraft(from: rooms))
+        var drafts = roomDrafts(from: rooms, configuration: configuration)
+        drafts.append(firstNightDraft(from: rooms, configuration: configuration))
 
         let availableDays = max(
             (calendar.dateComponents([.day], from: startToday, to: endDate).day ?? 0) + 1,
@@ -156,7 +160,8 @@ enum PackingPlanEngine {
     static func reflowIfNeeded(
         _ plan: PackingPlan,
         today: Date,
-        calendar: Calendar = .current
+        calendar: Calendar = .current,
+        configuration: PackingConfiguration
     ) -> PackingPlan {
         let startToday = calendar.startOfDay(for: today)
         guard plan.sessions.contains(where: {
@@ -165,7 +170,11 @@ enum PackingPlanEngine {
 
         var reflowed = plan
         let endDate = max(
-            calendar.date(byAdding: .day, value: -1, to: calendar.startOfDay(for: plan.moveDate)) ?? startToday,
+            calendar.date(
+                byAdding: .day,
+                value: -configuration.moveDayBufferDays,
+                to: calendar.startOfDay(for: plan.moveDate)
+            ) ?? startToday,
             startToday
         )
         let remainingIndices = reflowed.sessions.indices.filter { !reflowed.sessions[$0].isCompleted }
@@ -208,7 +217,8 @@ enum PackingPlanEngine {
                 itemSummary: original.itemSummary,
                 isFirstNightBag: original.isFirstNightBag,
                 completedAt: original.completedAt,
-                isBehindPace: position == 0 && requiredPerDay > 1.5
+                isBehindPace: position == 0
+                    && requiredPerDay > configuration.behindPaceSessionsPerDay
             )
         }
         reflowed.reflowedAt = startToday
@@ -245,7 +255,10 @@ enum PackingPlanEngine {
 
     // MARK: - Session construction
 
-    private static func roomDrafts(from rooms: [PackingRoomInput]) -> [DraftSession] {
+    private static func roomDrafts(
+        from rooms: [PackingRoomInput],
+        configuration: PackingConfiguration
+    ) -> [DraftSession] {
         var ordered: [(
             bucket: RoomBucket,
             roomName: String,
@@ -269,11 +282,17 @@ enum PackingPlanEngine {
                     variants.append((.kitchenEssentials, "essentials", essentials))
                 }
 
-                let rawMinutes = variants.map { workUnits(from: $0.items).reduce(0) { $0 + $1.minutes } }
+                let rawMinutes = variants.map {
+                    workUnits(from: $0.items, configuration: configuration)
+                        .reduce(0) { $0 + $1.minutes }
+                }
                 let roomMinutes = max(
                     rawMinutes.reduce(0, +),
-                    PackingConstants.minimumRoomMinutes(for: room.name),
-                    PackingConstants.minimumSessionMinutes
+                    PackingConstants.minimumRoomMinutes(
+                        for: room.name,
+                        configuration: configuration
+                    ),
+                    configuration.minimumSessionMinutes
                 )
                 let targets = distributedTargets(rawMinutes: rawMinutes, totalMinutes: roomMinutes)
                 for (index, variant) in variants.enumerated() {
@@ -286,18 +305,26 @@ enum PackingPlanEngine {
                     ))
                 }
             } else {
-                let itemMinutes = workUnits(from: packable).reduce(0) { $0 + $1.minutes }
+                let itemMinutes = workUnits(from: packable, configuration: configuration)
+                    .reduce(0) { $0 + $1.minutes }
                 let roomMinutes = max(
                     itemMinutes,
-                    PackingConstants.minimumRoomMinutes(for: room.name),
-                    PackingConstants.minimumSessionMinutes
+                    PackingConstants.minimumRoomMinutes(
+                        for: room.name,
+                        configuration: configuration
+                    ),
+                    configuration.minimumSessionMinutes
                 )
                 ordered.append((roomBucket(for: room.name), room.name, "room", packable, roomMinutes))
             }
         }
 
         ordered.sort {
-            if $0.bucket.rawValue != $1.bucket.rawValue { return $0.bucket.rawValue < $1.bucket.rawValue }
+            let leftWeight = configuration.sequencingWeights[$0.bucket.rawValue]
+                ?? Int.max
+            let rightWeight = configuration.sequencingWeights[$1.bucket.rawValue]
+                ?? Int.max
+            if leftWeight != rightWeight { return leftWeight < rightWeight }
             if $0.roomName != $1.roomName {
                 return $0.roomName.localizedCaseInsensitiveCompare($1.roomName) == .orderedAscending
             }
@@ -316,7 +343,8 @@ enum PackingPlanEngine {
                 label: label,
                 variant: entry.variant,
                 items: entry.items,
-                targetMinutes: entry.targetMinutes
+                targetMinutes: entry.targetMinutes,
+                configuration: configuration
             )
         }
     }
@@ -326,9 +354,10 @@ enum PackingPlanEngine {
         label: String,
         variant: String,
         items: [PackingPlanItem],
-        targetMinutes: Int
+        targetMinutes: Int,
+        configuration: PackingConfiguration
     ) -> [DraftSession] {
-        var units = workUnits(from: items)
+        var units = workUnits(from: items, configuration: configuration)
         guard !units.isEmpty else { return [] }
 
         let itemMinutes = units.reduce(0) { $0 + $1.minutes }
@@ -338,7 +367,7 @@ enum PackingPlanEngine {
         }
 
         let chunkCount = max(
-            Int(ceil(Double(targetMinutes) / Double(PackingConstants.targetSessionMinutes))),
+            Int(ceil(Double(targetMinutes) / Double(configuration.targetSessionMinutes))),
             1
         )
         let baseChunkMinutes = targetMinutes / chunkCount
@@ -385,15 +414,18 @@ enum PackingPlanEngine {
         }
     }
 
-    private static func workUnits(from items: [PackingPlanItem]) -> [WorkUnit] {
+    private static func workUnits(
+        from items: [PackingPlanItem],
+        configuration: PackingConfiguration
+    ) -> [WorkUnit] {
         items.flatMap { item -> [WorkUnit] in
             let boxEquivalents = max(
-                Int(ceil(item.cubicFeet / PackingConstants.cubicFeetPerBoxEquivalent)),
+                Int(ceil(item.cubicFeet / configuration.boxEquivalentCubicFeet)),
                 1
             )
             let minutes = max(
-                boxEquivalents * PackingConstants.minutesPerBoxEquivalent,
-                PackingConstants.minutesPerBoxEquivalent
+                boxEquivalents * configuration.minutesPerBoxEquivalent,
+                configuration.minutesPerBoxEquivalent
             )
             return (0..<item.quantity).map { _ in WorkUnit(name: item.name, minutes: minutes) }
         }
@@ -411,7 +443,10 @@ enum PackingPlanEngine {
         return result
     }
 
-    private static func firstNightDraft(from rooms: [PackingRoomInput]) -> DraftSession {
+    private static func firstNightDraft(
+        from rooms: [PackingRoomInput],
+        configuration: PackingConfiguration
+    ) -> DraftSession {
         let matches = rooms.flatMap(\.items).filter { item in
             containsAny(item.name, keywords: PackingConstants.firstNightKeywords)
         }
@@ -425,7 +460,7 @@ enum PackingPlanEngine {
             sourceKeys: ["first_night_bag"],
             rooms: ["First-night bag"],
             roomLabel: "First-night bag",
-            estMinutes: PackingConstants.minimumSessionMinutes,
+            estMinutes: configuration.minimumSessionMinutes,
             itemSummary: summary,
             isFirstNightBag: true
         )

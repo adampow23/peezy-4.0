@@ -97,6 +97,9 @@ struct FindMoversFlow: View {
 
         case .scope:
             MoveScopeSummaryView(
+                userId: userId,
+                totalCubicFeet: model.totalCubicFeet,
+                distanceMiles: model.moveDistanceMiles,
                 homeSummary: model.homeSummary,
                 cubeSummary: model.cubeSummary,
                 accessSummary: model.accessSummary,
@@ -114,8 +117,8 @@ struct FindMoversFlow: View {
             )
 
         case .comparison:
-            if model.isQuoteRequest {
-                conciergeQuoteCard
+            if model.isResearchGuidance {
+                researchGuidanceCard
             } else {
                 MoversComparisonView(
                     quotes: model.quotes,
@@ -138,14 +141,10 @@ struct FindMoversFlow: View {
             }
 
         case .confirmation:
-            if model.isQuoteRequest {
-                conciergeConfirmationCard
-            } else {
-                MoversConfirmationView(
-                    vendorName: model.selectedQuote?.vendor.name ?? "your selected company",
-                    onDone: completeFlow
-                )
-            }
+            MoversConfirmationView(
+                vendorName: model.selectedQuote?.vendor.name ?? "your selected company",
+                onDone: completeFlow
+            )
 
         case .failure:
             MoversFlowErrorView(
@@ -161,34 +160,12 @@ struct FindMoversFlow: View {
         model.showBooking()
     }
 
-    private var conciergeQuoteCard: some View {
-        MoversConciergeQuoteCard(
-            copy: model.conciergeCopy,
-            notes: $model.notes,
-            errorMessage: model.errorMessage,
-            isSubmitting: model.isSubmitting,
+    private var researchGuidanceCard: some View {
+        MoversResearchGuidanceCard(
+            copy: model.researchGuidanceCopy,
             onBack: model.goBack,
-            onSubmit: { Task { await model.submitQuoteRequest() } }
+            onDone: completeFlow
         )
-    }
-
-    private var conciergeConfirmationCard: some View {
-        VStack(spacing: PeezyTheme.Layout.itemSpacing) {
-            Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 52))
-                .foregroundStyle(PeezyTheme.Colors.successGreen)
-                .accessibilityHidden(true)
-            Text("Your quote request is in")
-                .font(.title2)
-                .bold()
-                .foregroundStyle(PeezyTheme.Colors.deepInk)
-            Text("We'll follow up with your hand-built mover quote within a day.")
-                .multilineTextAlignment(.center)
-                .foregroundStyle(PeezyTheme.Colors.deepInk)
-            PeezyAssessmentButton("Done", action: completeFlow)
-        }
-        .padding(PeezyTheme.Layout.cardPadding)
-        .accessibilityIdentifier("movers.quote.confirmation")
     }
 
     private func completeFlow() {
@@ -205,17 +182,14 @@ struct FindMoversFlow: View {
     }
 }
 
-struct MoversConciergeQuoteCard: View {
-    let copy: MoversConciergeCopy
-    @Binding var notes: String
-    let errorMessage: String?
-    let isSubmitting: Bool
+struct MoversResearchGuidanceCard: View {
+    let copy: MoversResearchGuidanceCopy
     let onBack: () -> Void
-    let onSubmit: () -> Void
+    let onDone: () -> Void
 
     var body: some View {
         VStack(spacing: 0) {
-            TaskFlowHeader(taskTitle: "Request a mover quote", showBack: true, onBack: onBack)
+            TaskFlowHeader(taskTitle: "Mover estimate guidance", showBack: true, onBack: onBack)
 
             Spacer()
 
@@ -237,26 +211,47 @@ struct MoversConciergeQuoteCard: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("movers.quote.body")
 
-                TextField("Anything we should know?", text: $notes, axis: .vertical)
-                    .lineLimit(3...6)
-                    .padding(PeezyTheme.Layout.cardPaddingSmall)
-                    .background(Color.white.opacity(0.65), in: .rect(cornerRadius: PeezyTheme.Layout.cornerRadiusSmall))
-                    .accessibilityIdentifier("movers.quote.notes")
+                VStack(alignment: .leading, spacing: PeezyTheme.Layout.verticalSpacingSmall) {
+                    Text("Estimate range")
+                        .font(.caption.bold())
+                        .foregroundStyle(.secondary)
 
-                if let errorMessage {
-                    Text(errorMessage)
-                        .font(.footnote)
-                        .foregroundStyle(PeezyTheme.Colors.emotionalRed)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .accessibilityIdentifier("movers.quote.error")
+                    Text(copy.rangeLabel)
+                        .font(.headline)
+                        .foregroundStyle(PeezyTheme.Colors.deepInk)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(PeezyTheme.Layout.cardPaddingSmall)
+                .background(
+                    PeezyTheme.Colors.brandYellow.opacity(0.45),
+                    in: .rect(cornerRadius: PeezyTheme.Layout.cornerRadiusSmall)
+                )
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("movers.guidance.range")
+
+                VStack(alignment: .leading, spacing: PeezyTheme.Layout.verticalSpacingSmall) {
+                    Label("Research this", systemImage: "magnifyingglass")
+                        .font(.headline)
+                        .foregroundStyle(PeezyTheme.Colors.deepInk)
+
+                    Text(copy.researchPointer)
+                        .font(.body)
+                        .foregroundStyle(PeezyTheme.Colors.deepInk)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(PeezyTheme.Layout.cardPaddingSmall)
+                .background(
+                    Color.white.opacity(0.65),
+                    in: .rect(cornerRadius: PeezyTheme.Layout.cornerRadiusSmall)
+                )
+                .accessibilityIdentifier("movers.guidance.research")
 
                 PeezyAssessmentButton(
-                    isSubmitting ? "Sending…" : "Request my quote",
-                    disabled: isSubmitting,
-                    action: onSubmit
+                    "I know what to compare",
+                    action: onDone
                 )
-                .accessibilityIdentifier("movers.quote.submit")
+                .accessibilityIdentifier("movers.guidance.done")
             }
             .padding(PeezyTheme.Layout.cardPadding)
             .background(Color.white.opacity(0.68), in: .rect(cornerRadius: PeezyTheme.Layout.cornerRadius))
@@ -266,7 +261,7 @@ struct MoversConciergeQuoteCard: View {
             }
             .padding(.horizontal, 24)
             .accessibilityElement(children: .contain)
-            .accessibilityIdentifier("movers.quote.concierge")
+            .accessibilityIdentifier("movers.guidance.card")
 
             Spacer()
         }
@@ -274,6 +269,28 @@ struct MoversConciergeQuoteCard: View {
 }
 
 #if DEBUG
+// Compatibility for the existing Phase C screenshot fixture. The fixture's
+// legacy symbol now renders the self-serve research guidance with no request
+// submission behavior.
+typealias MoversConciergeReason = MoversEstimateBoundaryReason
+
+struct MoversConciergeQuoteCard: View {
+    let copy: MoversResearchGuidanceCopy
+    @Binding var notes: String
+    let errorMessage: String?
+    let isSubmitting: Bool
+    let onBack: () -> Void
+    let onSubmit: () -> Void
+
+    var body: some View {
+        MoversResearchGuidanceCard(
+            copy: copy,
+            onBack: onBack,
+            onDone: onSubmit
+        )
+    }
+}
+
 #Preview("Find Movers Flow") {
     FindMoversFlow(
         userId: "preview-user",
