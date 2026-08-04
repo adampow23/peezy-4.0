@@ -294,7 +294,9 @@ class SubscriptionManager: ObservableObject {
 
                 if let subscription = snapshot.data()?["subscription"] as? [String: Any],
                    subscription["source"] as? String == "giftCode",
-                   let expirationDate = (subscription["expirationDate"] as? Timestamp)?.dateValue(),
+                   let expirationDate = subscriptionExpirationDate(
+                       from: subscription["expirationDate"]
+                   ),
                    expirationDate > Date() {
                     subscriptionStatus = .subscribed(
                         productId: ProductID.move.rawValue,
@@ -372,6 +374,23 @@ class SubscriptionManager: ObservableObject {
             value: Self.movePassTermMonths,
             to: transaction.purchaseDate
         )
+    }
+
+    private func subscriptionExpirationDate(from value: Any?) -> Date? {
+        if let timestamp = value as? Timestamp {
+            return timestamp.dateValue()
+        }
+
+        guard let string = value as? String else { return nil }
+
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        if let date = formatter.date(from: string) {
+            return date
+        }
+
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter.date(from: string)
     }
 
     // MARK: - Server Sync

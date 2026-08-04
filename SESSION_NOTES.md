@@ -1056,3 +1056,5 @@ gift error, StoreKit non-renewing access, no-entitlement denial, and wide cost
 guidance pass. Launch verification remains **BLOCKED** on the raw retired-term
 source sweep, gift ISO-date client decoding, missing config documents, absent
 client read permission for `appConfig`, and insufficient provider credit.
+
+ARCHITECT RULING: retired-term sweep gates USER-VISIBLE strings only. Internal identifiers (enum cases, callable names, collection names) waived until a post-launch rename pass — renaming deployed infrastructure pre-submission is unjustified risk.
