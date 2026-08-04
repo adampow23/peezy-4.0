@@ -47,7 +47,7 @@ struct InventoryLockedView: View {
                         .font(.system(size: 16, weight: .medium))
                         .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.6))
 
-                    Text("Need to make a change? Send us a message in the chat and we'll update it for you.")
+                    Text("Use the room-by-room list below to check your move plan. To make changes, reset the inventory from Tasks and scan again.")
                         .font(.system(size: 14))
                         .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.6))
                         .multilineTextAlignment(.center)

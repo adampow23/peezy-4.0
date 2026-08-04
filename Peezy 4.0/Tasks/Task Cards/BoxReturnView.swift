@@ -10,9 +10,7 @@ struct BoxReturnView: View {
     @State private var returnedCount = 0
     @State private var didEditReturnedCount = false
     @State private var ranOut: Bool?
-    @State private var requestsPickup = false
     @State private var submittedCalibration: KitCalibration?
-    @State private var submittedWithPickup = false
     @State private var isSubmitting = false
     @State private var errorMessage: String?
     @State private var questionIndex = 0
@@ -34,11 +32,8 @@ struct BoxReturnView: View {
             }
         }
         .task { await loadDeliveredCount() }
-        .onChange(of: returnedCount) { _, newValue in
+        .onChange(of: returnedCount) { _, _ in
             didEditReturnedCount = true
-            if newValue == 0 {
-                requestsPickup = false
-            }
         }
         .accessibilityIdentifier("box_return.flow")
         .resumableFlowProgress(
@@ -52,9 +47,6 @@ struct BoxReturnView: View {
             if let raw = restored.answers["ran_out"]?.first {
                 ranOut = raw == "true"
             }
-            if let raw = restored.answers["requests_pickup"]?.first {
-                requestsPickup = raw == "true"
-            }
         }
     }
 
@@ -62,20 +54,16 @@ struct BoxReturnView: View {
         var result: [String: [String]] = [:]
         if didEditReturnedCount { result["returned_count"] = [String(returnedCount)] }
         if let ranOut { result["ran_out"] = [String(ranOut)] }
-        if requestsPickup { result["requests_pickup"] = ["true"] }
         return result
     }
 
     private enum BoxReturnQuestion {
         case returnedCount
         case ranOut
-        case pickup
     }
 
     private var boxReturnQuestions: [BoxReturnQuestion] {
-        returnedCount > 0
-            ? [.returnedCount, .ranOut, .pickup]
-            : [.returnedCount, .ranOut]
+        [.returnedCount, .ranOut]
     }
 
     private var currentBoxReturnQuestion: BoxReturnQuestion {
@@ -192,24 +180,6 @@ struct BoxReturnView: View {
                 ranOutButton("No", value: false)
             }
 
-        case .pickup:
-            Text("Would you like Peezy to arrange pickup?")
-                .font(.title.bold())
-                .foregroundStyle(PeezyTheme.Colors.deepInk)
-                .fixedSize(horizontal: false, vertical: true)
-                .accessibilityIdentifier("box_return.pickup_question")
-            HStack(spacing: 12) {
-                pickupButton("Yes", value: true)
-                pickupButton("No", value: false)
-            }
-            .accessibilityIdentifier("box_return.pickup_toggle")
-            if requestsPickup {
-                Text("We'll send the count to the concierge team and follow up about pickup.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityIdentifier("box_return.pickup_note")
-            }
         }
     }
 
@@ -230,23 +200,25 @@ struct BoxReturnView: View {
                     .font(.system(size: 52))
                     .foregroundStyle(PeezyTheme.Colors.successGreen)
                     .accessibilityHidden(true)
-                Text("Got it — \(calibration.returned) of \(calibration.delivered) boxes recorded.")
+                Text("You're set. Here's everything you need.")
                     .font(.title2)
                     .bold()
                     .foregroundStyle(PeezyTheme.Colors.deepInk)
                     .accessibilityIdentifier("box_return.submitted_message")
-                if submittedWithPickup {
-                    Text("Your pickup request is with the concierge team.")
-                        .font(.body)
-                        .foregroundStyle(.secondary)
-                        .accessibilityIdentifier("box_return.pickup_submitted")
-                }
+                Text("\(calibration.returned) of \(calibration.delivered) boxes recorded.")
+                    .font(.body.bold())
+                    .foregroundStyle(PeezyTheme.Colors.deepInk)
+                Text("Offer clean boxes through a local reuse group or donation center. Flatten boxes that cannot be reused, remove tape and packing material, and check your local recycling rules.")
+                    .font(.body)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("box_return.reuse_guidance")
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 24)
             Spacer()
             PeezyAssessmentButton("Done") {
-                onStatusAction(submittedWithPickup ? .submittedToPeezy : .done)
+                onStatusAction(.done)
             }
             .padding(.horizontal, 24)
             .padding(.bottom, 24)
@@ -294,16 +266,14 @@ struct BoxReturnView: View {
         guard let ranOut, !isSubmitting else { return }
         isSubmitting = true
         errorMessage = nil
-        let pickup = requestsPickup
         Task {
             do {
                 let calibration = try await service.submit(
                     userId: userId,
                     returned: returnedCount,
                     ranOut: ranOut,
-                    requestPickup: pickup
+                    requestPickup: false
                 )
-                submittedWithPickup = pickup
                 submittedCalibration = calibration
                 isSubmitting = false
             } catch {
@@ -341,30 +311,6 @@ struct BoxReturnView: View {
         .accessibilityIdentifier("box_return.ran_out.\(value ? "yes" : "no")")
     }
 
-    private func pickupButton(_ label: String, value: Bool) -> some View {
-        Button {
-            requestsPickup = value
-            PeezyHaptics.selection()
-        } label: {
-            Text(label)
-                .font(.headline)
-                .foregroundStyle(PeezyTheme.Colors.deepInk)
-                .frame(maxWidth: .infinity, minHeight: 44)
-                .background(
-                    requestsPickup == value
-                        ? AnyShapeStyle(PeezyTheme.Colors.successGreen.opacity(0.2))
-                        : AnyShapeStyle(.regularMaterial)
-                )
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .stroke(requestsPickup == value ? PeezyTheme.Colors.successGreen : .clear, lineWidth: 2)
-                }
-        }
-        .buttonStyle(.plain)
-        .accessibilityValue(requestsPickup == value ? "Selected" : "Not selected")
-        .accessibilityIdentifier("box_return.pickup.\(value ? "yes" : "no")")
-    }
 }
 
 #if DEBUG

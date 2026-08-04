@@ -29,6 +29,8 @@ struct SellItemsFlow: View {
     @State private var currentIndex = 0
     @State private var answers: [String: Set<String>] = [:]
     @State private var isSubmitting = false
+    @State private var submissionError: String?
+    @State private var submissionAttempt = 0
 
     // MARK: - Card Indices
 
@@ -122,12 +124,14 @@ struct SellItemsFlow: View {
         case 4:
             TaskFlowSummaryCard(
                 taskTitle: taskTitle,
-                bodyText: "We'll put together a selling plan based on what you've got and where to list it.",
-                subtext: "Expect word back within 24–48 hours.",
+                bodyText: actionSheetText,
+                primaryLabel: submissionError == nil ? "Done" : "Try again",
+                subtext: submissionError ?? "Use the same facts and photos on each platform you selected.",
                 showBack: true,
                 onPrimary: { submitAndComplete() },
                 onBack: { goBack() }
             )
+            .id("summary.\(submissionAttempt)")
 
         default:
             EmptyView()
@@ -162,11 +166,47 @@ struct SellItemsFlow: View {
         }
     }
 
+    private var actionSheetText: String {
+        let itemTypes = labels(
+            for: "item_types",
+            mapping: [
+                "furniture": "furniture", "appliances": "appliances",
+                "electronics": "electronics", "clothing": "clothing and household items",
+                "outdoor": "outdoor items"
+            ]
+        )
+        let valueBand = labels(
+            for: "estimated_value",
+            mapping: [
+                "under_500": "lower-value group", "500_2000": "midrange group",
+                "2000_5000": "higher-value group", "over_5000": "top value range"
+            ]
+        )
+        let platforms = labels(
+            for: "platforms",
+            mapping: [
+                "fb_marketplace": "Facebook Marketplace", "offerup": "OfferUp",
+                "craigslist": "Craigslist", "consignment": "a consignment store",
+                "any": "any suitable platform"
+            ]
+        )
+
+        return "You're set. Here's everything you need.\n\nWhat to list\n• Items: \(itemTypes)\n• Value range: \(valueBand)\n• Platforms: \(platforms)\n\nWhat to have ready\nClear photos, dimensions, condition notes, pickup details, and the lowest offer you would accept."
+    }
+
+    private func labels(for key: String, mapping: [String: String]) -> String {
+        (answers[key] ?? [])
+            .map { mapping[$0] ?? $0.replacingOccurrences(of: "_", with: " ") }
+            .sorted()
+            .joined(separator: ", ")
+    }
+
     // MARK: - Submission
 
     private func submitAndComplete() {
         guard !isSubmitting else { return }
         isSubmitting = true
+        submissionError = nil
 
         var workflowAnswers = WorkflowAnswers(workflowId: workflowId)
         workflowAnswers.answers = answers.mapValues { Array($0) }
@@ -181,12 +221,18 @@ struct SellItemsFlow: View {
                 )
                 await MainActor.run {
                     isSubmitting = false
-                    if response.success { onComplete() }
+                    if response.success {
+                        onComplete()
+                    } else {
+                        submissionError = "Couldn't save your answers. Check your connection, then try again."
+                        submissionAttempt += 1
+                    }
                 }
             } catch {
                 await MainActor.run {
                     isSubmitting = false
-                    onComplete()
+                    submissionError = "Couldn't save your answers. Check your connection, then try again."
+                    submissionAttempt += 1
                 }
             }
         }

@@ -13,6 +13,8 @@ struct RentTruckFlow: View {
     @State private var currentIndex = 0
     @State private var answers: [String: Set<String>] = [:]
     @State private var isSubmitting = false
+    @State private var submissionError: String?
+    @State private var submissionAttempt = 0
 
     private let titleCard = 0
     private let tripTypeCard = 1
@@ -61,12 +63,14 @@ struct RentTruckFlow: View {
         case summaryCard:
             TaskFlowSummaryCard(
                 taskTitle: taskTitle,
-                bodyText: "We'll compare options from the major rental companies and get you the best deal.",
-                subtext: "Expect word back within 24–48 hours.",
+                bodyText: actionSheetText,
+                primaryLabel: submissionError == nil ? "Done" : "Try again",
+                subtext: submissionError ?? "Compare the full checkout total, mileage rules, and pickup location before booking.",
                 showBack: true,
                 onPrimary: { submitAndComplete() },
                 onBack: { goBack() }
             )
+            .id("summary.\(submissionAttempt)")
 
         default:
             EmptyView()
@@ -88,9 +92,20 @@ struct RentTruckFlow: View {
         advance()
     }
 
+    private var actionSheetText: String {
+        let tripType: String
+        switch answers["trip_type"]?.first {
+        case "one_way": tripType = "one-way rental"
+        case "round_trip": tripType = "return to the same location"
+        default: tripType = "your selected rental type"
+        }
+        return "You're set. Here's everything you need.\n\nWhat to say\n“I need a \(tripType). What truck sizes are available for my date, and what is included in the full checkout total?”\n\nWhat to have ready\nPickup and drop-off locations, move date, inventory size, driver details, and expected mileage."
+    }
+
     private func submitAndComplete() {
         guard !isSubmitting else { return }
         isSubmitting = true
+        submissionError = nil
         var workflowAnswers = WorkflowAnswers(workflowId: workflowId)
         workflowAnswers.answers = answers.mapValues { Array($0) }
         Task {
@@ -101,10 +116,19 @@ struct RentTruckFlow: View {
                 )
                 await MainActor.run {
                     isSubmitting = false
-                    if response.success { onComplete() }
+                    if response.success {
+                        onComplete()
+                    } else {
+                        submissionError = "Couldn't save your answers. Check your connection, then try again."
+                        submissionAttempt += 1
+                    }
                 }
             } catch {
-                await MainActor.run { isSubmitting = false; onComplete() }
+                await MainActor.run {
+                    isSubmitting = false
+                    submissionError = "Couldn't save your answers. Check your connection, then try again."
+                    submissionAttempt += 1
+                }
             }
         }
     }

@@ -5,11 +5,10 @@
 //  Thin resolver (Spec 04 Phase C — replaces the closed 47-case switch).
 //  Resolution order:
 //  1. Capture registry (scan_inventory keeps its bespoke path)
-//  2. Admin-pushed flows (quote_selection / admin_memo)
-//  3. Catalog-v2 in-app tasks (explicit, no server definitions)
-//  4. Swift custom flows (die in Specs 05–06 as the verticals rebuild
+//  2. Catalog-v2 in-app tasks (explicit, no server definitions)
+//  3. Swift custom flows (die in Specs 05–06 as the verticals rebuild
 //     on the spine)
-//  5. Everything else: flowDefinitions lookup → FlowEngineView; unresolvable
+//  4. Everything else: flowDefinitions lookup → FlowEngineView; unresolvable
 //     ids render the coming-right-up card (the permanent spinner is dead).
 //
 
@@ -21,7 +20,8 @@ enum TaskFlowStatusAction {
     case later
     /// The flow already persisted a permanent Home dismissal.
     case dismissedPermanently
-    /// The flow already persisted a server-side concierge submission.
+    /// Legacy callback name retained for existing call sites. Submitted work
+    /// is complete once the user has their action details.
     case submittedToPeezy
 }
 
@@ -74,13 +74,6 @@ struct TaskFlowRouter {
             ScanInventoryFlow(userId: userId, taskId: taskId, onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
         } else {
             switch flowId {
-
-        // ── Admin-pushed ──
-
-        case "quote_selection":
-            QuoteSelectionFlow(taskId: taskId, userId: userId, onComplete: onComplete, onDismiss: onDismiss)
-        case "admin_memo":
-            AdminMemoFlow(taskId: taskId, userId: userId, onComplete: onComplete, onDismiss: onDismiss)
 
         // ── Catalog-v2 in-app tasks ──
 

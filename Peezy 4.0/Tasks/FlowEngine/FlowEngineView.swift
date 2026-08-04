@@ -71,6 +71,8 @@ struct FlowEngineView: View {
     @State private var resolvingProviderStepId: String?
     @State private var activeProviderAction: ActiveProviderAction?
     @State private var providerResolveTask: Task<Void, Never>?
+    @State private var submissionError: String?
+    @State private var submissionAttempt = 0
 
     private let actionService = TaskActionService()
 
@@ -160,12 +162,14 @@ struct FlowEngineView: View {
         case .decision:
             TaskFlowDecisionCard(
                 taskTitle: definition.taskTitle,
-                question: step.question ?? "Would you like us to take care of this for you?",
+                question: step.question ?? "Would guided next steps help with this?",
                 questionIcon: PeezyQuestionVisuals.flowIcon(
                     workflowID: definition.workflowId,
                     stepID: step.id
                 ),
-                timeSaved: step.timeSaved ?? "~1 hr",
+                yesLabel: "Show me how",
+                noLabel: "I have a plan",
+                timeSaved: "time",
                 showBack: canGoBack,
                 onPeezy: {
                     record(step.id, ["peezy"])
@@ -258,12 +262,14 @@ struct FlowEngineView: View {
         case .summary:
             TaskFlowSummaryCard(
                 taskTitle: definition.taskTitle,
-                bodyText: summaryBody(for: step),
-                subtext: step.subtext,
+                bodyText: actionSheetBody,
+                primaryLabel: submissionError == nil ? "Done" : "Try again",
+                subtext: submissionError ?? "Use this action sheet while you make the calls or complete the steps.",
                 showBack: canGoBack,
                 onPrimary: { submitAndComplete() },
                 onBack: { goBack() }
             )
+            .id("summary.\(submissionAttempt)")
 
         case .status:
             TaskFlowStatusCard(
@@ -277,24 +283,65 @@ struct FlowEngineView: View {
         }
     }
 
-    /// First bodyVariant whose `when` pairs all match recorded answers,
-    /// else the step's default body — the ManageBank-family dynamic
-    /// find-summary text, generalized. "{rowsList}" resolves to the task's
-    /// stamped row labels (access flows: "a truck-sized loading spot and
-    /// the service elevator window").
-    private func summaryBody(for step: FlowStep) -> String {
-        var body = step.body ?? ""
-        if let variants = step.bodyVariants {
-            for variant in variants where conditionsSatisfied(variant.when) {
-                body = variant.body
-                break
+    private var actionSheetBody: String {
+        var sections = ["You're set. Here's everything you need."]
+
+        let contacts = resolvedSteps
+            .filter { $0.kind == .businessSearch }
+            .compactMap { answers[$0.id]?.first }
+            .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        if !contacts.isEmpty {
+            sections.append("Who to contact\n" + contacts.map { "• \($0)" }.joined(separator: "\n"))
+            sections.append("What to say\n“Hi, I'm moving and need to complete this change. What steps, dates, and documents do you need from me?”")
+        }
+
+        let answerLines = resolvedSteps.compactMap { step -> String? in
+            guard step.kind != .title,
+                  step.kind != .summary,
+                  step.kind != .status,
+                  step.kind != .businessSearch,
+                  let values = answers[step.id],
+                  !values.isEmpty,
+                  !step.id.hasSuffix(".__provider_method") else { return nil }
+
+            let prompt = (step.kind == .decision ? "Handling" : (step.infoTitle ?? humanized(step.id)))
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let displayValues = values.map { displayValue($0, for: step) }.sorted()
+            return "• \(prompt): \(displayValues.joined(separator: ", "))"
+        }
+        if !answerLines.isEmpty {
+            sections.append("What to have ready\n" + answerLines.joined(separator: "\n"))
+        }
+
+        if contacts.isEmpty && answerLines.isEmpty {
+            sections.append("Next step\nUse the guidance above to contact the provider or complete the task directly.")
+        }
+        return sections.joined(separator: "\n\n")
+    }
+
+    private func displayValue(_ value: String, for step: FlowStep) -> String {
+        if let label = step.options?.first(where: { $0.id == value })?.label {
+            return label
+        }
+        switch value {
+        case "peezy":
+            return "Guided next steps"
+        case "self":
+            return "Handle directly"
+        default:
+            if step.kind == .confirmDate,
+               let date = ISO8601DateFormatter().date(from: value) {
+                return date.formatted(date: .abbreviated, time: .omitted)
             }
+            return value.replacingOccurrences(of: "_", with: " ").capitalized
         }
-        if body.contains("{rowsList}") {
-            let labels = rows.compactMap { step.rowLabels?[$0.id] }
-            body = body.replacingOccurrences(of: "{rowsList}", with: labels.joined(separator: " and "))
-        }
-        return body
+    }
+
+    private func humanized(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: ".", with: " ")
+            .replacingOccurrences(of: "_", with: " ")
+            .capitalized
     }
 
     private func conditionsSatisfied(_ when: [String: String]) -> Bool {
@@ -362,17 +409,12 @@ struct FlowEngineView: View {
             providerResolveTask = nil
 
             let methodKey = providerMethodKey(for: step)
-            if resolution.method == .concierge {
-                record(methodKey, ["concierge"])
-                advance(from: step, selected: name)
-            } else {
-                record(methodKey, ["self_service"])
-                activeProviderAction = ActiveProviderAction(
-                    stepId: step.id,
-                    resolution: resolution,
-                    kind: kind
-                )
-            }
+            record(methodKey, [resolution.method.rawValue])
+            activeProviderAction = ActiveProviderAction(
+                stepId: step.id,
+                resolution: resolution,
+                kind: kind
+            )
         }
     }
 
@@ -501,6 +543,7 @@ struct FlowEngineView: View {
     private func submitAndComplete() {
         guard !isSubmitting else { return }
         isSubmitting = true
+        submissionError = nil
 
         var workflowAnswers = WorkflowAnswers(workflowId: definition.workflowId)
         workflowAnswers.answers = answers
@@ -514,18 +557,24 @@ struct FlowEngineView: View {
                     answers: workflowAnswers,
                     userId: userId
                 )
-                await actionService.clearFlowState(taskId: id)
-                await MainActor.run {
-                    isSubmitting = false
-                    if response.success { onComplete() }
+                guard response.success else {
+                    await MainActor.run {
+                        isSubmitting = false
+                        submissionError = "Couldn't save your answers. Check your connection, then try again."
+                        submissionAttempt += 1
+                    }
+                    return
                 }
-            } catch {
-                // Old screens completed on error too — submission is
-                // best-effort past this point.
                 await actionService.clearFlowState(taskId: id)
                 await MainActor.run {
                     isSubmitting = false
                     onComplete()
+                }
+            } catch {
+                await MainActor.run {
+                    isSubmitting = false
+                    submissionError = "Couldn't save your answers. Check your connection, then try again."
+                    submissionAttempt += 1
                 }
             }
         }
@@ -622,7 +671,7 @@ struct ComingRightUpCard: View {
                             .foregroundStyle(PeezyTheme.Colors.deepInk)
                             .multilineTextAlignment(.center)
 
-                        Text("This one isn't quite ready in the app — we're on it. It'll stay on your list.")
+                        Text("This one isn't ready in the app yet. It will stay on your task list.")
                             .font(.system(size: 16, weight: .medium))
                             .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.6))
                             .multilineTextAlignment(.center)

@@ -38,6 +38,8 @@ struct HandleAutoInsuranceFlow: View {
     @State private var updateProviderResolution: ProviderResolution?
     @State private var isResolvingUpdateProvider = false
     @State private var providerResolveTask: Task<Void, Never>?
+    @State private var submissionError: String?
+    @State private var submissionAttempt = 0
 
     // MARK: - Card Indices
 
@@ -95,10 +97,14 @@ struct HandleAutoInsuranceFlow: View {
 
     private var switchSummaryText: String {
         if answers["quote_choice"]?.contains("keep") == true {
-            return "We'll reach out to \(providerName) about switching your policy to cover your new place."
+            return "You're set. Here's everything you need.\n\nWho to contact\n• \(providerName)\n\nWhat to say\n“I’m moving and want to keep my current provider. Please quote my vehicles at the new address and confirm the effective date.”\n\nWhat to have ready\nYour current policy, new address, move date, driver details, vehicle information, and the coverage limits you want to compare."
         } else {
-            return "We'll get you 3 options — one from \(providerName) and two of the best alternatives."
+            return "You're set. Here's everything you need.\n\nStart with\n• \(providerName)\n• Other licensed insurers serving your new address\n\nWhat to say\n“I’m moving and comparing auto policies at my new address. Please quote the same coverage limits so I can compare terms directly.”\n\nWhat to have ready\nYour current policy, new address, move date, driver details, vehicle information, and matching coverage limits."
         }
+    }
+
+    private var updateSummaryText: String {
+        "You're set. Here's everything you need.\n\nWho to contact\n• \(providerName)\n\nWhat to say\n“I’m moving and need to update the garaging address on my auto policy. What changes, documents, and effective date do you need?”\n\nWhat to have ready\nYour policy number, current address, new address, move date, driver details, and vehicle information."
     }
 
     private var providerName: String {
@@ -269,12 +275,14 @@ struct HandleAutoInsuranceFlow: View {
         case updateSummaryCard:
             TaskFlowSummaryCard(
                 taskTitle: taskTitle,
-                bodyText: "We'll reach out to \(providerName) and get your address updated.",
-                subtext: "Expect word back within 24–48 hours.",
+                bodyText: updateSummaryText,
+                primaryLabel: submissionError == nil ? "Done" : "Try again",
+                subtext: submissionError ?? "Ask for written confirmation of the effective date and any coverage changes.",
                 showBack: true,
                 onPrimary: { submitAndComplete() },
                 onBack: { goBack() }
             )
+            .id("update_summary.\(submissionAttempt)")
 
         // ═══════════════════════════════════════
         // SWITCH PATH
@@ -314,11 +322,13 @@ struct HandleAutoInsuranceFlow: View {
             TaskFlowSummaryCard(
                 taskTitle: taskTitle,
                 bodyText: switchSummaryText,
-                subtext: "Expect word back within 24–48 hours.",
+                primaryLabel: submissionError == nil ? "Done" : "Try again",
+                subtext: submissionError ?? "Compare matching coverage, deductibles, exclusions, and effective dates.",
                 showBack: true,
                 onPrimary: { submitAndComplete() },
                 onBack: { goBack() }
             )
+            .id("switch_summary.\(submissionAttempt)")
 
         // ═══════════════════════════════════════
         // NO INSURANCE PATH
@@ -415,11 +425,7 @@ struct HandleAutoInsuranceFlow: View {
             guard !Task.isCancelled, isResolvingUpdateProvider else { return }
             isResolvingUpdateProvider = false
             providerResolveTask = nil
-            if resolution.method == .concierge {
-                advance()
-            } else {
-                updateProviderResolution = resolution
-            }
+            updateProviderResolution = resolution
         }
     }
 
@@ -434,6 +440,7 @@ struct HandleAutoInsuranceFlow: View {
     private func submitAndComplete() {
         guard !isSubmitting else { return }
         isSubmitting = true
+        submissionError = nil
 
         var workflowAnswers = WorkflowAnswers(workflowId: workflowId)
         workflowAnswers.answers = answers.mapValues { Array($0) }
@@ -448,12 +455,18 @@ struct HandleAutoInsuranceFlow: View {
                 )
                 await MainActor.run {
                     isSubmitting = false
-                    if response.success { onComplete() }
+                    if response.success {
+                        onComplete()
+                    } else {
+                        submissionError = "Couldn't save your answers. Check your connection, then try again."
+                        submissionAttempt += 1
+                    }
                 }
             } catch {
                 await MainActor.run {
                     isSubmitting = false
-                    onComplete()
+                    submissionError = "Couldn't save your answers. Check your connection, then try again."
+                    submissionAttempt += 1
                 }
             }
         }

@@ -8,7 +8,7 @@ struct AddressChangeIntro: View {
 
     let icon        = "envelope.fill"
     let header      = "Time to make sure everyone knows where to find you."
-    let subtext     : String? = "Banks, doctors, memberships — they all need your new address. We'll handle the updates, the cancellations, and finding new ones near you."
+    let subtext     : String? = "Banks, doctors, and memberships all need your new address. Your answers build a list of updates, cancellations, and nearby replacements to check."
     let buttonText  = "Continue"
 
     // ═══════════════════════════════════════════

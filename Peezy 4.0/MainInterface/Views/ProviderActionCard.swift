@@ -262,7 +262,22 @@ struct ProviderActionCard: View {
             }
 
         case .concierge:
-            EmptyView()
+            VStack(spacing: 12) {
+                Text("Search \(resolution.name)'s official website or use the number on your account statement. Ask for \(actionKind.noun), and have your account details ready.")
+                    .font(.body)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                ForEach(Array(resolution.citations.enumerated()), id: \.offset) { _, citation in
+                    if let url = URL(string: citation.url) {
+                        Link(citation.title, destination: url)
+                            .font(.subheadline.bold())
+                            .foregroundStyle(PeezyTheme.Colors.deepInk)
+                    }
+                }
+            }
+            .accessibilityIdentifier("provider.action.direct_guidance")
         }
     }
 
@@ -270,7 +285,7 @@ struct ProviderActionCard: View {
         switch resolution.method {
         case .link: "Continue with \(resolution.name)"
         case .call: "Call \(resolution.name)"
-        case .concierge: "We'll take it from here"
+        case .concierge: "Here's how to reach them directly"
         }
     }
 

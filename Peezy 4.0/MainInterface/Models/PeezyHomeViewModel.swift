@@ -13,7 +13,6 @@ import SwiftUI
 import Observation
 import FirebaseFirestore
 import FirebaseAuth
-import FirebaseFunctions
 
 @Observable
 final class PeezyHomeViewModel {
@@ -200,18 +199,9 @@ final class PeezyHomeViewModel {
     var allCompleteSubtext: String {
         if let days = userState?.daysUntilMove {
             let unit = days == 1 ? "day" : "days"
-            var text = "Your move is in \(days) \(unit) and everything is on track."
-            if inProgressTaskCount > 0 {
-                let itemUnit = inProgressTaskCount == 1 ? "item" : "items"
-                text += "\n\nPeezy is still working on \(inProgressTaskCount) \(itemUnit) — we'll keep you posted."
-            }
-            return text
+            return "Your move is in \(days) \(unit), and your current task list is complete."
         }
-        if inProgressTaskCount > 0 {
-            let itemUnit = inProgressTaskCount == 1 ? "item" : "items"
-            return "Peezy is still working on \(inProgressTaskCount) \(itemUnit) — we'll keep you posted."
-        }
-        return "Peezy is handling the rest."
+        return "Your current task list is complete."
     }
 
     // MARK: - Load Tasks
@@ -247,7 +237,6 @@ final class PeezyHomeViewModel {
                 .getDocuments()
 
             var cards: [PeezyCard] = []
-            var inProgressBuffer: [PeezyCard] = []
             var userInProgressBuffer: [PeezyCard] = []
             let now = Date()
 
@@ -260,8 +249,10 @@ final class PeezyHomeViewModel {
                 if let snoozedUntil = card.snoozedUntil, snoozedUntil > now { continue }
 
                 if card.status == .inProgress || card.status == .pending || card.status == .matchingInProgress {
-                    // pending / matching_in_progress = server working — waiting, not actionable
-                    inProgressBuffer.append(card)
+                    // Legacy human-handoff statuses are terminal. They stay
+                    // out of the actionable Home queue and render as complete
+                    // in the Tasks tab.
+                    continue
                 } else if card.status == .userInProgress {
                     if let returnDate = card.userInProgressReturnDate, returnDate <= now {
                         card.status = .upcoming
@@ -299,7 +290,7 @@ final class PeezyHomeViewModel {
 
             await MainActor.run {
                 self.allActiveTasks = sorted
-                self.inProgressTaskCount = inProgressBuffer.count
+                self.inProgressTaskCount = 0
                 self.userInProgressTaskCount = userInProgressBuffer.count
                 self.frozenDoseTaskIds = frozenIds
                 // Queue = frozen ids still active, in frozen order.
@@ -399,43 +390,6 @@ final class PeezyHomeViewModel {
         advanceAfterTask()
     }
 
-    // MARK: - Mark Task Peezy Handling
-
-    func markCurrentTaskPeezyHandling() {
-        guard let task = currentTask else { return }
-        Task {
-            await actionService.markTaskInProgress(task)
-            Task {
-                do {
-                    let callable = Functions.functions().httpsCallable("requestConcierge")
-                    let moveDateStr: String
-                    if let date = userState?.moveDate { moveDateStr = ISO8601DateFormatter().string(from: date) }
-                    else { moveDateStr = "" }
-                    let currentAddr = userState?.currentFullAddress ?? ""
-                    let newAddr = userState?.newFullAddress ?? ""
-                    let payload: [String: Any] = [
-                        "taskId": task.taskId ?? task.id, "taskTitle": task.title,
-                        "taskCategory": task.taskCategory ?? "", "userId": userState?.userId ?? "",
-                        "userName": userState?.name ?? "", "currentAddress": currentAddr,
-                        "newAddress": newAddr, "moveDate": moveDateStr,
-                        "moveDistance": userState?.moveDistance?.rawValue ?? ""
-                    ]
-                    _ = try await callable.call(payload)
-                } catch {
-                    print("Concierge notification failed: \(error.localizedDescription)")
-                }
-            }
-            await MainActor.run {
-                allActiveTasks.removeAll { $0.id == task.id }
-                recordDoseProgress(completedTask: true)
-                completedThisSession += 1
-                currentTask = nil
-                isFocusedTask = false
-                advanceAfterTask()
-            }
-        }
-    }
-
     // MARK: - Focus Task (from Task List)
 
     func focusTask(_ task: PeezyCard) {
@@ -456,11 +410,7 @@ final class PeezyHomeViewModel {
             return
         }
 
-        let isSelfService = task.selfServiceOnly || task.actionType == "off-app"
-        Task {
-            if isSelfService { await actionService.markTaskCompleted(task) }
-            else { await actionService.markTaskInProgress(task) }
-        }
+        Task { await actionService.markTaskCompleted(task) }
 
         PeezyHaptics.taskComplete()
         completedThisSession += 1
@@ -543,17 +493,10 @@ final class PeezyHomeViewModel {
         finishFlowAndDeferAdvance()
     }
 
-    /// The callable has already moved the task into Peezy's in-progress lane.
+    /// Legacy callback retained for callers that still use the old action
+    /// name. A submitted flow is complete once its action sheet is ready.
     func statusActionSubmittedToPeezy() {
-        guard let task = currentTask else {
-            showTaskFlow = false
-            return
-        }
-        allActiveTasks.removeAll { $0.id == task.id }
-        inProgressTaskCount += 1
-        recordDoseProgress(completedTask: false)
-        completedThisSession += 1
-        finishFlowAndDeferAdvance()
+        statusActionDone()
     }
 
     // MARK: - Get Ahead

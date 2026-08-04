@@ -5,7 +5,7 @@ enum TaskGrouping {
         var todo: [PeezyCard]
         var snoozed: [PeezyCard]
         var userInProgress: [PeezyCard]    // "You're on it"
-        var peezyOnIt: [PeezyCard]         // "Peezy is on it" — .inProgress, .pending, .matchingInProgress
+        var peezyOnIt: [PeezyCard]         // Retained for view compatibility; always empty.
         var completed: [PeezyCard]
     }
 
@@ -14,7 +14,6 @@ enum TaskGrouping {
         var todo: [PeezyCard] = []
         var snoozed: [PeezyCard] = []
         var userInProgress: [PeezyCard] = []
-        var peezyOnIt: [PeezyCard] = []
         var completed: [PeezyCard] = []
 
         for task in tasks {
@@ -31,7 +30,11 @@ enum TaskGrouping {
             case .userInProgress:
                 userInProgress.append(task)
             case .inProgress, .pending, .matchingInProgress:
-                peezyOnIt.append(task)
+                // Retired human-handoff states are terminal. Normalize the
+                // local presentation so old documents appear under Done.
+                var completedTask = task
+                completedTask.status = .completed
+                completed.append(completedTask)
             case .upcoming, .snoozed:
                 todo.append(task)
             case .skipped:
@@ -52,13 +55,6 @@ enum TaskGrouping {
             ($0.userInProgressReturnDate ?? .distantFuture) < ($1.userInProgressReturnDate ?? .distantFuture)
         }
 
-        let peezySorted = peezyOnIt.sorted { a, b in
-            if a.priority.rawValue != b.priority.rawValue {
-                return a.priority.rawValue > b.priority.rawValue
-            }
-            return (a.dueDate ?? .distantFuture) < (b.dueDate ?? .distantFuture)
-        }
-
         let completedSorted = completed.sorted { a, b in
             let aDate = a.completedAt ?? .distantPast
             let bDate = b.completedAt ?? .distantPast
@@ -69,7 +65,7 @@ enum TaskGrouping {
             todo: todoSorted,
             snoozed: snoozedSorted,
             userInProgress: uipSorted,
-            peezyOnIt: peezySorted,
+            peezyOnIt: [],
             completed: completedSorted
         )
     }

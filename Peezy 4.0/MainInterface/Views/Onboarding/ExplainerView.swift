@@ -25,13 +25,13 @@ struct ExplainerView: View {
         ),
         .init(
             kicker: "THE REAL DIFFERENCE",
-            title: "We do the parts you hate.",
-            body: "Internet setup. Finding movers you can trust. Changing your address everywhere. Peezy handles it — you just approve."
+            title: "The hard parts, made clear.",
+            body: "Internet setup. Finding movers. Changing your address everywhere. Peezy gives you the research, contacts, and exact next steps."
         ),
         .init(
             kicker: "FIRST THINGS FIRST",
             title: "A few questions.",
-            body: "Make an account and we'll build your plan. It takes about a minute — and it's the last time you'll have to think about any of this."
+            body: "Make an account and answer a few questions. Peezy turns your answers into a move plan you can work through one step at a time."
         )
     ]
 

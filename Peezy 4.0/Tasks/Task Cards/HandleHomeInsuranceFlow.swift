@@ -37,6 +37,8 @@ struct HandleHomeInsuranceFlow: View {
     @State private var updateProviderResolution: ProviderResolution?
     @State private var isResolvingUpdateProvider = false
     @State private var providerResolveTask: Task<Void, Never>?
+    @State private var submissionError: String?
+    @State private var submissionAttempt = 0
 
     // MARK: - Card Indices
 
@@ -94,10 +96,14 @@ struct HandleHomeInsuranceFlow: View {
 
     private var switchSummaryText: String {
         if answers["quote_choice"]?.contains("keep") == true {
-            return "We'll reach out to \(providerName) about switching your policy to cover your new place."
+            return "You're set. Here's everything you need.\n\nWho to contact\n• \(providerName)\n\nWhat to say\n“I’m moving and want to keep my current provider. Please quote coverage for my new home and confirm the effective date.”\n\nWhat to have ready\nYour current policy, new address, move date, housing type, and the coverage limits you want to compare."
         } else {
-            return "We'll get you 3 options — one from \(providerName) and two of the best alternatives."
+            return "You're set. Here's everything you need.\n\nStart with\n• \(providerName)\n• Other licensed insurers serving your new address\n\nWhat to say\n“I’m moving and comparing policies for my new home. Please quote the same coverage limits so I can compare terms directly.”\n\nWhat to have ready\nYour current policy, new address, move date, housing type, and matching coverage limits."
         }
+    }
+
+    private var updateSummaryText: String {
+        "You're set. Here's everything you need.\n\nWho to contact\n• \(providerName)\n\nWhat to say\n“I’m moving and need to update the insured address on my policy. What changes, documents, and effective date do you need?”\n\nWhat to have ready\nYour policy number, current address, new address, move date, and housing type."
     }
 
     private var providerName: String {
@@ -268,12 +274,14 @@ struct HandleHomeInsuranceFlow: View {
         case updateSummaryCard:
             TaskFlowSummaryCard(
                 taskTitle: taskTitle,
-                bodyText: "We'll reach out to \(providerName) and get your address updated.",
-                subtext: "Expect word back within 24–48 hours.",
+                bodyText: updateSummaryText,
+                primaryLabel: submissionError == nil ? "Done" : "Try again",
+                subtext: submissionError ?? "Ask for written confirmation of the effective date and any coverage changes.",
                 showBack: true,
                 onPrimary: { submitAndComplete() },
                 onBack: { goBack() }
             )
+            .id("update_summary.\(submissionAttempt)")
 
         // ═══════════════════════════════════════
         // SWITCH PATH
@@ -313,11 +321,13 @@ struct HandleHomeInsuranceFlow: View {
             TaskFlowSummaryCard(
                 taskTitle: taskTitle,
                 bodyText: switchSummaryText,
-                subtext: "Expect word back within 24–48 hours.",
+                primaryLabel: submissionError == nil ? "Done" : "Try again",
+                subtext: submissionError ?? "Compare matching coverage, deductibles, exclusions, and effective dates.",
                 showBack: true,
                 onPrimary: { submitAndComplete() },
                 onBack: { goBack() }
             )
+            .id("switch_summary.\(submissionAttempt)")
 
         // ═══════════════════════════════════════
         // NO INSURANCE PATH
@@ -328,7 +338,7 @@ struct HandleHomeInsuranceFlow: View {
             TaskFlowInfoCard(
                 taskTitle: taskTitle,
                 title: "Good to Know",
-                bodyText: "If you're renting, most leases require renter's insurance — it's usually $15-25/month and protects your stuff. If you're buying, your lender requires homeowner's insurance before closing.",
+                bodyText: "If you're renting, check your lease for renter's insurance requirements and compare coverage for your belongings and liability. If you're buying, confirm your lender's insurance requirements before closing.",
                 primaryLabel: "Got it",
                 showBack: true,
                 onPrimary: { advance() },
@@ -414,11 +424,7 @@ struct HandleHomeInsuranceFlow: View {
             guard !Task.isCancelled, isResolvingUpdateProvider else { return }
             isResolvingUpdateProvider = false
             providerResolveTask = nil
-            if resolution.method == .concierge {
-                advance()
-            } else {
-                updateProviderResolution = resolution
-            }
+            updateProviderResolution = resolution
         }
     }
 
@@ -433,6 +439,7 @@ struct HandleHomeInsuranceFlow: View {
     private func submitAndComplete() {
         guard !isSubmitting else { return }
         isSubmitting = true
+        submissionError = nil
 
         var workflowAnswers = WorkflowAnswers(workflowId: workflowId)
         workflowAnswers.answers = answers.mapValues { Array($0) }
@@ -447,12 +454,18 @@ struct HandleHomeInsuranceFlow: View {
                 )
                 await MainActor.run {
                     isSubmitting = false
-                    if response.success { onComplete() }
+                    if response.success {
+                        onComplete()
+                    } else {
+                        submissionError = "Couldn't save your answers. Check your connection, then try again."
+                        submissionAttempt += 1
+                    }
                 }
             } catch {
                 await MainActor.run {
                     isSubmitting = false
-                    onComplete()
+                    submissionError = "Couldn't save your answers. Check your connection, then try again."
+                    submissionAttempt += 1
                 }
             }
         }

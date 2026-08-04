@@ -36,6 +36,8 @@ struct FindCleanersFlow: View {
     @State private var currentIndex = 0
     @State private var answers: [String: Set<String>] = [:]
     @State private var isSubmitting = false
+    @State private var submissionError: String?
+    @State private var submissionAttempt = 0
 
     // MARK: - Card Indices
 
@@ -168,12 +170,14 @@ struct FindCleanersFlow: View {
         case summaryCard:
             TaskFlowSummaryCard(
                 taskTitle: taskTitle,
-                bodyText: "We'll find cleaners who can handle everything you selected and get you quotes.",
-                subtext: "Expect word back within 24–48 hours.",
+                bodyText: actionSheetText,
+                primaryLabel: submissionError == nil ? "Done" : "Try again",
+                subtext: submissionError ?? "Use the same details with each cleaner so the quotes are easy to compare.",
                 showBack: true,
                 onPrimary: { submitAndComplete() },
                 onBack: { goBack() }
             )
+            .id("summary.\(submissionAttempt)")
 
         default:
             EmptyView()
@@ -212,11 +216,44 @@ struct FindCleanersFlow: View {
         }
     }
 
+    private var actionSheetText: String {
+        let place = labels(
+            for: "which_place",
+            mapping: ["move_out": "old place", "move_in": "new place", "both": "both places"]
+        )
+        let services = labels(
+            for: "services",
+            mapping: ["standard": "standard clean", "deep": "deep clean", "carpet": "carpet cleaning", "windows": "window cleaning"]
+        )
+        let moveOutTiming = labels(
+            for: "move_out_timing",
+            mapping: ["morning": "morning", "afternoon": "afternoon", "evening": "evening", "flexible": "flexible"]
+        )
+        let moveInTiming = labels(
+            for: "move_in_timing",
+            mapping: ["morning": "morning", "afternoon": "afternoon", "evening": "evening", "flexible": "flexible"]
+        )
+
+        var ready = ["• Place: \(place)", "• Services: \(services)"]
+        if !moveOutTiming.isEmpty { ready.append("• Move-out timing: \(moveOutTiming)") }
+        if !moveInTiming.isEmpty { ready.append("• Move-in timing: \(moveInTiming)") }
+
+        return "You're set. Here's everything you need.\n\nWhat to say\n“I need \(services) for my \(place). What is included, when are you available, and what is your cancellation policy?”\n\nWhat to have ready\n\(ready.joined(separator: "\n"))"
+    }
+
+    private func labels(for key: String, mapping: [String: String]) -> String {
+        (answers[key] ?? [])
+            .map { mapping[$0] ?? $0.replacingOccurrences(of: "_", with: " ") }
+            .sorted()
+            .joined(separator: ", ")
+    }
+
     // MARK: - Submission
 
     private func submitAndComplete() {
         guard !isSubmitting else { return }
         isSubmitting = true
+        submissionError = nil
 
         var workflowAnswers = WorkflowAnswers(workflowId: workflowId)
         workflowAnswers.answers = answers.mapValues { Array($0) }
@@ -231,12 +268,18 @@ struct FindCleanersFlow: View {
                 )
                 await MainActor.run {
                     isSubmitting = false
-                    if response.success { onComplete() }
+                    if response.success {
+                        onComplete()
+                    } else {
+                        submissionError = "Couldn't save your answers. Check your connection, then try again."
+                        submissionAttempt += 1
+                    }
                 }
             } catch {
                 await MainActor.run {
                     isSubmitting = false
-                    onComplete()
+                    submissionError = "Couldn't save your answers. Check your connection, then try again."
+                    submissionAttempt += 1
                 }
             }
         }

@@ -12,10 +12,6 @@ struct TaskRowHeader: View {
         TaskGrouping.isSnoozedEffective(task)
     }
 
-    private var isMatchingVendors: Bool {
-        task.status == .pending || task.status == .matchingInProgress
-    }
-
     var body: some View {
         HStack(alignment: .top, spacing: 18) {
             iconCircle
@@ -93,7 +89,7 @@ struct TaskRowHeader: View {
         case .userInProgress:
             badge(text: "You're on it", color: PeezyTheme.Colors.infoBlue)
         case .peezyOnIt:
-            badge(text: isMatchingVendors ? "Matching vendors" : "Peezy is on it", color: PeezyTheme.Colors.accentBlue)
+            EmptyView()
         case .todo where isSnoozed:
             if let returnDate = task.snoozedUntil {
                 badge(

@@ -30,6 +30,8 @@ struct RemoveItemsFlow: View {
     @State private var currentIndex = 0
     @State private var answers: [String: Set<String>] = [:]
     @State private var isSubmitting = false
+    @State private var submissionError: String?
+    @State private var submissionAttempt = 0
 
     // MARK: - Card Indices
 
@@ -165,12 +167,14 @@ struct RemoveItemsFlow: View {
         case 7:
             TaskFlowSummaryCard(
                 taskTitle: taskTitle,
-                bodyText: "We'll find the best option for your items and get it scheduled.",
-                subtext: "Expect word back within 24–48 hours.",
+                bodyText: actionSheetText,
+                primaryLabel: submissionError == nil ? "Done" : "Try again",
+                subtext: submissionError ?? "Confirm accepted items, access requirements, and timing before scheduling.",
                 showBack: true,
                 onPrimary: { submitAndComplete() },
                 onBack: { goBack() }
             )
+            .id("summary.\(submissionAttempt)")
 
         default:
             EmptyView()
@@ -205,11 +209,45 @@ struct RemoveItemsFlow: View {
         }
     }
 
+    private var actionSheetText: String {
+        let intent = labels(for: "disposal_intent", mapping: [
+            "donate": "donate", "haul_away": "haul away", "not_sure": "compare donation and haul-away options"
+        ])
+        let items = labels(for: "item_types", mapping: [
+            "furniture": "furniture", "appliances": "appliances", "electronics": "electronics",
+            "mattresses": "mattresses", "household": "household items and clothing", "outdoor": "outdoor items or debris"
+        ])
+        let condition = labels(for: "item_condition", mapping: [
+            "like_new": "like new", "gently_used": "gently used", "worn": "worn but functional", "needs_repair": "needs repair"
+        ])
+        let quantity = labels(for: "quantity", mapping: [
+            "few_small": "a few small items", "several_large": "several large items",
+            "full_room": "a full room", "multiple_rooms": "multiple rooms"
+        ])
+        let location = labels(for: "item_location", mapping: [
+            "ground_floor": "inside on the ground floor", "upstairs": "upstairs, basement, or attic",
+            "garage": "garage", "curbside": "curbside or driveway"
+        ])
+        let handoff = labels(for: "pickup_preference", mapping: [
+            "need_pickup": "pickup needed", "can_dropoff": "drop-off works", "either": "pickup or drop-off"
+        ])
+
+        return "You're set. Here's everything you need.\n\nWhat to say\n“I need to \(intent) \(quantity) of \(items). They are \(condition), located \(location), and \(handoff). What do you accept and what access do you need?”\n\nWhat to have ready\nPhotos, item dimensions, stairs or elevator details, parking access, and preferred dates."
+    }
+
+    private func labels(for key: String, mapping: [String: String]) -> String {
+        (answers[key] ?? [])
+            .map { mapping[$0] ?? $0.replacingOccurrences(of: "_", with: " ") }
+            .sorted()
+            .joined(separator: ", ")
+    }
+
     // MARK: - Submission
 
     private func submitAndComplete() {
         guard !isSubmitting else { return }
         isSubmitting = true
+        submissionError = nil
 
         var workflowAnswers = WorkflowAnswers(workflowId: workflowId)
         workflowAnswers.answers = answers.mapValues { Array($0) }
@@ -224,12 +262,18 @@ struct RemoveItemsFlow: View {
                 )
                 await MainActor.run {
                     isSubmitting = false
-                    if response.success { onComplete() }
+                    if response.success {
+                        onComplete()
+                    } else {
+                        submissionError = "Couldn't save your answers. Check your connection, then try again."
+                        submissionAttempt += 1
+                    }
                 }
             } catch {
                 await MainActor.run {
                     isSubmitting = false
-                    onComplete()
+                    submissionError = "Couldn't save your answers. Check your connection, then try again."
+                    submissionAttempt += 1
                 }
             }
         }

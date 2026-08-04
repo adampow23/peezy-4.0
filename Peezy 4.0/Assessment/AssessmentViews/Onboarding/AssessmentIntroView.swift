@@ -16,7 +16,7 @@ struct AssessmentIntroView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private let headerText = "Welcome to the easy part"
-    private let descriptionText = "You're in! Take a deep breath—we've got the heavy lifting from here. To build your perfect game plan, we just need to grab a few quick details about your move."
+    private let descriptionText = "You're in! Take a breath. Answer a few quick questions about your move to build a game plan around the details."
 
     var body: some View {
         ZStack {
@@ -52,7 +52,7 @@ struct AssessmentIntroView: View {
                 HStack(spacing: 8) {
                     Image(systemName: "clock")
                         .font(.system(size: 14))
-                    Text("A few minutes of questions — then we take it from here.")
+                    Text("A few minutes of questions — then your move plan is ready.")
                         .font(.system(size: 14, weight: .medium))
                 }
                 .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.5))

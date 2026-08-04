@@ -29,6 +29,7 @@ struct SetupInternetFlow: View {
     @State private var isLoading = true
     @State private var isSubmitting = false
     @State private var errorMessage: String?
+    @State private var submissionError: String?
 
     private let logger = Logger(
         subsystem: Bundle.main.bundleIdentifier ?? "Peezy",
@@ -152,8 +153,18 @@ struct SetupInternetFlow: View {
             .scrollIndicators(.hidden)
 
             if !plans.isEmpty {
+                if let submissionError {
+                    Text(submissionError)
+                        .font(.footnote)
+                        .foregroundStyle(PeezyTheme.Colors.emotionalRed)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 24)
+                        .padding(.bottom, 8)
+                        .accessibilityIdentifier("internet.submission_error")
+                }
+
                 PeezyAssessmentButton(
-                    isSubmitting ? "Saving…" : "I checked availability",
+                    isSubmitting ? "Saving…" : (submissionError == nil ? "I checked availability" : "Try again"),
                     disabled: openedPlanID == nil || isSubmitting,
                     action: submitAndComplete
                 )
@@ -241,6 +252,7 @@ struct SetupInternetFlow: View {
               let openedPlanID,
               let selectedPlan = plans.first(where: { $0.id == openedPlanID }) else { return }
         isSubmitting = true
+        submissionError = nil
 
         var workflowAnswers = WorkflowAnswers(workflowId: workflowId)
         workflowAnswers.answers = [
@@ -249,14 +261,25 @@ struct SetupInternetFlow: View {
         ]
 
         Task {
-            _ = try? await WorkflowService().submitAnswers(
-                workflowId: workflowId,
-                answers: workflowAnswers,
-                userId: userId
-            )
-            await MainActor.run {
-                isSubmitting = false
-                onComplete()
+            do {
+                let response = try await WorkflowService().submitAnswers(
+                    workflowId: workflowId,
+                    answers: workflowAnswers,
+                    userId: userId
+                )
+                await MainActor.run {
+                    isSubmitting = false
+                    if response.success {
+                        onComplete()
+                    } else {
+                        submissionError = "Couldn't save your choice. Check your connection, then try again."
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    isSubmitting = false
+                    submissionError = "Couldn't save your choice. Check your connection, then try again."
+                }
             }
         }
     }
