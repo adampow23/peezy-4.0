@@ -15,18 +15,24 @@ Rules:
 2. You may only cite URLs that appear in your search results, character for
    character. Never construct, complete, or recall a URL. If search did not
    return a source for a claim, state the claim without a link or omit it.
-3. Never promise that Peezy or any person will contact, book, arrange, or
+3. URLs may appear ONLY in the sources array — never in section text,
+   headlines, or action items. Refer to sources by publisher name in prose
+   (e.g., 'the City of Overland Park utilities page — link below').
+4. Prefer official sources (providers, government, institutions) over
+   marketing blogs and SEO content; cite a commercial blog only when no
+   official source covers the claim.
+5. Never promise that Peezy or any person will contact, book, arrange, or
    handle anything. You equip; the user acts. Describe what Peezy's app
    features do (research, scan, plan) freely.
-4. No fixed prices as facts unless a cited source states them; ranges labeled
+6. No fixed prices as facts unless a cited source states them; ranges labeled
    as typical are allowed when attributed to the search results.
-5. Write like a sharp friend who did this professionally for a decade: short
+7. Write like a sharp friend who did this professionally for a decade: short
    sentences, no corporate tone, no hedging filler.
-6. Vendor tasks MUST include questionsToAsk (the questions that expose a bad
+8. Vendor tasks MUST include questionsToAsk (the questions that expose a bad
    operator) and redFlags (the tells, each with why it matters in one clause).
-7. Every brief ends with whatCouldGoWrong: the honest tradeoffs of each
+9. Every brief ends with whatCouldGoWrong: the honest tradeoffs of each
    realistic choice, so the user decides with eyes open.
-8. Output ONLY the JSON object in the required schema. No markdown fences, no
+10. Output ONLY the JSON object in the required schema. No markdown fences, no
    preamble.`;
 
 const BRIEF_SCHEMA_PROMPT = `{
@@ -446,13 +452,37 @@ function stripUnsupportedURLs(value, allowedURLs) {
   return value;
 }
 
+function cleanStrippedURLArtifacts(value) {
+  return value
+    .replace(/\(\s*\)/g, "")
+    .replace(/\s+at\s+([.,])/gi, "$1")
+    .replace(/\s+([.,;:!?])/g, "$1")
+    .replace(/ {2,}/g, " ")
+    .trim();
+}
+
+function cleanBriefText(brief) {
+  const cleanItems = (items) => items.map(cleanStrippedURLArtifacts);
+  return {
+    ...brief,
+    headline: cleanStrippedURLArtifacts(brief.headline),
+    sections: brief.sections.map((section) => ({
+      heading: cleanStrippedURLArtifacts(section.heading),
+      items: cleanItems(section.items)
+    })),
+    questionsToAsk: cleanItems(brief.questionsToAsk),
+    redFlags: cleanItems(brief.redFlags),
+    whatCouldGoWrong: cleanItems(brief.whatCouldGoWrong)
+  };
+}
+
 function guardBriefURLs(brief, allowedURLs) {
   const safeSources = brief.sources.filter((source) => (
     allowedURLs.has(source.url) && !containsUnsupportedURL(source, allowedURLs)
   ));
   const guarded = stripUnsupportedURLs({ ...brief, sources: safeSources }, allowedURLs);
   return {
-    brief: guarded,
+    brief: cleanBriefText(guarded),
     removedSourceCount: brief.sources.length - safeSources.length
   };
 }
