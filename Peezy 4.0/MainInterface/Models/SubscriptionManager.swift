@@ -116,21 +116,32 @@ class SubscriptionManager: ObservableObject {
     // MARK: - Private
 
     private var transactionListener: Task<Void, Error>?
+    private var authStateHandle: AuthStateDidChangeListenerHandle?
+    private var authRefreshTask: Task<Void, Never>?
+    private var statusUpdateVersion: UInt = 0
 
     // MARK: - Init
 
     private init() {
         transactionListener = listenForTransactions()
+        authStateHandle = Auth.auth().addStateDidChangeListener { [weak self] _, _ in
+            Task { @MainActor [weak self] in
+                self?.handleAuthUserChange()
+            }
+        }
 
         Task {
             await loadProducts()
-            await updateSubscriptionStatus()
             await refreshTrialEligibility()
         }
     }
 
     deinit {
         transactionListener?.cancel()
+        authRefreshTask?.cancel()
+        if let authStateHandle {
+            Auth.auth().removeStateDidChangeListener(authStateHandle)
+        }
     }
 
     // MARK: - Product Loading
@@ -229,17 +240,36 @@ class SubscriptionManager: ObservableObject {
 
     // MARK: - Subscription Status
 
+    private func handleAuthUserChange() {
+        // Account boundaries must close the gate synchronously. The refresh
+        // below may reopen it only from the new account's current entitlement.
+        statusUpdateVersion &+= 1
+        authRefreshTask?.cancel()
+        subscriptionStatus = .notSubscribed
+
+        authRefreshTask = Task { [weak self] in
+            await self?.updateSubscriptionStatus()
+        }
+    }
+
     func updateSubscriptionStatus() async {
-        var foundEntitlement = false
+        statusUpdateVersion &+= 1
+        let updateVersion = statusUpdateVersion
+        let previousStatus = subscriptionStatus
+        var resolvedStatus: SubscriptionStatus?
+
+        func isCurrentUpdate() -> Bool {
+            !Task.isCancelled && updateVersion == statusUpdateVersion
+        }
 
         // Step 1: Preserve legacy auto-renewable access for grandfathered users.
         for await result in Transaction.currentEntitlements {
+            guard isCurrentUpdate() else { return }
             guard case .verified(let transaction) = result else { continue }
             guard transaction.productType == .autoRenewable else { continue }
 
             if transaction.revocationDate != nil {
-                subscriptionStatus = .revoked
-                foundEntitlement = true
+                resolvedStatus = .revoked
                 break
             }
 
@@ -251,60 +281,62 @@ class SubscriptionManager: ObservableObject {
             let isInTrial = transaction.offerType == .introductory
 
             if isInTrial {
-                subscriptionStatus = .trial(
+                resolvedStatus = .trial(
                     productId: transaction.productID,
                     expirationDate: expirationDate
                 )
             } else {
-                subscriptionStatus = .subscribed(
+                resolvedStatus = .subscribed(
                     productId: transaction.productID,
                     expirationDate: expirationDate
                 )
             }
-            foundEntitlement = true
             break
         }
 
         // Step 2: Finished non-renewing transactions are absent from
         // currentEntitlements, so inspect the latest Move Pass transaction.
-        if !foundEntitlement,
+        guard isCurrentUpdate() else { return }
+        if resolvedStatus == nil,
            let result = await Transaction.latest(for: ProductID.move.rawValue),
            case .verified(let transaction) = result,
            transaction.revocationDate == nil,
            let expirationDate = movePassExpirationDate(for: transaction) {
+            guard isCurrentUpdate() else { return }
             if expirationDate > Date() {
-                subscriptionStatus = .subscribed(
+                resolvedStatus = .subscribed(
                     productId: transaction.productID,
                     expirationDate: expirationDate
                 )
             } else {
-                subscriptionStatus = .expired
+                resolvedStatus = .expired
             }
-            foundEntitlement = true
         }
 
         // Step 3: Gift codes grant the same Move Pass entitlement through the
-        // user document. The server-side write path ships separately.
-        if !foundEntitlement, let uid = Auth.auth().currentUser?.uid {
+        // user document. Resolve the UID here at call time — never from an auth
+        // callback capture — then reject the response if the account changes.
+        if resolvedStatus == nil, let currentUID = Auth.auth().currentUser?.uid {
             do {
                 let snapshot = try await Firestore.firestore()
                     .collection("users")
-                    .document(uid)
+                    .document(currentUID)
                     .getDocument()
 
+                guard isCurrentUpdate(), Auth.auth().currentUser?.uid == currentUID else { return }
                 if let subscription = snapshot.data()?["subscription"] as? [String: Any],
                    subscription["source"] as? String == "giftCode",
                    let expirationDate = subscriptionExpirationDate(
                        from: subscription["expirationDate"]
                    ),
                    expirationDate > Date() {
-                    subscriptionStatus = .subscribed(
+                    resolvedStatus = .subscribed(
                         productId: ProductID.move.rawValue,
                         expirationDate: expirationDate
                     )
-                    foundEntitlement = true
                 }
             } catch {
+                guard isCurrentUpdate() else { return }
                 #if DEBUG
                 print("Gift-code entitlement lookup failed: \(error)")
                 #endif
@@ -313,9 +345,12 @@ class SubscriptionManager: ObservableObject {
             }
         }
 
-        if !foundEntitlement {
+        guard isCurrentUpdate() else { return }
+        if let resolvedStatus {
+            subscriptionStatus = resolvedStatus
+        } else {
             // Check if we were previously active → now expired
-            switch subscriptionStatus {
+            switch previousStatus {
             case .trial, .subscribed:
                 subscriptionStatus = .expired
             case .revoked:

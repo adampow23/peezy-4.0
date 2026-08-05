@@ -42,12 +42,14 @@ enum TaskGrouping {
             }
         }
 
-        let todoSorted = todo.sorted { a, b in
+        let todoSorted = sortPackingSessionsChronologically(
+            in: todo.sorted { a, b in
                 let ua = a.urgencyPercentage ?? 0
                 let ub = b.urgencyPercentage ?? 0
                 if ua != ub { return ua > ub }
                 return a.title < b.title
             }
+        )
         let snoozedSorted = snoozed
             .sorted { ($0.snoozedUntil ?? .distantFuture) < ($1.snoozedUntil ?? .distantFuture) }
 
@@ -73,5 +75,26 @@ enum TaskGrouping {
     static func isSnoozedEffective(_ card: PeezyCard, now: Date = Date()) -> Bool {
         guard let snoozedUntil = card.snoozedUntil else { return false }
         return snoozedUntil > now
+    }
+
+    /// Packing generation owns session dates; the Tasks tab only owns their
+    /// display order. Keep non-packing task positions unchanged while replacing
+    /// packing slots with sessions ordered by their scheduled date.
+    private static func sortPackingSessionsChronologically(in tasks: [PeezyCard]) -> [PeezyCard] {
+        let packingSessions = tasks
+            .filter(\.isPackingSession)
+            .sorted { left, right in
+                let leftDate = left.packingSession?.scheduledDate ?? left.dueDate ?? .distantFuture
+                let rightDate = right.packingSession?.scheduledDate ?? right.dueDate ?? .distantFuture
+                if leftDate != rightDate { return leftDate < rightDate }
+                return left.id < right.id
+            }
+
+        var packingIndex = 0
+        return tasks.map { task in
+            guard task.isPackingSession else { return task }
+            defer { packingIndex += 1 }
+            return packingSessions[packingIndex]
+        }
     }
 }
