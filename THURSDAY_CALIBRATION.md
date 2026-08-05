@@ -169,3 +169,110 @@ The session is complete when Adam has signed off each section as `PASS`, accepte
 - Cost, packing-plan, and supplies judgments.
 - Every accepted document/field change with before and after values.
 - Every blocked defect that needs a separately scoped fix.
+
+## Packing engine v2 addendum — sections E and F
+
+For packing-engine-v2 calibration, this addendum supersedes the judgment
+questions and correction map for sections E and F above. Sections A–D remain
+unchanged. Thursday records evidence and a proposed field-level correction; it
+does not patch Firestore or source directly. Every accepted tuning number must
+be changed in the `appConfig/packingSim` seed owned by `seedCubeSheet.js`, pass
+the complete validation gate, and be reseeded in a separately authorized
+session. Never tune generated `packPlan` output.
+
+### E. Box believability, lane sanity, and walkthrough order
+
+Read every room plan from the first box to the last and record `PASS`, `DATA
+CORRECTION`, or `BLOCKED — NO PACKING-SIM FIELD` for each check:
+
+- Box believability: for every box, record its size, assigned lane, displayed
+  contents, bottom-to-top layers, estimated gross weight, and closure reason.
+  Judge whether the contents fit the physical box, remain below its gross
+  weight limit, and produce a plausible box a mover would actually carry.
+- Lane sanity: confirm dense goods use `dense`, fragile clean goods use
+  `fragileClean`, and clothing, linens, and general household goods use
+  `generalSoft`. Flag unsafe tag combinations, a box used by a lane it does not
+  permit, or evidence that more than one box in the same lane was open at once.
+- Walkthrough order: compare the plan with the recording. Rooms must follow
+  their minimum first-seen frame; items within each room must follow their
+  first-seen frame; equal frames must use inventory document ID. Do not accept
+  a globally optimized order, even when it appears more efficient.
+- Routing precedence: spot-check transport policy, packing state, row specialty
+  route, row `notBoxable`, category fallback, then lane simulation in that exact
+  order. A correct row-level decision must not be weakened to make a category
+  look more consistent.
+- Effective volume: when wrapping or compressibility is the suspected cause,
+  judge `protectionFactor` and `compressionFactor` independently. Record which
+  physical effect is wrong; never propose a blended replacement.
+- Time: compare every displayed range with the box and its contents. Judge both
+  the central `estMinutes` and the configured lower/upper range; never replace a
+  range with a point promise.
+
+Walkthrough order, the three-lane architecture, one-open-box-per-lane rule, and
+routing precedence are locked behavior, not calibration settings. A failure in
+one of those rules is `BLOCKED — NO PACKING-SIM FIELD` and needs a separately
+scoped code fix.
+
+### F. Planned-versus-reserve honesty
+
+For each box size, record the literal assigned count, reserve count, and
+purchase count, then verify `purchase = assigned + reserve`. Judge the evidence
+card and reserve detail against these checks:
+
+- The assigned count is the literal normal simulation, with no reconciliation
+  blend or post-hoc adjustment.
+- Reserve is the positive difference between the deterministic stress run and
+  the normal run, plus named coverage-debt allowances; negative differences are
+  zero.
+- Every nonzero reserve line names its reason and its line counts reconcile to
+  the displayed reserve total.
+- High-band or ambiguous items appear in the uncertainty evidence, and each
+  closed dresser, cabinet, closet, opaque bin, or other unverifiable container
+  appears as coverage debt rather than invented contents.
+- Specialty containers appear in both runs but are excluded from the stress
+  box comparison.
+- The card states what was observed, what could not be verified, and what was
+  not included. It must not imply that reserve removes uncertainty.
+
+Judge honesty separately from generosity. A larger reserve is not automatically
+better; it must be traceable to the configured stress rule or a named coverage
+debt.
+
+### Packing-simulation correction map
+
+Only the following `appConfig/packingSim` field paths may receive a proposed E
+or F calibration correction. Replace `<size>`, `<lane>`, `<density>`,
+`<category>`, `<band>`, `<debtType>`, or `<containerType>` with an existing,
+validated key.
+
+| Observation | Seeded `appConfig/packingSim` field | Calibration rule |
+|---|---|---|
+| Physical box dimensions are wrong | `boxes.<size>.internalDimensionsIn.length`, `.width`, or `.height` | Use a measured interior dimension for that box size. |
+| Usable volume is implausible after dimensions are correct | `boxes.<size>.usableCube` | Keep physical dimensions and usable capacity as distinct facts. |
+| A believable load exceeds or underuses the safe gross limit | `boxes.<size>.maxGrossWeightLb` | Cite the packed contents and measured or defensible gross weight. |
+| A lane should not use a particular box size | `boxes.<size>.permittedLanes` | Change lane permission only from repeated physical evidence. |
+| Boxes in one lane are consistently overfilled or underfilled | `lanes.<lane>.fillEfficiency` | Change one lane only and rerun every affected room. |
+| Weight estimates for a density class are consistently wrong | `densityClasses.<density>.lbPerCuFt` | Do not compensate with volume or fill efficiency. |
+| A whole category consistently uses the wrong lane or density | `categoryDefaults.<category>.lane` or `.densityClass` | A single bad row is not category evidence. Row rules retain precedence. |
+| A whole category consistently needs different box bounds | `categoryDefaults.<category>.minBox` or `.maxBox` | Preserve valid box-order and box cross-references. |
+| A whole category consistently has an unsafe mix | `categoryDefaults.<category>.itemTags` or `.incompatibleTags` | Use only existing validated tags. |
+| A category consistently needs more or less protective volume | `categoryDefaults.<category>.protectionFactor` | Record wrapping and air only; do not fold compression into this factor. |
+| A category consistently compresses more or less | `categoryDefaults.<category>.compressionFactor` | Record soft-goods compression only; do not fold protection into this factor. |
+| A whole category is consistently boxable, not boxable, or specialty-routed incorrectly | `categoryDefaults.<category>.notBoxable` or `.specialtyRoute` | Row-level `packProfile` decisions still win exactly. |
+| Wardrobe capacity is implausible | `specialtyRoutes.wardrobe.itemsPerWardrobe` | Count garments placed in one real wardrobe carton. |
+| Picture-carton capacity is implausible | `specialtyRoutes.pictureCarton.itemsPerCartonBySizeBand.<band>` | Keep the existing row-to-size-band map unless the taxonomy itself is wrong. |
+| Dish-pack capacity is implausible | `specialtyRoutes.dishPack.bundlesPerPack` | Count the configured dish bundles per physical pack. |
+| Mattress-bag or television-kit quantity is implausible | `specialtyEstimator.mattressBagsPerMattress` or `.tvKitsPerTelevision` | Change only the observed specialty-container count. |
+| Central time per box is wrong | `timeEstimation.baseMinutesByBoxSize.<size>`, `.minutesPerPackedUnit`, or `.minimumMinutesPerBox` | Change one time hypothesis, rebuild every affected range, and compare again. |
+| Displayed time ranges are too narrow, wide, or coarsely rounded | `timeEstimation.rangeLowerFactor`, `.rangeUpperFactor`, or `.rangeRoundingMinutes` | Preserve a lower factor below one and an upper factor above one. |
+| Ambiguous items use the wrong stress cube band | `stress.ambiguousCubeBand` | Keep normal and stress runs separate and deterministic. |
+| Uncertain fragile reserve is too light or too heavy | `stress.uncertainFragileFillEfficiency` | Do not alter the normal lane fill efficiency to tune stress. |
+| A coverage-debt type receives the wrong reserve | `stress.coverageDebtAllowances.<debtType>.reserveByContainerType.<containerType>` | Tie every count to the named debt and retain a nonempty reason. |
+| A coverage-debt reason is inaccurate or unclear | `stress.coverageDebtAllowances.<debtType>.reason` | Equip and inform; do not promise that the reserve covers unseen contents. |
+| The evidence card shows too many or too few uncertain items | `evidence.mostUncertainItemLimit` | Change only the configured display count, not uncertainty classification. |
+
+A one-row routing, volume, boxability, availability, or transport error is not a
+category-default correction. Record the exact cube-row key as `BLOCKED — ROW
+PROFILE`; a later authorized seeder session may assess that row's
+`packProfile`. Do not use a broader `categoryDefaults` change to defeat the
+locked row-over-category precedence.

@@ -1058,3 +1058,63 @@ source sweep, gift ISO-date client decoding, missing config documents, absent
 client read permission for `appConfig`, and insufficient provider credit.
 
 ARCHITECT RULING: retired-term sweep gates USER-VISIBLE strings only. Internal identifiers (enum cases, callable names, collection names) waived until a post-launch rename pass — renaming deployed infrastructure pre-submission is unjustified risk.
+
+---
+
+## Packing engine v2 — Phase 6 verification (2026-08-05)
+
+Scope: Phase 6 only. The only tracked repository writes are this verification
+ledger and the packing-v2 addendum in `THURSDAY_CALIBRATION.md`. No production
+source, seeder, test, deployment, remote data, or explicitly deferred feature
+was changed.
+
+### Fixture and validation gates
+
+- `node --check` passed for `functions/seedCubeSheet.js`,
+  `functions/packSimulation.js`, and `functions/processInventory.js`.
+- The focused packing chain passed 34/34 tests. It covers seeded config,
+  all eight golden simulator fixtures, strict row-over-category routing,
+  separate `protectionFactor` and `compressionFactor` math, walkthrough order,
+  deterministic stress reserve, prompt defaults, room persistence, retry-safe
+  move aggregation, partial-status guarding, and evidence-frame cleanup.
+- The full Functions suite passed 53/53 tests with zero failures.
+- The deliberately broken seeder fixture rejected schema, cross-reference,
+  range, and boxability-conflict errors. Every case failed before Firestore was
+  reached; the fake admin recorded zero `firestore()` calls, proving the gate
+  writes nothing on invalid input.
+
+### Static and contract verification
+
+- A field-assignment grep across the packing-v2 server and client execution
+  paths found zero numeric literals assigned to box dimensions, usable cube,
+  gross weights, density, fill efficiency, protection/compression factors,
+  specialty capacities, chunk quantities, or time/range tuning fields.
+- A second simulator-only grep found zero executable occurrences of the seeded
+  draft box capacities, density values, or gross-weight values. The client
+  legacy kit fallback remains unchanged by the Phase 5 contract and is not used
+  when a matching complete move aggregate supplies `purchaseBySize`.
+- The copy-tone sweep found no external-action promise. Its only delivery-term
+  user-facing hit was `Have these ready by …`, which equips the user rather than
+  claiming that Peezy will arrange or deliver supplies.
+- Appendix B was extracted as an exact 808-byte block with SHA-256
+  `1885b5882c66a77034725923d6f3ba34a52279a747c71fda420377c5bcfd4583`.
+  The emitted `packPlan` matched its top-level, box, item, leftover, restricted,
+  and feedback-schema keys in order; `engineVersion` and the reserved feedback
+  values also matched. The frozen 1.1 contract was not edited.
+
+### Build and calibration handoff
+
+- A signed Debug build for iPhone 17 Pro / iOS 26.5 completed with
+  `** BUILD SUCCEEDED **`. The only warning was the existing Crashlytics build
+  phase without declared outputs.
+- `THURSDAY_CALIBRATION.md` now requires section E to judge physical box
+  believability, three-lane sanity, exact routing precedence, and sacred
+  walkthrough order. Section F separately judges literal planned counts against
+  deterministic, reason-bearing reserve counts.
+- The addendum lists every permitted packing-v2 correction path under
+  `appConfig/packingSim`, preserves row-over-category precedence, and treats
+  `protectionFactor` and `compressionFactor` as independent hypotheses. Locked
+  ordering or routing behavior and single-row defects cannot be hidden in a
+  broad category tuning change.
+
+Phase 6 verification result: **PASS**. No deployment or reseed was performed.
