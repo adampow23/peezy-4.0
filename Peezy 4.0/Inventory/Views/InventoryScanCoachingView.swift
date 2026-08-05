@@ -51,6 +51,17 @@ struct InventoryScanCoachingView: View {
                         )
                     }
 
+                    Label {
+                        Text("Your video never leaves your phone. Peezy uploads still frames only, and deletes them after your inventory is confirmed — keeping just the snapshots that show where your items are.")
+                            .font(.footnote)
+                            .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.72))
+                            .fixedSize(horizontal: false, vertical: true)
+                    } icon: {
+                        Image(systemName: "lock.shield.fill")
+                            .foregroundStyle(PeezyTheme.Colors.deepInk)
+                    }
+                    .accessibilityIdentifier("inventory.coaching.privacy")
+
                     PeezyAssessmentButton("Start scanning", action: onStart)
                         .accessibilityIdentifier("inventory.coaching.start")
                 }

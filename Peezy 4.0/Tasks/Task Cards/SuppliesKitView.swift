@@ -1,3 +1,4 @@
+import FirebaseFirestore
 import SwiftUI
 
 struct SuppliesKitView: View {
@@ -16,6 +17,8 @@ struct SuppliesKitView: View {
     @State private var hasCustomizedKit = false
     @State private var didEditCustomization = false
     @State private var restoredCustomizationValue: String?
+    @State private var packingAllocation: PackingSupplyAllocation?
+    @State private var reserveDetails: ReserveDetails?
 
     @ObservedObject private var subscriptionManager = SubscriptionManager.shared
     private let actionService = TaskActionService()
@@ -53,6 +56,7 @@ struct SuppliesKitView: View {
                         self.didEditCustomization = true
                     }
                 ),
+                includesExtraLarge: packingAllocation != nil,
                 isSaving: isSaving,
                 onSave: saveCustomization,
                 onCancel: {
@@ -61,6 +65,9 @@ struct SuppliesKitView: View {
                     if !hasCustomizedKit { restoredCustomizationValue = nil }
                 }
             )
+        }
+        .sheet(item: $reserveDetails) { details in
+            ReserveReasonsSheet(details: details)
         }
         .accessibilityIdentifier("kit.flow")
         .resumableFlowProgress(
@@ -107,14 +114,49 @@ struct SuppliesKitView: View {
                         .foregroundStyle(PeezyTheme.Colors.deepInk)
                         .accessibilityIdentifier("kit.title")
 
-                    Text("Sized from your home scan")
-                        .font(.body)
-                        .foregroundStyle(.secondary)
+                    if packingAllocation != nil {
+                        betaLabel
+                    }
+
+                    Text(
+                        packingAllocation == nil
+                            ? "Sized from your home scan"
+                            : "Based on the items visible in your walkthrough and the inventory you confirmed."
+                    )
+                    .font(.body)
+                    .foregroundStyle(.secondary)
 
                     VStack(spacing: 10) {
-                        quantityLine("Small boxes", kit.small, id: "small")
-                        quantityLine("Medium boxes", kit.medium, id: "medium")
-                        quantityLine("Large boxes", kit.large, id: "large")
+                        if let packingAllocation {
+                            packingQuantityLine(
+                                "Small boxes",
+                                currentValue: kit.small,
+                                breakdown: packingAllocation[.small],
+                                size: .small
+                            )
+                            packingQuantityLine(
+                                "Medium boxes",
+                                currentValue: kit.medium,
+                                breakdown: packingAllocation[.medium],
+                                size: .medium
+                            )
+                            packingQuantityLine(
+                                "Large boxes",
+                                currentValue: kit.large,
+                                breakdown: packingAllocation[.large],
+                                size: .large
+                            )
+                            packingQuantityLine(
+                                "Extra-large boxes",
+                                currentValue: kit.xl,
+                                breakdown: packingAllocation[.xl],
+                                size: .xl
+                            )
+                        } else {
+                            quantityLine("Small boxes", kit.small, id: "small")
+                            quantityLine("Medium boxes", kit.medium, id: "medium")
+                            quantityLine("Large boxes", kit.large, id: "large")
+                        }
                         quantityLine("Wardrobe boxes", kit.wardrobe, id: "wardrobe")
                         quantityLine("Dish packs", kit.dishPack, id: "dish_pack")
                         quantityLine("Tape rolls", kit.tape, id: "tape")
@@ -141,14 +183,17 @@ struct SuppliesKitView: View {
                     .accessibilityIdentifier("kit.price")
 
                     if let deliveryBy = kit.deliveryBy {
-                        Text("Deliver by \(deliveryBy.formatted(date: .abbreviated, time: .omitted)) — before your first packing session.")
+                        Text("Have these ready by \(deliveryBy.formatted(date: .abbreviated, time: .omitted)) — before your first packing session.")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                             .accessibilityIdentifier("kit.delivery")
                     }
 
-                    // Copy LOCKED (Spec 06 Phase B).
-                    Text("Includes a few extra — running out mid-pack is worse than spares.")
+                    Text(
+                        packingAllocation == nil
+                            ? "Includes a few extra — running out mid-pack is worse than spares."
+                            : "Reserve boxes cover the specific inventory gaps listed with each size."
+                    )
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .accessibilityIdentifier("kit.headroom_copy")
@@ -167,7 +212,7 @@ struct SuppliesKitView: View {
 
             VStack(spacing: 12) {
                 PeezyAssessmentButton(
-                    isSubmitting ? "Sending…" : "Order my kit",
+                    isSubmitting ? "Sending…" : "Send kit request",
                     disabled: isSubmitting || isSaving,
                     action: orderTapped
                 )
@@ -211,7 +256,7 @@ struct SuppliesKitView: View {
                     .font(.system(size: 52))
                     .foregroundStyle(PeezyTheme.Colors.successGreen)
                     .accessibilityHidden(true)
-                Text("Kit request sent. Peezy is lining up the supplies before packing starts.")
+                Text("Kit request sent. Keep this list handy so you can confirm the supplies and timing before packing starts.")
                     .font(.title2)
                     .bold()
                     .foregroundStyle(PeezyTheme.Colors.deepInk)
@@ -263,14 +308,86 @@ struct SuppliesKitView: View {
         .accessibilityIdentifier("kit.item.\(id)")
     }
 
+    private var betaLabel: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text("Packing engine · beta")
+                .font(.caption.bold())
+                .foregroundStyle(PeezyTheme.Colors.deepInk)
+            Text("Estimates improve as movers like you use it.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("kit.packing_beta")
+    }
+
+    private func packingQuantityLine(
+        _ label: String,
+        currentValue: Int,
+        breakdown: PackingSupplyBreakdown,
+        size: PackingSupplyBoxSize
+    ) -> some View {
+        let valueMatchesPlan = currentValue == breakdown.purchase
+        let content = HStack(spacing: 10) {
+            Text(label)
+            Spacer()
+            VStack(alignment: .trailing, spacing: 2) {
+                if !valueMatchesPlan {
+                    Text("\(currentValue) selected")
+                        .bold()
+                }
+                Text("\(breakdown.assigned) assigned + \(breakdown.reserve) reserve")
+                    .font(valueMatchesPlan ? .body.bold() : .caption)
+                    .foregroundStyle(valueMatchesPlan ? PeezyTheme.Colors.deepInk : .secondary)
+            }
+            if !breakdown.reasons.isEmpty {
+                Image(systemName: "info.circle")
+                    .foregroundStyle(PeezyTheme.Colors.deepInk)
+                    .accessibilityHidden(true)
+            }
+        }
+
+        return Group {
+            if breakdown.reasons.isEmpty {
+                content
+            } else {
+                Button {
+                    reserveDetails = ReserveDetails(
+                        size: size,
+                        label: label,
+                        breakdown: breakdown
+                    )
+                } label: {
+                    content
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .foregroundStyle(PeezyTheme.Colors.deepInk)
+        .accessibilityElement(children: .combine)
+        .accessibilityHint(
+            breakdown.reasons.isEmpty
+                ? ""
+                : "Shows why reserve boxes were included."
+        )
+        .accessibilityIdentifier("kit.item.\(size.rawValue)")
+    }
+
     private func loadKit() async {
         errorMessage = nil
         do {
             let loaded = try await actionService.loadSuppliesKitState(userId: userId, taskId: taskId)
-            let loadedKit = restoredCustomizationValue
+            let allocation = try? await loadPackingAllocation()
+            var loadedKit = restoredCustomizationValue
                 .flatMap { Self.applyingCustomization($0, to: loaded.kit) }
                 ?? loaded.kit
+            if let allocation,
+               !loaded.wasCustomized,
+               restoredCustomizationValue == nil {
+                loadedKit.apply(allocation)
+            }
             kit = loadedKit
+            packingAllocation = allocation
             hasCustomizedKit = loaded.wasCustomized || restoredCustomizationValue != nil
             if !didLogOfferView {
                 didLogOfferView = true
@@ -279,6 +396,27 @@ struct SuppliesKitView: View {
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    private func loadPackingAllocation() async throws -> PackingSupplyAllocation? {
+        let db = Firestore.firestore()
+        let aggregateSnapshot = try await db.collection("users").document(userId)
+            .collection("packingAggregate").document("current")
+            .getDocument()
+        guard let aggregateData = aggregateSnapshot.data() else { return nil }
+
+        let inventorySnapshot = try await db.collection("users").document(userId)
+            .collection("inventory")
+            .getDocuments()
+        let inventoryDocuments = inventorySnapshot.documents
+            .filter { $0.documentID != "_metadata" }
+            .map {
+                PackingV2InventoryDocument(id: $0.documentID, data: $0.data())
+            }
+        return PackingSupplyAllocation(
+            aggregateData: aggregateData,
+            inventoryDocuments: inventoryDocuments
+        )
     }
 
     private func saveCustomization() {
@@ -368,6 +506,7 @@ struct SuppliesKitView: View {
             small: kit.small,
             medium: kit.medium,
             large: kit.large,
+            xl: kit.xl,
             wardrobe: kit.wardrobe,
             dishPack: kit.dishPack,
             tape: kit.tape,
@@ -402,7 +541,7 @@ struct SuppliesKitView: View {
 
     private static func customizationValue(for kit: SuppliesKit) -> String {
         [
-            kit.small, kit.medium, kit.large, kit.wardrobe, kit.dishPack,
+            kit.small, kit.medium, kit.large, kit.xl, kit.wardrobe, kit.dishPack,
             kit.tape, kit.paper, kit.wrap, kit.mattressBags
         ]
         .map(String.init)
@@ -411,22 +550,29 @@ struct SuppliesKitView: View {
 
     private static func applyingCustomization(_ value: String, to base: SuppliesKit) -> SuppliesKit? {
         let values = value.split(separator: ",").compactMap { Int($0) }
-        guard values.count == 9 else { return nil }
+        guard values.count == 9 || values.count == 10 else { return nil }
         var result = base
         result.small = values[0]
         result.medium = values[1]
         result.large = values[2]
-        result.wardrobe = values[3]
-        result.dishPack = values[4]
-        result.tape = values[5]
-        result.paper = values[6]
-        result.wrap = values[7]
-        result.mattressBags = values[8]
+        let offset: Int
+        if values.count == 10 {
+            result.xl = values[3]
+            offset = 1
+        } else {
+            offset = 0
+        }
+        result.wardrobe = values[3 + offset]
+        result.dishPack = values[4 + offset]
+        result.tape = values[5 + offset]
+        result.paper = values[6 + offset]
+        result.wrap = values[7 + offset]
+        result.mattressBags = values[8 + offset]
         return result
     }
 
     private func itemTotal(_ kit: SuppliesKit) -> Int {
-        kit.small + kit.medium + kit.large + kit.wardrobe + kit.dishPack
+        kit.small + kit.medium + kit.large + kit.xl + kit.wardrobe + kit.dishPack
             + kit.tape + kit.paper + kit.wrap + kit.mattressBags
     }
 }
@@ -435,6 +581,7 @@ private struct SuppliesKitOrderPayload: Codable {
     let small: Int
     let medium: Int
     let large: Int
+    let xl: Int
     let wardrobe: Int
     let dishPack: Int
     let tape: Int
@@ -454,8 +601,54 @@ private enum SuppliesKitSubmissionError: LocalizedError {
     }
 }
 
+private struct ReserveDetails: Identifiable {
+    let size: PackingSupplyBoxSize
+    let label: String
+    let breakdown: PackingSupplyBreakdown
+
+    var id: PackingSupplyBoxSize { size }
+}
+
+private struct ReserveReasonsSheet: View {
+    let details: ReserveDetails
+
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    LabeledContent("Assigned", value: "\(details.breakdown.assigned)")
+                    LabeledContent("Reserve", value: "\(details.breakdown.reserve)")
+                }
+
+                Section("Why reserve boxes are included") {
+                    ForEach(details.breakdown.reasons) { reason in
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(reason.reason)
+                            Text("\(reason.count) reserve")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        .accessibilityElement(children: .combine)
+                    }
+                }
+            }
+            .navigationTitle(details.label)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+        .accessibilityIdentifier("kit.reserve_reasons.\(details.size.rawValue)")
+    }
+}
+
 private struct SuppliesKitCustomizeSheet: View {
     @Binding var kit: SuppliesKit
+    let includesExtraLarge: Bool
     let isSaving: Bool
     let onSave: () -> Void
     let onCancel: () -> Void
@@ -466,6 +659,7 @@ private struct SuppliesKitCustomizeSheet: View {
         case small
         case medium
         case large
+        case xl
         case wardrobe
         case dishPack
         case tape
@@ -478,6 +672,7 @@ private struct SuppliesKitCustomizeSheet: View {
             case .small: "Small boxes"
             case .medium: "Medium boxes"
             case .large: "Large boxes"
+            case .xl: "Extra-large boxes"
             case .wardrobe: "Wardrobe boxes"
             case .dishPack: "Dish packs"
             case .tape: "Tape rolls"
@@ -492,6 +687,7 @@ private struct SuppliesKitCustomizeSheet: View {
             case .small: "small"
             case .medium: "medium"
             case .large: "large"
+            case .xl: "xl"
             case .wardrobe: "wardrobe"
             case .dishPack: "dish_pack"
             case .tape: "tape"
@@ -502,14 +698,18 @@ private struct SuppliesKitCustomizeSheet: View {
         }
     }
 
+    private var fields: [KitField] {
+        KitField.allCases.filter { includesExtraLarge || $0 != .xl }
+    }
+
     private var currentField: KitField {
-        KitField.allCases[min(questionIndex, KitField.allCases.count - 1)]
+        fields[min(questionIndex, fields.count - 1)]
     }
 
     var body: some View {
         NavigationStack {
             VStack(alignment: .leading, spacing: 24) {
-                Text("Item \(questionIndex + 1) of \(KitField.allCases.count)")
+                Text("Item \(questionIndex + 1) of \(fields.count)")
                     .font(.caption.bold())
                     .foregroundStyle(.secondary)
                     .accessibilityIdentifier("kit.customize.progress")
@@ -542,7 +742,7 @@ private struct SuppliesKitCustomizeSheet: View {
                     .accessibilityIdentifier("kit.customize.price")
 
                     PeezyAssessmentButton(
-                        questionIndex == KitField.allCases.count - 1
+                        questionIndex == fields.count - 1
                             ? (isSaving ? "Saving…" : "Save")
                             : "Continue",
                         disabled: isSaving,
@@ -571,7 +771,7 @@ private struct SuppliesKitCustomizeSheet: View {
     }
 
     private func advance() {
-        if questionIndex == KitField.allCases.count - 1 {
+        if questionIndex == fields.count - 1 {
             onSave()
         } else {
             questionIndex += 1
@@ -583,6 +783,7 @@ private struct SuppliesKitCustomizeSheet: View {
         case .small: $kit.small
         case .medium: $kit.medium
         case .large: $kit.large
+        case .xl: $kit.xl
         case .wardrobe: $kit.wardrobe
         case .dishPack: $kit.dishPack
         case .tape: $kit.tape

@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 struct PackingPlanItem: Equatable {
@@ -55,6 +56,499 @@ struct PackingPlan: Codable, Equatable {
 struct PackingCompletion: Equatable {
     let consequenceLine: String
     let nextSessionDate: Date?
+}
+
+nonisolated struct PackingV2InventoryDocument {
+    let id: String
+    let data: [String: Any]
+}
+
+nonisolated enum PackingV2InventoryRevision {
+    static func room(documentID: String, items: Any) -> String? {
+        digest(["roomId": documentID, "items": items])
+    }
+
+    static func aggregate(inventoryDocuments: [PackingV2InventoryDocument]) -> String? {
+        let revisions = inventoryDocuments
+            .sorted { $0.id < $1.id }
+            .compactMap { document -> [String: String]? in
+                guard let items = document.data["items"] as? [[String: Any]],
+                      let inventoryRevision = room(documentID: document.id, items: items)
+                else { return nil }
+                return ["id": document.id, "inventoryRevision": inventoryRevision]
+            }
+        guard revisions.count == inventoryDocuments.count else { return nil }
+        return digest(revisions)
+    }
+
+    private static func digest(_ value: Any) -> String? {
+        guard let json = canonicalJSONString(value),
+              let data = json.data(using: .utf8)
+        else { return nil }
+        return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// Mirrors `JSON.stringify(canonicalize(value))` in processInventory.js.
+    /// Foundation's JSONSerialization expands binary floating-point tails, so
+    /// it cannot be used for the cross-runtime revision stamp.
+    private static func canonicalJSONString(_ value: Any) -> String? {
+        if value is NSNull { return "null" }
+        if let string = value as? String { return quoted(string) }
+        if let number = value as? NSNumber {
+            if CFGetTypeID(number) == CFBooleanGetTypeID() {
+                return number.boolValue ? "true" : "false"
+            }
+            return javascriptNumber(number.doubleValue)
+        }
+        if let values = value as? [Any] {
+            let encoded = values.compactMap(canonicalJSONString)
+            guard encoded.count == values.count else { return nil }
+            return "[\(encoded.joined(separator: ","))]"
+        }
+        if let values = value as? [String: Any] {
+            let encoded = values.keys.sorted().compactMap { key -> String? in
+                guard let value = values[key],
+                      let encodedValue = canonicalJSONString(value)
+                else { return nil }
+                return "\(quoted(key)):\(encodedValue)"
+            }
+            guard encoded.count == values.count else { return nil }
+            return "{\(encoded.joined(separator: ","))}"
+        }
+        return nil
+    }
+
+    private static func quoted(_ value: String) -> String {
+        guard let data = try? JSONSerialization.data(
+            withJSONObject: [value],
+            options: [.withoutEscapingSlashes]
+        ) else { return "\"\"" }
+        let arrayJSON = String(decoding: data, as: UTF8.self)
+        return String(arrayJSON.dropFirst().dropLast())
+    }
+
+    private static func javascriptNumber(_ value: Double) -> String {
+        guard value.isFinite else { return "null" }
+        guard value != 0 else { return "0" }
+
+        let swiftValue = String(value).lowercased()
+        let magnitude = abs(value)
+        if let exponentIndex = swiftValue.firstIndex(of: "e") {
+            if magnitude >= 0.000001, magnitude < 1_000_000_000_000_000_000_000 {
+                return expandedDecimal(swiftValue, exponentIndex: exponentIndex)
+            }
+            let mantissa = swiftValue[..<exponentIndex]
+            let exponent = swiftValue[swiftValue.index(after: exponentIndex)...]
+            let sign: Character? = exponent.first == "+" || exponent.first == "-"
+                ? exponent.first
+                : nil
+            let digits = sign == nil ? exponent[...] : exponent.dropFirst()
+            let normalizedDigits = digits.drop { $0 == "0" }
+            let exponentDigits = normalizedDigits.isEmpty ? "0" : String(normalizedDigits)
+            return "\(mantissa)e\(sign.map(String.init) ?? "")\(exponentDigits)"
+        }
+        return swiftValue.hasSuffix(".0") ? String(swiftValue.dropLast(2)) : swiftValue
+    }
+
+    private static func expandedDecimal(
+        _ value: String,
+        exponentIndex: String.Index
+    ) -> String {
+        let mantissa = String(value[..<exponentIndex])
+        let exponent = Int(value[value.index(after: exponentIndex)...]) ?? 0
+        let isNegative = mantissa.hasPrefix("-")
+        let unsigned = isNegative ? String(mantissa.dropFirst()) : mantissa
+        let digits = unsigned.filter { $0 != "." }
+        let originalDecimalPosition = unsigned.firstIndex(of: ".").map {
+            unsigned.distance(from: unsigned.startIndex, to: $0)
+        } ?? unsigned.count
+        let decimalPosition = originalDecimalPosition + exponent
+        let expanded: String
+        if decimalPosition <= 0 {
+            expanded = "0." + String(repeating: "0", count: -decimalPosition) + digits
+        } else if decimalPosition >= digits.count {
+            expanded = digits + String(repeating: "0", count: decimalPosition - digits.count)
+        } else {
+            let split = digits.index(digits.startIndex, offsetBy: decimalPosition)
+            expanded = String(digits[..<split]) + "." + String(digits[split...])
+        }
+        return isNegative ? "-" + expanded : expanded
+    }
+}
+
+nonisolated struct PackingV2TimeRange: Equatable {
+    let lowerFactor: Double
+    let upperFactor: Double
+    let roundingMinutes: Int
+
+    init?(firestoreData data: [String: Any]) {
+        guard let lowerFactor = (data["rangeLowerFactor"] as? NSNumber)?.doubleValue,
+              let upperFactor = (data["rangeUpperFactor"] as? NSNumber)?.doubleValue,
+              let roundingMinutes = (data["rangeRoundingMinutes"] as? NSNumber)?.intValue,
+              lowerFactor > 0,
+              lowerFactor < 1,
+              upperFactor > 1,
+              roundingMinutes > 0
+        else { return nil }
+        self.lowerFactor = lowerFactor
+        self.upperFactor = upperFactor
+        self.roundingMinutes = roundingMinutes
+    }
+
+    func label(centralMinutes: Double) -> String {
+        let increment = Double(roundingMinutes)
+        let lower = max(
+            roundingMinutes,
+            Int(floor((centralMinutes * lowerFactor) / increment)) * roundingMinutes
+        )
+        let roundedUpper = Int(ceil((centralMinutes * upperFactor) / increment)) * roundingMinutes
+        let upper = max(roundedUpper, lower + roundingMinutes)
+        return "about \(lower)–\(upper) min"
+    }
+}
+
+nonisolated struct PackingV2RenderConfiguration: Equatable {
+    let configVersion: String
+    let timeRange: PackingV2TimeRange
+    let transportGuidance: [String: String]
+
+    init?(firestoreData data: [String: Any]) {
+        guard let configVersion = data["configVersion"] as? String,
+              !configVersion.isEmpty,
+              let timeData = data["timeEstimation"] as? [String: Any],
+              let timeRange = PackingV2TimeRange(firestoreData: timeData),
+              let policyData = data["transportPolicies"] as? [String: Any]
+        else { return nil }
+
+        let guidance = policyData.reduce(into: [String: String]()) { result, entry in
+            guard let policy = entry.value as? [String: Any],
+                  let copy = policy["userFacingCopy"] as? String,
+                  !copy.isEmpty
+            else { return }
+            result[entry.key] = copy
+        }
+        guard !guidance.isEmpty else { return nil }
+        self.configVersion = configVersion
+        self.timeRange = timeRange
+        transportGuidance = guidance
+    }
+}
+
+nonisolated struct PackingV2BoxItem: Equatable {
+    let name: String
+    let qty: Int
+}
+
+nonisolated struct PackingV2Box: Equatable {
+    let n: Int
+    let size: String
+    let lane: String
+    let items: [PackingV2BoxItem]
+    let layers: [String]
+    let estMinutes: Double
+    let roomID: String
+}
+
+nonisolated struct PackingV2Leftover: Equatable, Identifiable {
+    let name: String
+    let handlingNote: String
+
+    var id: String { "\(name):\(handlingNote)" }
+}
+
+nonisolated struct PackingV2RestrictedItem: Equatable, Identifiable {
+    let name: String
+    let policy: String
+
+    var id: String { "\(name):\(policy)" }
+}
+
+nonisolated struct PackingV2CoverageItem: Equatable, Identifiable {
+    let name: String
+    let qty: Int
+    let reason: String
+
+    var id: String { "\(name):\(reason)" }
+}
+
+nonisolated struct PackingV2UncertainItem: Equatable, Identifiable {
+    let name: String
+    let reasons: [String]
+
+    var id: String { "\(name):\(reasons.joined(separator: ":"))" }
+}
+
+nonisolated struct PackingV2Evidence: Equatable {
+    let assignedCount: Int
+    let reserveCount: Int
+    let coverageGrade: String
+    let basedOn: String
+    let notIncluded: String
+    let couldNotVerify: [PackingV2CoverageItem]
+    let mostUncertain: [PackingV2UncertainItem]
+}
+
+nonisolated struct PackingV2RoomPlan: Equatable {
+    let id: String
+    let name: String
+    let boxes: [PackingV2Box]
+    let leftovers: [PackingV2Leftover]
+    let restricted: [PackingV2RestrictedItem]
+    let openFirst: [String]
+    let evidence: PackingV2Evidence
+
+    init?(
+        inventoryDocument: PackingV2InventoryDocument,
+        configuration: PackingV2RenderConfiguration
+    ) {
+        let data = inventoryDocument.data
+        guard let items = data["items"] as? [[String: Any]],
+              let currentRevision = PackingV2InventoryRevision.room(
+                  documentID: inventoryDocument.id,
+                  items: items
+              ),
+              let metadata = data["packMeta"] as? [String: Any],
+              metadata["status"] as? String == "complete",
+              metadata["inventoryRevision"] as? String == currentRevision,
+              metadata["configVersion"] as? String == configuration.configVersion,
+              let plan = data["packPlan"] as? [String: Any],
+              plan["engineVersion"] as? String == "sim-v2",
+              plan["configVersion"] as? String == configuration.configVersion,
+              let boxesData = plan["boxes"] as? [[String: Any]],
+              let leftoversData = plan["leftovers"] as? [[String: Any]],
+              let restrictedData = plan["restricted"] as? [[String: Any]],
+              let openFirst = plan["openFirst"] as? [String],
+              let totalsBySize = Self.nonnegativeCounts(plan["totalsBySize"]),
+              let reserveBySize = Self.nonnegativeCounts(metadata["reserveBySize"]),
+              let uncertainty = metadata["uncertainty"] as? [String: Any],
+              let coverageGrade = uncertainty["coverageGrade"] as? String,
+              let basedOn = uncertainty["basedOn"] as? String,
+              let notIncluded = uncertainty["notIncluded"] as? String,
+              let couldNotVerifyData = uncertainty["couldNotVerify"] as? [[String: Any]],
+              let mostUncertainData = uncertainty["mostUncertain"] as? [[String: Any]]
+        else { return nil }
+
+        let decodedBoxes = boxesData.compactMap(Self.box(from:))
+        let decodedLeftovers = leftoversData.compactMap(Self.leftover(from:))
+        let decodedRestricted = restrictedData.compactMap(Self.restricted(from:))
+        let couldNotVerify = couldNotVerifyData.compactMap(Self.coverageItem(from:))
+        let mostUncertain = mostUncertainData.compactMap(Self.uncertainItem(from:))
+        guard decodedBoxes.count == boxesData.count,
+              decodedLeftovers.count == leftoversData.count,
+              decodedRestricted.count == restrictedData.count,
+              decodedRestricted.allSatisfy({
+                  configuration.transportGuidance[$0.policy] != nil
+              }),
+              couldNotVerify.count == couldNotVerifyData.count,
+              mostUncertain.count == mostUncertainData.count
+        else { return nil }
+
+        id = inventoryDocument.id
+        name = data["name"] as? String
+            ?? data["roomName"] as? String
+            ?? inventoryDocument.id
+        boxes = decodedBoxes
+        leftovers = decodedLeftovers
+        restricted = decodedRestricted
+        self.openFirst = openFirst
+        evidence = PackingV2Evidence(
+            assignedCount: totalsBySize.values.reduce(0, +),
+            reserveCount: reserveBySize.values.reduce(0, +),
+            coverageGrade: coverageGrade,
+            basedOn: basedOn,
+            notIncluded: notIncluded,
+            couldNotVerify: couldNotVerify,
+            mostUncertain: mostUncertain
+        )
+    }
+
+    private static func box(from data: [String: Any]) -> PackingV2Box? {
+        guard let n = (data["n"] as? NSNumber)?.intValue,
+              n > 0,
+              let size = data["size"] as? String,
+              !size.isEmpty,
+              let lane = data["lane"] as? String,
+              !lane.isEmpty,
+              let itemData = data["items"] as? [[String: Any]],
+              let layers = data["layers"] as? [String],
+              let estMinutes = (data["estMinutes"] as? NSNumber)?.doubleValue,
+              estMinutes > 0,
+              let roomID = data["roomId"] as? String
+        else { return nil }
+        let items = itemData.compactMap { item -> PackingV2BoxItem? in
+            guard let name = item["name"] as? String,
+                  !name.isEmpty,
+                  let qty = (item["qty"] as? NSNumber)?.intValue,
+                  qty > 0
+            else { return nil }
+            return PackingV2BoxItem(name: name, qty: qty)
+        }
+        guard items.count == itemData.count else { return nil }
+        return PackingV2Box(
+            n: n,
+            size: size,
+            lane: lane,
+            items: items,
+            layers: layers,
+            estMinutes: estMinutes,
+            roomID: roomID
+        )
+    }
+
+    private static func leftover(from data: [String: Any]) -> PackingV2Leftover? {
+        guard let name = data["name"] as? String,
+              !name.isEmpty,
+              let note = data["handlingNote"] as? String,
+              !note.isEmpty
+        else { return nil }
+        return PackingV2Leftover(name: name, handlingNote: note)
+    }
+
+    private static func restricted(from data: [String: Any]) -> PackingV2RestrictedItem? {
+        guard let name = data["name"] as? String,
+              !name.isEmpty,
+              let policy = data["policy"] as? String,
+              !policy.isEmpty
+        else { return nil }
+        return PackingV2RestrictedItem(name: name, policy: policy)
+    }
+
+    private static func coverageItem(from data: [String: Any]) -> PackingV2CoverageItem? {
+        guard let name = data["name"] as? String,
+              !name.isEmpty,
+              let reason = data["reason"] as? String,
+              !reason.isEmpty,
+              let qty = (data["qty"] as? NSNumber)?.intValue,
+              qty > 0
+        else { return nil }
+        return PackingV2CoverageItem(name: name, qty: qty, reason: reason)
+    }
+
+    private static func uncertainItem(from data: [String: Any]) -> PackingV2UncertainItem? {
+        guard let name = data["name"] as? String,
+              !name.isEmpty,
+              let reasons = data["reasons"] as? [String],
+              !reasons.isEmpty
+        else { return nil }
+        return PackingV2UncertainItem(name: name, reasons: reasons)
+    }
+
+    private static func nonnegativeCounts(_ value: Any?) -> [String: Int]? {
+        guard let raw = value as? [String: Any] else { return nil }
+        var result: [String: Int] = [:]
+        for (key, value) in raw {
+            guard let count = (value as? NSNumber)?.intValue,
+                  count >= 0
+            else { return nil }
+            result[key] = count
+        }
+        return result
+    }
+}
+
+nonisolated struct PackingV2DisplayBox: Equatable, Identifiable {
+    let roomName: String
+    let box: PackingV2Box
+
+    var id: String { "\(box.roomID):\(box.n)" }
+}
+
+nonisolated struct PackingV2SessionPlan: Equatable {
+    let boxes: [PackingV2DisplayBox]
+    let leftovers: [PackingV2Leftover]
+    let restricted: [PackingV2RestrictedItem]
+    let openFirst: [String]
+    let evidence: PackingV2Evidence
+    let timeRange: PackingV2TimeRange
+    let transportGuidance: [String: String]
+
+    static func make(
+        session: PackingSession,
+        legacyPlan: PackingPlan,
+        roomPlans: [PackingV2RoomPlan],
+        configuration: PackingV2RenderConfiguration
+    ) -> PackingV2SessionPlan? {
+        guard !session.isFirstNightBag else { return nil }
+        let orderedRoomPlans = session.rooms.compactMap { roomName in
+            roomPlans.first { $0.name.caseInsensitiveCompare(roomName) == .orderedSame }
+        }
+        guard orderedRoomPlans.count == session.rooms.count else { return nil }
+
+        var displayBoxes: [PackingV2DisplayBox] = []
+        var leftovers: [PackingV2Leftover] = []
+        var restricted: [PackingV2RestrictedItem] = []
+        var openFirst: [String] = []
+
+        for roomPlan in orderedRoomPlans {
+            let matchingSessions = legacyPlan.sessions.filter { candidate in
+                !candidate.isFirstNightBag && candidate.rooms.contains {
+                    $0.caseInsensitiveCompare(roomPlan.name) == .orderedSame
+                }
+            }
+            guard let position = matchingSessions.firstIndex(where: { $0.taskId == session.taskId })
+            else { return nil }
+
+            let boxSlice = slice(
+                roomPlan.boxes,
+                position: position,
+                partitionCount: matchingSessions.count
+            )
+            displayBoxes.append(contentsOf: boxSlice.map {
+                PackingV2DisplayBox(roomName: roomPlan.name, box: $0)
+            })
+            if position == matchingSessions.startIndex {
+                restricted.append(contentsOf: roomPlan.restricted)
+            }
+            if position == matchingSessions.index(before: matchingSessions.endIndex) {
+                leftovers.append(contentsOf: roomPlan.leftovers)
+                openFirst.append(contentsOf: roomPlan.openFirst)
+            }
+        }
+
+        let evidence = mergeEvidence(orderedRoomPlans.map(\.evidence))
+        return PackingV2SessionPlan(
+            boxes: displayBoxes,
+            leftovers: unique(leftovers),
+            restricted: unique(restricted),
+            openFirst: unique(openFirst),
+            evidence: evidence,
+            timeRange: configuration.timeRange,
+            transportGuidance: configuration.transportGuidance
+        )
+    }
+
+    private static func slice<T>(_ values: [T], position: Int, partitionCount: Int) -> ArraySlice<T> {
+        guard partitionCount > 0 else { return values[values.startIndex..<values.startIndex] }
+        let baseCount = values.count / partitionCount
+        let remainder = values.count % partitionCount
+        let offset = (position * baseCount) + min(position, remainder)
+        let count = baseCount + (position < remainder ? 1 : 0)
+        return values[offset..<(offset + count)]
+    }
+
+    private static func mergeEvidence(_ values: [PackingV2Evidence]) -> PackingV2Evidence {
+        PackingV2Evidence(
+            assignedCount: values.reduce(0) { $0 + $1.assignedCount },
+            reserveCount: values.reduce(0) { $0 + $1.reserveCount },
+            coverageGrade: values.map(\.coverageGrade).contains("Limited")
+                ? "Limited"
+                : (values.map(\.coverageGrade).contains("Medium") ? "Medium" : "High"),
+            basedOn: values.first?.basedOn ?? "",
+            notIncluded: values.first?.notIncluded ?? "",
+            couldNotVerify: unique(values.flatMap(\.couldNotVerify)),
+            mostUncertain: unique(values.flatMap(\.mostUncertain))
+        )
+    }
+
+    private static func unique<T: Identifiable>(_ values: [T]) -> [T] where T.ID: Hashable {
+        var seen: Set<T.ID> = []
+        return values.filter { seen.insert($0.id).inserted }
+    }
+
+    private static func unique(_ values: [String]) -> [String] {
+        var seen: Set<String> = []
+        return values.filter { seen.insert($0).inserted }
+    }
 }
 
 /// Pure reverse-scheduling engine for the inventory-derived packing plan.
