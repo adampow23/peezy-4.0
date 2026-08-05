@@ -4,19 +4,32 @@
  * returns structured inventory JSON to Firestore.
  */
 
+const { createHash } = require('node:crypto');
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
+const { onDocumentWritten } = require('firebase-functions/v2/firestore');
 const admin = require('firebase-admin');
 const Anthropic = require('@anthropic-ai/sdk');
 const { getAIConfig } = require('./aiConfig');
 const { requireMovePass } = require('./entitlement');
+const { simulatePackWithStress } = require('./packSimulation');
 
 const INVENTORY_CONFIG_PATHS = {
   anchors: 'appConfig/anchors',
-  cubeSheet: 'appConfig/cubeSheet'
+  cubeSheet: 'appConfig/cubeSheet',
+  packingSim: 'appConfig/packingSim'
 };
+const PACKING_AGGREGATE_COLLECTION = 'packingAggregate';
+const PACKING_AGGREGATE_DOCUMENT = 'current';
 const VALID_CATEGORIES = ['furniture', 'electronics', 'boxes', 'appliance', 'decor', 'other'];
 const VALID_SIZES = ['small', 'medium', 'large', 'oversized'];
 const VALID_TIERS = ['furniture', 'boxable'];
+const RESERVED_FEEDBACK_SCHEMA = Object.freeze({
+  outcome: 'easy|snug|failed',
+  failureReason: 'tooFull|tooHeavy|awkwardShape|unsafeMix|inventoryMismatch',
+  actualSize: null,
+  activeSeconds: null,
+  crewCount: null
+});
 
 // Lazy-init Anthropic client (same pattern as peezyBrain.js)
 let anthropic = null;
@@ -120,6 +133,7 @@ async function readInventorySizingConfig(db) {
 
   return {
     anchorRows,
+    cubeSheet: cubeSheetConfig,
     cubeRows: cubeSheetConfig.rows,
     cubeRowLookup: buildCubeRowLookup(cubeSheetConfig.rows),
     unknownSizeTypical
@@ -160,6 +174,427 @@ function mergeExactInventoryItems(items) {
     };
   }
   return mergedItems;
+}
+
+function canonicalize(value) {
+  if (Array.isArray(value)) return value.map(canonicalize);
+  if (value !== null && typeof value === 'object') {
+    return Object.keys(value).sort().reduce((result, key) => {
+      if (value[key] !== undefined) result[key] = canonicalize(value[key]);
+      return result;
+    }, {});
+  }
+  return value;
+}
+
+function contentRevision(value) {
+  return createHash('sha256')
+    .update(JSON.stringify(canonicalize(value)))
+    .digest('hex');
+}
+
+function roomInventoryRevision(roomId, items) {
+  if (!Array.isArray(items)) throw new TypeError('room items must be an array');
+  return contentRevision({ roomId: String(roomId), items });
+}
+
+function aggregateInventoryRevision(roomEntries) {
+  return contentRevision(roomEntries.map(({ id, inventoryRevision }) => ({
+    id,
+    inventoryRevision
+  })));
+}
+
+function finiteEvidenceFrames(item) {
+  const values = [];
+  for (const value of item.evidenceFrames || item.frameIndices || []) {
+    const number = Number(value);
+    if (Number.isFinite(number)) values.push(number);
+  }
+  if (item.frameIndex != null) {
+    const number = Number(item.frameIndex);
+    if (Number.isFinite(number)) values.push(number);
+  }
+  return [...new Set(values)].sort((left, right) => left - right);
+}
+
+function uncertainItems(items, packingSim) {
+  const candidates = items.filter((item) =>
+    item.uncertain === true || item.ambiguous === true || item.cubeBand === 'high');
+  candidates.sort((left, right) => {
+    const confidenceDifference = Number(left.confidence ?? Number.POSITIVE_INFINITY) -
+      Number(right.confidence ?? Number.POSITIVE_INFINITY);
+    if (confidenceDifference !== 0) return confidenceDifference;
+    const leftFrame = finiteEvidenceFrames(left).at(0) ?? Number.POSITIVE_INFINITY;
+    const rightFrame = finiteEvidenceFrames(right).at(0) ?? Number.POSITIVE_INFINITY;
+    if (leftFrame !== rightFrame) return leftFrame - rightFrame;
+    return String(left.id || '').localeCompare(String(right.id || ''));
+  });
+
+  return candidates.slice(0, packingSim.evidence.mostUncertainItemLimit).map((item) => ({
+    inventoryItemId: String(item.id || ''),
+    name: String(item.name || ''),
+    reasons: [
+      ...(item.cubeBand === 'high' ? ['highBand'] : []),
+      ...(item.ambiguous === true ? ['ambiguous'] : []),
+      ...(item.uncertain === true ? ['unmappedCubeRow'] : [])
+    ],
+    evidenceFrames: finiteEvidenceFrames(item)
+  }));
+}
+
+function uncertaintyMetadata(items, coverageDebt, packingSim) {
+  const mostUncertain = uncertainItems(items, packingSim);
+  const [highGrade, mediumGrade, limitedGrade] = packingSim.evidence.coverageGrades;
+  const coverageGrade = coverageDebt.length
+    ? limitedGrade
+    : (mostUncertain.length ? mediumGrade : highGrade);
+  return {
+    coverageGrade,
+    mostUncertain,
+    couldNotVerify: coverageDebt,
+    basedOn: packingSim.evidence.basedOnCopy,
+    notIncluded: packingSim.evidence.notIncludedCopy
+  };
+}
+
+function estimateBoxMinutes(box, packingSim) {
+  const time = packingSim.timeEstimation;
+  const packedUnits = box.items.reduce((sum, item) => sum + Number(item.qty || 0), 0);
+  return Math.max(
+    time.minimumMinutesPerBox,
+    time.baseMinutesByBoxSize[box.size] + (packedUnits * time.minutesPerPackedUnit)
+  );
+}
+
+function specialtyLeftovers(specialtyContainers) {
+  return specialtyContainers.map((container) => ({
+    name: container.items.map((item) => item.name).join(', '),
+    handlingNote: container.variant
+      ? `${container.variant} ${container.containerType}`
+      : container.containerType
+  }));
+}
+
+function buildPackPlan(simulation, packingSim, roomId, generatedAt) {
+  const packResult = simulation.planned.packResult;
+  return {
+    generatedAt,
+    engineVersion: packingSim.engineVersion,
+    configVersion: packingSim.configVersion,
+    boxes: packResult.boxes.map((box) => ({
+      n: box.n,
+      size: box.size,
+      lane: box.lane,
+      items: box.items,
+      layers: box.layers,
+      estMinutes: estimateBoxMinutes(box, packingSim),
+      roomId,
+      startedAt: null,
+      packedAt: null,
+      fitFeedback: null
+    })),
+    leftovers: [
+      ...packResult.leftovers.map((item) => ({
+        name: item.name,
+        handlingNote: item.handlingNote
+      })),
+      ...specialtyLeftovers(packResult.specialtyContainers)
+    ],
+    restricted: packResult.restrictedItems.map((item) => ({
+      name: item.name,
+      policy: item.policy
+    })),
+    openFirst: packResult.openFirst.map((item) => item.name),
+    totalsBySize: packResult.totalsBySize,
+    reservedFeedbackSchema: { ...RESERVED_FEEDBACK_SCHEMA }
+  };
+}
+
+function buildRoomPackingArtifacts(items, config, {
+  roomId,
+  generatedAt = new Date().toISOString(),
+  inventoryRevision = roomInventoryRevision(roomId, items)
+} = {}) {
+  if (!roomId) throw new Error('roomId is required to build a packing plan');
+  const packingSim = config.packingSim || config;
+  const simulation = simulatePackWithStress(
+    items.map((item) => ({ ...item, roomDocumentId: String(roomId) })),
+    config
+  );
+  const coverageDebt = simulation.planned.packResult.coverageDebt;
+  return {
+    packPlan: buildPackPlan(simulation, packingSim, String(roomId), generatedAt),
+    packMeta: {
+      status: 'complete',
+      inventoryRevision,
+      configVersion: packingSim.configVersion,
+      reserveBySize: simulation.comparison.reserveBySize,
+      reserveByContainerType: simulation.comparison.reserveByContainerType,
+      reserveLines: simulation.comparison.reserveLines,
+      coverageDebt,
+      restrictedItems: simulation.planned.packResult.restrictedItems,
+      uncertainty: uncertaintyMetadata(items, coverageDebt, packingSim)
+    },
+    packTrace: simulation.planned.trace,
+    packClosures: simulation.planned.closures
+  };
+}
+
+function failedPackMeta(inventoryRevision, configVersion, error) {
+  return {
+    status: 'failed',
+    inventoryRevision,
+    configVersion: configVersion || null,
+    failureCode: 'simulationFailed',
+    diagnostic: String(error?.message || error || 'Unknown packing simulation failure')
+  };
+}
+
+function emptySizeCounts(packingSim) {
+  return Object.fromEntries(packingSim.boxSizeOrder.map((size) => [size, 0]));
+}
+
+function recomputeMovePackingAggregate(roomDocuments, packingSim) {
+  if (!Array.isArray(roomDocuments)) {
+    throw new TypeError('roomDocuments must be an array');
+  }
+  const rooms = roomDocuments
+    .map((room) => ({ id: String(room.id), data: room.data || {} }))
+    .filter((room) => room.id !== '_metadata')
+    .sort((left, right) => left.id.localeCompare(right.id));
+  const roomEntries = rooms.map((room) => ({
+    ...room,
+    inventoryRevision: roomInventoryRevision(room.id, room.data.items || [])
+  }));
+  const expectedRoomIds = roomEntries.map((room) => room.id);
+  const includedRooms = roomEntries.filter((room) =>
+    room.data.packMeta?.status === 'complete' &&
+    room.data.packMeta.inventoryRevision === room.inventoryRevision &&
+    room.data.packMeta.configVersion === packingSim.configVersion);
+  const includedRoomIds = includedRooms.map((room) => room.id);
+  const hasFailedRoom = roomEntries.some((room) =>
+    room.data.packMeta?.status === 'failed' &&
+    room.data.packMeta.inventoryRevision === room.inventoryRevision);
+
+  let status = 'building';
+  if (expectedRoomIds.length && includedRoomIds.length === expectedRoomIds.length) {
+    status = 'complete';
+  } else if (hasFailedRoom || includedRoomIds.length) {
+    status = 'partial';
+  }
+
+  const plannedBySize = emptySizeCounts(packingSim);
+  const reserveBySize = emptySizeCounts(packingSim);
+  const reserveByContainerType = {};
+  const coverageDebt = [];
+  const restrictedItems = [];
+  const uncertain = [];
+  const reserveLineCounts = new Map();
+  for (const room of includedRooms) {
+    for (const size of packingSim.boxSizeOrder) {
+      plannedBySize[size] += Number(room.data.packPlan?.totalsBySize?.[size] || 0);
+      reserveBySize[size] += Number(room.data.packMeta.reserveBySize?.[size] || 0);
+    }
+    for (const [containerType, count] of
+      Object.entries(room.data.packMeta.reserveByContainerType || {})) {
+      reserveByContainerType[containerType] =
+        (reserveByContainerType[containerType] || 0) + Number(count || 0);
+    }
+    for (const line of room.data.packMeta.reserveLines || []) {
+      const key = JSON.stringify([line.containerType, line.reason]);
+      const existing = reserveLineCounts.get(key) || { ...line, count: 0 };
+      existing.count += Number(line.count || 0);
+      reserveLineCounts.set(key, existing);
+    }
+    coverageDebt.push(...(room.data.packMeta.coverageDebt || []).map((debt) => ({
+      roomId: room.id,
+      ...debt
+    })));
+    restrictedItems.push(...(room.data.packMeta.restrictedItems || []).map((item) => ({
+      roomId: room.id,
+      ...item
+    })));
+    uncertain.push(...(room.data.packMeta.uncertainty?.mostUncertain || []).map((item) => ({
+      roomId: room.id,
+      ...item
+    })));
+  }
+
+  const sizeRank = new Map(packingSim.boxSizeOrder.map((size, index) => [size, index]));
+  const reserveLines = [...reserveLineCounts.values()].sort((left, right) => {
+    const sizeDifference = (sizeRank.get(left.containerType) ?? Number.MAX_SAFE_INTEGER) -
+      (sizeRank.get(right.containerType) ?? Number.MAX_SAFE_INTEGER);
+    return sizeDifference || String(left.reason).localeCompare(String(right.reason));
+  });
+  const reserveReasonsBySize = Object.fromEntries(packingSim.boxSizeOrder.map((size) => [
+    size,
+    reserveLines
+      .filter((line) => line.containerType === size)
+      .map(({ reason, count }) => ({ reason, count }))
+  ]));
+  const purchaseBySize = Object.fromEntries(packingSim.boxSizeOrder.map((size) => [
+    size,
+    plannedBySize[size] + reserveBySize[size]
+  ]));
+  uncertain.sort((left, right) => {
+    const roomDifference = left.roomId.localeCompare(right.roomId);
+    return roomDifference || left.inventoryItemId.localeCompare(right.inventoryItemId);
+  });
+  const [highGrade, mediumGrade, limitedGrade] = packingSim.evidence.coverageGrades;
+  const mostUncertain = uncertain.slice(0, packingSim.evidence.mostUncertainItemLimit);
+  const coverageGrade = coverageDebt.length
+    ? limitedGrade
+    : (mostUncertain.length ? mediumGrade : highGrade);
+
+  return {
+    status,
+    clientGuardReady: status === 'complete',
+    inventoryRevision: aggregateInventoryRevision(roomEntries),
+    expectedRoomIds,
+    includedRoomIds,
+    plannedBySize,
+    reserveBySize,
+    reserveReasonsBySize,
+    reserveByContainerType,
+    reserveLines,
+    purchaseBySize,
+    coverageDebt,
+    restrictedItems,
+    uncertainty: {
+      coverageGrade,
+      mostUncertain,
+      couldNotVerify: coverageDebt,
+      basedOn: packingSim.evidence.basedOnCopy,
+      notIncluded: packingSim.evidence.notIncludedCopy
+    },
+    configVersion: packingSim.configVersion
+  };
+}
+
+async function readPackingConfig(db, cubeSheetData = null) {
+  const [cubeSheetSnapshot, packingSimSnapshot] = await Promise.all([
+    cubeSheetData ? null : db.doc(INVENTORY_CONFIG_PATHS.cubeSheet).get(),
+    db.doc(INVENTORY_CONFIG_PATHS.packingSim).get()
+  ]);
+  const resolvedCubeSheet = cubeSheetData || cubeSheetSnapshot?.data();
+  const packingSim = packingSimSnapshot.exists ? packingSimSnapshot.data() : null;
+  if (!resolvedCubeSheet || !packingSim) {
+    throw new Error('Packing config missing — run node seedCubeSheet.js');
+  }
+  if (!resolvedCubeSheet.configVersion ||
+      resolvedCubeSheet.configVersion !== packingSim.configVersion) {
+    throw new Error('Packing config versions do not match');
+  }
+  return { cubeSheet: resolvedCubeSheet, packingSim };
+}
+
+function referencedEvidenceFrameIndices(trace) {
+  const retained = new Set();
+  for (const entries of Object.values(trace || {})) {
+    for (const entry of entries || []) {
+      for (const frameIndex of entry.evidenceFrames || []) {
+        const value = Number(frameIndex);
+        if (Number.isFinite(value)) retained.add(value);
+      }
+    }
+  }
+  return retained;
+}
+
+async function cleanupSessionFrames(frames, trace, logger = console) {
+  const retained = referencedEvidenceFrameIndices(trace);
+  const deletions = frames.filter((frame) => !retained.has(frame.index));
+  await Promise.all(deletions.map(async (frame) => {
+    try {
+      await frame.storageFile.delete();
+    } catch (error) {
+      logger.error('processInventory: frame cleanup failed', {
+        frame: frame.name,
+        error: error.message || String(error)
+      });
+    }
+  }));
+  return {
+    retained: frames.filter((frame) => retained.has(frame.index)).map((frame) => frame.name),
+    deleted: deletions.map((frame) => frame.name)
+  };
+}
+
+async function sessionItemSources(db, userId) {
+  const snapshot = await db.collection('users').doc(userId)
+    .collection('inventorySessions').get();
+  const sources = new Map();
+  const documents = [...snapshot.docs].sort((left, right) =>
+    left.id.localeCompare(right.id));
+  for (const document of documents) {
+    for (const item of document.data().items || []) {
+      if (item.id && !sources.has(String(item.id))) sources.set(String(item.id), item);
+    }
+  }
+  return sources;
+}
+
+function enrichReviewedItems(items, sources) {
+  return items.map((item) => ({
+    ...(sources.get(String(item.id)) || {}),
+    ...item
+  }));
+}
+
+async function persistMovePackingAggregate(db, userId, packingSim) {
+  const inventoryQuery = db.collection('users').doc(userId).collection('inventory');
+  const aggregateRef = db.collection('users').doc(userId)
+    .collection(PACKING_AGGREGATE_COLLECTION).doc(PACKING_AGGREGATE_DOCUMENT);
+  return db.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(inventoryQuery);
+    const roomDocuments = snapshot.docs.map((document) => ({
+      id: document.id,
+      data: document.data()
+    }));
+    const aggregate = recomputeMovePackingAggregate(roomDocuments, packingSim);
+    transaction.set(aggregateRef, aggregate);
+    return aggregate;
+  });
+}
+
+async function handleInventoryRoomWrite(event) {
+  const { userId, roomId } = event.params;
+  if (String(roomId).startsWith('_')) return null;
+
+  const db = admin.firestore();
+  const roomSnapshot = event.data?.after;
+  const roomRef = roomSnapshot?.ref;
+  const roomData = roomSnapshot?.exists ? roomSnapshot.data() : null;
+  const config = await readPackingConfig(db);
+
+  if (roomData && Array.isArray(roomData.items)) {
+    const inventoryRevision = roomInventoryRevision(roomId, roomData.items);
+    const matchingMeta = roomData.packMeta?.inventoryRevision === inventoryRevision &&
+      roomData.packMeta?.configVersion === config.packingSim.configVersion;
+    if (!matchingMeta) {
+      try {
+        const sources = await sessionItemSources(db, userId);
+        const artifacts = buildRoomPackingArtifacts(
+          enrichReviewedItems(roomData.items, sources),
+          config,
+          { roomId, inventoryRevision, generatedAt: event.time }
+        );
+        await roomRef.set(artifacts, { merge: true });
+      } catch (error) {
+        console.error('inventory room packing failed', { userId, roomId, error });
+        await roomRef.set({
+          packMeta: failedPackMeta(
+            inventoryRevision,
+            config.packingSim.configVersion,
+            error
+          )
+        }, { merge: true });
+      }
+    }
+  }
+
+  return persistMovePackingAggregate(db, userId, config.packingSim);
 }
 
 exports.processInventory = onCall(
@@ -223,6 +658,7 @@ exports.processInventory = onCall(
         return {
           index: indexMatch ? Number(indexMatch[1]) : position,
           name: file.name,
+          storageFile: file,
           base64: buffer.toString('base64')
         };
       }));
@@ -246,6 +682,7 @@ exports.processInventory = onCall(
 
       const {
         anchorRows,
+        cubeSheet,
         cubeRows,
         cubeRowLookup,
         unknownSizeTypical
@@ -430,12 +867,49 @@ Return only a valid JSON array with no markdown, explanation, preamble, or backt
       const items = mergeExactInventoryItems(normalizedItems);
       items.sort((left, right) => Number(right.uncertain) - Number(left.uncertain));
 
-      // 8. Update Firestore session document
+      // 8. Build the additive packing output after cube validation and before
+      // the session becomes complete. Packing failures do not block the
+      // existing inventory finalization path.
+      const inventoryRevision = roomInventoryRevision(sessionId, items);
+      let roomPackingWrite;
+      let evidenceTrace = {};
+      try {
+        const packingConfig = await readPackingConfig(db, cubeSheet);
+        roomPackingWrite = buildRoomPackingArtifacts(items, packingConfig, {
+          roomId: sessionId,
+          inventoryRevision
+        });
+        evidenceTrace = roomPackingWrite.packTrace;
+      } catch (packingError) {
+        console.error('processInventory: packing simulation failed', {
+          sessionId,
+          error: packingError.message || String(packingError)
+        });
+        roomPackingWrite = {
+          packMeta: failedPackMeta(inventoryRevision, cubeSheet.configVersion, packingError)
+        };
+      }
+
+      // 9. Critical room write. The legacy inventory remains complete even if
+      // the additive packing output above failed.
       await sessionRef.update({
         status: 'complete',
         items: items,
+        ...roomPackingWrite,
         completedAt: admin.firestore.FieldValue.serverTimestamp()
       });
+
+      // 10. Best-effort cleanup is independently guarded and deliberately
+      // follows the critical write. Only evidence referenced by the trace is
+      // retained for plan thumbnails.
+      try {
+        await cleanupSessionFrames(frames, evidenceTrace);
+      } catch (cleanupError) {
+        console.error('processInventory: frame cleanup failed independently', {
+          sessionId,
+          error: cleanupError.message || String(cleanupError)
+        });
+      }
 
       console.log(`processInventory: ${items.length} items found for session ${sessionId}`);
 
@@ -455,4 +929,12 @@ Return only a valid JSON array with no markdown, explanation, preamble, or backt
   }
 );
 
+exports.onInventoryRoomWritten = onDocumentWritten(
+  'users/{userId}/inventory/{roomId}',
+  handleInventoryRoomWrite
+);
 exports.mergeExactInventoryItems = mergeExactInventoryItems;
+exports.roomInventoryRevision = roomInventoryRevision;
+exports.buildRoomPackingArtifacts = buildRoomPackingArtifacts;
+exports.recomputeMovePackingAggregate = recomputeMovePackingAggregate;
+exports.cleanupSessionFrames = cleanupSessionFrames;
