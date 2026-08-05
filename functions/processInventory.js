@@ -23,6 +23,15 @@ const PACKING_AGGREGATE_DOCUMENT = 'current';
 const VALID_CATEGORIES = ['furniture', 'electronics', 'boxes', 'appliance', 'decor', 'other'];
 const VALID_SIZES = ['small', 'medium', 'large', 'oversized'];
 const VALID_TIERS = ['furniture', 'boxable'];
+const VALID_PACKING_STATES = [
+  'loose',
+  'alreadyPackedSealed',
+  'alreadyPackedOpen',
+  'emptyContainer',
+  'visibleContentsStayInside',
+  'closedContentsUnknown',
+  'builtInOrStays'
+];
 const RESERVED_FEEDBACK_SCHEMA = Object.freeze({
   outcome: 'easy|snug|failed',
   failureReason: 'tooFull|tooHeavy|awkwardShape|unsafeMix|inventoryMismatch',
@@ -146,6 +155,15 @@ function normalizedInventoryName(value) {
     .toLowerCase()
     .replace(/[^\p{L}\p{N}]+/gu, ' ')
     .trim();
+}
+
+function normalizePackingSignals(item) {
+  return {
+    packingState: VALID_PACKING_STATES.includes(item?.packingState)
+      ? item.packingState
+      : 'loose',
+    restrictedCandidate: item?.restrictedCandidate === true
+  };
 }
 
 function mergeExactInventoryItems(items) {
@@ -706,6 +724,8 @@ PASS 2 — INVENTORY THE ROOM
 6. For furniture entries, set frameIndex to the labeled frame where the item is clearest and boundingBox to normalized 0.0–1.0 coordinates in that frame. For boxable entries, set frameIndex and boundingBox to null.
 7. Include uncertain items with lower confidence. Do not omit an item merely because identification is uncertain.
 8. Ignore walls, floors, ceilings, doors, windows, and built-in fixtures such as cabinets, countertops, and closet shelving.
+9. Set packingState to "loose" for ordinary unpacked items; "alreadyPackedSealed" for sealed packed containers; "alreadyPackedOpen" for open packed containers whose contents should be inventoried separately; "emptyContainer" for empty movable containers; "visibleContentsStayInside" when visible contents will remain in their container; "closedContentsUnknown" for closed storage whose contents cannot be verified; or "builtInOrStays" for built-ins or items clearly staying in place.
+10. Set restrictedCandidate to true only for obvious fuels, compressed cylinders, paint or chemicals, potentially restricted batteries, or perishables; otherwise set it to false. This is a candidate flag because carrier rules vary by provider.
 
 INJECTED_CUBE_SHEET_ROWS:
 ${JSON.stringify(cubeRows)}
@@ -724,7 +744,9 @@ Return only a valid JSON array with no markdown, explanation, preamble, or backt
   "confidence": 0.0,
   "frameIndices": [0],
   "frameIndex": null,
-  "boundingBox": null
+  "boundingBox": null,
+  "packingState": "loose|alreadyPackedSealed|alreadyPackedOpen|emptyContainer|visibleContentsStayInside|closedContentsUnknown|builtInOrStays",
+  "restrictedCandidate": false
 }`;
 
       const client = getAnthropicClient();
@@ -854,6 +876,7 @@ Return only a valid JSON array with no markdown, explanation, preamble, or backt
           isFragile: Boolean(item.isFragile),
           isHighValue: Boolean(item.isHighValue),
           confidence: Math.min(1, Math.max(0, Number(item.confidence) || 0.5)),
+          ...normalizePackingSignals(item),
           uncertain: !cubeRow,
           adjusted,
           frameIndices,
@@ -933,6 +956,7 @@ exports.onInventoryRoomWritten = onDocumentWritten(
   'users/{userId}/inventory/{roomId}',
   handleInventoryRoomWrite
 );
+exports.normalizePackingSignals = normalizePackingSignals;
 exports.mergeExactInventoryItems = mergeExactInventoryItems;
 exports.roomInventoryRevision = roomInventoryRevision;
 exports.buildRoomPackingArtifacts = buildRoomPackingArtifacts;
