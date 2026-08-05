@@ -31,7 +31,7 @@ struct MoversConfirmationView: View {
                     .foregroundStyle(PeezyTheme.Colors.deepInk)
                     .fixedSize(horizontal: false, vertical: true)
 
-                Text("We'll confirm the requested window and next steps as soon as the company responds.")
+                Text("Your request details are saved. Call \(vendorName) to confirm the arrival window, total price, and next steps.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

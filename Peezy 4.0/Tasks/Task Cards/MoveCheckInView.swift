@@ -285,7 +285,7 @@ struct MoveCheckInView: View {
                     .font(.system(size: 52))
                     .foregroundStyle(PeezyTheme.Colors.successGreen)
                     .accessibilityHidden(true)
-                Text("Thanks. We saved the facts and we'll follow up on anything that needs attention.")
+                Text("Thanks. We saved the facts and anything that needs attention is now on your list.")
                     .font(.title2)
                     .bold()
                     .foregroundStyle(PeezyTheme.Colors.deepInk)

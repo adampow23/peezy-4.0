@@ -152,7 +152,7 @@ struct InventoryFlowView: View {
                 onSubmitted?()
             }
         } message: {
-            Text("Your inventory has been submitted. We'll use it to coordinate your move.")
+            Text("Your inventory has been submitted. It powers your truck size, cost picture, packing plan, and supplies list.")
         }
         .onChange(of: sessionManager.stateDescription) { oldValue, newValue in
             // Detect room save: reviewing → roomList
