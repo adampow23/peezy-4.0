@@ -73,3 +73,4 @@ node_modules/
 **/GoogleService-Info.plist
 *.xcuserstate
 **/serviceAccountKey.json
+build/
