@@ -1,3 +1,5 @@
-functions/taskCatalogData.json
-functions/flowDefinitionsData.json
-functions/seedTaskCatalog.js
+PHASE_MANIFEST
+functions/spawnTasks.js
+functions/spawnTasks.test.js
+functions/index.js
+firestore.rules
