@@ -73,6 +73,9 @@ struct FlowEngineView: View {
     @State private var providerResolveTask: Task<Void, Never>?
     @State private var submissionError: String?
     @State private var submissionAttempt = 0
+    /// Set on spawnTasks success; flips the spawn card into its confirmation
+    /// rendering (returned titles + scheduled dates, Done → conclude).
+    @State private var spawnedTasks: [SpawnService.SpawnedTask]?
 
     private let actionService = TaskActionService()
 
@@ -280,6 +283,18 @@ struct FlowEngineView: View {
                 onDone: { concludeFlow { onStatusAction(.done) } },
                 onBack: { goBack() }
             )
+
+        case .spawn:
+            TaskFlowSummaryCard(
+                taskTitle: definition.taskTitle,
+                bodyText: spawnBody(for: step),
+                primaryLabel: spawnPrimaryLabel(for: step),
+                subtext: submissionError ?? step.subtext ?? "Peezy schedules these so nothing slips.",
+                showBack: spawnedTasks == nil && canGoBack,
+                onPrimary: { spawnPrimaryTapped(step) },
+                onBack: { goBack() }
+            )
+            .id("spawn.\(submissionAttempt).\(spawnedTasks != nil)")
         }
     }
 
@@ -363,9 +378,10 @@ struct FlowEngineView: View {
         } else {
             nextId = step.next
         }
-        guard let nextId, let nextStep = resolvedStep(withId: nextId) else { return }
+        let landingId = resolveKnownAnswerSkips(from: nextId)
+        guard let landingId, let nextStep = resolvedStep(withId: landingId) else { return }
 
-        path.append(nextId)
+        path.append(landingId)
         persistProgress()
 
         // Empty-taskId guard (Phase A validator finding): Firestore's
@@ -495,6 +511,172 @@ struct FlowEngineView: View {
         callback()
     }
 
+    // MARK: - Known Answers (Spec 09 Phase 4)
+
+    /// Instance wrapper over the pure walk: adopts remembered values into the
+    /// live answer state and returns the first step id that must render.
+    private func resolveKnownAnswerSkips(from id: String?) -> String? {
+        Self.resolveKnownAnswerSkips(
+            from: id,
+            steps: resolvedSteps,
+            knownAnswers: MoveAnswersStore.shared.answers,
+            answers: &answers
+        )
+    }
+
+    /// Pure skipIfKnown walk shared with unit tests: while the target step
+    /// declares skipIfKnown and the remembered move answers contain that key,
+    /// the value is adopted as the step's answer and the walk follows the
+    /// step's branches/next with advance's first-match semantics.
+    nonisolated static func resolveKnownAnswerSkips(
+        from id: String?,
+        steps: [FlowStep],
+        knownAnswers: [String: String],
+        answers: inout [String: [String]]
+    ) -> String? {
+        var currentId = id
+        var hops = 0
+        while hops <= steps.count,
+              let stepId = currentId,
+              let step = steps.first(where: { $0.id == stepId }),
+              let key = step.skipIfKnown,
+              let known = knownAnswers[key] {
+            hops += 1
+            answers[stepId] = [known]
+            let recorded = answers
+            let branch = step.branches?.first { candidate in
+                candidate.value == known &&
+                    (candidate.when ?? [:]).allSatisfy { recorded[$0.key]?.first == $0.value }
+            }
+            currentId = branch?.next ?? step.next
+        }
+        return currentId
+    }
+
+    // MARK: - Spawn Terminal (Spec 09 Phase 4)
+
+    private func spawnPrimaryLabel(for step: FlowStep) -> String {
+        if spawnedTasks != nil { return "Done" }
+        if submissionError != nil { return "Try again" }
+        if resolvedSpawns(for: step).isEmpty { return "Done" }
+        return step.primaryLabel ?? "Set it up"
+    }
+
+    private func spawnBody(for step: FlowStep) -> String {
+        if let spawnedTasks {
+            guard !spawnedTasks.isEmpty else {
+                return "You're all set — nothing else needed here."
+            }
+            let lines = spawnedTasks.map { task in
+                "• \(task.title)\n   Scheduled for \(formattedSpawnDate(task.dueDateISO))"
+            }
+            return "Added to your plan:\n\n" + lines.joined(separator: "\n")
+        }
+
+        let resolved = resolvedSpawns(for: step)
+        guard !resolved.isEmpty else {
+            return step.body ?? "You're all set — nothing else needed here."
+        }
+        let intro = step.body ?? "Here's what Peezy will set up:"
+        return intro + "\n\n" + resolved.map { "• \(pendingSpawnTitle(for: $0))" }.joined(separator: "\n")
+    }
+
+    /// Pre-submit display title; the server's templated title replaces it in
+    /// the confirmation body once the callable returns.
+    private func pendingSpawnTitle(for spawn: SpawnService.Spawn) -> String {
+        if let institution = spawn.titleParams?["institution"] {
+            return "Update \(institution)"
+        }
+        return humanized(spawn.taskId.lowercased())
+    }
+
+    private func formattedSpawnDate(_ iso: String) -> String {
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let date = fractional.date(from: iso) ?? ISO8601DateFormatter().date(from: iso)
+        return date?.formatted(date: .abbreviated, time: .omitted) ?? iso
+    }
+
+    private func resolvedSpawns(for step: FlowStep) -> [SpawnService.Spawn] {
+        Self.resolveSpawns(step.spawns ?? [], answers: answers, steps: resolvedSteps)
+    }
+
+    /// Pure spawn-list resolution shared with unit tests. `when` guards reuse
+    /// the branch `when` semantics against recorded answers; `perSelectionFrom`
+    /// expands one spawn per selected option with the option's label as
+    /// titleParams.institution. Zero resolved spawns is a valid outcome.
+    nonisolated static func resolveSpawns(
+        _ spawns: [FlowSpawnDef],
+        answers: [String: [String]],
+        steps: [FlowStep]
+    ) -> [SpawnService.Spawn] {
+        spawns.flatMap { def -> [SpawnService.Spawn] in
+            if let when = def.when,
+               !when.allSatisfy({ answers[$0.key]?.first == $0.value }) {
+                return []
+            }
+            guard let sourceId = def.perSelectionFrom else {
+                return [SpawnService.Spawn(taskId: def.taskId)]
+            }
+            let options = steps.first { $0.id == sourceId }?.options ?? []
+            return (answers[sourceId] ?? []).map { selection in
+                SpawnService.Spawn(
+                    taskId: def.taskId,
+                    titleParams: ["institution": options.first { $0.id == selection }?.label ?? selection]
+                )
+            }
+        }
+    }
+
+    private func spawnPrimaryTapped(_ step: FlowStep) {
+        if spawnedTasks != nil {
+            concludeFlow { onComplete() }
+            return
+        }
+        let resolved = resolvedSpawns(for: step)
+        // Zero resolved spawns: nothing to create — the callable is not called.
+        guard !resolved.isEmpty else {
+            concludeFlow { onComplete() }
+            return
+        }
+        submitSpawns(resolved)
+    }
+
+    private func submitSpawns(_ spawns: [SpawnService.Spawn]) {
+        guard !isSubmitting else { return }
+        isSubmitting = true
+        submissionError = nil
+
+        // spawnTasks merge-writes answers into moveAnswers/answers — single
+        // selections flatten to the store's flat-string contract.
+        let collected: [String: Any] = answers.mapValues { value -> Any in
+            value.count == 1 ? value[0] : value
+        }
+        let token = "\(taskId)-spawn"
+        let sourceId = taskId.isEmpty ? definition.workflowId : taskId
+
+        Task {
+            do {
+                let response = try await SpawnService().spawn(
+                    token: token,
+                    source: SpawnService.Source(kind: "conversation", id: sourceId),
+                    spawns: spawns,
+                    answers: collected
+                )
+                await MainActor.run {
+                    isSubmitting = false
+                    spawnedTasks = response.created
+                }
+            } catch {
+                await MainActor.run {
+                    isSubmitting = false
+                    submissionError = "Couldn't set that up. Check your connection, then try again."
+                    submissionAttempt += 1
+                }
+            }
+        }
+    }
+
     // MARK: - Resume
 
     private func restoreState() async {
@@ -522,6 +704,7 @@ struct FlowEngineView: View {
         rows = (data["flowRows"] as? [[String: Any]])?
             .compactMap(FlowRow.init(firestoreData:)) ?? []
         resolvedSteps = definition.resolvedSteps(rows: rows)
+        await MoveAnswersStore.shared.load(userId: userId)
         let entry = resolvedSteps.first?.id ?? ""
 
         let savedPath = savedProgress.path
@@ -534,7 +717,7 @@ struct FlowEngineView: View {
             path = savedPath
             answers = savedAnswers
         } else {
-            path = [entry]
+            path = [resolveKnownAnswerSkips(from: entry) ?? entry]
         }
     }
 

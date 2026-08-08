@@ -34,7 +34,7 @@ struct FlowDefinition: Codable, Equatable {
 
 // MARK: - Step
 
-/// The nine card kinds the 38 templated flows render (kit component per case).
+/// The card kinds the flow engine renders (kit component per case).
 enum FlowStepKind: String, Codable, Equatable {
     case title           // TaskFlowTitleCard
     case info            // TaskFlowInfoCard
@@ -45,6 +45,7 @@ enum FlowStepKind: String, Codable, Equatable {
     case confirmDate     // TaskFlowConfirmDateCard
     case summary         // TaskFlowSummaryCard (terminal: submits answers)
     case status          // TaskFlowStatusCard  (terminal: status action)
+    case spawn           // TaskFlowSummaryCard composition (terminal: spawns tasks — Spec 09)
 }
 
 /// One card in a flow. `id` doubles as the answer key for answer-bearing
@@ -101,6 +102,14 @@ struct FlowStep: Codable, Equatable {
     var rowConfigs: [String: FlowRowConfig]?
     /// Summary-step labels for the {rowsList} substitution, keyed by row id.
     var rowLabels: [String: String]?
+
+    // Conversation extensions (Spec 09 Phase 4). Both additive optionals —
+    // the pre-Spec-09 definitions never carry them and decode unchanged.
+    /// Remembered-answer key into users/{uid}/moveAnswers/answers: when the
+    /// store has it, the step auto-advances adopting the value as its answer.
+    var skipIfKnown: String?
+    /// spawn-terminal list, resolved against recorded answers on submit.
+    var spawns: [FlowSpawnDef]?
 }
 
 /// Per-category strings for a forEachRow step instance.
@@ -135,6 +144,16 @@ struct FlowOptionDef: Codable, Equatable {
     let id: String
     let label: String
     let icon: String
+}
+
+/// One task a spawn terminal may create (Spec 09 Phase 4). `when` guards use
+/// branch semantics against recorded answers; `perSelectionFrom` expands one
+/// spawn per selected option of that step, with the option's label passed as
+/// titleParams.institution.
+struct FlowSpawnDef: Codable, Equatable {
+    let taskId: String
+    var when: [String: String]?
+    var perSelectionFrom: String?
 }
 
 /// Summary body override: applies when every `when` pair matches a recorded
