@@ -1,5 +1,3 @@
 PHASE_MANIFEST
-functions/spawnTasks.js
-functions/spawnTasks.test.js
-functions/index.js
-firestore.rules
+Peezy 4.0/Assessment/AssessmentModels/TaskGenerationService.swift
+Peezy 4.0Tests/PostMoveDoseTests.swift

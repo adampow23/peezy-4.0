@@ -149,3 +149,33 @@ struct NudgeTierTests {
         PeezyCard(id: id, type: .task, title: id, subtitle: "", taskId: id, urgencyPercentage: 50)
     }
 }
+
+// MARK: - Spec 09 Phase 3: legacy-client gate strip
+
+struct NudgeConditionGateTests {
+    @Test func generationStripsRequiresClientV2BeforeEvaluation() {
+        let conditions: [String: Any] = [
+            "requiresClientV2": ["true"],
+            "moveType": ["Local"]
+        ]
+        let assessment: [String: Any] = ["moveType": "Local"]
+
+        // Legacy clients fail-false on the unknown gate key by design…
+        #expect(!TaskConditionParser.evaluateConditions(conditions, against: assessment))
+
+        // …this client strips it and evaluates the remaining conditions.
+        let stripped = TaskGenerationService.evaluableConditions(conditions)
+        #expect(stripped?["requiresClientV2"] == nil)
+        #expect(TaskConditionParser.evaluateConditions(stripped, against: assessment))
+    }
+
+    @Test func gateOnlyConditionsBecomeAutoPass() {
+        let stripped = TaskGenerationService.evaluableConditions(["requiresClientV2": ["true"]])
+        #expect(TaskConditionParser.evaluateConditions(stripped, against: [:]))
+    }
+
+    @Test func nilConditionsStayNil() {
+        #expect(TaskGenerationService.evaluableConditions(nil) == nil)
+        #expect(TaskConditionParser.evaluateConditions(nil, against: [:]))
+    }
+}

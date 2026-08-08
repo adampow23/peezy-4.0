@@ -74,7 +74,7 @@ class TaskGenerationService {
             let taskTitle = taskData["title"] as? String ?? "Unknown"
 
             // Get conditions — stored as { fieldName: [acceptableValues] }
-            let conditions = taskData["conditions"] as? [String: Any]
+            let conditions = Self.evaluableConditions(taskData["conditions"] as? [String: Any])
 
             #if DEBUG
             print("🔍 Evaluating: '\(taskTitle)' conditions: \(conditions ?? [:])")
@@ -224,7 +224,7 @@ class TaskGenerationService {
             let taskData = document.data()
             // spawnedOnly rows exist only via the spawnTasks callable (Spec 09).
             if taskData["spawnedOnly"] as? Bool == true { continue }
-            let conditions = taskData["conditions"] as? [String: Any]
+            let conditions = Self.evaluableConditions(taskData["conditions"] as? [String: Any])
             guard TaskConditionParser.evaluateConditions(conditions, against: assessment) else { continue }
 
             let urgencyPercentage = (taskData["urgencyPercentage"] as? NSNumber)?.intValue ?? 50
@@ -342,6 +342,18 @@ class TaskGenerationService {
                 result.append(char)
             }
             .trimmingCharacters(in: CharacterSet(charactersIn: "_"))
+    }
+
+    // MARK: - Spec 09 Legacy-Client Gate
+
+    /// The 7 _NUDGE rows carry `requiresClientV2:["true"]` so legacy clients
+    /// fail-false on the unknown key and never generate them. This client
+    /// understands the nudge tier — strip the gate key before evaluation
+    /// (a gate-only conditions map becomes empty = auto-pass).
+    static func evaluableConditions(_ conditions: [String: Any]?) -> [String: Any]? {
+        guard var conditions else { return nil }
+        conditions.removeValue(forKey: "requiresClientV2")
+        return conditions
     }
 
     // MARK: - Spec 09 Tier / Nudge Metadata
