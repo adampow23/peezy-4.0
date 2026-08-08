@@ -1,5 +1,7 @@
-# Day 1 Launch Audits — READ-ONLY on all source
-# Active spec: DAY1_AUDITS_SPEC.md
-# Writable paths: audit_reports/ ONLY
-# Trustproof run (peezy-trustproof-run.md) is PAUSED — do not execute
-# its contract. It resumes after launch week.
+# Spec 09 Phase 1 — Catalog v2 Data + Seeder
+# Active spec: PEEZY_SPEC_09_CATALOG_RESTRUCTURE.md
+# Writable paths:
+functions/taskCatalogData.json
+functions/flowDefinitionsData.json
+functions/seedTaskCatalog.js
+PHASE_MANIFEST

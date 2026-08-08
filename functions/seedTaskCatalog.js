@@ -94,6 +94,7 @@ async function seedCollection() {
     const chunk = tasks.slice(i, i + batchSize);
 
     for (const task of chunk) {
+      if (task.parked === true) continue;
       const docId = task.taskId;
       const docRef = db.collection(COLLECTION).doc(docId);
 
@@ -135,6 +136,33 @@ async function seedCollection() {
       }
       if (Number.isInteger(task.surfaceAfterDaysPastMove)) {
         doc.surfaceAfterDaysPastMove = task.surfaceAfterDaysPastMove;
+      }
+
+      // Catalog v2 fields (Spec 09) — conditional so the round-trip verifier
+      // sees every JSON-declared field stored exactly
+      if (task.tier !== undefined) {
+        doc.tier = task.tier;
+      }
+      if (task.spawnedOnly !== undefined) {
+        doc.spawnedOnly = task.spawnedOnly;
+      }
+      if (task.dateRule !== undefined) {
+        doc.dateRule = task.dateRule;
+      }
+      if (task.nudge !== undefined) {
+        doc.nudge = task.nudge;
+      }
+      if (task.onCompleteSpawns !== undefined) {
+        doc.onCompleteSpawns = task.onCompleteSpawns;
+      }
+      if (task.notesEnabled !== undefined) {
+        doc.notesEnabled = task.notesEnabled;
+      }
+      if (task.quoteTracker !== undefined) {
+        doc.quoteTracker = task.quoteTracker;
+      }
+      if (task.content !== undefined) {
+        doc.content = task.content;
       }
 
       batch.set(docRef, doc);
@@ -188,7 +216,7 @@ async function verifySeed() {
   // Spot-check a few documents (catalog v2 ids)
   const spotChecks = [
     "BOOK_MOVERS", "SETUP_INTERNET", "MEMBERSHIPS", "FINANCIAL_ACCOUNTS",
-    "STORAGE_UNIT", "MOVE_CHECKIN", "BOX_RETURN"
+    "STORAGE_UNIT", "MOVE_CHECKIN", "BOX_RETURN", "FORWARD_MAIL_USPS"
   ];
   for (const id of spotChecks) {
     const doc = await db.collection(COLLECTION).doc(id).get();

@@ -227,57 +227,91 @@
     ]
   },
   {
-    "workflowId": "setup_utilities",
-    "taskTitle": "Set up my new utilities",
-    "steps": [
+   "workflowId": "setup_utilities",
+   "taskTitle": "Set up my new utilities",
+   "steps": [
+    {
+     "id": "title",
+     "kind": "title",
+     "icon": "bolt.fill",
+     "next": "included"
+    },
+    {
+     "id": "included",
+     "kind": "select",
+     "question": "Does the new place include any utilities in the rent?",
+     "options": [
       {
-        "id": "title",
-        "kind": "title",
-        "icon": "bolt.fill",
-        "next": "handling"
+       "id": "yes",
+       "label": "Yes, some are included",
+       "icon": "checkmark.circle"
       },
       {
-        "id": "handling",
-        "kind": "decision",
-        "timeSaved": "~2.5 hrs",
-        "stage": "capture",
-        "next": "confirmed_address",
-        "branches": [
-          {
-            "value": "peezy",
-            "next": "confirmed_address"
-          },
-          {
-            "value": "self",
-            "next": "tip"
-          }
-        ]
-      },
-      {
-        "id": "confirmed_address",
-        "kind": "confirmAddress",
-        "question": "Is this your new address?",
-        "addressSource": "new",
-        "displayIcon": "mappin.and.ellipse",
-        "next": "summary"
-      },
-      {
-        "id": "summary",
-        "kind": "summary",
-        "body": "Your utility setup list is ready: each provider, the number to call, and what to ask so service starts before you arrive.",
-        "subtext": "Use the confirmed address when you open each provider's official setup path."
-      },
-      {
-        "id": "tip",
-        "kind": "info",
-        "body": "Get a 'letter of credit' from your old utility — waives the deposit.",
-        "next": "status"
-      },
-      {
-        "id": "status",
-        "kind": "status"
+       "id": "no",
+       "label": "No, all on me",
+       "icon": "bolt.fill"
       }
-    ]
+     ],
+     "next": "handling",
+     "branches": [
+      {
+       "value": "yes",
+       "next": "included_info"
+      },
+      {
+       "value": "no",
+       "next": "handling"
+      }
+     ]
+    },
+    {
+     "id": "handling",
+     "kind": "decision",
+     "timeSaved": "~2.5 hrs",
+     "stage": "capture",
+     "next": "confirmed_address",
+     "branches": [
+      {
+       "value": "peezy",
+       "next": "confirmed_address"
+      },
+      {
+       "value": "self",
+       "next": "tip"
+      }
+     ]
+    },
+    {
+     "id": "confirmed_address",
+     "kind": "confirmAddress",
+     "question": "Is this your new address?",
+     "addressSource": "new",
+     "displayIcon": "mappin.and.ellipse",
+     "next": "summary"
+    },
+    {
+     "id": "summary",
+     "kind": "summary",
+     "body": "Your utility setup list is ready: each provider, the number to call, and what to ask so service starts before you arrive.",
+     "subtext": "Use the confirmed address when you open each provider's official setup path."
+    },
+    {
+     "id": "tip",
+     "kind": "info",
+     "body": "Get a 'letter of credit' from your old utility — waives the deposit.",
+     "next": "status"
+    },
+    {
+     "id": "status",
+     "kind": "status"
+    },
+    {
+     "id": "included_info",
+     "kind": "info",
+     "body": "Confirm with the landlord exactly which ones — then set up only the rest. Start date on those: the day BEFORE move-in.",
+     "next": "status"
+    }
+   ]
   },
   {
     "workflowId": "cancel_utilities",
@@ -333,57 +367,91 @@
     ]
   },
   {
-    "workflowId": "transfer_utilities",
-    "taskTitle": "Transfer my utilities",
-    "steps": [
+   "workflowId": "transfer_utilities",
+   "taskTitle": "Transfer my utilities",
+   "steps": [
+    {
+     "id": "title",
+     "kind": "title",
+     "icon": "bolt.fill",
+     "next": "included"
+    },
+    {
+     "id": "included",
+     "kind": "select",
+     "question": "Does the new place include any utilities in the rent?",
+     "options": [
       {
-        "id": "title",
-        "kind": "title",
-        "icon": "bolt.fill",
-        "next": "handling"
+       "id": "yes",
+       "label": "Yes, some are included",
+       "icon": "checkmark.circle"
       },
       {
-        "id": "handling",
-        "kind": "decision",
-        "timeSaved": "~1.5 hrs",
-        "stage": "capture",
-        "next": "confirmed_address",
-        "branches": [
-          {
-            "value": "peezy",
-            "next": "confirmed_address"
-          },
-          {
-            "value": "self",
-            "next": "tip"
-          }
-        ]
-      },
-      {
-        "id": "confirmed_address",
-        "kind": "confirmAddress",
-        "question": "Is this your new address?",
-        "addressSource": "new",
-        "displayIcon": "mappin.and.ellipse",
-        "next": "summary"
-      },
-      {
-        "id": "summary",
-        "kind": "summary",
-        "body": "Your transfer list is ready: each provider, their number, and the script for a no-overlap switch.",
-        "subtext": "Confirm both service dates and keep each confirmation number."
-      },
-      {
-        "id": "tip",
-        "kind": "info",
-        "body": "Same provider = no new deposit, no credit check, no setup fee.",
-        "next": "status"
-      },
-      {
-        "id": "status",
-        "kind": "status"
+       "id": "no",
+       "label": "No, all on me",
+       "icon": "bolt.fill"
       }
-    ]
+     ],
+     "next": "handling",
+     "branches": [
+      {
+       "value": "yes",
+       "next": "included_info"
+      },
+      {
+       "value": "no",
+       "next": "handling"
+      }
+     ]
+    },
+    {
+     "id": "handling",
+     "kind": "decision",
+     "timeSaved": "~1.5 hrs",
+     "stage": "capture",
+     "next": "confirmed_address",
+     "branches": [
+      {
+       "value": "peezy",
+       "next": "confirmed_address"
+      },
+      {
+       "value": "self",
+       "next": "tip"
+      }
+     ]
+    },
+    {
+     "id": "confirmed_address",
+     "kind": "confirmAddress",
+     "question": "Is this your new address?",
+     "addressSource": "new",
+     "displayIcon": "mappin.and.ellipse",
+     "next": "summary"
+    },
+    {
+     "id": "summary",
+     "kind": "summary",
+     "body": "Your transfer list is ready: each provider, their number, and the script for a no-overlap switch.",
+     "subtext": "Confirm both service dates and keep each confirmation number."
+    },
+    {
+     "id": "tip",
+     "kind": "info",
+     "body": "Same provider = no new deposit, no credit check, no setup fee.",
+     "next": "status"
+    },
+    {
+     "id": "status",
+     "kind": "status"
+    },
+    {
+     "id": "included_info",
+     "kind": "info",
+     "body": "Confirm with the landlord exactly which ones — then set up only the rest. Start date on those: the day BEFORE move-in.",
+     "next": "status"
+    }
+   ]
   },
   {
     "workflowId": "manage_vet",
@@ -1009,77 +1077,82 @@
     ]
   },
   {
-    "workflowId": "financial_accounts",
-    "taskTitle": "Handle my money accounts",
-    "steps": [
+   "workflowId": "financial_accounts",
+   "taskTitle": "Handle my money accounts",
+   "steps": [
+    {
+     "id": "title",
+     "kind": "title",
+     "icon": "banknote.fill",
+     "next": "handling"
+    },
+    {
+     "id": "handling",
+     "kind": "decision",
+     "timeSaved": "~2 hrs",
+     "stage": "capture",
+     "next": "provider",
+     "branches": [
       {
-        "id": "title",
-        "kind": "title",
-        "icon": "banknote.fill",
-        "next": "handling"
+       "value": "peezy",
+       "next": "provider"
       },
       {
-        "id": "handling",
-        "kind": "decision",
-        "timeSaved": "~2 hrs",
-        "stage": "capture",
-        "next": "provider",
-        "branches": [
-          {
-            "value": "peezy",
-            "next": "provider"
-          },
-          {
-            "value": "self",
-            "next": "tip"
-          }
-        ]
-      },
-      {
-        "id": "provider",
-        "kind": "businessSearch",
-        "forEachRow": true,
-        "rowConfigs": {
-          "Bank / Credit Union": {
-            "question": "Which bank are you with?",
-            "placeholder": "Search for a bank...",
-            "searchHint": "bank"
-          },
-          "Credit Card": {
-            "question": "Which credit card company?",
-            "placeholder": "Search for a card issuer...",
-            "searchHint": "bank"
-          },
-          "Investment Account": {
-            "question": "Which brokerage are you with?",
-            "placeholder": "Search for a brokerage...",
-            "searchHint": "brokerage investment"
-          },
-          "Student Loans": {
-            "question": "Who services your student loans?",
-            "placeholder": "Search for a loan servicer...",
-            "searchHint": "loan servicer"
-          }
-        },
-        "next": "summary"
-      },
-      {
-        "id": "summary",
-        "kind": "summary",
-        "body": "Your financial-account list is ready — here's each contact and exactly where to update your address.",
-        "subtext": "Confirm mailing and billing addresses, then keep each update confirmation."
-      },
-      {
-        "id": "tip",
-        "kind": "info",
-        "body": "Update billing addresses before your next statement closes — mismatches trigger fraud alerts and declined transactions.",
-        "next": "status"
-      },
-      {
-        "id": "status",
-        "kind": "status"
+       "value": "self",
+       "next": "tip"
       }
-    ]
+     ]
+    },
+    {
+     "id": "provider",
+     "kind": "businessSearch",
+     "forEachRow": true,
+     "rowConfigs": {
+      "Bank / Credit Union": {
+       "question": "Which bank are you with?",
+       "placeholder": "Search for a bank...",
+       "searchHint": "bank"
+      },
+      "Credit Card": {
+       "question": "Which credit card company?",
+       "placeholder": "Search for a card issuer...",
+       "searchHint": "bank"
+      },
+      "Investment Account": {
+       "question": "Which brokerage are you with?",
+       "placeholder": "Search for a brokerage...",
+       "searchHint": "brokerage investment"
+      },
+      "Student Loans": {
+       "question": "Who services your student loans?",
+       "placeholder": "Search for a loan servicer...",
+       "searchHint": "loan servicer"
+      }
+     },
+     "next": "spawn_confirm"
+    },
+    {
+     "id": "spawn_confirm",
+     "kind": "spawn",
+     "body": "One task per institution — each remembers who it's for.",
+     "spawns": [
+      {
+       "taskId": "UPDATE_INSTITUTION",
+       "perSelectionFrom": "provider"
+      }
+     ]
+    },
+    {
+     "id": "tip",
+     "kind": "info",
+     "body": "Update billing addresses before your next statement closes — mismatches trigger fraud alerts and declined transactions.",
+     "next": "status"
+    },
+    {
+     "id": "status",
+     "kind": "status"
+    }
+   ]
   },
   {
     "workflowId": "memberships",
@@ -1204,5 +1277,421 @@
         "kind": "status"
       }
     ]
+  },
+  {
+   "workflowId": "update_auto_insurance",
+   "taskTitle": "Update auto insurance",
+   "steps": [
+    {
+     "id": "title",
+     "kind": "title",
+     "icon": "car.fill",
+     "next": "registered"
+    },
+    {
+     "id": "registered",
+     "kind": "select",
+     "skipIfKnown": "vehicleRegistered",
+     "question": "Is your vehicle currently registered and on the road?",
+     "options": [
+      {
+       "id": "yes",
+       "label": "Yes",
+       "icon": "checkmark.circle"
+      },
+      {
+       "id": "no",
+       "label": "No — it sits",
+       "icon": "parkingsign.circle"
+      }
+     ],
+     "next": "education",
+     "branches": [
+      {
+       "value": "yes",
+       "next": "education"
+      },
+      {
+       "value": "no",
+       "next": "will_register"
+      }
+     ]
+    },
+    {
+     "id": "will_register",
+     "kind": "select",
+     "skipIfKnown": "willRegisterVehicle",
+     "question": "Will you register it at the new place?",
+     "options": [
+      {
+       "id": "yes",
+       "label": "Yes",
+       "icon": "checkmark.circle"
+      },
+      {
+       "id": "no",
+       "label": "No",
+       "icon": "xmark.circle"
+      }
+     ],
+     "next": "education",
+     "branches": [
+      {
+       "value": "yes",
+       "next": "education"
+      },
+      {
+       "value": "no",
+       "next": "done_info"
+      }
+     ]
+    },
+    {
+     "id": "done_info",
+     "kind": "info",
+     "body": "Then there's nothing to update — this one's done.",
+     "next": "status"
+    },
+    {
+     "id": "education",
+     "kind": "info",
+     "body": "Your address is a rating factor — the price resets when you move, either direction. Before switching anywhere, make your current company re-quote you at the NEW address as a new customer. Loyalty pricing works against you.",
+     "next": "intent"
+    },
+    {
+     "id": "intent",
+     "kind": "select",
+     "skipIfKnown": "autoInsuranceIntent",
+     "question": "Update the current policy, or shop the reset?",
+     "options": [
+      {
+       "id": "update",
+       "label": "Update my current policy",
+       "icon": "pencil.line"
+      },
+      {
+       "id": "shop",
+       "label": "Shop for a better rate",
+       "icon": "magnifyingglass"
+      }
+     ],
+     "next": "spawn_confirm"
+    },
+    {
+     "id": "spawn_confirm",
+     "kind": "spawn",
+     "body": "Here's your move on insurance:",
+     "spawns": [
+      {
+       "taskId": "AUTO_INSURANCE_UPDATE",
+       "when": {
+        "intent": "update"
+       }
+      },
+      {
+       "taskId": "AUTO_INSURANCE_SHOP",
+       "when": {
+        "intent": "shop"
+       }
+      }
+     ]
+    },
+    {
+     "id": "status",
+     "kind": "status"
+    }
+   ]
+  },
+  {
+   "workflowId": "setup_internet",
+   "taskTitle": "Set up internet",
+   "steps": [
+    {
+     "id": "title",
+     "kind": "title",
+     "icon": "wifi",
+     "next": "included"
+    },
+    {
+     "id": "included",
+     "kind": "select",
+     "question": "Is internet included at the new place?",
+     "options": [
+      {
+       "id": "yes",
+       "label": "Yes, it's included",
+       "icon": "checkmark.circle"
+      },
+      {
+       "id": "no",
+       "label": "No, I set it up",
+       "icon": "wifi"
+      }
+     ],
+     "next": "current",
+     "branches": [
+      {
+       "value": "yes",
+       "next": "included_info"
+      },
+      {
+       "value": "no",
+       "next": "current"
+      }
+     ]
+    },
+    {
+     "id": "included_info",
+     "kind": "info",
+     "body": "Then you're covered — confirm the login with the landlord and this one's done.",
+     "next": "status"
+    },
+    {
+     "id": "current",
+     "kind": "select",
+     "skipIfKnown": "hasCurrentISP",
+     "question": "Do you have internet service now?",
+     "options": [
+      {
+       "id": "yes",
+       "label": "Yes",
+       "icon": "checkmark.circle"
+      },
+      {
+       "id": "no",
+       "label": "No — starting fresh",
+       "icon": "sparkles"
+      }
+     ],
+     "next": "keep_shop",
+     "branches": [
+      {
+       "value": "yes",
+       "next": "keep_shop"
+      },
+      {
+       "value": "no",
+       "next": "insider"
+      }
+     ]
+    },
+    {
+     "id": "keep_shop",
+     "kind": "select",
+     "question": "Transfer your current service, or shop?",
+     "options": [
+      {
+       "id": "transfer",
+       "label": "Transfer — keep my rate",
+       "icon": "arrow.right.circle"
+      },
+      {
+       "id": "shop",
+       "label": "Shop for a better deal",
+       "icon": "magnifyingglass"
+      }
+     ],
+     "next": "insider"
+    },
+    {
+     "id": "insider",
+     "kind": "info",
+     "body": "Book the install BEFORE you move — slots run 1–2 weeks out. Transferring keeps your existing rate; shopping opens the new-customer pricing window. Mid-contract, ask about the early-termination fee before canceling anything.",
+     "next": "spawn_confirm"
+    },
+    {
+     "id": "spawn_confirm",
+     "kind": "spawn",
+     "body": "You're equipped — research below has your local options.",
+     "spawns": [
+      {
+       "taskId": "RETURN_ISP_EQUIPMENT",
+       "when": {
+        "current": "yes"
+       }
+      }
+     ]
+    },
+    {
+     "id": "status",
+     "kind": "status"
+    }
+   ]
+  },
+  {
+   "workflowId": "give_daycare_notice",
+   "taskTitle": "Give daycare written notice",
+   "steps": [
+    {
+     "id": "title",
+     "kind": "title",
+     "icon": "envelope.fill",
+     "next": "info"
+    },
+    {
+     "id": "info",
+     "kind": "info",
+     "body": "Check the contract for the notice clause — most require 2–4 weeks, in writing. Send it dated. Miss the window and they bill for a spot you no longer use.",
+     "next": "status"
+    },
+    {
+     "id": "status",
+     "kind": "status"
+    }
+   ]
+  },
+  {
+   "workflowId": "get_hoa_master_policy",
+   "taskTitle": "Get the HOA master policy",
+   "steps": [
+    {
+     "id": "title",
+     "kind": "title",
+     "icon": "doc.text.fill",
+     "next": "info"
+    },
+    {
+     "id": "info",
+     "kind": "info",
+     "body": "One email to the HOA or your realtor: ask for the 'master policy declaration page.' Your condo insurance can't be quoted without it — everything waits on this.",
+     "next": "status"
+    },
+    {
+     "id": "status",
+     "kind": "status"
+    }
+   ]
+  },
+  {
+   "workflowId": "return_isp_equipment",
+   "taskTitle": "Return your equipment",
+   "steps": [
+    {
+     "id": "title",
+     "kind": "title",
+     "icon": "shippingbox.fill",
+     "next": "info"
+    },
+    {
+     "id": "info",
+     "kind": "info",
+     "body": "Return the modem and router, get a receipt, photograph it into your notes. Unreturned-equipment fees run $100+ and land months later — the receipt photo is the whole defense.",
+     "next": "status"
+    },
+    {
+     "id": "status",
+     "kind": "status"
+    }
+   ]
+  },
+  {
+   "workflowId": "truck_pickup_checklist",
+   "taskTitle": "Truck pickup checklist",
+   "steps": [
+    {
+     "id": "title",
+     "kind": "title",
+     "icon": "checklist",
+     "next": "info"
+    },
+    {
+     "id": "info",
+     "kind": "info",
+     "body": "At the counter: confirm the ramp, dolly, and pads are on the reservation. Photograph the fuel gauge and odometer before you drive off — those photos decide every dispute.",
+     "next": "status"
+    },
+    {
+     "id": "status",
+     "kind": "status"
+    }
+   ]
+  },
+  {
+   "workflowId": "auto_insurance_update",
+   "taskTitle": "Update auto insurance",
+   "steps": [
+    {
+     "id": "title",
+     "kind": "title",
+     "icon": "car.fill",
+     "next": "info"
+    },
+    {
+     "id": "info",
+     "kind": "info",
+     "body": "One call or portal visit: new address, effective your move date. Cross-state, they write a new policy for the new state — same call starts it. Do this BEFORE the DMV trip.",
+     "next": "status"
+    },
+    {
+     "id": "status",
+     "kind": "status"
+    }
+   ]
+  },
+  {
+   "workflowId": "auto_insurance_shop",
+   "taskTitle": "Shop auto insurance",
+   "steps": [
+    {
+     "id": "title",
+     "kind": "title",
+     "icon": "car.fill",
+     "next": "info"
+    },
+    {
+     "id": "info",
+     "kind": "info",
+     "body": "Quote 2–3 companies at the new address — and make your current company re-quote you at new-customer rates first. New coverage starts BEFORE the old ends. No lapse, ever.",
+     "next": "status"
+    },
+    {
+     "id": "status",
+     "kind": "status"
+    }
+   ]
+  },
+  {
+   "workflowId": "update_institution",
+   "taskTitle": "Update this institution",
+   "steps": [
+    {
+     "id": "title",
+     "kind": "title",
+     "icon": "banknote.fill",
+     "next": "info"
+    },
+    {
+     "id": "info",
+     "kind": "info",
+     "body": "Log in or call: update mailing AND billing address, keep the confirmation. Mail forwarding does not cover this one — they mark statements 'do not forward.'",
+     "next": "status"
+    },
+    {
+     "id": "status",
+     "kind": "status"
+    }
+   ]
+  },
+  {
+   "workflowId": "register_to_vote",
+   "taskTitle": "Update voter registration",
+   "steps": [
+    {
+     "id": "title",
+     "kind": "title",
+     "icon": "checkmark.seal.fill",
+     "next": "info"
+    },
+    {
+     "id": "info",
+     "kind": "info",
+     "body": "vote.gov, your state, two minutes online. States close registration weeks before an election — if one's coming, do it now.",
+     "next": "status"
+    },
+    {
+     "id": "status",
+     "kind": "status"
+    }
+   ]
   }
 ]
