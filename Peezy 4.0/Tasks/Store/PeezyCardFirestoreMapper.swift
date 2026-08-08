@@ -7,8 +7,12 @@ enum PeezyCardFirestoreMapper {
     /// (TasksStore listener) BOTH decode through this function — do not add a
     /// second path or re-inline field decoding at a call site.
     static func card(from document: QueryDocumentSnapshot) -> PeezyCard? {
-        let data = document.data()
+        card(from: document.data(), documentID: document.documentID)
+    }
 
+    /// Data-shaped entry so unit fixtures can decode without a live snapshot.
+    /// Still the one path — the snapshot overload above delegates here.
+    static func card(from data: [String: Any], documentID: String) -> PeezyCard? {
         let statusString = data["status"] as? String ?? "Upcoming"
         let status = TaskStatus(rawValue: statusString) ?? .upcoming
 
@@ -35,13 +39,31 @@ enum PeezyCardFirestoreMapper {
         let categoryRaw = data["category"] as? String
         let isVendorTask = categoryRaw?.lowercased().contains("vendor") ?? false
         let cardType: PeezyCard.CardType = isVendorTask ? .vendor : .task
-        let taskId = data["taskId"] as? String ?? data["id"] as? String ?? document.documentID
+        let taskId = data["taskId"] as? String ?? data["id"] as? String ?? documentID
         let packingSession = packingSession(from: data, fallbackTaskId: taskId)
         let workflowId = data["workflowId"] as? String
             ?? (taskId.hasPrefix("PACKING_SESSION_") ? "packing_session" : nil)
 
+        // Spawn metadata (Spec 09) — NSNumber-safe numerics, defaults on absence.
+        let spawnedFrom = (data["spawnedFrom"] as? [String: Any]).flatMap { raw -> PeezyCard.SpawnedFrom? in
+            guard let kind = raw["kind"] as? String, let id = raw["id"] as? String else { return nil }
+            return PeezyCard.SpawnedFrom(kind: kind, id: id)
+        }
+        let onCompleteSpawns = (data["onCompleteSpawns"] as? [[String: Any]] ?? [])
+            .compactMap { raw -> PeezyCard.CompletionSpawn? in
+                guard let id = raw["id"] as? String else { return nil }
+                let dateRule = (raw["dateRule"] as? [String: Any]).flatMap { rule -> PeezyCard.SpawnDateRule? in
+                    guard let offsetDays = (rule["offsetDays"] as? NSNumber)?.intValue else { return nil }
+                    return PeezyCard.SpawnDateRule(
+                        anchor: rule["anchor"] as? String ?? "moveDate",
+                        offsetDays: offsetDays
+                    )
+                }
+                return PeezyCard.CompletionSpawn(id: id, dateRule: dateRule)
+            }
+
         return PeezyCard(
-            id: document.documentID,
+            id: documentID,
             type: cardType,
             title: data["title"] as? String ?? "Untitled Task",
             // Retained for the gated task-detail renderer; free list rows do
@@ -73,7 +95,14 @@ enum PeezyCardFirestoreMapper {
             estHours: (data["estHours"] as? NSNumber)?.doubleValue,
             // Nil-tolerant: absent/unknown stage = nil (notStarted for workflow tasks)
             stage: (data["stage"] as? String).flatMap(TaskStage.init(rawValue:)),
-            payload: packingSession.map(CardPayload.packing)
+            payload: packingSession.map(CardPayload.packing),
+            tier: data["tier"] as? String ?? "task",
+            nudgePrompt: data["nudgePrompt"] as? String,
+            nudgeSpawnsId: data["nudgeSpawnsId"] as? String,
+            spawnedFrom: spawnedFrom,
+            onCompleteSpawns: onCompleteSpawns,
+            notesEnabled: data["notesEnabled"] as? Bool ?? false,
+            quoteTracker: data["quoteTracker"] as? String ?? "none"
         )
     }
 

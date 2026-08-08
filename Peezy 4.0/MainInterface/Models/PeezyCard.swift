@@ -20,6 +20,10 @@ enum TaskStatus: String, Codable {
     case completed = "Completed"
     case snoozed = "Snoozed"
     case skipped = "Skipped"
+    // Terminal — nudge lifecycle (Spec 09 Phase 3). A dismissed nudge never
+    // resurfaces; a converted nudge is replaced by its spawned real task.
+    case dismissed = "Dismissed"
+    case converted = "Converted"
 }
 
 // MARK: - PeezyCard Model
@@ -93,6 +97,45 @@ struct PeezyCard: Identifiable, Equatable, Codable {
 
     // Per-type payload (shells until Specs 04–05; nil = no payload)
     var payload: CardPayload?
+
+    // Catalog tier (Spec 09): "task" | "nudge" | "conversation". Nudge cards
+    // are Home-only and carry their prompt + spawn target.
+    var tier: String = "task"
+    var nudgePrompt: String?
+    var nudgeSpawnsId: String?
+
+    // Spawn metadata (Spec 09): provenance + completion-spawn list.
+    var spawnedFrom: SpawnedFrom?
+    var onCompleteSpawns: [CompletionSpawn] = []
+
+    // Task-surface flags from the catalog (Spec 09).
+    var notesEnabled: Bool = false
+    var quoteTracker: String = "none"
+
+    // MARK: - Spawn Metadata Types (Spec 09)
+
+    /// Provenance stamped by the spawnTasks callable — which nudge,
+    /// conversation, or completion produced this task doc.
+    struct SpawnedFrom: Codable, Equatable {
+        let kind: String
+        let id: String
+    }
+
+    /// Per-spawn date override: `{anchor:"moveDate", offsetDays:N}`.
+    struct SpawnDateRule: Codable, Equatable {
+        let anchor: String
+        let offsetDays: Int
+    }
+
+    struct CompletionSpawn: Codable, Equatable {
+        let id: String
+        var dateRule: SpawnDateRule?
+
+        init(id: String, dateRule: SpawnDateRule? = nil) {
+            self.id = id
+            self.dateRule = dateRule
+        }
+    }
 
     // MARK: - Card Types
     enum CardType: String, Codable {
@@ -269,7 +312,14 @@ struct PeezyCard: Identifiable, Equatable, Codable {
         estPeezy: String? = nil,
         estHours: Double? = nil,
         stage: TaskStage? = nil,
-        payload: CardPayload? = nil
+        payload: CardPayload? = nil,
+        tier: String = "task",
+        nudgePrompt: String? = nil,
+        nudgeSpawnsId: String? = nil,
+        spawnedFrom: SpawnedFrom? = nil,
+        onCompleteSpawns: [CompletionSpawn] = [],
+        notesEnabled: Bool = false,
+        quoteTracker: String = "none"
     ) {
         self.id = id
         self.type = type
@@ -302,6 +352,13 @@ struct PeezyCard: Identifiable, Equatable, Codable {
         self.estHours = estHours
         self.stage = stage
         self.payload = payload
+        self.tier = tier
+        self.nudgePrompt = nudgePrompt
+        self.nudgeSpawnsId = nudgeSpawnsId
+        self.spawnedFrom = spawnedFrom
+        self.onCompleteSpawns = onCompleteSpawns
+        self.notesEnabled = notesEnabled
+        self.quoteTracker = quoteTracker
     }
     
     // MARK: - Factory Methods

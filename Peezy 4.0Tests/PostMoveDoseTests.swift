@@ -76,3 +76,76 @@ struct PostMoveDoseTests {
         )
     }
 }
+
+// MARK: - Spec 09 Phase 3: nudge tier
+
+struct NudgeTierTests {
+    @Test func mapperDecodesNudgeFixture() {
+        let data: [String: Any] = [
+            "taskId": "STORAGE_NUDGE",
+            "title": "Storage unit",
+            "status": "Upcoming",
+            "tier": "nudge",
+            "nudgePrompt": "Sounds like you might need storage — want us to line it up?",
+            "nudgeSpawnsId": "BOOK_STORAGE",
+            "notesEnabled": true,
+            "quoteTracker": "v1",
+            "spawnedFrom": ["kind": "conversation", "id": "MOVING_DAY_PLAN"],
+            "onCompleteSpawns": [
+                ["id": "RETURN_ISP_EQUIPMENT", "dateRule": ["anchor": "moveDate", "offsetDays": NSNumber(value: 2)]]
+            ],
+            "urgencyPercentage": NSNumber(value: 60)
+        ]
+
+        let card = PeezyCardFirestoreMapper.card(from: data, documentID: "STORAGE_NUDGE")
+
+        #expect(card?.tier == "nudge")
+        #expect(card?.nudgePrompt == "Sounds like you might need storage — want us to line it up?")
+        #expect(card?.nudgeSpawnsId == "BOOK_STORAGE")
+        #expect(card?.notesEnabled == true)
+        #expect(card?.quoteTracker == "v1")
+        #expect(card?.spawnedFrom == PeezyCard.SpawnedFrom(kind: "conversation", id: "MOVING_DAY_PLAN"))
+        #expect(card?.onCompleteSpawns == [
+            PeezyCard.CompletionSpawn(
+                id: "RETURN_ISP_EQUIPMENT",
+                dateRule: PeezyCard.SpawnDateRule(anchor: "moveDate", offsetDays: 2)
+            )
+        ])
+    }
+
+    @Test func mapperDefaultsSpawnFieldsWhenAbsent() {
+        let card = PeezyCardFirestoreMapper.card(
+            from: ["title": "Plain", "status": "Upcoming"],
+            documentID: "PLAIN"
+        )
+
+        #expect(card?.tier == "task")
+        #expect(card?.nudgePrompt == nil)
+        #expect(card?.nudgeSpawnsId == nil)
+        #expect(card?.spawnedFrom == nil)
+        #expect(card?.onCompleteSpawns.isEmpty == true)
+        #expect(card?.notesEnabled == false)
+        #expect(card?.quoteTracker == "none")
+    }
+
+    @Test func groupingSkipsNudgesAndTerminalNudgeStatuses() {
+        var nudge = fixture(id: "NUDGE")
+        nudge.tier = "nudge"
+        var dismissed = fixture(id: "DISMISSED")
+        dismissed.status = .dismissed
+        var converted = fixture(id: "CONVERTED")
+        converted.status = .converted
+        let regular = fixture(id: "REGULAR")
+
+        let groups = TaskGrouping.partition([nudge, dismissed, converted, regular])
+
+        #expect(groups.todo.map(\.id) == ["REGULAR"])
+        #expect(groups.snoozed.isEmpty)
+        #expect(groups.userInProgress.isEmpty)
+        #expect(groups.completed.isEmpty)
+    }
+
+    private func fixture(id: String) -> PeezyCard {
+        PeezyCard(id: id, type: .task, title: id, subtitle: "", taskId: id, urgencyPercentage: 50)
+    }
+}

@@ -57,12 +57,20 @@ class TaskGenerationService {
 
         var tasksToCreate: [[String: Any]] = []
 
+        // Spec 09: nudge rows resolve their spawn target's date through this
+        // per-run index — built once from the snapshot, shared by every row.
+        let catalogIndex = Dictionary(
+            uniqueKeysWithValues: catalogSnapshot.documents.map { ($0.documentID, $0.data()) }
+        )
+
         // 2. Evaluate each task's conditions
         for document in catalogSnapshot.documents {
             if document.documentID == "BOX_RETURN", !hasSuppliesKitSubmission {
                 continue
             }
             let taskData = document.data()
+            // spawnedOnly rows exist only via the spawnTasks callable (Spec 09).
+            if taskData["spawnedOnly"] as? Bool == true { continue }
             let taskTitle = taskData["title"] as? String ?? "Unknown"
 
             // Get conditions — stored as { fieldName: [acceptableValues] }
@@ -76,12 +84,12 @@ class TaskGenerationService {
             let conditionPassed = TaskConditionParser.evaluateConditions(conditions, against: assessment)
 
             if conditionPassed {
-                // Calculate due date based on urgency
                 let urgencyPercentage = (taskData["urgencyPercentage"] as? NSNumber)?.intValue ?? 50
 
-                let dueDate = calculateDueDate(
-                    moveDate: moveDate,
-                    urgencyPercentage: urgencyPercentage
+                let dueDate = resolvedDueDate(
+                    for: taskData,
+                    catalogIndex: catalogIndex,
+                    moveDate: moveDate
                 )
 
                 #if DEBUG
@@ -121,6 +129,8 @@ class TaskGenerationService {
 
                 // Copy selfServiceOnly flag (defaults to false if absent)
                 userTask["selfServiceOnly"] = taskData["selfServiceOnly"] as? Bool ?? false
+
+                stampTierAndNudgeMetadata(from: taskData, onto: &userTask)
 
                 // Row-generation (Spec 04 Phase B): stamp per-user rows the
                 // FlowEngine expands (merged flows, count-expanded providers,
@@ -201,17 +211,24 @@ class TaskGenerationService {
         let userTasksRef = db.collection("users").document(userId).collection("tasks")
         var created = 0
 
+        // Same per-run index as the initial loop (Spec 09 nudge date math).
+        let catalogIndex = Dictionary(
+            uniqueKeysWithValues: catalogSnapshot.documents.map { ($0.documentID, $0.data()) }
+        )
+
         for document in catalogSnapshot.documents {
             guard !existingIds.contains(document.documentID) else { continue }
             if document.documentID == "BOX_RETURN", !hasSuppliesKitSubmission {
                 continue
             }
             let taskData = document.data()
+            // spawnedOnly rows exist only via the spawnTasks callable (Spec 09).
+            if taskData["spawnedOnly"] as? Bool == true { continue }
             let conditions = taskData["conditions"] as? [String: Any]
             guard TaskConditionParser.evaluateConditions(conditions, against: assessment) else { continue }
 
             let urgencyPercentage = (taskData["urgencyPercentage"] as? NSNumber)?.intValue ?? 50
-            let dueDate = calculateDueDate(moveDate: moveDate, urgencyPercentage: urgencyPercentage)
+            let dueDate = resolvedDueDate(for: taskData, catalogIndex: catalogIndex, moveDate: moveDate)
 
             var userTask: [String: Any] = [
                 "id": document.documentID,
@@ -239,6 +256,7 @@ class TaskGenerationService {
                 userTask["surfaceAfterDaysPastMove"] = days
             }
             userTask["selfServiceOnly"] = taskData["selfServiceOnly"] as? Bool ?? false
+            stampTierAndNudgeMetadata(from: taskData, onto: &userTask)
             if let rowGen = taskData["rowGeneration"] as? [String: Any] {
                 let rows = Self.flowRows(from: rowGen, assessment: assessment)
                 if !rows.isEmpty {
@@ -324,6 +342,58 @@ class TaskGenerationService {
                 result.append(char)
             }
             .trimmingCharacters(in: CharacterSet(charactersIn: "_"))
+    }
+
+    // MARK: - Spec 09 Tier / Nudge Metadata
+
+    /// Stamps `tier` (when the row carries one) and nudge card metadata onto
+    /// the user task doc so the mapper renders nudges without a catalog read.
+    private func stampTierAndNudgeMetadata(
+        from taskData: [String: Any],
+        onto userTask: inout [String: Any]
+    ) {
+        if let tier = taskData["tier"] as? String {
+            userTask["tier"] = tier
+        }
+        if let nudge = taskData["nudge"] as? [String: Any] {
+            if let prompt = nudge["cardPrompt"] as? String {
+                userTask["nudgePrompt"] = prompt
+            }
+            if let spawnsId = nudge["spawnsId"] as? String {
+                userTask["nudgeSpawnsId"] = spawnsId
+            }
+        }
+    }
+
+    // MARK: - Spec 09 Due Dates
+
+    /// One date path for BOTH generation loops: a nudge row's dueDate is its
+    /// spawn target's computed date minus leadDays (default 2); every other
+    /// row uses its own dateRule override or the existing urgency math.
+    private func resolvedDueDate(
+        for taskData: [String: Any],
+        catalogIndex: [String: [String: Any]],
+        moveDate: Date
+    ) -> Date {
+        if let nudge = taskData["nudge"] as? [String: Any] {
+            let leadDays = (nudge["leadDays"] as? NSNumber)?.intValue ?? 2
+            let target = (nudge["spawnsId"] as? String).flatMap { catalogIndex[$0] } ?? taskData
+            let targetDate = rowDueDate(for: target, moveDate: moveDate)
+            return Calendar.current.date(byAdding: .day, value: -leadDays, to: targetDate) ?? targetDate
+        }
+        return rowDueDate(for: taskData, moveDate: moveDate)
+    }
+
+    /// A row's own date: `dateRule` `{anchor:"moveDate", offsetDays:N}`
+    /// override when present, else the urgency-timeline math.
+    private func rowDueDate(for taskData: [String: Any], moveDate: Date) -> Date {
+        if let dateRule = taskData["dateRule"] as? [String: Any],
+           let offsetDays = (dateRule["offsetDays"] as? NSNumber)?.intValue {
+            let anchor = Calendar.current.startOfDay(for: moveDate)
+            return Calendar.current.date(byAdding: .day, value: offsetDays, to: anchor) ?? anchor
+        }
+        let urgency = (taskData["urgencyPercentage"] as? NSNumber)?.intValue ?? 50
+        return calculateDueDate(moveDate: moveDate, urgencyPercentage: urgency)
     }
 
     // MARK: - Due Date Calculation

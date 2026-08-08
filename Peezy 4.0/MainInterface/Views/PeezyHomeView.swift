@@ -335,6 +335,19 @@ struct PeezyHomeView: View {
 
     @ViewBuilder
     private var activeTaskContent: some View {
+        if let task = viewModel.currentTask, task.tier == "nudge" {
+            // Nudge cards render inline (Spec 09 Phase 3) — no flow cover.
+            NudgeCardView(
+                prompt: task.nudgePrompt ?? task.title,
+                onYes: { viewModel.answerNudge(yes: true) },
+                onNo: { viewModel.answerNudge(yes: false) }
+            )
+        } else {
+            activeTaskLoadingContent
+        }
+    }
+
+    private var activeTaskLoadingContent: some View {
         VStack(spacing: 20) {
             if viewModel.dailyTarget > 0 {
                 doseBadge("\(min(viewModel.doseCompletedToday + 1, viewModel.dailyTarget)) of \(viewModel.dailyTarget)")

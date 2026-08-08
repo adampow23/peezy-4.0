@@ -1,8 +1,11 @@
-# Spec 09 Phase 2 — Spawn Engine: Cloud Function + Rule
-# Active spec: PEEZY_SPEC_09_CATALOG_RESTRUCTURE.md
-# Writable paths:
-functions/spawnTasks.js
-functions/index.js
-functions/tests/spawnTasks.test.js
-firestore.rules
 PHASE_MANIFEST
+Peezy 4.0/MainInterface/Models/PeezyCard.swift
+Peezy 4.0/Tasks/Store/PeezyCardFirestoreMapper.swift
+Peezy 4.0/Tasks/Store/TaskGrouping.swift
+Peezy 4.0/Assessment/AssessmentModels/TaskGenerationService.swift
+Peezy 4.0/MainInterface/Models/PeezyHomeViewModel.swift
+Peezy 4.0/MainInterface/Views/PeezyHomeView.swift
+Peezy 4.0/MainInterface/Models/TaskActionService.swift
+Peezy 4.0/MainInterface/Models/SpawnService.swift
+Peezy 4.0/MainInterface/Views/NudgeCardView.swift
+Peezy 4.0Tests/PostMoveDoseTests.swift

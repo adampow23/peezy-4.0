@@ -317,9 +317,58 @@ final class PeezyHomeViewModel {
         let task = taskQueue.removeFirst()
         currentTask = task
 
+        // Nudges render inline on Home — no flow cover (Spec 09 Phase 3).
+        if task.tier == "nudge" {
+            state = .activeTask
+            return
+        }
+
         taskFlowWorkflowId = flowId(for: task)
         showTaskFlow = true
         state = .activeTask
+    }
+
+    // MARK: - Nudge Card Actions (Spec 09 Phase 3)
+
+    /// No: terminal "Dismissed" — the nudge never resurfaces anywhere and
+    /// earns no dose credit. Yes: convert through the spawnTasks callable
+    /// first; only on success persist "Converted" and credit the dose like a
+    /// completion. On failure the card stays put and the error toast shows.
+    func answerNudge(yes: Bool) {
+        guard let task = currentTask, task.tier == "nudge" else { return }
+
+        if !yes {
+            Task { await actionService.setStatus(taskId: task.id, status: "Dismissed") }
+            allActiveTasks.removeAll { $0.id == task.id }
+            currentTask = nil
+            isFocusedTask = false
+            advanceAfterTask()
+            return
+        }
+
+        guard let spawnsId = task.nudgeSpawnsId else { return }
+        Task {
+            do {
+                _ = try await SpawnService().spawn(
+                    token: "\(task.id)-convert",
+                    source: SpawnService.Source(kind: "nudge", id: task.taskId ?? task.id),
+                    spawns: [SpawnService.Spawn(taskId: spawnsId)]
+                )
+            } catch {
+                await MainActor.run { self.error = error.localizedDescription }
+                return
+            }
+            await actionService.setStatus(taskId: task.id, status: "Converted")
+            await MainActor.run {
+                PeezyHaptics.taskComplete()
+                self.completedThisSession += 1
+                self.recordDoseProgress(completedTask: true)
+                self.allActiveTasks.removeAll { $0.id == task.id }
+                self.currentTask = nil
+                self.isFocusedTask = false
+                self.advanceAfterTask()
+            }
+        }
     }
 
     // MARK: - Advance After Task

@@ -76,6 +76,19 @@ struct TaskActionService {
         }
     }
 
+    /// Terminal nudge-lifecycle writes (Spec 09 Phase 3): "Dismissed" /
+    /// "Converted". Same direct-write pattern as the sibling status writes.
+    func setStatus(taskId: String, status: String) async {
+        guard let userId = Auth.auth().currentUser?.uid, !taskId.isEmpty else { return }
+        let db = Firestore.firestore()
+        do {
+            try await db.collection("users").document(userId).collection("tasks")
+                .document(taskId).updateData(["status": status])
+        } catch {
+            print("⚠️ Failed to set status \(status): \(error.localizedDescription)")
+        }
+    }
+
     func markTaskCompleted(_ task: PeezyCard) async {
         guard let userId = Auth.auth().currentUser?.uid else { return }
         let db = Firestore.firestore()

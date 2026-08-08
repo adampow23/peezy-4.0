@@ -17,6 +17,8 @@ enum TaskGrouping {
         var completed: [PeezyCard] = []
 
         for task in tasks {
+            // Nudges are Home-only (Spec 09) — never a Tasks-tab row.
+            guard task.tier != "nudge" else { continue }
             guard task.status != .skipped else { continue }
 
             if isSnoozedEffective(task, now: now) {
@@ -38,6 +40,9 @@ enum TaskGrouping {
             case .upcoming, .snoozed:
                 todo.append(task)
             case .skipped:
+                continue
+            case .dismissed, .converted:
+                // Terminal nudge lifecycle (Spec 09) — hidden everywhere.
                 continue
             }
         }
