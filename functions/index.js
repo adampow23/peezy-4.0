@@ -14,6 +14,7 @@ const { resolveProvider } = require('./resolveProvider');
 const { researchTask } = require('./researchTask');
 const { submitCheckIn } = require('./submitCheckIn');
 const { redeemGiftCode } = require('./entitlement');
+const { spawnTasks } = require('./spawnTasks');
 
 // Set global options
 setGlobalOptions({ maxInstances: 10 });
@@ -207,3 +208,4 @@ exports.researchTask = researchTask;
 exports.peezyChat = peezyChat;
 exports.submitCheckIn = submitCheckIn;
 exports.redeemGiftCode = redeemGiftCode;
+exports.spawnTasks = spawnTasks;

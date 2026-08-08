@@ -30,6 +30,12 @@ service cloud.firestore {
       allow read, write: if request.auth != null && request.auth.uid == userId;
     }
 
+    // Remembered conversation answers (users/{uid}/moveAnswers/answers) —
+    // written only by the spawnTasks Cloud Function (Admin SDK). Owner read.
+    match /users/{userId}/moveAnswers/{doc} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+    }
+
     // Task catalog — readable by any authenticated user
     match /taskCatalog/{document=**} {
       allow read: if request.auth != null;
