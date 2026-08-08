@@ -1,4 +1,3 @@
-Peezy 4.0/Tasks/Views/QuoteTrackerView.swift
-Peezy 4.0/Tasks/Views/TaskContentSections.swift
-Peezy 4.0/MainInterface/Models/ManHourNormalizer.swift
-Tests/ManHourNormalizerTests.swift
+functions/taskCatalogData.json
+functions/flowDefinitionsData.json
+functions/seedTaskCatalog.js

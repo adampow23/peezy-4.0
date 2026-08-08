@@ -1799,6 +1799,9 @@
    "conditions": {
     "hasVet": [
      "Yes"
+    ],
+    "requiresClientV2": [
+     "true"
     ]
    },
    "desc": "Got pets? Two quick things protect them in the move — records and the microchip registry.",
@@ -1828,6 +1831,9 @@
     ],
     "moveDistance": [
      "Long Distance"
+    ],
+    "requiresClientV2": [
+     "true"
     ]
    },
    "desc": "Take regular prescriptions? Want a task to move them to a pharmacy near the new place?",
@@ -1856,6 +1862,9 @@
      "Doctor",
      "Dentist",
      "Specialists"
+    ],
+    "requiresClientV2": [
+     "true"
     ]
    },
    "desc": "Seeing any specialists you'll need records from — cardiologist, OB, derm, anyone?",
@@ -1879,7 +1888,11 @@
    "actionType": "in-app",
    "taskType": "provide_info",
    "researchScope": "none",
-   "conditions": {},
+   "conditions": {
+    "requiresClientV2": [
+     "true"
+    ]
+   },
    "desc": "Is your fridge going on the truck? It needs a 24–48 hour head start.",
    "estHours": 0,
    "estPeezy": "5 secs",
@@ -1904,6 +1917,9 @@
    "conditions": {
     "currentRentOrOwn": [
      "Rent"
+    ],
+    "requiresClientV2": [
+     "true"
     ]
    },
    "desc": "Want a reminder to photograph the old place before you hand over the keys?",
@@ -1927,7 +1943,11 @@
    "actionType": "in-app",
    "taskType": "provide_info",
    "researchScope": "none",
-   "conditions": {},
+   "conditions": {
+    "requiresClientV2": [
+     "true"
+    ]
+   },
    "desc": "Need to request time off for the move?",
    "estHours": 0,
    "estPeezy": "5 secs",
@@ -1949,7 +1969,11 @@
    "actionType": "in-app",
    "taskType": "provide_info",
    "researchScope": "none",
-   "conditions": {},
+   "conditions": {
+    "requiresClientV2": [
+     "true"
+    ]
+   },
    "desc": "Want to update your voter registration for the new address?",
    "estHours": 0,
    "estPeezy": "5 secs",
