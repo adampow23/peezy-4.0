@@ -1,4 +1,5 @@
-Peezy 4.0/Tasks/FlowEngine/FlowDefinition.swift
-Peezy 4.0/Tasks/FlowEngine/FlowEngineView.swift
-Peezy 4.0/Tasks/FlowEngine/MoveAnswersStore.swift
-Peezy 4.0Tests/ConversationFlowTests.swift
+Peezy 4.0/Tasks/Views/TaskDetailView.swift
+Peezy 4.0/Tasks/Views/TaskRowHeader.swift
+Peezy 4.0/Tasks/Views/TaskContentSections.swift
+Peezy 4.0/Tasks/Views/QuoteTrackerView.swift
+Peezy 4.0/MainInterface/Models/TaskActionService.swift

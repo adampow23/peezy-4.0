@@ -89,6 +89,32 @@ struct TaskActionService {
         }
     }
 
+    /// Detail-surface notes (Spec 09 Phase 5) — additive write of exactly the
+    /// `notes` field on the user task doc, saved on editor blur.
+    func updateNotes(taskId: String, notes: String) async {
+        guard let userId = Auth.auth().currentUser?.uid, !taskId.isEmpty else { return }
+        let db = Firestore.firestore()
+        do {
+            try await db.collection("users").document(userId).collection("tasks")
+                .document(taskId).updateData(["notes": notes])
+        } catch {
+            print("⚠️ Failed to save notes: \(error.localizedDescription)")
+        }
+    }
+
+    /// Quote-tracker rows (Spec 09 Phase 5) — additive write of exactly the
+    /// `quotes` array of {company, notes} dictionaries on the user task doc.
+    func updateQuotes(taskId: String, quotes: [TaskQuote]) async {
+        guard let userId = Auth.auth().currentUser?.uid, !taskId.isEmpty else { return }
+        let db = Firestore.firestore()
+        do {
+            try await db.collection("users").document(userId).collection("tasks")
+                .document(taskId).updateData(["quotes": quotes.map(\.firestoreData)])
+        } catch {
+            print("⚠️ Failed to save quotes: \(error.localizedDescription)")
+        }
+    }
+
     func markTaskCompleted(_ task: PeezyCard) async {
         guard let userId = Auth.auth().currentUser?.uid else { return }
         let db = Firestore.firestore()

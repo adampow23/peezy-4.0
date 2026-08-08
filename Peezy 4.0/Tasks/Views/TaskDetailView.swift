@@ -106,6 +106,14 @@ struct TaskDetailView: View {
                     pointers(task.tips)
                 }
 
+                TaskContentContainer(
+                    taskId: taskDocumentId,
+                    taskTitle: task.title,
+                    content: task.content,
+                    initialNotes: task.notes,
+                    initialQuotes: task.quotes
+                )
+
                 researchModule(task)
 
                 if task.hasGuidedFlow {
@@ -612,6 +620,9 @@ private struct TaskDetailTask {
     let actionType: String
     let researchScope: String
     let researchPreferences: [ResearchPreference]
+    let content: TaskContent
+    let notes: String?
+    let quotes: [TaskQuote]
 
     var hasGuidedFlow: Bool {
         ["workflow", "in-app", "in-app-inventory"].contains(actionType)
@@ -761,14 +772,9 @@ private final class TaskDetailViewModel {
         let catalogTaskId = (userData["taskId"] as? String)
             .flatMap { $0.isEmpty ? nil : $0 }
             ?? taskDocumentId
-        let catalogData: [String: Any]
-        if !catalogTaskId.isEmpty,
-           let snapshot = try? await db.collection("taskCatalog")
-            .document(catalogTaskId).getDocument() {
-            catalogData = snapshot.data() ?? [:]
-        } else {
-            catalogData = [:]
-        }
+        // Single catalog fetch path: the cached store payload feeds both the
+        // task metadata and the Phase 5 surface content.
+        let catalogData = await TaskContentStore.shared.catalogData(for: catalogTaskId)
 
         task = Self.makeTask(
             catalogTaskId: catalogTaskId,
@@ -896,7 +902,11 @@ private final class TaskDetailViewModel {
             tips: string("tips"),
             actionType: string("actionType").isEmpty ? "workflow" : string("actionType"),
             researchScope: catalogData["researchScope"] as? String ?? "none",
-            researchPreferences: preferences
+            researchPreferences: preferences,
+            content: TaskContent(data: catalogData),
+            notes: userData["notes"] as? String,
+            quotes: (userData["quotes"] as? [[String: Any]])?
+                .compactMap(TaskQuote.init(data:)) ?? []
         )
     }
 }

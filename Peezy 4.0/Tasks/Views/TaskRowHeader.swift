@@ -93,9 +93,10 @@ struct TaskRowHeader: View {
         case .todo where isSnoozed:
             if let returnDate = task.snoozedUntil {
                 badge(
-                    text: "Returns \(returnDate.formatted(date: .abbreviated, time: .omitted))",
+                    text: "Scheduled for \(returnDate.formatted(date: .abbreviated, time: .omitted))",
                     color: PeezyTheme.Colors.warningOrange
                 )
+                .accessibilityIdentifier("tasks.row.scheduledBadge")
             }
         default:
             EmptyView()
