@@ -181,6 +181,11 @@ for i in $(seq "$START_PHASE" "$PHASES"); do
     PHASE_DEPLOY_POLICY="Deploy Cloud Functions only with the exact targeted command firebase deploy --only functions:spawnTasks. NEVER deploy firestore.rules and never run a broad Firebase Functions deploy. The outer runner owns the Firestore-rules approval gate."
   fi
 
+  PHASE_RETRY_CONTEXT=""
+  if [ "$i" -eq 1 ] && [ -s "$LOG_DIR/phase_1_result.json" ]; then
+    PHASE_RETRY_CONTEXT="A prior Phase 1 attempt exhausted its turn limit after completing the data edits, JSON/syntax checks, seeder dry run, and live seed. The runner rolled all local edits back, so implement again from the clean checkpoint. To stay within 30 turns: do not write a temporary script, do not retry blocked shasum commands, and do not run xcodebuild in the background. Use an in-memory Node/Python pipeline for the raw-byte extraction and merge, then run verification commands in the foreground. The prior evidence established the companion has 61 catalog rows and 34 definitions; the intended merge has 35 definitions: 22 original documents unchanged byte-for-byte, 3 overlapping conversation definitions replaced from the companion (setup_utilities, transfer_utilities, financial_accounts), and 10 companion additions. Do not re-investigate that resolved merge shape."
+  fi
+
   PROMPT="You are implementing exactly Phase $i of Spec 09 in the Peezy iOS repository.
 
 Read CLAUDE.md and peezy-conventions-v2.md. Then read $SPEC_FILE, the entire Phase $i section, every file named in READ FIRST, and the cited sections of $AUDIT_FILE before editing. Phase 0 is already complete.
@@ -189,7 +194,9 @@ Execute Phase $i completely and only Phase $i. Follow all architecture decisions
 
 Deployment policy: $PHASE_DEPLOY_POLICY
 
-Phase 1 content boundary: $CATALOG_INPUT is immutable and its SHA-256 must remain $EXPECTED_CATALOG_SHA256. Do not author, edit, normalize, pretty-print, or improve any catalog content. Write functions/taskCatalogData.json from the raw taskCatalog array bytes in the companion input and byte-compare the result. Preserve the original 25 flowDefinitions documents exactly while merging the supplied definitions.
+Retry context, if any: $PHASE_RETRY_CONTEXT
+
+Phase 1 content boundary: $CATALOG_INPUT is immutable and its SHA-256 must remain $EXPECTED_CATALOG_SHA256. Do not author, edit, normalize, pretty-print, or improve any catalog content. Write functions/taskCatalogData.json from the raw taskCatalog array bytes in the companion input and byte-compare the result. Preserve every original flow definition byte-for-byte except an overlapping conversation definition that the companion intentionally replaces; copy replacement/addition bytes only from the companion.
 
 Before finishing: run every phase-specific verification, run the Spec 09 xcodebuild, review git diff from checkpoint $PRE_PHASE_COMMIT, and fix failures. Do not mark the spec file or edit it to record completion. In your final result, report exact tests, deploy commands, changed files, and any unresolved failure."
 
