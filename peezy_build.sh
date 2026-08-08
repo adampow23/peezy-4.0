@@ -178,12 +178,14 @@ for i in $(seq "$START_PHASE" "$PHASES"); do
 
   PHASE_DEPLOY_POLICY="No deploy is authorized in this phase unless the phase text names a targeted deploy. Never run a broad Firebase Functions deploy."
   if [ "$i" -eq 2 ]; then
-    PHASE_DEPLOY_POLICY="Deploy Cloud Functions only with the exact targeted command firebase deploy --only functions:spawnTasks. NEVER deploy firestore.rules and never run a broad Firebase Functions deploy. The outer runner owns the Firestore-rules approval gate."
+    PHASE_DEPLOY_POLICY="Do not run any deploy command in this Claude session. The outer runner owns both the exact targeted functions:spawnTasks deploy and the separate Firestore-rules approval gate."
   fi
 
   PHASE_RETRY_CONTEXT=""
   if [ "$i" -eq 1 ] && [ -s "$LOG_DIR/phase_1_result.json" ]; then
     PHASE_RETRY_CONTEXT="Prior Phase 1 attempts resolved and verified the implementation shape, but the runner rolled local edits back. One attempt exhausted its turn limit after a successful live seed; the next completed in 22 turns with live seed, build, and diff checks passing, but the outer raw-byte gate rejected functions/taskCatalogData.json because it contained exactly one trailing LF (68,968 bytes instead of the 68,967-byte raw array). Implement again from the clean checkpoint. CRITICAL: write only raw_catalog bytes with a binary write such as open(path, 'wb').write(raw_catalog) or fs.writeFileSync(path, Buffer); do not append a newline or any byte before/after the closing bracket. Compare the target Buffer directly to the raw source slice. To stay within 30 turns: do not write a temporary script, do not retry blocked shasum commands, and do not run xcodebuild in the background. Use an in-memory Node/Python pipeline for extraction/merge and run verification in the foreground. The resolved companion has 61 catalog rows and 34 definitions; the intended merge has 35 definitions: 22 original documents unchanged byte-for-byte, 3 overlapping conversation definitions replaced from the companion (setup_utilities, transfer_utilities, financial_accounts), and 10 companion additions. Do not re-investigate that resolved merge shape. The forward-mail taskId in the immutable companion is FORWARD_MAIL_USPS; use that real id for the seeder spot check."
+  elif [ "$i" -eq 2 ] && [ -s "$LOG_DIR/phase_2_result.json" ]; then
+    PHASE_RETRY_CONTEXT="A prior Phase 2 attempt completed the entire required architecture/test read pass but exhausted the 25-turn limit before editing; the runner rolled back a clean tree and no deploy occurred. Begin implementation after one BATCHED read call for the exact READ FIRST files/ranges; do not rediscover or repeatedly grep. Resolved facts: functions/index.js imports callable modules at the top and exports them at the bottom; add require('./spawnTasks') and exports.spawnTasks. Existing modules use firebase-functions/v2/https onCall + HttpsError, guard admin.initializeApp(), and us-central1/15s/256MiB style. The canonical move-date read is users/{uid}/identity/identity first, then users/{uid}/user_assessments limit(1), accepting Timestamp.toDate/string/number as in peezyChat.js dateFromValue. The generation document shape and due-date formula are exactly those pasted in Spec 09/audit from Assessment/AssessmentModels/TaskGenerationService.swift. firestore.rules needs only the additive moveAnswers owner-read block and no client write. Keep pure validation/date/doc builders testable if that lets node:test cover duplicate-token/unknown-id/batch-shape behavior efficiently. Do not run shasum, firebase --version, java --version, or any deploy command; the outer runner handles immutable hash, build, targeted function deploy, and rules gate. Run tests/build in the foreground."
   fi
 
   PROMPT="You are implementing exactly Phase $i of Spec 09 in the Peezy iOS repository.
@@ -259,8 +261,19 @@ Before finishing: run every phase-specific verification, run the Spec 09 xcodebu
   echo -e "${GREEN}  Phase $i complete at $PHASE_COMMIT (cost: \$$PHASE_COST; turns: $NUM_TURNS)${NC}"
 
   # Human gate required by Spec 09. The Phase 2 agent was forbidden from
-  # deploying rules; only this exact command can do so.
+  # deploying anything; only these exact outer-runner commands can do so.
   if [ "$i" -eq 2 ]; then
+    echo ""
+    echo -e "${YELLOW}Deploying only functions:spawnTasks...${NC}"
+    set +e
+    firebase deploy --only functions:spawnTasks 2>&1 | tee "$LOG_DIR/phase_2_spawnTasks_deploy.log"
+    FUNCTION_DEPLOY_EXIT=${PIPESTATUS[0]}
+    set -e
+    if [ "$FUNCTION_DEPLOY_EXIT" -ne 0 ]; then
+      fail "Targeted functions:spawnTasks deploy failed; see $LOG_DIR/phase_2_spawnTasks_deploy.log."
+    fi
+    echo -e "${GREEN}Targeted functions:spawnTasks deploy complete.${NC}"
+
     echo ""
     echo -e "${YELLOW}APPROVAL REQUIRED: deploy checked-in firestore.rules now? [y/n]${NC}"
     while true; do
