@@ -153,7 +153,7 @@ struct TaskContentContainer: View {
                     }
                 }
                 if content.quoteTracker != "none" {
-                    QuoteTrackerView(quotes: $quotes) { updated in
+                    QuoteTrackerView(quotes: $quotes, tracker: content.quoteTracker) { updated in
                         let id = taskId
                         Task { await TaskActionService().updateQuotes(taskId: id, quotes: updated) }
                     }
