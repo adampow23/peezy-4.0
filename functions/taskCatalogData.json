@@ -1593,7 +1593,11 @@
     "estPeezy": "1 min",
     "tips": "Stick to what happened — arrival, pace, price, and damage.",
     "urgencyPercentage": 99,
-    "whyNeeded": "Fresh facts give you a clear record for reviews, claims, or disputes."
+    "whyNeeded": "Fresh facts give you a clear record for reviews, claims, or disputes.",
+    "dateRule": {
+      "anchor": "moveDate",
+      "offsetDays": 1
+    }
   },
   {
     "taskId": "BOX_RETURN",
@@ -1612,7 +1616,11 @@
     "estPeezy": "30 secs",
     "tips": "Flatten clean boxes before donation or recycling, and keep wet or damaged cardboard separate.",
     "urgencyPercentage": 90,
-    "whyNeeded": "Returned counts reduce waste and make the next kit estimate sharper."
+    "whyNeeded": "Returned counts reduce waste and make the next kit estimate sharper.",
+    "dateRule": {
+      "anchor": "moveDate",
+      "offsetDays": 7
+    }
   },
   {
     "taskId": "GIVE_DAYCARE_NOTICE",
