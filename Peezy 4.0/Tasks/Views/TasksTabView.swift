@@ -16,7 +16,7 @@ struct TasksTabView: View {
     }
 
     var body: some View {
-        let groups = TaskGrouping.partition(store.tasks)
+        let groups = TaskGrouping.partition(store.tasks, moveDate: userState?.moveDate)
 
         ZStack {
             InteractiveBackground()

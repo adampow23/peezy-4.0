@@ -1,5 +1,4 @@
 PHASE_MANIFEST
-Peezy 4.0/Tasks/Views/QuoteTrackerView.swift
-Peezy 4.0/Tasks/Views/TaskContentSections.swift
-Peezy 4.0/MainInterface/Models/ManHourNormalizer.swift
-Tests/ManHourNormalizerTests.swift
+Peezy 4.0/Tasks/Store/TaskGrouping.swift
+Peezy 4.0/Tasks/Views/TasksTabView.swift
+Peezy 4.0Tests/TaskGroupingTests.swift
