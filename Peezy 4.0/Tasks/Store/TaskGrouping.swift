@@ -7,33 +7,29 @@ enum TaskGrouping {
         var userInProgress: [PeezyCard]    // "You're on it"
         var peezyOnIt: [PeezyCard]         // Retained for view compatibility; always empty.
         var completed: [PeezyCard]
+
+        /// The To-Do tab's single continuous list: todo + snoozed merged,
+        /// ordered by the date each row displays — snoozedUntil for snoozed
+        /// rows, dueDate otherwise.
+        var todoDisplay: [PeezyCard] {
+            TaskGrouping.mergedTodoDisplay(todo: todo, snoozed: snoozed)
+        }
     }
 
-    /// Partitions tasks into tab sections. `now`/`calendar` parameters for
-    /// testability. `moveDate` comes from UserState — the same source the Home
-    /// dose path passes to DailyDoseEngine (PeezyHomeViewModel).
+    /// Partitions tasks into tab sections. `now` parameter for testability.
     static func partition(
         _ tasks: [PeezyCard],
-        moveDate: Date? = nil,
-        now: Date = Date(),
-        calendar: Calendar = .current
+        now: Date = Date()
     ) -> Groups {
         var todo: [PeezyCard] = []
         var snoozed: [PeezyCard] = []
         var userInProgress: [PeezyCard] = []
         var completed: [PeezyCard] = []
 
-        let doseGate = DailyDoseEngine()
-
         for task in tasks {
             // Nudges are Home-only (Spec 09) — never a Tasks-tab row.
             guard task.tier != "nudge" else { continue }
             guard task.status != .skipped else { continue }
-
-            // Post-move surfacing gate — identical semantics to the dose path:
-            // a surfaceAfterDaysPastMove row is hidden entirely before
-            // moveDate + n, and a missing move date cannot satisfy the gate.
-            guard doseGate.isEligibleForDose(task, moveDate: moveDate, today: now, calendar: calendar) else { continue }
 
             if isSnoozedEffective(task, now: now) {
                 snoozed.append(task)
@@ -91,6 +87,22 @@ enum TaskGrouping {
             if aDate != bDate { return aDate < bDate }
             return a.title < b.title
         }
+    }
+
+    /// Merges the To-Do and Snoozed piles into one list sorted ascending by
+    /// the effective date the row displays (snoozedUntil for snoozed rows,
+    /// dueDate otherwise), nil dates last, title tiebreak. Packing sessions
+    /// keep their chronological slot ordering within the merged list.
+    static func mergedTodoDisplay(todo: [PeezyCard], snoozed: [PeezyCard]) -> [PeezyCard] {
+        let keyed: [(card: PeezyCard, date: Date?)] =
+            todo.map { ($0, $0.dueDate) } + snoozed.map { ($0, $0.snoozedUntil) }
+        let merged = keyed.sorted { a, b in
+            let aDate = a.date ?? .distantFuture
+            let bDate = b.date ?? .distantFuture
+            if aDate != bDate { return aDate < bDate }
+            return a.card.title < b.card.title
+        }
+        return sortPackingSessionsChronologically(in: merged.map(\.card))
     }
 
     static func isSnoozedEffective(_ card: PeezyCard, now: Date = Date()) -> Bool {

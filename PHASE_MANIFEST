@@ -1,4 +1,5 @@
 PHASE_MANIFEST
 Peezy 4.0/Tasks/Store/TaskGrouping.swift
+Peezy 4.0/Tasks/Views/TasksList.swift
 Peezy 4.0/Tasks/Views/TasksTabView.swift
 Peezy 4.0Tests/TaskGroupingTests.swift

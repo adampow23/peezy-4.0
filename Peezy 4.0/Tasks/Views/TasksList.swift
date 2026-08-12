@@ -24,17 +24,11 @@ struct TasksList: View {
     private var content: some View {
         switch selectedTab {
         case .todo:
-            if groups.todo.isEmpty && groups.snoozed.isEmpty {
+            if groups.todoDisplay.isEmpty {
                 TasksTabEmptyState(message: "You're on track. New tasks drop in daily.")
             } else {
-                ForEach(groups.todo) { task in
+                ForEach(groups.todoDisplay) { task in
                     row(task: task, section: .todo)
-                }
-                if !groups.snoozed.isEmpty {
-                    TasksSectionHeader(title: "Snoozed")
-                    ForEach(groups.snoozed) { task in
-                        row(task: task, section: .todo)
-                    }
                 }
             }
 

@@ -20,8 +20,7 @@ struct TaskGroupingTests {
 
         let groups = TaskGrouping.partition(
             [noDue, late, earlyB, earlyA],
-            now: day(0),
-            calendar: calendar
+            now: day(0)
         )
 
         #expect(groups.todo.map(\.id) == ["EARLY_A", "EARLY_B", "LATE", "NO_DUE"])
@@ -38,8 +37,7 @@ struct TaskGroupingTests {
 
         let groups = TaskGrouping.partition(
             [later, soonB, soonA],
-            now: day(0),
-            calendar: calendar
+            now: day(0)
         )
 
         #expect(groups.snoozed.map(\.id) == ["SOON_A", "SOON_B", "LATER"])
@@ -59,54 +57,52 @@ struct TaskGroupingTests {
 
         let groups = TaskGrouping.partition(
             [noReturn, late, earlyB, earlyA],
-            now: day(0),
-            calendar: calendar
+            now: day(0)
         )
 
         #expect(groups.userInProgress.map(\.id) == ["EARLY_A", "EARLY_B", "LATE", "NO_RETURN"])
     }
 
-    @Test func futurePostMoveGateExcludesCardFromEveryGroup() {
-        let moveDate = calendar.date(from: DateComponents(year: 2026, month: 8, day: 10))!
-        let boxReturn = card(id: "BOX_RETURN", title: "Box return", surfaceAfterDaysPastMove: 7)
-        let regular = card(id: "REGULAR", title: "Regular")
-        let daySix = calendar.date(byAdding: .day, value: 6, to: moveDate)!
+    @Test func futurePostMoveCardIncludedAndSortsLastByDueDate() {
+        let day = { (offset: Int) -> Date in
+            self.calendar.date(from: DateComponents(year: 2026, month: 8, day: 1 + offset))!
+        }
+        // Post-move gated cards (surfaceAfterDaysPastMove) are Home-dose-only
+        // hiding; the Tasks tab shows them, sorted by their post-move dueDate.
+        let boxReturn = card(id: "BOX_RETURN", title: "Box return", dueDate: day(17), surfaceAfterDaysPastMove: 7)
+        let regular = card(id: "REGULAR", title: "Regular", dueDate: day(1))
 
         let groups = TaskGrouping.partition(
             [boxReturn, regular],
-            moveDate: moveDate,
-            now: daySix,
-            calendar: calendar
+            now: day(0)
         )
 
-        #expect(groups.todo.map(\.id) == ["REGULAR"])
-        #expect(groups.snoozed.isEmpty)
-        #expect(groups.userInProgress.isEmpty)
-        #expect(groups.completed.isEmpty)
+        #expect(groups.todo.map(\.id) == ["REGULAR", "BOX_RETURN"])
+        #expect(groups.todoDisplay.map(\.id) == ["REGULAR", "BOX_RETURN"])
     }
 
-    @Test func reachedPostMoveGateIncludesCard() {
-        let moveDate = calendar.date(from: DateComponents(year: 2026, month: 8, day: 10))!
-        let boxReturn = card(id: "BOX_RETURN", title: "Box return", surfaceAfterDaysPastMove: 7)
-        let daySeven = calendar.date(byAdding: .day, value: 7, to: moveDate)!
+    @Test func todoDisplayMergesSnoozedBySnoozedUntilWithNilLastAndTitleTiebreak() {
+        let day = { (offset: Int) -> Date in
+            self.calendar.date(from: DateComponents(year: 2026, month: 8, day: 1 + offset))!
+        }
+        let alpha = card(id: "ALPHA", title: "Alpha", dueDate: day(1))
+        // Snoozed rows key off snoozedUntil — dueDate runs late to prove it.
+        let sched = card(id: "SCHED", title: "Sched", dueDate: day(9), snoozedUntil: day(2))
+        let charlie = card(id: "CHARLIE", title: "Charlie", dueDate: day(3))
+        // Same effective date across piles → title tiebreak (Bravo < Delta).
+        let bravo = card(id: "BRAVO", title: "Bravo", dueDate: day(9), snoozedUntil: day(4))
+        let delta = card(id: "DELTA", title: "Delta", dueDate: day(4))
+        let noDue = card(id: "NO_DUE", title: "Zeta")
 
         let groups = TaskGrouping.partition(
-            [boxReturn],
-            moveDate: moveDate,
-            now: daySeven,
-            calendar: calendar
+            [noDue, delta, bravo, charlie, sched, alpha],
+            now: day(0)
         )
 
-        #expect(groups.todo.map(\.id) == ["BOX_RETURN"])
-    }
-
-    @Test func missingMoveDateExcludesGatedCard() {
-        let boxReturn = card(id: "BOX_RETURN", title: "Box return", surfaceAfterDaysPastMove: 7)
-        let regular = card(id: "REGULAR", title: "Regular")
-
-        let groups = TaskGrouping.partition([boxReturn, regular], calendar: calendar)
-
-        #expect(groups.todo.map(\.id) == ["REGULAR"])
+        #expect(groups.todoDisplay.map(\.id) == ["ALPHA", "SCHED", "CHARLIE", "BRAVO", "DELTA", "NO_DUE"])
+        // The underlying piles are unchanged — tab counts stay the same.
+        #expect(groups.todo.count == 4)
+        #expect(groups.snoozed.count == 2)
     }
 
     private func card(
