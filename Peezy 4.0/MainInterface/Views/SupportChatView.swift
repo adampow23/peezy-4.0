@@ -3,12 +3,15 @@ import FirebaseFirestore
 import FirebaseFunctions
 import Observation
 import SwiftUI
+import UserNotifications
 
 struct SupportChatView: View {
     let chatService: SupportChatService
     var taskContext: SupportTaskContext?
 
     @State private var inputText = ""
+    @State private var showsNotificationPermissionMoment = false
+    @AppStorage("supportNotificationPermissionMomentShown") private var notificationPermissionMomentShown = false
     @FocusState private var isInputFocused: Bool
 
     private let deepInk = PeezyTheme.Colors.deepInk
@@ -51,11 +54,11 @@ struct SupportChatView: View {
         )
         .onAppear {
             chatService.startListening()
-            chatService.markSupportMessagesRead()
+            markMessagesReadAndClearBadge()
         }
         .onChange(of: chatService.unreadCount) { _, unreadCount in
             if unreadCount > 0 {
-                chatService.markSupportMessagesRead()
+                markMessagesReadAndClearBadge()
             }
         }
     }
@@ -105,6 +108,11 @@ struct SupportChatView: View {
                         messageBubble(message)
                             .id(message.id)
                     }
+
+                    if showsNotificationPermissionMoment {
+                        notificationPermissionCard
+                            .id("support-notification-permission")
+                    }
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
@@ -112,6 +120,12 @@ struct SupportChatView: View {
             .scrollDismissesKeyboard(.interactively)
             .onChange(of: chatService.messages.count) { _, _ in
                 scrollToBottom(proxy)
+            }
+            .onChange(of: showsNotificationPermissionMoment) { _, isShowing in
+                guard isShowing else { return }
+                withAnimation(.easeOut(duration: 0.2)) {
+                    proxy.scrollTo("support-notification-permission", anchor: .bottom)
+                }
             }
             .onAppear {
                 scrollToBottom(proxy, animated: false)
@@ -190,6 +204,47 @@ struct SupportChatView: View {
         }
     }
 
+    private var notificationPermissionCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top, spacing: 12) {
+                Text("Want a heads-up when we reply?")
+                    .font(PeezyTheme.Typography.body.weight(.semibold))
+                    .foregroundStyle(deepInk)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("support.notification_prompt_title")
+
+                Spacer(minLength: 8)
+
+                Button {
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        showsNotificationPermissionMoment = false
+                    }
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.caption.bold())
+                        .foregroundStyle(deepInk.opacity(0.5))
+                        .frame(width: 28, height: 28)
+                }
+                .accessibilityLabel("Not now")
+                .accessibilityIdentifier("support.notification_prompt_dismiss")
+            }
+
+            Button("Turn on notifications") {
+                withAnimation(.easeOut(duration: 0.2)) {
+                    showsNotificationPermissionMoment = false
+                }
+                PushNotificationAuthorization.request()
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(deepInk)
+            .accessibilityIdentifier("support.notification_prompt_enable")
+        }
+        .padding(16)
+        .background(supportBubbleBackground)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("support.notification_prompt")
+    }
+
     private var composer: some View {
         HStack(spacing: 12) {
             TextField("Message us", text: $inputText, axis: .vertical)
@@ -255,7 +310,20 @@ struct SupportChatView: View {
         inputText = ""
 
         Task {
-            await chatService.sendMessage(text, taskContext: taskContext)
+            let wasFirstUserMessage = await chatService.sendMessage(text, taskContext: taskContext)
+            guard wasFirstUserMessage, !notificationPermissionMomentShown else { return }
+
+            notificationPermissionMomentShown = true
+            withAnimation(.easeOut(duration: 0.2)) {
+                showsNotificationPermissionMoment = true
+            }
+        }
+    }
+
+    private func markMessagesReadAndClearBadge() {
+        chatService.markSupportMessagesRead()
+        Task {
+            try? await UNUserNotificationCenter.current().setBadgeCount(0)
         }
     }
 

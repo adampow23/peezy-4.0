@@ -100,6 +100,59 @@ function threadFromDocument(document) {
   };
 }
 
+function supportReplyNotificationBody(text) {
+  if (text.length <= 120) return text;
+  return `${text.slice(0, 119).trimEnd()}…`;
+}
+
+async function sendSupportReplyPush(uid, text) {
+  const tokenSnapshot = await admin.firestore()
+    .collection('users').doc(uid)
+    .collection('fcmTokens').get();
+  if (tokenSnapshot.empty) return;
+
+  for (let start = 0; start < tokenSnapshot.docs.length; start += 500) {
+    const tokenDocuments = tokenSnapshot.docs.slice(start, start + 500);
+    const invalidTokenRefs = [];
+    const result = await admin.messaging().sendEachForMulticast({
+      tokens: tokenDocuments.map(document => document.id),
+      notification: {
+        title: 'Peezy',
+        body: supportReplyNotificationBody(text)
+      },
+      apns: {
+        payload: {
+          aps: {
+            sound: 'default',
+            badge: 1
+          }
+        }
+      },
+      data: {
+        thread: 'support'
+      }
+    });
+
+    result.responses.forEach((response, index) => {
+      if (response.success) return;
+
+      if (response.error?.code === 'messaging/registration-token-not-registered') {
+        invalidTokenRefs.push(tokenDocuments[index].ref);
+      }
+    });
+
+    if (result.failureCount > 0) {
+      console.error(`Support reply push had ${result.failureCount} delivery failure(s) for user ${uid}.`);
+    }
+
+    if (invalidTokenRefs.length > 0) {
+      const cleanupBatch = admin.firestore().batch();
+      invalidTokenRefs.forEach(ref => cleanupBatch.delete(ref));
+      await cleanupBatch.commit();
+    }
+  }
+}
+
 const adminListThreads = onCall(CALLABLE_OPTIONS, async (request) => {
   requireSupportAdmin(request);
 
@@ -230,6 +283,9 @@ const adminReplySupport = onCall(CALLABLE_OPTIONS, async (request) => {
   }, { merge: true });
 
   await batch.commit();
+  await sendSupportReplyPush(uid, text).catch(error => {
+    console.error(`Support reply push failed for user ${uid}.`, error);
+  });
   return { success: true, messageId: messageRef.id };
 });
 

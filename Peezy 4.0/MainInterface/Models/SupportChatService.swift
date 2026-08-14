@@ -82,14 +82,15 @@ final class SupportChatService {
         error = nil
     }
 
-    func sendMessage(_ text: String, taskContext: SupportTaskContext? = nil) async {
+    func sendMessage(_ text: String, taskContext: SupportTaskContext? = nil) async -> Bool {
         guard let userId = Auth.auth().currentUser?.uid else {
             error = "Not signed in"
-            return
+            return false
         }
 
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
+        guard !trimmed.isEmpty else { return false }
+        let isFirstUserMessage = !messages.contains { $0.sender == .user }
 
         let message = SupportMessage(
             text: trimmed,
@@ -118,10 +119,12 @@ final class SupportChatService {
                 }
                 _ = try? await callable.call(payload)
             }
+            return isFirstUserMessage
         } catch {
             sendingMessageIds.remove(message.id)
             messages.removeAll { $0.id == message.id }
             self.error = "Failed to send: \(error.localizedDescription)"
+            return false
         }
     }
 

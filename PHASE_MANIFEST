@@ -1,4 +1,6 @@
 PHASE_MANIFEST
+Peezy 4.0.xcodeproj/project.pbxproj
+Peezy 4.0/MainInterface/Models/PeezyV1App.swift
 Peezy 4.0/MainInterface/Views/SupportChatView.swift
 Peezy 4.0/MainInterface/Models/SupportChatService.swift
 Peezy 4.0/MainInterface/Models/SupportMessage.swift

@@ -12,6 +12,7 @@
 		45D0CA042F157FCC00064C3C /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = 45D0CA032F157FCC00064C3C /* FirebaseAuth */; };
 		45D0CA062F157FCC00064C3C /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = 45D0CA052F157FCC00064C3C /* FirebaseFirestore */; };
 		45D0CA082F157FCC00064C3C /* FirebaseFunctions in Frameworks */ = {isa = PBXBuildFile; productRef = 45D0CA072F157FCC00064C3C /* FirebaseFunctions */; };
+		A14FC0012FA1000100000001 /* FirebaseMessaging in Frameworks */ = {isa = PBXBuildFile; productRef = A14FC0022FA1000100000002 /* FirebaseMessaging */; };
 		45D0CA0A2F160200000GSIN1 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = 45D0CA092F160200000GSIN1 /* GoogleSignIn */; };
 		45D0CA0C2F160200000STRG1 /* FirebaseStorage in Frameworks */ = {isa = PBXBuildFile; productRef = 45D0CA0B2F160200000STRG1 /* FirebaseStorage */; };
 		B3DE11D747EF80D6685EAEBB /* FirebaseCrashlytics in Frameworks */ = {isa = PBXBuildFile; productRef = D8A0062C57C13DFB0845AAA0 /* FirebaseCrashlytics */; };
@@ -69,6 +70,7 @@
 			files = (
 				D40000012F90000100000001 /* LucideIcons in Frameworks */,
 				45D0CA082F157FCC00064C3C /* FirebaseFunctions in Frameworks */,
+				A14FC0012FA1000100000001 /* FirebaseMessaging in Frameworks */,
 				45D0CA042F157FCC00064C3C /* FirebaseAuth in Frameworks */,
 				45D0CA062F157FCC00064C3C /* FirebaseFirestore in Frameworks */,
 				45D0CA0A2F160200000GSIN1 /* GoogleSignIn in Frameworks */,
@@ -150,6 +152,7 @@
 				45D0CA032F157FCC00064C3C /* FirebaseAuth */,
 				45D0CA052F157FCC00064C3C /* FirebaseFirestore */,
 				45D0CA072F157FCC00064C3C /* FirebaseFunctions */,
+				A14FC0022FA1000100000002 /* FirebaseMessaging */,
 				45D0CA092F160200000GSIN1 /* GoogleSignIn */,
 				45D0CA0B2F160200000STRG1 /* FirebaseStorage */,
 				D8A0062C57C13DFB0845AAA0 /* FirebaseCrashlytics */,
@@ -475,6 +478,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "Peezy-4-0-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "";
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "";
 				INFOPLIST_KEY_NSCameraUsageDescription = "Peezy uses your camera to scan rooms and create your moving inventory.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -520,6 +524,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "Peezy-4-0-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "";
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "";
 				INFOPLIST_KEY_NSCameraUsageDescription = "Peezy uses your camera to scan rooms and create your moving inventory.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -724,6 +729,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 45D0C9BB2F1512B300064C3C /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
 			productName = FirebaseFunctions;
+		};
+		A14FC0022FA1000100000002 /* FirebaseMessaging */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 45D0C9BB2F1512B300064C3C /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseMessaging;
 		};
 		45D0CA092F160200000GSIN1 /* GoogleSignIn */ = {
 			isa = XCSwiftPackageProductDependency;

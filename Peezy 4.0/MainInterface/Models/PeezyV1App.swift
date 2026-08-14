@@ -6,18 +6,125 @@
 //
 
 import SwiftUI
+import UserNotifications
 import FirebaseCore
 import FirebaseAuth
 import FirebaseCrashlytics
+import FirebaseFirestore
+import FirebaseMessaging
 import GoogleSignIn
+
+final class AppDelegate: NSObject, UIApplicationDelegate, MessagingDelegate, UNUserNotificationCenterDelegate {
+    private var authStateHandle: AuthStateDidChangeListenerHandle?
+    private var pendingFCMToken: String?
+
+    func application(
+        _ application: UIApplication,
+        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
+    ) -> Bool {
+        FirebaseApp.configure()
+        _ = Crashlytics.crashlytics()
+
+        Messaging.messaging().delegate = self
+        UNUserNotificationCenter.current().delegate = self
+        PushNotificationAuthorization.registerIfAlreadyAuthorized(application)
+
+        authStateHandle = Auth.auth().addStateDidChangeListener { [weak self] _, user in
+            guard let self, let user else { return }
+            guard let token = self.pendingFCMToken ?? Messaging.messaging().fcmToken else { return }
+            self.persist(token: token, userId: user.uid)
+        }
+
+        return true
+    }
+
+    func application(
+        _ application: UIApplication,
+        didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
+    ) {
+        Messaging.messaging().apnsToken = deviceToken
+    }
+
+    func messaging(_ messaging: Messaging, didReceiveRegistrationToken fcmToken: String?) {
+        guard let fcmToken else { return }
+        pendingFCMToken = fcmToken
+
+        guard let userId = Auth.auth().currentUser?.uid else { return }
+        persist(token: fcmToken, userId: userId)
+    }
+
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        completionHandler([.banner, .sound])
+    }
+
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        guard response.notification.request.content.userInfo["thread"] as? String == "support" else {
+            completionHandler()
+            return
+        }
+
+        Task { @MainActor in
+            SupportChatNavigation.requestOpen()
+            completionHandler()
+        }
+    }
+
+    private func persist(token: String, userId: String) {
+        Firestore.firestore()
+            .collection("users")
+            .document(userId)
+            .collection("fcmTokens")
+            .document(token)
+            .setData([
+                "createdAt": FieldValue.serverTimestamp(),
+                "platform": "ios"
+            ], merge: true) { error in
+                if let error {
+                    print("Failed to sync push token: \(error.localizedDescription)")
+                }
+            }
+    }
+}
+
+enum PushNotificationAuthorization {
+    static func request() {
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound]) { granted, error in
+            if let error {
+                print("Notification authorization failed: \(error.localizedDescription)")
+            }
+            guard granted else { return }
+
+            DispatchQueue.main.async {
+                UIApplication.shared.registerForRemoteNotifications()
+            }
+        }
+    }
+
+    static func registerIfAlreadyAuthorized(_ application: UIApplication) {
+        UNUserNotificationCenter.current().getNotificationSettings { settings in
+            guard settings.authorizationStatus == .authorized else { return }
+
+            DispatchQueue.main.async {
+                application.registerForRemoteNotifications()
+            }
+        }
+    }
+}
 
 @main
 struct PeezyV1App: App {
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     // This runs ONCE when the app launches, before any views appear
     init() {
-        FirebaseApp.configure()
-        _ = Crashlytics.crashlytics()
         // Start StoreKit transaction listener early
         _ = SubscriptionManager.shared
     }

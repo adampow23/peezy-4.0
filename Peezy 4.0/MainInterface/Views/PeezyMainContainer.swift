@@ -8,6 +8,26 @@
 
 import SwiftUI
 
+extension Notification.Name {
+    static let openSupportChat = Notification.Name("openSupportChat")
+}
+
+@MainActor
+enum SupportChatNavigation {
+    private static var hasPendingOpen = false
+
+    static func requestOpen() {
+        hasPendingOpen = true
+        NotificationCenter.default.post(name: .openSupportChat, object: nil)
+    }
+
+    static func consumePendingOpen() -> Bool {
+        guard hasPendingOpen else { return false }
+        hasPendingOpen = false
+        return true
+    }
+}
+
 struct PeezyMainContainer: View {
     // Navigation state
     @State private var selectedTab: PeezyTab = .home
@@ -94,6 +114,9 @@ struct PeezyMainContainer: View {
             if let uid = userState?.userId {
                 tasksStore.start(userId: uid)
             }
+            if SupportChatNavigation.consumePendingOpen() {
+                openSupportChat()
+            }
         }
         .onChange(of: userState?.userId) { _, newId in
             if let newId {
@@ -111,6 +134,10 @@ struct PeezyMainContainer: View {
                 }
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .openSupportChat)) { _ in
+            _ = SupportChatNavigation.consumePendingOpen()
+            openSupportChat()
+        }
     }
 
     private func restoreTaskFlowOrigin() {
@@ -118,6 +145,12 @@ struct PeezyMainContainer: View {
         taskFlowOriginTab = nil
         withAnimation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.8)) {
             selectedTab = origin
+        }
+    }
+
+    private func openSupportChat() {
+        withAnimation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.8)) {
+            selectedTab = .chat
         }
     }
 }
