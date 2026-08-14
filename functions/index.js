@@ -15,6 +15,12 @@ const { researchTask } = require('./researchTask');
 const { submitCheckIn } = require('./submitCheckIn');
 const { redeemGiftCode } = require('./entitlement');
 const { spawnTasks } = require('./spawnTasks');
+const { notifySupport } = require('./notifySupport');
+const {
+  adminReplySupport,
+  adminMarkSeen,
+  adminSetThreadStatus
+} = require('./supportAdmin');
 
 // Set global options
 setGlobalOptions({ maxInstances: 10 });
@@ -83,20 +89,48 @@ exports.submitTaskFlow = onCall(
  * Submit support chat message — notifies team when user sends a message
  */
 exports.submitSupportMessage = onCall(
-  { region: 'us-central1', timeoutSeconds: 10, memory: '256MiB' },
+  {
+    region: 'us-central1',
+    timeoutSeconds: 10,
+    memory: '256MiB',
+    secrets: ['GMAIL_APP_PASSWORD']
+  },
   async (request) => {
     const userId = request.auth?.uid;
     if (!userId) {
       throw new HttpsError('unauthenticated', 'Must be signed in to contact support.');
     }
 
-    try {
-      const db = admin.firestore();
-      const supportChatRef = db.collection('users').doc(userId).collection('supportChat');
-      const userMessagesSnapshot = await supportChatRef
-        .where('sender', '==', 'user')
-        .get();
+    const text = typeof request.data?.text === 'string'
+      ? request.data.text.trim()
+      : '';
+    if (!text) {
+      throw new HttpsError('invalid-argument', 'Support message text is required.');
+    }
 
+    const rawTaskContext = request.data?.taskContext;
+    const taskContext = rawTaskContext &&
+      typeof rawTaskContext.userTaskId === 'string' &&
+      typeof rawTaskContext.catalogTaskId === 'string' &&
+      typeof rawTaskContext.title === 'string'
+      ? {
+          userTaskId: rawTaskContext.userTaskId,
+          catalogTaskId: rawTaskContext.catalogTaskId,
+          title: rawTaskContext.title
+        }
+      : null;
+
+    const db = admin.firestore();
+    const userRef = db.collection('users').doc(userId);
+    const supportChatRef = userRef.collection('supportChat');
+
+    const [userMessagesResult, assessmentResult] = await Promise.allSettled([
+      supportChatRef.where('sender', '==', 'user').get(),
+      userRef.collection('user_assessments').limit(1).get()
+    ]);
+
+    if (userMessagesResult.status === 'fulfilled') {
+      const userMessagesSnapshot = userMessagesResult.value;
       if (userMessagesSnapshot.size === 1) {
         try {
           await supportChatRef.doc(FIRST_SUPPORT_AUTO_ACK_ID).create({
@@ -108,13 +142,51 @@ exports.submitSupportMessage = onCall(
           });
         } catch (error) {
           if (error.code !== 6 && error.code !== 'already-exists') {
-            throw error;
+            console.error('Support auto-acknowledgment failed:', error.message);
           }
         }
       }
-    } catch (error) {
-      console.error('Support auto-acknowledgment failed:', error.message);
+    } else {
+      console.error('Support auto-acknowledgment lookup failed:', userMessagesResult.reason.message);
     }
+
+    let userName = '';
+    if (assessmentResult.status === 'fulfilled') {
+      const assessmentSnapshot = assessmentResult.value;
+      const assessment = assessmentSnapshot.empty
+        ? {}
+        : assessmentSnapshot.docs[0].data();
+      if (typeof assessment.userName === 'string') {
+        userName = assessment.userName.trim();
+      }
+    } else {
+      console.error('Support user name lookup failed:', assessmentResult.reason.message);
+    }
+
+    const threadData = {
+      uid: userId,
+      lastMessageText: text,
+      lastMessageAt: admin.firestore.FieldValue.serverTimestamp(),
+      lastSender: 'user',
+      unreadForAdmin: admin.firestore.FieldValue.increment(1),
+      status: 'open'
+    };
+    if (taskContext) {
+      threadData.taskContext = taskContext;
+    }
+    if (userName) {
+      threadData.userName = userName;
+    }
+
+    void notifySupport({
+      uid: userId,
+      textPreview: text.slice(0, 500),
+      taskTitle: taskContext?.title || ''
+    }).catch(error => {
+      console.error('[notifySupport] Unexpected failure:', error.message);
+    });
+
+    await db.collection('supportThreads').doc(userId).set(threadData, { merge: true });
 
     return { success: true };
   }
@@ -207,3 +279,6 @@ exports.peezyChat = peezyChat;
 exports.submitCheckIn = submitCheckIn;
 exports.redeemGiftCode = redeemGiftCode;
 exports.spawnTasks = spawnTasks;
+exports.adminReplySupport = adminReplySupport;
+exports.adminMarkSeen = adminMarkSeen;
+exports.adminSetThreadStatus = adminSetThreadStatus;

@@ -6,5 +6,9 @@ Peezy 4.0/MainInterface/Views/PeezyMainContainer.swift
 Peezy 4.0/Tasks/Views/TaskDetailView.swift
 Peezy 4.0/Menu/PeezySettingsView.swift
 functions/index.js
+functions/notifySupport.js
+functions/supportAdmin.js
+functions/.env.example
+firestore.rules
 Peezy 4.0/MainInterface/Models/TaskActionService.swift
 Peezy 4.0/Tasks/Task Cards/PackingSessionView.swift
