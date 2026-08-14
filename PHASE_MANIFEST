@@ -9,6 +9,7 @@ functions/index.js
 functions/notifySupport.js
 functions/supportAdmin.js
 functions/.env.example
+public/admin/index.html
 firestore.rules
 Peezy 4.0/MainInterface/Models/TaskActionService.swift
 Peezy 4.0/Tasks/Task Cards/PackingSessionView.swift

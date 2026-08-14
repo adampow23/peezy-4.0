@@ -17,6 +17,8 @@ const { redeemGiftCode } = require('./entitlement');
 const { spawnTasks } = require('./spawnTasks');
 const { notifySupport } = require('./notifySupport');
 const {
+  adminListThreads,
+  adminGetThread,
   adminReplySupport,
   adminMarkSeen,
   adminSetThreadStatus
@@ -279,6 +281,8 @@ exports.peezyChat = peezyChat;
 exports.submitCheckIn = submitCheckIn;
 exports.redeemGiftCode = redeemGiftCode;
 exports.spawnTasks = spawnTasks;
+exports.adminListThreads = adminListThreads;
+exports.adminGetThread = adminGetThread;
 exports.adminReplySupport = adminReplySupport;
 exports.adminMarkSeen = adminMarkSeen;
 exports.adminSetThreadStatus = adminSetThreadStatus;
