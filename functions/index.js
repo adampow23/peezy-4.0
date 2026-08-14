@@ -25,7 +25,7 @@ if (!admin.apps.length) {
 }
 
 const FIRST_SUPPORT_AUTO_ACK_ID = 'first-message-auto-acknowledgment';
-const FIRST_SUPPORT_AUTO_ACK_TEXT = 'Thanks for reaching out. Peezy can help with moving questions here. For account or billing issues, email support@peezymove.com.';
+const FIRST_SUPPORT_AUTO_ACK_TEXT = "Thanks — a real person on the Peezy team reads every message. We'll get back to you within 8 hours, usually much faster.";
 /**
  * Request concierge handling for a task ("Peezy, handle this")
  */
@@ -85,37 +85,35 @@ exports.submitTaskFlow = onCall(
 exports.submitSupportMessage = onCall(
   { region: 'us-central1', timeoutSeconds: 10, memory: '256MiB' },
   async (request) => {
-    const { userId } = request.data;
-    const resolvedUserId = request.auth?.uid || userId;
+    const userId = request.auth?.uid;
+    if (!userId) {
+      throw new HttpsError('unauthenticated', 'Must be signed in to contact support.');
+    }
 
-    if (resolvedUserId) {
-      try {
-        const db = admin.firestore();
-        const supportChatRef = db.collection('users').doc(resolvedUserId).collection('supportChat');
-        const userMessagesSnapshot = await supportChatRef
-          .where('sender', '==', 'user')
-          .get();
+    try {
+      const db = admin.firestore();
+      const supportChatRef = db.collection('users').doc(userId).collection('supportChat');
+      const userMessagesSnapshot = await supportChatRef
+        .where('sender', '==', 'user')
+        .get();
 
-        if (userMessagesSnapshot.size === 1) {
-          try {
-            await supportChatRef.doc(FIRST_SUPPORT_AUTO_ACK_ID).create({
-              text: FIRST_SUPPORT_AUTO_ACK_TEXT,
-              sender: 'support',
-              isAutoResponse: true,
-              read: false,
-              timestamp: admin.firestore.FieldValue.serverTimestamp()
-            });
-          } catch (error) {
-            if (error.code !== 6 && error.code !== 'already-exists') {
-              throw error;
-            }
+      if (userMessagesSnapshot.size === 1) {
+        try {
+          await supportChatRef.doc(FIRST_SUPPORT_AUTO_ACK_ID).create({
+            text: FIRST_SUPPORT_AUTO_ACK_TEXT,
+            sender: 'support',
+            isAutoResponse: true,
+            read: false,
+            timestamp: admin.firestore.FieldValue.serverTimestamp()
+          });
+        } catch (error) {
+          if (error.code !== 6 && error.code !== 'already-exists') {
+            throw error;
           }
         }
-      } catch (error) {
-        console.error('Support auto-acknowledgment failed:', error.message);
       }
-    } else {
-      console.warn('Support auto-acknowledgment skipped: missing userId');
+    } catch (error) {
+      console.error('Support auto-acknowledgment failed:', error.message);
     }
 
     return { success: true };

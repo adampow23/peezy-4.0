@@ -12,6 +12,7 @@ struct TaskDetailView: View {
     let onSnooze: () -> Void
     let onDismiss: () -> Void
 
+    @Environment(SupportChatService.self) private var chatService
     @State private var model: TaskDetailViewModel
     @State private var isTaskChatPresented = false
 
@@ -77,9 +78,11 @@ struct TaskDetailView: View {
         .sheet(isPresented: $isTaskChatPresented) {
             if let task = model.task {
                 NavigationStack {
-                    PeezyChatView(
-                        surface: .task(
-                            taskId: task.catalogTaskId,
+                    SupportChatView(
+                        chatService: chatService,
+                        taskContext: SupportTaskContext(
+                            userTaskId: taskDocumentId,
+                            catalogTaskId: task.catalogTaskId,
                             title: task.title
                         )
                     )

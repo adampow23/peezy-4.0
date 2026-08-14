@@ -64,7 +64,7 @@ struct PeezyMainContainer: View {
                     .ignoresSafeArea(.keyboard, edges: .bottom)
 
                 case .chat:
-                    SupportChatView(userState: userState)
+                    SupportChatView(chatService: chatService)
 
                 case .settings:
                     PeezySettingsView(userState: $userState)
@@ -75,6 +75,7 @@ struct PeezyMainContainer: View {
                 Color.clear.frame(height: tabBarHeight)
             }
             .environment(tasksStore)
+            .environment(chatService)
 
             // Floating tab bar — height is measured and fed back into tabBarHeight
             PeezyFloatingTabBar(selectedTab: $selectedTab, chatUnreadCount: chatService.unreadCount)
@@ -97,8 +98,10 @@ struct PeezyMainContainer: View {
         .onChange(of: userState?.userId) { _, newId in
             if let newId {
                 tasksStore.start(userId: newId)
+                chatService.startListening()
             } else {
                 tasksStore.stop()
+                chatService.stopListening()
             }
         }
         .onChange(of: selectedTab) { _, newValue in

@@ -5,11 +5,284 @@ import Observation
 import SwiftUI
 
 struct SupportChatView: View {
-    var userState: UserState?
+    let chatService: SupportChatService
+    var taskContext: SupportTaskContext?
+
+    @State private var inputText = ""
+    @FocusState private var isInputFocused: Bool
+
+    private let deepInk = PeezyTheme.Colors.deepInk
+
+    init(
+        chatService: SupportChatService,
+        taskContext: SupportTaskContext? = nil
+    ) {
+        self.chatService = chatService
+        self.taskContext = taskContext
+    }
 
     var body: some View {
-        PeezyChatView(surface: .support)
-            .id(userState?.userId ?? "signed-out")
+        VStack(spacing: 0) {
+            header
+
+            if chatService.messages.isEmpty {
+                Spacer()
+                emptyState
+                Spacer()
+            } else {
+                messageList
+            }
+
+            if let error = chatService.error {
+                Label(error, systemImage: "exclamationmark.circle.fill")
+                    .font(.caption)
+                    .foregroundStyle(PeezyTheme.Colors.emotionalRed)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 6)
+                    .accessibilityIdentifier("support.error")
+            }
+
+            composer
+        }
+        .background(
+            InteractiveBackground()
+                .ignoresSafeArea()
+        )
+        .onAppear {
+            chatService.startListening()
+            chatService.markSupportMessagesRead()
+        }
+        .onChange(of: chatService.unreadCount) { _, unreadCount in
+            if unreadCount > 0 {
+                chatService.markSupportMessagesRead()
+            }
+        }
+    }
+
+    private var header: some View {
+        VStack(spacing: 4) {
+            Text("Message us")
+                .font(.title2.bold())
+                .foregroundStyle(deepInk)
+                .multilineTextAlignment(.center)
+
+            Text("A real person on the Peezy team reads every message.")
+                .font(PeezyTheme.Typography.caption)
+                .foregroundStyle(deepInk.opacity(0.55))
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 52)
+        .padding(.top, 16)
+        .padding(.bottom, 12)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("support.header")
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "bubble.left.and.text.bubble.right")
+                .font(.system(size: 48, weight: .light))
+                .foregroundStyle(deepInk.opacity(0.22))
+                .accessibilityHidden(true)
+
+            Text("Send us a message whenever you need help.")
+                .font(PeezyTheme.Typography.body)
+                .foregroundStyle(deepInk.opacity(0.58))
+                .multilineTextAlignment(.center)
+        }
+        .padding(.horizontal, 40)
+        .accessibilityIdentifier("support.empty_state")
+    }
+
+    private var messageList: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(spacing: 10) {
+                    ForEach(chatService.messages) { message in
+                        messageBubble(message)
+                            .id(message.id)
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+            }
+            .scrollDismissesKeyboard(.interactively)
+            .onChange(of: chatService.messages.count) { _, _ in
+                scrollToBottom(proxy)
+            }
+            .onAppear {
+                scrollToBottom(proxy, animated: false)
+            }
+        }
+    }
+
+    private func messageBubble(_ message: SupportMessage) -> some View {
+        HStack {
+            if message.isFromUser {
+                Spacer(minLength: 60)
+            }
+
+            VStack(alignment: message.isFromUser ? .trailing : .leading, spacing: 4) {
+                Text(message.text)
+                    .font(PeezyTheme.Typography.body)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .background {
+                        if message.isFromUser {
+                            RoundedRectangle(
+                                cornerRadius: PeezyTheme.Layout.cornerRadiusLarge,
+                                style: .continuous
+                            )
+                            .fill(deepInk)
+                        } else {
+                            supportBubbleBackground
+                        }
+                    }
+                    .foregroundStyle(message.isFromUser ? PeezyTheme.Colors.lightBase : deepInk)
+                    .accessibilityLabel("\(message.isFromUser ? "You" : "Support"): \(message.text)")
+                    .accessibilityIdentifier("support.message")
+
+                Text(formattedTime(message.timestamp))
+                    .font(.caption2)
+                    .foregroundStyle(deepInk.opacity(0.38))
+                    .padding(.horizontal, 4)
+                    .accessibilityIdentifier("support.message_time")
+
+                if message.id == latestUserMessageId {
+                    let receipt = chatService.receipt(for: message)
+                    Text(receipt.caption)
+                        .font(.caption2.weight(.medium))
+                        .foregroundStyle(deepInk.opacity(0.52))
+                        .padding(.horizontal, 4)
+                        .accessibilityLabel("Message status: \(receipt.caption)")
+                        .accessibilityIdentifier("support.receipt_caption")
+                }
+            }
+
+            if !message.isFromUser {
+                Spacer(minLength: 60)
+            }
+        }
+    }
+
+    private var supportBubbleBackground: some View {
+        ZStack {
+            RoundedRectangle(
+                cornerRadius: PeezyTheme.Layout.cornerRadiusLarge,
+                style: .continuous
+            )
+            .fill(.regularMaterial)
+            RoundedRectangle(
+                cornerRadius: PeezyTheme.Layout.cornerRadiusLarge,
+                style: .continuous
+            )
+            .fill(Color.white.opacity(0.15))
+        }
+        .overlay {
+            RoundedRectangle(
+                cornerRadius: PeezyTheme.Layout.cornerRadiusLarge,
+                style: .continuous
+            )
+            .stroke(Color.black.opacity(0.05), lineWidth: 1)
+        }
+    }
+
+    private var composer: some View {
+        HStack(spacing: 12) {
+            TextField("Message us", text: $inputText, axis: .vertical)
+                .textFieldStyle(.plain)
+                .foregroundStyle(deepInk)
+                .tint(deepInk)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .background(
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .fill(Color.white.opacity(0.15))
+                )
+                .overlay {
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .stroke(Color.black.opacity(0.05), lineWidth: 1)
+                }
+                .lineLimit(1...5)
+                .focused($isInputFocused)
+                .submitLabel(.send)
+                .onSubmit { send() }
+                .accessibilityIdentifier("support.composer")
+
+            Button(action: send) {
+                Image(systemName: "arrow.up.circle.fill")
+                    .font(.system(size: 32))
+                    .foregroundStyle(canSend ? deepInk : deepInk.opacity(0.3))
+                    .frame(width: 44, height: 44)
+            }
+            .disabled(!canSend)
+            .accessibilityLabel("Send message")
+            .accessibilityIdentifier("support.send_button")
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .background(
+            ZStack {
+                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    .fill(.regularMaterial)
+                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    .fill(Color.white.opacity(0.15))
+            }
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .stroke(Color.black.opacity(0.05), lineWidth: 1)
+        }
+        .shadow(color: Color.black.opacity(0.1), radius: 12, x: 0, y: -5)
+        .padding(.horizontal, 16)
+        .padding(.bottom, 8)
+    }
+
+    private var latestUserMessageId: String? {
+        chatService.messages.last(where: { $0.isFromUser })?.id
+    }
+
+    private var canSend: Bool {
+        !inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private func send() {
+        let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        inputText = ""
+
+        Task {
+            await chatService.sendMessage(text, taskContext: taskContext)
+        }
+    }
+
+    private func scrollToBottom(_ proxy: ScrollViewProxy, animated: Bool = true) {
+        guard let lastId = chatService.messages.last?.id else { return }
+        if animated {
+            withAnimation(.easeOut(duration: 0.2)) {
+                proxy.scrollTo(lastId, anchor: .bottom)
+            }
+        } else {
+            proxy.scrollTo(lastId, anchor: .bottom)
+        }
+    }
+
+    private func formattedTime(_ date: Date) -> String {
+        let calendar = Calendar.current
+        let formatter = DateFormatter()
+
+        if calendar.isDateInToday(date) {
+            formatter.dateFormat = "h:mm a"
+        } else if calendar.isDateInYesterday(date) {
+            return "Yesterday"
+        } else {
+            formatter.dateFormat = "MMM d, h:mm a"
+        }
+
+        return formatter.string(from: date)
     }
 }
 
@@ -482,5 +755,5 @@ private final class PeezyChatViewModel {
 }
 
 #Preview {
-    SupportChatView(userState: .preview)
+    SupportChatView(chatService: SupportChatService())
 }

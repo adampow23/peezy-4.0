@@ -766,7 +766,7 @@ struct PeezySettingsView: View {
     }
     
     private func openSupportEmail() {
-        if let url = URL(string: "mailto:support@peezy.move") {
+        if let url = URL(string: "mailto:support@peezymove.com") {
             UIApplication.shared.open(url)
         }
     }

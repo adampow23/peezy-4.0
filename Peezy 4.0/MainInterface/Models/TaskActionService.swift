@@ -293,7 +293,8 @@ struct TaskActionService {
             try await persist(
                 reflowed,
                 userId: userId,
-                packingConfiguration: configuration
+                packingConfiguration: configuration,
+                preservesMatchingPackingFlowAnswers: true
             )
         }
     }
@@ -521,7 +522,8 @@ struct TaskActionService {
         _ plan: PackingPlan,
         suppliesKit: SuppliesKit? = nil,
         userId: String,
-        packingConfiguration: PackingConfiguration
+        packingConfiguration: PackingConfiguration,
+        preservesMatchingPackingFlowAnswers: Bool = false
     ) async throws {
         let db = Firestore.firestore()
         let taskCollection = db.collection("users").document(userId).collection("tasks")
@@ -547,8 +549,15 @@ struct TaskActionService {
         }
         for session in plan.sessions {
             let previousData = existingById[session.taskId] ?? existingByKey[session.sessionKey]
+            let matchingSessionData = preservesMatchingPackingFlowAnswers
+                ? existingByKey[session.sessionKey]
+                : nil
             batch.setData(
-                packingTaskData(session, previousData: previousData),
+                packingTaskData(
+                    session,
+                    previousData: previousData,
+                    matchingSessionData: matchingSessionData
+                ),
                 forDocument: taskCollection.document(session.taskId)
             )
         }
@@ -699,7 +708,8 @@ struct TaskActionService {
 
     private func packingTaskData(
         _ session: PackingSession,
-        previousData: [String: Any]?
+        previousData: [String: Any]?,
+        matchingSessionData: [String: Any]?
     ) -> [String: Any] {
         var data: [String: Any] = [
             "id": session.taskId,
@@ -722,6 +732,12 @@ struct TaskActionService {
             "createdAt": previousData?["createdAt"] ?? FieldValue.serverTimestamp(),
             "packingSession": packingSessionData(session)
         ]
+
+        if let previousSession = matchingSessionData?["packingSession"] as? [String: Any],
+           previousSession["sessionKey"] as? String == session.sessionKey,
+           let flowAnswers = matchingSessionData?["flowAnswers"] as? [String: Any] {
+            data["flowAnswers"] = flowAnswers
+        }
 
         if let completedAt = session.completedAt {
             data["completedAt"] = Timestamp(date: completedAt)
