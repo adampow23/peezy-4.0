@@ -14,13 +14,6 @@ struct InventoryRoomReviewView: View {
     var onConfirm: ([InventoryItem]) -> Void
     var onRescan: (() -> Void)?
 
-    // Add item sheet
-    @State private var newItemName = ""
-    @State private var newItemTier = "furniture"
-    @State private var newItemCategory = "furniture"
-    @State private var newItemSize = "medium"
-    @State private var addItemQuestionIndex = 0
-
     // Animation
     @State private var itemsAppeared = false
     @State private var confirmPressed = false
@@ -29,25 +22,6 @@ struct InventoryRoomReviewView: View {
     @State private var showDeleteConfirmation = false
     @State private var toastMessage: String?
     @State private var showToast = false
-
-    private let categories = ["furniture", "electronics", "boxes", "appliance", "decor", "other"]
-    private let sizes = ["small", "medium", "large", "oversized"]
-
-    private enum AddItemQuestion: Int, CaseIterable {
-        case name
-        case tier
-        case category
-        case size
-
-        var title: String {
-            switch self {
-            case .name: "What item are you adding?"
-            case .tier: "What kind of item is it?"
-            case .category: "Which category fits best?"
-            case .size: "What size is it?"
-            }
-        }
-    }
 
     init(
         items: [InventoryItem],
@@ -89,7 +63,9 @@ struct InventoryRoomReviewView: View {
             }
         }
         .sheet(isPresented: $viewModel.showAddItem) {
-            addItemSheet
+            InventoryAddItemSheet(roomName: viewModel.roomName) { item in
+                viewModel.items.append(item)
+            }
         }
         .onAppear {
             withAnimation(.spring(response: 0.5, dampingFraction: 0.85)) {
@@ -438,112 +414,6 @@ struct InventoryRoomReviewView: View {
         .background(Color.primary.opacity(item.shouldMove ? 0.06 : 0.03))
         .clipShape(Capsule())
         .strikethrough(!item.shouldMove)
-    }
-
-    // MARK: - Add Item Sheet
-
-    private var addItemSheet: some View {
-        NavigationStack {
-            VStack(alignment: .leading, spacing: 24) {
-                Text("Question \(addItemQuestionIndex + 1) of \(AddItemQuestion.allCases.count)")
-                    .font(.caption.bold())
-                    .foregroundStyle(.secondary)
-                    .accessibilityIdentifier("inventory.add_item.progress")
-
-                Text(currentAddItemQuestion.title)
-                    .font(.title.bold())
-                    .foregroundStyle(PeezyTheme.Colors.deepInk)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityIdentifier("inventory.add_item.question.\(currentAddItemQuestion.rawValue)")
-
-                addItemQuestionControl
-
-                Spacer()
-
-                PeezyAssessmentButton(
-                    addItemQuestionIndex == AddItemQuestion.allCases.count - 1 ? "Add" : "Continue",
-                    disabled: currentAddItemQuestion == .name && newItemName.trimmingCharacters(in: .whitespaces).isEmpty,
-                    action: advanceAddItem
-                )
-                .accessibilityIdentifier("inventory.add_item.continue")
-            }
-            .padding(24)
-            .navigationTitle("Add Item")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
-                        addItemQuestionIndex = 0
-                        viewModel.showAddItem = false
-                    }
-                }
-                if addItemQuestionIndex > 0 {
-                    ToolbarItem(placement: .topBarLeading) {
-                        Button("Back") { addItemQuestionIndex -= 1 }
-                            .accessibilityIdentifier("inventory.add_item.back")
-                    }
-                }
-            }
-        }
-        .presentationDetents([.medium])
-    }
-
-    private var currentAddItemQuestion: AddItemQuestion {
-        AddItemQuestion.allCases[min(addItemQuestionIndex, AddItemQuestion.allCases.count - 1)]
-    }
-
-    @ViewBuilder
-    private var addItemQuestionControl: some View {
-        switch currentAddItemQuestion {
-        case .name:
-                    TextField("e.g. Floor Lamp", text: $newItemName)
-                .textFieldStyle(.roundedBorder)
-                .accessibilityIdentifier("inventory.add_item.name")
-        case .tier:
-            Picker("Tier", selection: $newItemTier) {
-                Text("Furniture / Large Item").tag("furniture")
-                Text("Packable / Goes in a Box").tag("boxable")
-            }
-            .pickerStyle(.inline)
-            .accessibilityIdentifier("inventory.add_item.tier")
-        case .category:
-            Picker("Category", selection: $newItemCategory) {
-                ForEach(categories, id: \.self) { category in
-                    Label(category.capitalized, systemImage: iconForCategory(category))
-                        .tag(category)
-                }
-            }
-            .pickerStyle(.inline)
-            .accessibilityIdentifier("inventory.add_item.category")
-        case .size:
-            Picker("Size", selection: $newItemSize) {
-                ForEach(sizes, id: \.self) { size in
-                    Text(size.capitalized).tag(size)
-                }
-            }
-            .pickerStyle(.inline)
-            .accessibilityIdentifier("inventory.add_item.size")
-        }
-    }
-
-    private func advanceAddItem() {
-        if addItemQuestionIndex < AddItemQuestion.allCases.count - 1 {
-            addItemQuestionIndex += 1
-            return
-        }
-        guard !newItemName.trimmingCharacters(in: .whitespaces).isEmpty else { return }
-        viewModel.addManualItem(
-            name: newItemName,
-            category: newItemCategory,
-            size: newItemSize,
-            tier: newItemTier
-        )
-        newItemName = ""
-        newItemCategory = "furniture"
-        newItemSize = "medium"
-        newItemTier = "furniture"
-        addItemQuestionIndex = 0
-        viewModel.showAddItem = false
     }
 
     // MARK: - Helpers

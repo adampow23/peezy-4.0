@@ -11,11 +11,25 @@ struct TaskRowButtonConfig: Identifiable {
     let title: String
     let style: TaskRowButtonStyle
     let action: TaskAction
+    let accessibilityIdentifier: String?
+
+    init(
+        title: String,
+        style: TaskRowButtonStyle,
+        action: TaskAction,
+        accessibilityIdentifier: String? = nil
+    ) {
+        self.title = title
+        self.style = style
+        self.action = action
+        self.accessibilityIdentifier = accessibilityIdentifier
+    }
 }
 
 enum TaskRowButtonLayout {
     case none
     case single(TaskRowButtonConfig)
+    case singleWithLink(TaskRowButtonConfig, TaskRowButtonConfig)
     case pair(TaskRowButtonConfig, TaskRowButtonConfig)
     case pairWithLink(TaskRowButtonConfig, TaskRowButtonConfig, TaskRowButtonConfig)
 }
@@ -30,6 +44,11 @@ struct TaskRowButtons: View {
             EmptyView()
         case .single(let btn):
             renderButton(btn)
+        case .singleWithLink(let button, let link):
+            VStack(spacing: 12) {
+                renderButton(button)
+                renderButton(link)
+            }
         case .pair(let a, let b):
             HStack(spacing: 12) {
                 renderButton(a).frame(maxWidth: .infinity)
@@ -48,6 +67,16 @@ struct TaskRowButtons: View {
 
     @ViewBuilder
     private func renderButton(_ cfg: TaskRowButtonConfig) -> some View {
+        if let identifier = cfg.accessibilityIdentifier {
+            buttonContent(cfg)
+                .accessibilityIdentifier(identifier)
+        } else {
+            buttonContent(cfg)
+        }
+    }
+
+    @ViewBuilder
+    private func buttonContent(_ cfg: TaskRowButtonConfig) -> some View {
         switch cfg.style {
         case .primary:
             PeezyAssessmentButton(cfg.title) {
@@ -95,7 +124,15 @@ struct TaskRowButtons: View {
             return .single(.init(title: "Open Task", style: .primary, action: .open(task)))
 
         case (.done, .completed, true):
-            return .single(.init(title: "Reset inventory", style: .primary, action: .resetInventory(task)))
+            return .singleWithLink(
+                .init(
+                    title: "View inventory",
+                    style: .primary,
+                    action: .open(task),
+                    accessibilityIdentifier: "viewInventoryButton"
+                ),
+                .init(title: "Reset inventory", style: .destructiveLink, action: .resetInventory(task))
+            )
         case (.done, .completed, false):
             return .single(.init(title: "Undo", style: .primary, action: .undo(task)))
 

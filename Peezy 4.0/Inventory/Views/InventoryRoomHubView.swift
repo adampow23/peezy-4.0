@@ -89,7 +89,7 @@ struct InventoryRoomHubView: View {
                 submitInventory()
             }
         } message: {
-            Text("Are you sure you've scanned all your rooms? Once submitted, you won't be able to add or change rooms. If something changes, message us in the chat.")
+            Text("Are you sure you've scanned all your rooms? Once submitted, your room-by-room list stays viewable and editable from the completed task.")
         }
         .sheet(isPresented: $showRoomNameEntry) {
             roomNameSheet

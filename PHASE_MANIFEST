@@ -1,5 +1,8 @@
 PHASE_MANIFEST
-Peezy 4.0/Tasks/Store/TaskGrouping.swift
-Peezy 4.0/Tasks/Views/TasksList.swift
-Peezy 4.0/Tasks/Views/TasksTabView.swift
-Peezy 4.0Tests/TaskGroupingTests.swift
+Peezy 4.0/Inventory/Models/InventorySessionManager.swift
+Peezy 4.0/Inventory/Views/InventoryAddItemSheet.swift
+Peezy 4.0/Inventory/Views/InventoryFlowView.swift
+Peezy 4.0/Inventory/Views/InventoryLockedView.swift
+Peezy 4.0/Inventory/Views/InventoryRoomHubView.swift
+Peezy 4.0/Inventory/Views/InventoryRoomReviewView.swift
+Peezy 4.0/Tasks/Views/TaskRowButtons.swift

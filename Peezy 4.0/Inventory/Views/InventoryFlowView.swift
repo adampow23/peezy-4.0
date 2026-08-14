@@ -47,7 +47,7 @@ struct InventoryFlowView: View {
             Group {
                 if sessionManager.submissionStatus == .submitted && !pendingLockedView {
                     InventoryLockedView(
-                        rooms: sessionManager.scannedRooms,
+                        sessionManager: sessionManager,
                         onDismiss: {
                             closeFlow()
                         }

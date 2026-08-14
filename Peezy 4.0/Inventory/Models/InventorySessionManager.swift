@@ -504,6 +504,43 @@ final class InventorySessionManager {
         self.submissionStatus = .draft
     }
 
+    /// Persists edits made after final submission without unlocking inventory.
+    func persistRooms() async throws {
+        guard let userId, !userId.isEmpty else {
+            throw InventoryError.notAuthenticated
+        }
+        guard scannedRooms.allSatisfy({ !$0.id.isEmpty }) else {
+            throw InventoryError.invalidRequest("Inventory room is missing an identifier")
+        }
+
+        let db = Firestore.firestore()
+        let batch = db.batch()
+        addRoomWrites(to: batch, db: db, userId: userId)
+
+        let metaRef = db.collection("users").document(userId)
+            .collection("inventory").document("_metadata")
+        var metadata: [String: Any] = [
+            "submissionStatus": SubmissionStatus.submitted.rawValue,
+            "updatedAt": Timestamp(date: Date())
+        ]
+        metadata.merge(
+            InventoryCoverage.metadata(confirmedRoomIDs: coverageConfirmedRoomIDs),
+            uniquingKeysWith: { _, new in new }
+        )
+        batch.setData(metadata, forDocument: metaRef, merge: true)
+        try await batch.commit()
+        self.submissionStatus = .submitted
+
+        guard let identity = await IdentityService.shared.loadOrMigrate(userId: userId),
+              let moveDate = identity.moveDate else {
+            throw PackingPlanPersistenceError.missingMoveDate
+        }
+        _ = try await TaskActionService().regeneratePackingPlanFromStoredInventory(
+            userId: userId,
+            moveDate: moveDate
+        )
+    }
+
     /// Final submit — persists every generated output before locking inventory.
     func submitFinal() async throws {
         guard let userId else {
