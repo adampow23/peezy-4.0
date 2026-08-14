@@ -155,6 +155,15 @@ struct PeezyHomeView: View {
                         }
                     }
                 )
+            } else if let task = viewModel.currentTask {
+                TaskFlowRouter.detail(
+                    userId: Auth.auth().currentUser?.uid ?? "",
+                    taskId: task.id,
+                    fallbackFlowId: (task.taskId ?? task.id).lowercased(),
+                    onComplete: { viewModel.completeTaskFlow() },
+                    onSnooze: { viewModel.statusActionLater() },
+                    onDismiss: { viewModel.dismissTaskFlow() }
+                )
             }
         }
         .onChange(of: focusedTask) { _, task in

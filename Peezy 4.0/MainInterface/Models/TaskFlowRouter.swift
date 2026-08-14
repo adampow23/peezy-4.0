@@ -8,8 +8,9 @@
 //  2. Catalog-v2 in-app tasks (explicit, no server definitions)
 //  3. Swift custom flows (die in Specs 05–06 as the verticals rebuild
 //     on the spine)
-//  4. Everything else: flowDefinitions lookup → FlowEngineView; unresolvable
-//     ids render the coming-right-up card (the permanent spinner is dead).
+//  4. Routed ids not matched above: flowDefinitions lookup → FlowEngineView;
+//     unresolvable ids render the coming-right-up card (the permanent spinner
+//     is dead).
 //
 
 import SwiftUI
@@ -27,6 +28,38 @@ enum TaskFlowStatusAction {
 
 struct TaskFlowRouter {
 
+    /// A task is routable when the catalog supplied a workflow id or its
+    /// lowercased task id resolves to one of the router's explicit mappings.
+    static func flowId(for card: PeezyCard) -> String? {
+        if let workflowId = card.workflowId, !workflowId.isEmpty {
+            return workflowId
+        }
+
+        let candidate = (card.taskId ?? card.id).lowercased()
+        guard hasMappedFlow(for: candidate) else { return nil }
+        return candidate
+    }
+
+    private static func hasMappedFlow(for flowId: String) -> Bool {
+        if CaptureRegistry.registration(flowId: flowId) != nil {
+            return true
+        }
+
+        switch flowId {
+        case "add_new_address", "confirm_move_date", "declutter_intent", "storage_need",
+             "packing_session", "supplies_kit", "packing_readiness", "move_checkin", "box_return",
+             "rent_truck", "book_movers", "book_cleaners", "setup_internet", "sell_items", "remove_items",
+             "handle_auto_insurance", "update_auto_insurance",
+             "handle_home_insurance",
+             "cancel_renters_insurance", "setup_renters_insurance", "transfer_renters_insurance",
+             "cancel_condo_insurance", "setup_condo_insurance", "transfer_condo_insurance",
+             "cancel_homeowners_insurance", "setup_homeowners_insurance", "transfer_homeowners_insurance":
+            return true
+        default:
+            return false
+        }
+    }
+
     @ViewBuilder
     static func flow(
         for flowId: String,
@@ -38,15 +71,26 @@ struct TaskFlowRouter {
         onStatusAction: @escaping (TaskFlowStatusAction) -> Void
     ) -> some View {
         let resolvedTaskId = taskId ?? ""
-        MovePassProtectedTaskFlow(onDismiss: onDismiss) {
-            UniversalTaskRoute(
+        if CaptureRegistry.registration(flowId: flowId)?.kind == .videoInventory {
+            ScanInventoryRouteGate(
                 userId: userId,
                 taskId: resolvedTaskId,
-                flowId: flowId,
-                waitsForExternalAnswerState:
-                    CaptureRegistry.registration(flowId: flowId)?.kind == .videoInventory,
                 onComplete: onComplete,
-                onSnooze: { onStatusAction(.later) },
+                onDismiss: onDismiss,
+                onStatusAction: onStatusAction
+            )
+        } else if flowId == "packing_session" {
+            PackingSessionRouteGate(
+                userId: userId,
+                taskId: resolvedTaskId,
+                onComplete: onComplete,
+                onDismiss: onDismiss,
+                onStatusAction: onStatusAction
+            )
+        } else {
+            OutermostTaskFlowContainer(
+                userId: userId,
+                taskId: resolvedTaskId,
                 onDismiss: onDismiss
             ) { requestExit in
                 routedFlow(
@@ -63,6 +107,25 @@ struct TaskFlowRouter {
     }
 
     @ViewBuilder
+    static func detail(
+        userId: String,
+        taskId: String,
+        fallbackFlowId: String,
+        onComplete: @escaping () -> Void,
+        onSnooze: @escaping () -> Void,
+        onDismiss: @escaping () -> Void
+    ) -> some View {
+        TaskDetailView(
+            userId: userId,
+            taskDocumentId: taskId,
+            fallbackFlowId: fallbackFlowId,
+            onComplete: onComplete,
+            onSnooze: onSnooze,
+            onDismiss: onDismiss
+        )
+    }
+
+    @ViewBuilder
     private static func routedFlow(
         for flowId: String,
         userId: String,
@@ -74,7 +137,13 @@ struct TaskFlowRouter {
     ) -> some View {
         // ── Capture registry (bespoke path; parameterization in Spec 05) ──
         if CaptureRegistry.registration(flowId: flowId)?.kind == .videoInventory {
-            ScanInventoryFlow(userId: userId, taskId: taskId, onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
+            ScanInventoryRouteGate(
+                userId: userId,
+                taskId: taskId,
+                onComplete: onComplete,
+                onDismiss: onDismiss,
+                onStatusAction: onStatusAction
+            )
         } else {
             switch flowId {
 
@@ -88,14 +157,6 @@ struct TaskFlowRouter {
             DeclutterIntentFlow(userId: userId, taskId: taskId, onComplete: onComplete, onDismiss: onDismiss)
         case "storage_need":
             StorageNeedFlow(userId: userId, taskId: taskId, onComplete: onComplete, onDismiss: onDismiss)
-        case "packing_session":
-            PackingSessionView(
-                userId: userId,
-                taskId: taskId,
-                onComplete: onComplete,
-                onDismiss: onDismiss,
-                onStatusAction: onStatusAction
-            )
         case "supplies_kit":
             SuppliesKitView(
                 userId: userId,
@@ -175,89 +236,81 @@ struct TaskFlowRouter {
     }
 }
 
-private struct UniversalTaskRoute<FlowContent: View>: View {
+private struct ScanInventoryRouteGate: View {
     let userId: String
     let taskId: String
-    let flowId: String
-    let waitsForExternalAnswerState: Bool
     let onComplete: () -> Void
-    let onSnooze: () -> Void
     let onDismiss: () -> Void
-    private let flowContent: (@escaping () -> Void) -> FlowContent
-
-    @State private var isShowingFlow = false
-
-    init(
-        userId: String,
-        taskId: String,
-        flowId: String,
-        waitsForExternalAnswerState: Bool,
-        onComplete: @escaping () -> Void,
-        onSnooze: @escaping () -> Void,
-        onDismiss: @escaping () -> Void,
-        @ViewBuilder flowContent: @escaping (@escaping () -> Void) -> FlowContent
-    ) {
-        self.userId = userId
-        self.taskId = taskId
-        self.flowId = flowId
-        self.waitsForExternalAnswerState = waitsForExternalAnswerState
-        self.onComplete = onComplete
-        self.onSnooze = onSnooze
-        self.onDismiss = onDismiss
-        self.flowContent = flowContent
-    }
-
-    @ViewBuilder
-    var body: some View {
-        if isShowingFlow {
-            OutermostTaskFlowContainer(
-                userId: userId,
-                taskId: taskId,
-                waitsForExternalAnswerState: waitsForExternalAnswerState,
-                onDismiss: onDismiss
-            ) { requestExit in
-                flowContent(requestExit)
-            }
-        } else {
-            TaskDetailView(
-                userId: userId,
-                taskDocumentId: taskId,
-                fallbackFlowId: flowId,
-                onStart: { isShowingFlow = true },
-                onComplete: onComplete,
-                onSnooze: onSnooze,
-                onDismiss: onDismiss
-            )
-        }
-    }
-
-}
-
-private struct MovePassProtectedTaskFlow<Content: View>: View {
-    let onDismiss: () -> Void
-    let content: () -> Content
+    let onStatusAction: (TaskFlowStatusAction) -> Void
 
     @ObservedObject private var subscriptionManager = SubscriptionManager.shared
 
-    init(
-        onDismiss: @escaping () -> Void,
-        @ViewBuilder content: @escaping () -> Content
-    ) {
-        self.onDismiss = onDismiss
-        self.content = content
+    @ViewBuilder
+    var body: some View {
+        Group {
+            if PaywallPolicy.requiresMovePass(for: .scanner),
+               !subscriptionManager.isSubscribed {
+                PaywallGateSheet(surface: .scanner) { subscribed in
+                    if !subscribed {
+                        onDismiss()
+                    }
+                }
+            } else {
+                OutermostTaskFlowContainer(
+                    userId: userId,
+                    taskId: taskId,
+                    waitsForExternalAnswerState: true,
+                    onDismiss: onDismiss
+                ) { requestExit in
+                    ScanInventoryFlow(
+                        userId: userId,
+                        taskId: taskId,
+                        onComplete: onComplete,
+                        onDismiss: requestExit,
+                        onStatusAction: onStatusAction
+                    )
+                }
+            }
+        }
+        .accessibilityIdentifier("scanner.route_gate")
     }
+}
+
+private struct PackingSessionRouteGate: View {
+    let userId: String
+    let taskId: String
+    let onComplete: () -> Void
+    let onDismiss: () -> Void
+    let onStatusAction: (TaskFlowStatusAction) -> Void
+
+    @ObservedObject private var subscriptionManager = SubscriptionManager.shared
 
     @ViewBuilder
     var body: some View {
-        if PaywallPolicy.requiresMovePass(for: .task),
-           !subscriptionManager.isSubscribed {
-            PaywallGateSheet(surface: .task) { subscribed in
-                if !subscribed {
-                    onDismiss()
+        Group {
+            if PaywallPolicy.requiresMovePass(for: .packing),
+               !subscriptionManager.isSubscribed {
+                PaywallGateSheet(surface: .packing) { subscribed in
+                    if !subscribed {
+                        onDismiss()
+                    }
+                }
+            } else {
+                OutermostTaskFlowContainer(
+                    userId: userId,
+                    taskId: taskId,
+                    onDismiss: onDismiss
+                ) { requestExit in
+                    PackingSessionView(
+                        userId: userId,
+                        taskId: taskId,
+                        onComplete: onComplete,
+                        onDismiss: requestExit,
+                        onStatusAction: onStatusAction
+                    )
                 }
             }
-        } else {
-            content()
         }
+        .accessibilityIdentifier("packing.route_gate")
     }
 }

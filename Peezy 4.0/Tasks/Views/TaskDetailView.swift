@@ -1,5 +1,4 @@
 import FirebaseFirestore
-import FirebaseFunctions
 import Observation
 import SwiftUI
 
@@ -7,20 +6,20 @@ struct TaskDetailView: View {
     let userId: String
     let taskDocumentId: String
     let fallbackFlowId: String
-    let onStart: () -> Void
     let onComplete: () -> Void
     let onSnooze: () -> Void
     let onDismiss: () -> Void
 
     @Environment(SupportChatService.self) private var chatService
+    @ObservedObject private var subscriptionManager = SubscriptionManager.shared
     @State private var model: TaskDetailViewModel
     @State private var isTaskChatPresented = false
+    @State private var pendingResearchRequest: TaskResearchRequest?
 
     init(
         userId: String,
         taskDocumentId: String,
         fallbackFlowId: String,
-        onStart: @escaping () -> Void,
         onComplete: @escaping () -> Void,
         onSnooze: @escaping () -> Void,
         onDismiss: @escaping () -> Void
@@ -28,7 +27,6 @@ struct TaskDetailView: View {
         self.userId = userId
         self.taskDocumentId = taskDocumentId
         self.fallbackFlowId = fallbackFlowId
-        self.onStart = onStart
         self.onComplete = onComplete
         self.onSnooze = onSnooze
         self.onDismiss = onDismiss
@@ -98,6 +96,14 @@ struct TaskDetailView: View {
                 .presentationDragIndicator(.visible)
             }
         }
+        .fullScreenCover(isPresented: researchPaywallBinding) {
+            PaywallGateSheet(surface: .research) { subscribed in
+                let request = pendingResearchRequest
+                pendingResearchRequest = nil
+                guard subscribed, let request else { return }
+                performResearchRequest(request)
+            }
+        }
     }
 
     private func taskContent(_ task: TaskDetailTask) -> some View {
@@ -117,26 +123,8 @@ struct TaskDetailView: View {
                     initialQuotes: task.quotes
                 )
 
-                if task.researchEnabled && model.hasRecordedFlowAnswers {
-                    researchModule(task)
-                }
-
-                if task.hasGuidedFlow {
-                    Button(action: onStart) {
-                        Label("Start", systemImage: "arrow.right.circle.fill")
-                            .font(.headline)
-                            .foregroundStyle(.white)
-                            .frame(maxWidth: .infinity, minHeight: 56)
-                            .background(
-                                PeezyTheme.Gradients.deepInk,
-                                in: RoundedRectangle(
-                                    cornerRadius: PeezyTheme.Layout.cornerRadius,
-                                    style: .continuous
-                                )
-                            )
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityHint("Opens the guided steps for this task")
+                if model.research.isEligible {
+                    researchModule
                 }
             }
             .padding(.horizontal, PeezyTheme.Layout.horizontalPadding)
@@ -209,105 +197,43 @@ struct TaskDetailView: View {
         .taskDetailCard()
     }
 
-    @ViewBuilder
-    private func researchModule(_ task: TaskDetailTask) -> some View {
+    private var researchModule: some View {
         VStack(alignment: .leading, spacing: 16) {
             TaskDetailSectionTitle(title: "Research", systemImage: "sparkles")
 
-            if !task.researchEnabled {
-                Text("The task details and guided steps contain what you need for this one.")
-                    .font(.body)
-                    .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.7))
-            } else {
-                researchStateContent(task)
-            }
+            TaskResearchModuleView(
+                model: model.research,
+                startButtonTitle: "Want us to dig up the easiest way to get this done?",
+                hasAccess: subscriptionManager.isSubscribed,
+                onRequest: requestResearch
+            )
         }
         .padding(20)
         .taskDetailCard()
+        .accessibilityIdentifier("task_detail.research")
     }
 
-    @ViewBuilder
-    private func researchStateContent(_ task: TaskDetailTask) -> some View {
-        switch model.researchState {
-        case .loading:
-            ProgressView("Checking for saved research…")
-                .tint(PeezyTheme.Colors.deepInk)
+    private var researchPaywallBinding: Binding<Bool> {
+        Binding(
+            get: { pendingResearchRequest != nil },
+            set: { if !$0 { pendingResearchRequest = nil } }
+        )
+    }
 
-        case .absent:
-            researchStart(
-                task,
-                buttonTitle: "Want us to dig up the easiest way to get this done?"
-            )
-
-        case .generating:
-            HStack(spacing: 12) {
-                ProgressView()
-                    .tint(PeezyTheme.Colors.deepInk)
-                Text("Peezy is researching your situation…")
-                    .font(.body.weight(.medium))
-                    .foregroundStyle(PeezyTheme.Colors.deepInk)
-            }
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel("Peezy is researching your situation")
-
-        case .ready(let brief, let degraded):
-            ResearchBriefView(
-                brief: brief,
-                degraded: degraded,
-                animateOnReveal: model.shouldAnimateBrief
-            )
-
-            Button("Refresh research") {
-                Task { await model.generateResearch(force: true) }
-            }
-            .font(.callout.weight(.semibold))
-            .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.68))
-            .frame(minHeight: 44)
-            .accessibilityHint("Generates a new brief using your current move details")
-
-        case .failed:
-            Text("Peezy couldn't finish this research.")
-                .font(.body)
-                .foregroundStyle(PeezyTheme.Colors.deepInk)
-            researchStart(
-                task,
-                buttonTitle: "Want us to dig up the easiest way to get this done?"
-            )
+    private func requestResearch(_ request: TaskResearchRequest) {
+        guard subscriptionManager.isSubscribed else {
+            pendingResearchRequest = request
+            return
         }
+        performResearchRequest(request)
     }
 
-    private func researchStart(_ task: TaskDetailTask, buttonTitle: String) -> some View {
-        VStack(alignment: .leading, spacing: 16) {
-            if !task.researchPreferences.isEmpty {
-                VStack(alignment: .leading, spacing: 18) {
-                    ForEach(task.researchPreferences) { preference in
-                        ResearchPreferenceQuestion(
-                            preference: preference,
-                            selection: model.selectedPreferences[preference.id],
-                            onSelect: { model.select(option: $0, for: preference.id) }
-                        )
-                    }
-                }
-            }
-
-            Button {
-                Task { await model.generateResearch(force: false) }
-            } label: {
-                Label(buttonTitle, systemImage: "sparkles")
-                    .font(.headline)
-                    .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity, minHeight: 52)
-                    .background(
-                        PeezyTheme.Colors.deepInk,
-                        in: RoundedRectangle(
-                            cornerRadius: PeezyTheme.Layout.cornerRadiusMedium,
-                            style: .continuous
-                        )
-                    )
-            }
-            .buttonStyle(.plain)
-            .disabled(!model.canGenerateResearch)
-            .opacity(model.canGenerateResearch ? 1 : 0.45)
+    private func performResearchRequest(_ request: TaskResearchRequest) {
+        switch request {
+        case .generate(let force):
+            Task { await model.research.generateResearch(force: force) }
+        case .reveal:
+            break
         }
     }
 
@@ -379,242 +305,6 @@ private struct TaskDetailFooterButton: View {
     }
 }
 
-private struct ResearchPreferenceQuestion: View {
-    let preference: ResearchPreference
-    let selection: String?
-    let onSelect: (String) -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(preference.question)
-                .font(.headline)
-                .foregroundStyle(PeezyTheme.Colors.deepInk)
-                .fixedSize(horizontal: false, vertical: true)
-
-            ForEach(preference.options, id: \.self) { option in
-                let isSelected = selection == option
-                Button {
-                    onSelect(option)
-                } label: {
-                    HStack(spacing: 12) {
-                        Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                            .foregroundStyle(
-                                isSelected
-                                    ? PeezyTheme.Colors.deepInk
-                                    : PeezyTheme.Colors.deepInk.opacity(0.38)
-                            )
-                            .accessibilityHidden(true)
-
-                        Text(option)
-                            .font(.body)
-                            .foregroundStyle(PeezyTheme.Colors.deepInk)
-                            .multilineTextAlignment(.leading)
-
-                        Spacer(minLength: 0)
-                    }
-                    .padding(.horizontal, 14)
-                    .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
-                    .background(
-                        isSelected
-                            ? PeezyTheme.Colors.deepInk.opacity(0.42)
-                            : Color.white.opacity(0.42),
-                        in: RoundedRectangle(
-                            cornerRadius: PeezyTheme.Layout.cornerRadiusSmall,
-                            style: .continuous
-                        )
-                    )
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(option)
-                .accessibilityAddTraits(isSelected ? [.isSelected] : [])
-            }
-        }
-        .accessibilityElement(children: .contain)
-    }
-}
-
-private struct ResearchBriefView: View {
-    let brief: ResearchBrief
-    let degraded: Bool
-    let animateOnReveal: Bool
-
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            revealText(brief.headline, font: .title3.bold())
-
-            if degraded {
-                Label(
-                    "Some source links could not be verified, so they were left out.",
-                    systemImage: "exclamationmark.shield.fill"
-                )
-                .font(.callout)
-                .foregroundStyle(PeezyTheme.Colors.warningOrange)
-            }
-
-            ForEach(Array(brief.sections.enumerated()), id: \.offset) { _, section in
-                ResearchListSection(
-                    title: section.heading,
-                    items: section.items,
-                    symbol: "text.justify.left",
-                    tint: PeezyTheme.Colors.infoBlue,
-                    animateOnReveal: animateOnReveal
-                )
-            }
-
-            if !brief.questionsToAsk.isEmpty {
-                ResearchListSection(
-                    title: "Questions to ask",
-                    items: brief.questionsToAsk,
-                    symbol: "questionmark.bubble.fill",
-                    tint: PeezyTheme.Colors.infoBlue,
-                    animateOnReveal: animateOnReveal
-                )
-            }
-
-            if !brief.redFlags.isEmpty {
-                ResearchListSection(
-                    title: "Red flags",
-                    items: brief.redFlags,
-                    symbol: "flag.fill",
-                    tint: PeezyTheme.Colors.emotionalRed,
-                    animateOnReveal: animateOnReveal
-                )
-            }
-
-            if !brief.sources.isEmpty {
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("Sources")
-                        .font(.headline)
-                        .foregroundStyle(PeezyTheme.Colors.deepInk)
-                        .accessibilityAddTraits(.isHeader)
-
-                    ForEach(Array(brief.sources.enumerated()), id: \.offset) { _, source in
-                        if let url = source.safeURL {
-                            Link(destination: url) {
-                                HStack(alignment: .top, spacing: 10) {
-                                    VStack(alignment: .leading, spacing: 3) {
-                                        Text(source.publisher)
-                                            .font(.callout.weight(.semibold))
-                                        Text(source.title)
-                                            .font(.footnote)
-                                            .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.66))
-                                            .multilineTextAlignment(.leading)
-                                    }
-                                    Spacer(minLength: 8)
-                                    Image(systemName: "arrow.up.right.square")
-                                        .accessibilityHidden(true)
-                                }
-                                .foregroundStyle(PeezyTheme.Colors.deepInk)
-                                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                            }
-                            .accessibilityLabel("\(source.publisher): \(source.title)")
-                            .accessibilityHint("Opens this source")
-                        }
-                    }
-                }
-            }
-
-            if !brief.whatCouldGoWrong.isEmpty {
-                ResearchListSection(
-                    title: "What could go wrong",
-                    items: brief.whatCouldGoWrong,
-                    symbol: "exclamationmark.triangle.fill",
-                    tint: PeezyTheme.Colors.warningOrange,
-                    animateOnReveal: animateOnReveal
-                )
-            }
-
-            if !brief.script.isEmpty {
-                ResearchListSection(
-                    title: "SCRIPT",
-                    items: [brief.script],
-                    symbol: "phone.fill",
-                    tint: PeezyTheme.Colors.successGreen,
-                    animateOnReveal: animateOnReveal
-                )
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func revealText(_ text: String, font: Font) -> some View {
-        if animateOnReveal && !reduceMotion {
-            TypewriterText(
-                phrases: [text],
-                typingSpeed: 0.015,
-                font: font,
-                foregroundColor: PeezyTheme.Colors.deepInk,
-                repeatsPhrases: false,
-                textAlignment: .leading,
-                showsCursor: false
-            )
-            .frame(maxWidth: .infinity, alignment: .leading)
-        } else {
-            Text(text)
-                .font(font)
-                .foregroundStyle(PeezyTheme.Colors.deepInk)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-    }
-}
-
-private struct ResearchListSection: View {
-    let title: String
-    let items: [String]
-    let symbol: String
-    let tint: Color
-    let animateOnReveal: Bool
-
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Label(title, systemImage: symbol)
-                .font(.headline)
-                .foregroundStyle(PeezyTheme.Colors.deepInk)
-                .accessibilityAddTraits(.isHeader)
-
-            ForEach(Array(items.enumerated()), id: \.offset) { _, item in
-                HStack(alignment: .top, spacing: 10) {
-                    Circle()
-                        .fill(tint)
-                        .frame(width: 7, height: 7)
-                        .padding(.top, 7)
-                        .accessibilityHidden(true)
-
-                    if animateOnReveal && !reduceMotion {
-                        TypewriterText(
-                            phrases: [item],
-                            typingSpeed: 0.012,
-                            font: .body,
-                            foregroundColor: PeezyTheme.Colors.deepInk,
-                            repeatsPhrases: false,
-                            textAlignment: .leading,
-                            showsCursor: false
-                        )
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    } else {
-                        Text(item)
-                            .font(.body)
-                            .foregroundStyle(PeezyTheme.Colors.deepInk)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-            }
-        }
-        .padding(14)
-        .background(
-            tint.opacity(0.12),
-            in: RoundedRectangle(
-                cornerRadius: PeezyTheme.Layout.cornerRadiusMedium,
-                style: .continuous
-            )
-        )
-    }
-}
-
 private extension View {
     func taskDetailCard() -> some View {
         background(
@@ -640,150 +330,31 @@ private struct TaskDetailTask {
     let description: String
     let whyNeeded: String
     let tips: String
-    let actionType: String
     let workflowId: String
-    let researchScope: String
-    let researchPreferences: [ResearchPreference]
+    let researchConfiguration: TaskResearchConfiguration
     let content: TaskContent
     let notes: String?
     let quotes: [TaskQuote]
-
-    var hasGuidedFlow: Bool {
-        ["workflow", "in-app", "in-app-inventory"].contains(actionType)
-    }
-
-    var researchEnabled: Bool {
-        researchScope == "web" || researchScope == "reasoning"
-    }
-}
-
-private struct ResearchPreference: Identifiable, Equatable {
-    let id: String
-    let question: String
-    let options: [String]
-
-    nonisolated init?(data: [String: Any]) {
-        guard let id = data["id"] as? String,
-              !id.isEmpty,
-              let question = data["question"] as? String,
-              !question.isEmpty,
-              let options = data["options"] as? [String],
-              !options.isEmpty else { return nil }
-        self.id = id
-        self.question = question
-        self.options = options
-    }
-}
-
-private struct ResearchBrief: Equatable {
-    let headline: String
-    let sections: [ResearchBriefSection]
-    let questionsToAsk: [String]
-    let redFlags: [String]
-    let whatCouldGoWrong: [String]
-    let sources: [ResearchSource]
-    let script: String
-
-    nonisolated init?(data: [String: Any]) {
-        guard let headline = data["headline"] as? String,
-              !headline.isEmpty,
-              let sectionData = data["sections"] as? [[String: Any]],
-              let questionsToAsk = data["questionsToAsk"] as? [String],
-              let redFlags = data["redFlags"] as? [String],
-              let whatCouldGoWrong = data["whatCouldGoWrong"] as? [String],
-              let sourceData = data["sources"] as? [[String: Any]] else { return nil }
-
-        let sections = sectionData.compactMap(ResearchBriefSection.init(data:))
-        guard sections.count == sectionData.count else { return nil }
-
-        self.headline = headline
-        self.sections = sections
-        self.questionsToAsk = questionsToAsk
-        self.redFlags = redFlags
-        self.whatCouldGoWrong = whatCouldGoWrong
-        self.sources = sourceData.compactMap(ResearchSource.init(data:))
-        self.script = data["script"] as? String ?? ""
-    }
-}
-
-private struct ResearchBriefSection: Equatable {
-    let heading: String
-    let items: [String]
-
-    nonisolated init?(data: [String: Any]) {
-        guard let heading = data["heading"] as? String,
-              !heading.isEmpty,
-              let items = data["items"] as? [String] else { return nil }
-        self.heading = heading
-        self.items = items
-    }
-}
-
-private struct ResearchSource: Equatable {
-    let title: String
-    let publisher: String
-    let url: String
-
-    nonisolated init?(data: [String: Any]) {
-        guard let title = data["title"] as? String,
-              !title.isEmpty,
-              let publisher = data["publisher"] as? String,
-              !publisher.isEmpty,
-              let url = data["url"] as? String,
-              !url.isEmpty else { return nil }
-        self.title = title
-        self.publisher = publisher
-        self.url = url
-    }
-
-    var safeURL: URL? {
-        guard let candidate = URL(string: url),
-              let scheme = candidate.scheme?.lowercased(),
-              scheme == "https" || scheme == "http" else { return nil }
-        return candidate
-    }
-}
-
-private enum TaskResearchState {
-    case loading
-    case absent
-    case generating
-    case ready(ResearchBrief, degraded: Bool)
-    case failed
 }
 
 @MainActor
 @Observable
 private final class TaskDetailViewModel {
     private(set) var task: TaskDetailTask?
-    private(set) var researchState: TaskResearchState = .loading
-    private(set) var shouldAnimateBrief = false
-    private(set) var selectedPreferences: [String: String] = [:]
     private(set) var flowAnswers: [String: [String]] = [:]
+    let research: TaskResearchModel
 
     @ObservationIgnored private let userId: String
     @ObservationIgnored private let taskDocumentId: String
     @ObservationIgnored private let fallbackFlowId: String
     @ObservationIgnored private let db = Firestore.firestore()
-    @ObservationIgnored private var researchListener: ListenerRegistration?
     @ObservationIgnored private var hasStarted = false
-    @ObservationIgnored private var hasReceivedResearchSnapshot = false
 
     init(userId: String, taskDocumentId: String, fallbackFlowId: String) {
         self.userId = userId
         self.taskDocumentId = taskDocumentId
         self.fallbackFlowId = fallbackFlowId
-    }
-
-    var hasRecordedFlowAnswers: Bool {
-        flowAnswers.values.contains { !$0.isEmpty }
-    }
-
-    var canGenerateResearch: Bool {
-        guard let task, task.researchEnabled, hasRecordedFlowAnswers else { return false }
-        return task.researchPreferences.allSatisfy {
-            selectedPreferences[$0.id] != nil
-        }
+        research = TaskResearchModel(userId: userId)
     }
 
     func start() async {
@@ -817,161 +388,39 @@ private final class TaskDetailViewModel {
             workflowId: resolvedTask.workflowId,
             userData: userData
         )
-
-        if task?.researchEnabled == true {
-            listenForResearch(taskId: catalogTaskId)
-        } else {
-            researchState = .absent
-        }
+        research.configure(
+            configuration: resolvedTask.researchConfiguration,
+            flowAnswers: flowAnswers
+        )
+        research.start()
     }
 
     func stop() {
-        researchListener?.remove()
-        researchListener = nil
-    }
-
-    func select(option: String, for preferenceId: String) {
-        selectedPreferences[preferenceId] = option
-    }
-
-    func generateResearch(force: Bool) async {
-        guard let task, canGenerateResearch else { return }
-        shouldAnimateBrief = false
-        researchState = .generating
-
-        var payload: [String: Any] = [
-            "taskId": task.catalogTaskId,
-            "force": force
-        ]
-        if !selectedPreferences.isEmpty {
-            payload["prefs"] = selectedPreferences
-        }
-        payload["flowAnswers"] = flowAnswers
-        if let entityName {
-            payload["entityName"] = entityName
-        }
-
-        do {
-            _ = try await Functions.functions()
-                .httpsCallable("researchTask")
-                .call(payload)
-        } catch {
-            researchState = .failed
-        }
-    }
-
-    private func listenForResearch(taskId: String) {
-        researchListener?.remove()
-        hasReceivedResearchSnapshot = false
-        researchState = .loading
-
-        researchListener = db.collection("users").document(userId)
-            .collection("research").document(taskId)
-            .addSnapshotListener { [weak self] snapshot, error in
-                let data = snapshot?.data()
-                Task { @MainActor [weak self] in
-                    self?.applyResearchSnapshot(data: data, error: error)
-                }
-            }
-    }
-
-    private func applyResearchSnapshot(data: [String: Any]?, error: Error?) {
-        let isFirstSnapshot = !hasReceivedResearchSnapshot
-        hasReceivedResearchSnapshot = true
-
-        guard error == nil else {
-            researchState = .failed
-            return
-        }
-        guard let data else {
-            researchState = .absent
-            return
-        }
-
-        switch data["status"] as? String {
-        case "generating":
-            shouldAnimateBrief = false
-            researchState = .generating
-
-        case "ready":
-            guard let briefData = data["brief"] as? [String: Any],
-                  let brief = ResearchBrief(data: briefData) else {
-                researchState = .failed
-                return
-            }
-            guard Self.normalizedFlowAnswers(Self.decodeFlowAnswers(data["flowAnswersUsed"]))
-                    == Self.normalizedFlowAnswers(flowAnswers) else {
-                shouldAnimateBrief = false
-                researchState = .absent
-                return
-            }
-            if let prefsUsed = data["prefsUsed"] as? [String: Any] {
-                let savedSelections = prefsUsed.compactMapValues { $0 as? String }
-                if !savedSelections.isEmpty {
-                    selectedPreferences = savedSelections
-                }
-            }
-            shouldAnimateBrief = !isFirstSnapshot
-            researchState = .ready(brief, degraded: data["degraded"] as? Bool ?? false)
-
-        case "failed":
-            shouldAnimateBrief = false
-            researchState = .failed
-
-        default:
-            researchState = .absent
-        }
-    }
-
-    private var entityName: String? {
-        let answerKeys = flowAnswers.keys.sorted()
-        for businessSearchKey in ["business_name", "current_business", "provider_name", "provider"] {
-            guard let answerKey = answerKeys.first(where: {
-                $0 == businessSearchKey || $0.hasSuffix(".\(businessSearchKey)")
-            }),
-            let value = flowAnswers[answerKey]?.first?
-                .trimmingCharacters(in: .whitespacesAndNewlines),
-            !value.isEmpty else { continue }
-            return value
-        }
-        return nil
+        research.stop()
     }
 
     private func loadRecordedFlowAnswers(
         workflowId: String,
         userData: [String: Any]
     ) async -> [String: [String]] {
-        var recorded = Self.decodeFlowAnswers(userData["qualifyingAnswers"])
+        var recorded = TaskResearchPolicy.decodeFlowAnswers(userData["qualifyingAnswers"])
 
         if !userId.isEmpty, !workflowId.isEmpty,
            let snapshot = try? await db.collection("users").document(userId)
             .collection("workflowResponses").document(workflowId).getDocument() {
-            recorded.merge(Self.decodeFlowAnswers(snapshot.data()?["answers"])) { _, submitted in
+            recorded.merge(
+                TaskResearchPolicy.decodeFlowAnswers(snapshot.data()?["answers"])
+            ) { _, submitted in
                 submitted
             }
         }
 
-        recorded.merge(Self.decodeFlowAnswers(userData["flowAnswers"])) { _, active in
+        recorded.merge(
+            TaskResearchPolicy.decodeFlowAnswers(userData["flowAnswers"])
+        ) { _, active in
             active
         }
         return recorded.filter { !$0.value.isEmpty }
-    }
-
-    private static func decodeFlowAnswers(_ value: Any?) -> [String: [String]] {
-        guard let data = value as? [String: Any] else { return [:] }
-        if let nested = data["answers"] as? [String: Any] {
-            return decodeFlowAnswers(nested)
-        }
-        return data.compactMapValues { entry in
-            guard let values = entry as? [String], !values.isEmpty else { return nil }
-            return values
-        }
-    }
-
-    private static func normalizedFlowAnswers(
-        _ answers: [String: [String]]
-    ) -> [String: [String]] {
-        answers.mapValues { $0.sorted() }
     }
 
     private static func makeTask(
@@ -984,8 +433,6 @@ private final class TaskDetailViewModel {
             (catalogData[key] as? String) ?? (userData[key] as? String) ?? ""
         }
 
-        let preferenceData = catalogData["researchPrefs"] as? [[String: Any]] ?? []
-        let preferences = preferenceData.compactMap(ResearchPreference.init(data:))
         let fallbackTitle = fallbackFlowId
             .replacingOccurrences(of: "_", with: " ")
             .capitalized
@@ -996,10 +443,11 @@ private final class TaskDetailViewModel {
             description: string("desc"),
             whyNeeded: string("whyNeeded"),
             tips: string("tips"),
-            actionType: string("actionType").isEmpty ? "workflow" : string("actionType"),
             workflowId: string("workflowId").isEmpty ? fallbackFlowId : string("workflowId"),
-            researchScope: catalogData["researchScope"] as? String ?? "none",
-            researchPreferences: preferences,
+            researchConfiguration: TaskResearchConfiguration(
+                catalogTaskId: catalogTaskId,
+                catalogData: catalogData
+            ),
             content: TaskContent(data: catalogData),
             notes: userData["notes"] as? String,
             quotes: (userData["quotes"] as? [[String: Any]])?

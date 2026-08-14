@@ -2,14 +2,13 @@
 //  PaywallPolicy.swift
 //  Peezy 4.0
 //
-//  The free tier is the personalized task list. Opening any task substance
-//  or entering a task-adjacent tool requires an active Move Pass.
+//  Guided task flows are free. Move Pass is required only for the scanner,
+//  packing, supplies fulfillment, and research help surfaces.
 //
 
 import SwiftUI
 
 enum MovePassSurface {
-    case task
     case scanner
     case packing
     case supplies
@@ -17,8 +16,6 @@ enum MovePassSurface {
 
     fileprivate var analyticsTrigger: AnalyticsEvents.PaywallTrigger {
         switch self {
-        case .task:
-            return .postAssessment
         case .scanner, .packing, .research:
             return .concierge
         case .supplies:
@@ -28,11 +25,11 @@ enum MovePassSurface {
 }
 
 enum PaywallPolicy {
-    /// The task list is the complete free tier. All task substance and every
-    /// task-adjacent tool named here requires Move Pass access.
+    /// Guided task flows are free; these dedicated help surfaces require the
+    /// Move Pass.
     static func requiresMovePass(for surface: MovePassSurface) -> Bool {
         switch surface {
-        case .task, .scanner, .packing, .supplies, .research:
+        case .scanner, .packing, .supplies, .research:
             return true
         }
     }

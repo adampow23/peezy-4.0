@@ -1,17 +1,9 @@
 PHASE_MANIFEST
-Peezy 4.0.xcodeproj/project.pbxproj
-Peezy 4.0/MainInterface/Models/PeezyV1App.swift
-Peezy 4.0/MainInterface/Views/SupportChatView.swift
-Peezy 4.0/MainInterface/Models/SupportChatService.swift
-Peezy 4.0/MainInterface/Models/SupportMessage.swift
-Peezy 4.0/MainInterface/Views/PeezyMainContainer.swift
+Peezy 4.0/MainInterface/Models/TaskFlowRouter.swift
+Peezy 4.0/MainInterface/Models/PaywallPolicy.swift
+Peezy 4.0/MainInterface/Models/PeezyHomeViewModel.swift
+Peezy 4.0/Tasks/FlowEngine/FlowEngineView.swift
+Peezy 4.0/Tasks/FlowEngine/PostFlowForkView.swift
+Peezy 4.0/Tasks/Task Cards/ScanInventoryFlow.swift
+Peezy 4.0/Tasks/Views/TaskResearchModule.swift
 Peezy 4.0/Tasks/Views/TaskDetailView.swift
-Peezy 4.0/Menu/PeezySettingsView.swift
-functions/index.js
-functions/notifySupport.js
-functions/supportAdmin.js
-functions/.env.example
-public/admin/index.html
-firestore.rules
-Peezy 4.0/MainInterface/Models/TaskActionService.swift
-Peezy 4.0/Tasks/Task Cards/PackingSessionView.swift

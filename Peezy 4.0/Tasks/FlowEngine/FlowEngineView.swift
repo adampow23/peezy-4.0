@@ -76,6 +76,16 @@ struct FlowEngineView: View {
     /// Set on spawnTasks success; flips the spawn card into its confirmation
     /// rendering (returned titles + scheduled dates, Done → conclude).
     @State private var spawnedTasks: [SpawnService.SpawnedTask]?
+    @State private var pendingPostFlowCompletion: PostFlowCompletion?
+    @State private var researchConfiguration: TaskResearchConfiguration?
+    @State private var isRoutingPostFlow = false
+
+    private enum PostFlowCompletion: String, Identifiable {
+        case complete
+        case statusDone
+
+        var id: String { rawValue }
+    }
 
     private let actionService = TaskActionService()
 
@@ -99,10 +109,27 @@ struct FlowEngineView: View {
             }
         }
         .task {
+            async let loadedResearchConfiguration = TaskResearchConfiguration.load(
+                userId: userId,
+                taskDocumentId: taskId,
+                fallbackCatalogTaskId: definition.workflowId
+            )
             await restoreState()
+            researchConfiguration = await loadedResearchConfiguration
         }
         .onDisappear {
             providerResolveTask?.cancel()
+        }
+        .fullScreenCover(item: $pendingPostFlowCompletion) { completion in
+            if let researchConfiguration {
+                PostFlowForkView(
+                    userId: userId,
+                    configuration: researchConfiguration,
+                    flowAnswers: answers,
+                    onComplete: { finishPostFlow(completion) }
+                )
+                .interactiveDismissDisabled()
+            }
         }
     }
 
@@ -280,7 +307,11 @@ struct FlowEngineView: View {
                 showBack: canGoBack,
                 onLater: { concludeFlow { onStatusAction(.later) } },
                 onInProgress: { concludeFlow { onStatusAction(.inProgress) } },
-                onDone: { concludeFlow { onStatusAction(.done) } },
+                onDone: {
+                    concludeFlow {
+                        beginPostFlow(.statusDone)
+                    }
+                },
                 onBack: { goBack() }
             )
 
@@ -450,7 +481,9 @@ struct FlowEngineView: View {
         }
 
         if nextIsSummary && !hasConciergeRow {
-            concludeFlow { onComplete() }
+            concludeFlow {
+                beginPostFlow(.complete)
+            }
         } else {
             advance(from: step, selected: answers[step.id]?.first)
         }
@@ -509,6 +542,55 @@ struct FlowEngineView: View {
         let id = taskId
         Task { await actionService.clearFlowState(taskId: id) }
         callback()
+    }
+
+    private func finishPostFlow(_ completion: PostFlowCompletion) {
+        pendingPostFlowCompletion = nil
+        isRoutingPostFlow = false
+        isSubmitting = false
+        switch completion {
+        case .complete:
+            onComplete()
+        case .statusDone:
+            onStatusAction(.done)
+        }
+    }
+
+    private func beginPostFlow(_ completion: PostFlowCompletion) {
+        guard !isRoutingPostFlow else { return }
+        isRoutingPostFlow = true
+        isSubmitting = true
+
+        if let researchConfiguration {
+            routePostFlow(completion, configuration: researchConfiguration)
+            return
+        }
+
+        Task {
+            let configuration = await TaskResearchConfiguration.load(
+                userId: userId,
+                taskDocumentId: taskId,
+                fallbackCatalogTaskId: definition.workflowId
+            )
+            await MainActor.run {
+                researchConfiguration = configuration
+                routePostFlow(completion, configuration: configuration)
+            }
+        }
+    }
+
+    private func routePostFlow(
+        _ completion: PostFlowCompletion,
+        configuration: TaskResearchConfiguration
+    ) {
+        if TaskResearchPolicy.isEligible(
+            configuration: configuration,
+            flowAnswers: answers
+        ) {
+            pendingPostFlowCompletion = completion
+        } else {
+            finishPostFlow(completion)
+        }
     }
 
     // MARK: - Known Answers (Spec 09 Phase 4)
@@ -630,13 +712,17 @@ struct FlowEngineView: View {
 
     private func spawnPrimaryTapped(_ step: FlowStep) {
         if spawnedTasks != nil {
-            concludeFlow { onComplete() }
+            concludeFlow {
+                beginPostFlow(.complete)
+            }
             return
         }
         let resolved = resolvedSpawns(for: step)
         // Zero resolved spawns: nothing to create — the callable is not called.
         guard !resolved.isEmpty else {
-            concludeFlow { onComplete() }
+            concludeFlow {
+                beginPostFlow(.complete)
+            }
             return
         }
         submitSpawns(resolved)
@@ -750,8 +836,7 @@ struct FlowEngineView: View {
                 }
                 await actionService.clearFlowState(taskId: id)
                 await MainActor.run {
-                    isSubmitting = false
-                    onComplete()
+                    beginPostFlow(.complete)
                 }
             } catch {
                 await MainActor.run {

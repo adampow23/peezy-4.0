@@ -80,13 +80,10 @@ final class PeezyHomeViewModel {
         }
     }
 
-    /// Data-driven routing (Spec 04 Phase C — the newFlowIds allowlist is
-    /// gone): every card resolves to a flow id — workflowId when present,
-    /// else the lowercased taskId (the off-app convention). The router
-    /// resolves it against the explicit map or flowDefinitions; unknown ids
-    /// render the coming-right-up card, never a dead end.
-    private func flowId(for card: PeezyCard) -> String {
-        card.workflowId ?? (card.taskId ?? card.id).lowercased()
+    /// Workflow-backed cards and explicit router mappings enter their flow.
+    /// A nil route keeps off-app/static cards on the task-detail surface.
+    private func flowId(for card: PeezyCard) -> String? {
+        TaskFlowRouter.flowId(for: card)
     }
 
     // MARK: - Computed Properties
