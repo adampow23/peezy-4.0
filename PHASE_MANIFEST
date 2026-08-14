@@ -1,8 +1,3 @@
 PHASE_MANIFEST
-Peezy 4.0/Inventory/Models/InventorySessionManager.swift
-Peezy 4.0/Inventory/Views/InventoryAddItemSheet.swift
-Peezy 4.0/Inventory/Views/InventoryFlowView.swift
-Peezy 4.0/Inventory/Views/InventoryLockedView.swift
-Peezy 4.0/Inventory/Views/InventoryRoomHubView.swift
-Peezy 4.0/Inventory/Views/InventoryRoomReviewView.swift
-Peezy 4.0/Tasks/Views/TaskRowButtons.swift
+Peezy 4.0/Tasks/Views/TaskDetailView.swift
+functions/researchTask.js

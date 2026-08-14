@@ -114,7 +114,9 @@ struct TaskDetailView: View {
                     initialQuotes: task.quotes
                 )
 
-                researchModule(task)
+                if task.researchEnabled && model.hasRecordedFlowAnswers {
+                    researchModule(task)
+                }
 
                 if task.hasGuidedFlow {
                     Button(action: onStart) {
@@ -229,7 +231,10 @@ struct TaskDetailView: View {
                 .tint(PeezyTheme.Colors.deepInk)
 
         case .absent:
-            researchStart(task, buttonTitle: "Research this for me")
+            researchStart(
+                task,
+                buttonTitle: "Want us to dig up the easiest way to get this done?"
+            )
 
         case .generating:
             HStack(spacing: 12) {
@@ -261,7 +266,10 @@ struct TaskDetailView: View {
             Text("Peezy couldn't finish this research.")
                 .font(.body)
                 .foregroundStyle(PeezyTheme.Colors.deepInk)
-            researchStart(task, buttonTitle: "Try research again")
+            researchStart(
+                task,
+                buttonTitle: "Want us to dig up the easiest way to get this done?"
+            )
         }
     }
 
@@ -505,13 +513,25 @@ private struct ResearchBriefView: View {
                 }
             }
 
-            ResearchListSection(
-                title: "What could go wrong",
-                items: brief.whatCouldGoWrong,
-                symbol: "exclamationmark.triangle.fill",
-                tint: PeezyTheme.Colors.warningOrange,
-                animateOnReveal: animateOnReveal
-            )
+            if !brief.whatCouldGoWrong.isEmpty {
+                ResearchListSection(
+                    title: "What could go wrong",
+                    items: brief.whatCouldGoWrong,
+                    symbol: "exclamationmark.triangle.fill",
+                    tint: PeezyTheme.Colors.warningOrange,
+                    animateOnReveal: animateOnReveal
+                )
+            }
+
+            if !brief.script.isEmpty {
+                ResearchListSection(
+                    title: "SCRIPT",
+                    items: [brief.script],
+                    symbol: "phone.fill",
+                    tint: PeezyTheme.Colors.successGreen,
+                    animateOnReveal: animateOnReveal
+                )
+            }
         }
     }
 
@@ -618,6 +638,7 @@ private struct TaskDetailTask {
     let whyNeeded: String
     let tips: String
     let actionType: String
+    let workflowId: String
     let researchScope: String
     let researchPreferences: [ResearchPreference]
     let content: TaskContent
@@ -658,6 +679,7 @@ private struct ResearchBrief: Equatable {
     let redFlags: [String]
     let whatCouldGoWrong: [String]
     let sources: [ResearchSource]
+    let script: String
 
     nonisolated init?(data: [String: Any]) {
         guard let headline = data["headline"] as? String,
@@ -666,7 +688,6 @@ private struct ResearchBrief: Equatable {
               let questionsToAsk = data["questionsToAsk"] as? [String],
               let redFlags = data["redFlags"] as? [String],
               let whatCouldGoWrong = data["whatCouldGoWrong"] as? [String],
-              !whatCouldGoWrong.isEmpty,
               let sourceData = data["sources"] as? [[String: Any]] else { return nil }
 
         let sections = sectionData.compactMap(ResearchBriefSection.init(data:))
@@ -678,6 +699,7 @@ private struct ResearchBrief: Equatable {
         self.redFlags = redFlags
         self.whatCouldGoWrong = whatCouldGoWrong
         self.sources = sourceData.compactMap(ResearchSource.init(data:))
+        self.script = data["script"] as? String ?? ""
     }
 }
 
@@ -734,6 +756,7 @@ private final class TaskDetailViewModel {
     private(set) var researchState: TaskResearchState = .loading
     private(set) var shouldAnimateBrief = false
     private(set) var selectedPreferences: [String: String] = [:]
+    private(set) var flowAnswers: [String: [String]] = [:]
 
     @ObservationIgnored private let userId: String
     @ObservationIgnored private let taskDocumentId: String
@@ -749,8 +772,12 @@ private final class TaskDetailViewModel {
         self.fallbackFlowId = fallbackFlowId
     }
 
+    var hasRecordedFlowAnswers: Bool {
+        flowAnswers.values.contains { !$0.isEmpty }
+    }
+
     var canGenerateResearch: Bool {
-        guard let task, task.researchEnabled else { return false }
+        guard let task, task.researchEnabled, hasRecordedFlowAnswers else { return false }
         return task.researchPreferences.allSatisfy {
             selectedPreferences[$0.id] != nil
         }
@@ -776,11 +803,16 @@ private final class TaskDetailViewModel {
         // task metadata and the Phase 5 surface content.
         let catalogData = await TaskContentStore.shared.catalogData(for: catalogTaskId)
 
-        task = Self.makeTask(
+        let resolvedTask = Self.makeTask(
             catalogTaskId: catalogTaskId,
             catalogData: catalogData,
             userData: userData,
             fallbackFlowId: fallbackFlowId
+        )
+        task = resolvedTask
+        flowAnswers = await loadRecordedFlowAnswers(
+            workflowId: resolvedTask.workflowId,
+            userData: userData
         )
 
         if task?.researchEnabled == true {
@@ -810,6 +842,10 @@ private final class TaskDetailViewModel {
         ]
         if !selectedPreferences.isEmpty {
             payload["prefs"] = selectedPreferences
+        }
+        payload["flowAnswers"] = flowAnswers
+        if let entityName {
+            payload["entityName"] = entityName
         }
 
         do {
@@ -860,6 +896,12 @@ private final class TaskDetailViewModel {
                 researchState = .failed
                 return
             }
+            guard Self.normalizedFlowAnswers(Self.decodeFlowAnswers(data["flowAnswersUsed"]))
+                    == Self.normalizedFlowAnswers(flowAnswers) else {
+                shouldAnimateBrief = false
+                researchState = .absent
+                return
+            }
             if let prefsUsed = data["prefsUsed"] as? [String: Any] {
                 let savedSelections = prefsUsed.compactMapValues { $0 as? String }
                 if !savedSelections.isEmpty {
@@ -876,6 +918,57 @@ private final class TaskDetailViewModel {
         default:
             researchState = .absent
         }
+    }
+
+    private var entityName: String? {
+        let answerKeys = flowAnswers.keys.sorted()
+        for businessSearchKey in ["business_name", "current_business", "provider_name", "provider"] {
+            guard let answerKey = answerKeys.first(where: {
+                $0 == businessSearchKey || $0.hasSuffix(".\(businessSearchKey)")
+            }),
+            let value = flowAnswers[answerKey]?.first?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+            !value.isEmpty else { continue }
+            return value
+        }
+        return nil
+    }
+
+    private func loadRecordedFlowAnswers(
+        workflowId: String,
+        userData: [String: Any]
+    ) async -> [String: [String]] {
+        var recorded = Self.decodeFlowAnswers(userData["qualifyingAnswers"])
+
+        if !userId.isEmpty, !workflowId.isEmpty,
+           let snapshot = try? await db.collection("users").document(userId)
+            .collection("workflowResponses").document(workflowId).getDocument() {
+            recorded.merge(Self.decodeFlowAnswers(snapshot.data()?["answers"])) { _, submitted in
+                submitted
+            }
+        }
+
+        recorded.merge(Self.decodeFlowAnswers(userData["flowAnswers"])) { _, active in
+            active
+        }
+        return recorded.filter { !$0.value.isEmpty }
+    }
+
+    private static func decodeFlowAnswers(_ value: Any?) -> [String: [String]] {
+        guard let data = value as? [String: Any] else { return [:] }
+        if let nested = data["answers"] as? [String: Any] {
+            return decodeFlowAnswers(nested)
+        }
+        return data.compactMapValues { entry in
+            guard let values = entry as? [String], !values.isEmpty else { return nil }
+            return values
+        }
+    }
+
+    private static func normalizedFlowAnswers(
+        _ answers: [String: [String]]
+    ) -> [String: [String]] {
+        answers.mapValues { $0.sorted() }
     }
 
     private static func makeTask(
@@ -901,6 +994,7 @@ private final class TaskDetailViewModel {
             whyNeeded: string("whyNeeded"),
             tips: string("tips"),
             actionType: string("actionType").isEmpty ? "workflow" : string("actionType"),
+            workflowId: string("workflowId").isEmpty ? fallbackFlowId : string("workflowId"),
             researchScope: catalogData["researchScope"] as? String ?? "none",
             researchPreferences: preferences,
             content: TaskContent(data: catalogData),
