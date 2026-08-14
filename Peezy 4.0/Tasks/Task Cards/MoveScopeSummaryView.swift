@@ -38,9 +38,10 @@ struct MoveScopeSummaryView: View {
                     Text("Price basis: \(priceBasis)")
                         .font(.footnote)
                         .bold()
+                        .foregroundStyle(.white)
                         .padding(.horizontal, PeezyTheme.Layout.cardPaddingSmall)
                         .padding(.vertical, PeezyTheme.Layout.verticalSpacingSmall)
-                        .background(PeezyTheme.Colors.brandYellow.opacity(0.6), in: .capsule)
+                        .background(PeezyTheme.Colors.deepInk, in: .capsule)
 
                     TruckSizeView(
                         userId: userId,

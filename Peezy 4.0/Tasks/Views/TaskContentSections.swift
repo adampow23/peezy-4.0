@@ -272,10 +272,10 @@ struct TripKitSection: View {
                 Link(destination: url) {
                     Label("Directions", systemImage: "map.fill")
                         .font(PeezyTheme.Typography.headline)
-                        .foregroundStyle(PeezyTheme.Colors.deepInk)
+                        .foregroundStyle(.white)
                         .frame(maxWidth: .infinity, minHeight: PeezyTheme.Layout.buttonHeightSmall)
                         .background(
-                            PeezyTheme.Colors.brandYellow,
+                            PeezyTheme.Colors.deepInk,
                             in: RoundedRectangle(
                                 cornerRadius: PeezyTheme.Layout.cornerRadiusMedium,
                                 style: .continuous
@@ -383,10 +383,10 @@ struct DeepLinkFork: View {
         Link(destination: url) {
             Label(title, systemImage: "arrow.up.right.square")
                 .font(PeezyTheme.Typography.headline)
-                .foregroundStyle(PeezyTheme.Colors.deepInk)
+                .foregroundStyle(.white)
                 .frame(maxWidth: .infinity, minHeight: PeezyTheme.Layout.buttonHeightSmall)
                 .background(
-                    PeezyTheme.Colors.brandYellow,
+                    PeezyTheme.Colors.deepInk,
                     in: RoundedRectangle(
                         cornerRadius: PeezyTheme.Layout.cornerRadiusMedium,
                         style: .continuous
@@ -476,9 +476,9 @@ struct TaskWalkthroughSteps: View {
                 HStack(alignment: .top, spacing: PeezyTheme.Layout.verticalSpacing) {
                     Text("\(index + 1)")
                         .font(PeezyTheme.Typography.calloutSemibold)
-                        .foregroundStyle(PeezyTheme.Colors.deepInk)
+                        .foregroundStyle(.white)
                         .frame(width: 24, height: 24)
-                        .background(PeezyTheme.Colors.brandYellow.opacity(0.42), in: Circle())
+                        .background(PeezyTheme.Colors.deepInk, in: Circle())
                         .accessibilityHidden(true)
 
                     Text(step)

@@ -223,7 +223,7 @@ struct MoversResearchGuidanceCard: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(PeezyTheme.Layout.cardPaddingSmall)
                 .background(
-                    PeezyTheme.Colors.brandYellow.opacity(0.45),
+                    PeezyTheme.Colors.backgroundSecondary,
                     in: .rect(cornerRadius: PeezyTheme.Layout.cornerRadiusSmall)
                 )
                 .accessibilityElement(children: .combine)

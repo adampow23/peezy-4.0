@@ -65,7 +65,7 @@ struct ComparisonCardView: View {
             cardContent
             .padding(presentation == .compact ? 10 : PeezyTheme.Layout.cardPadding)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(isSelected ? PeezyTheme.Colors.brandYellow.opacity(0.22) : Color.white.opacity(0.62), in: .rect(cornerRadius: PeezyTheme.Layout.cornerRadius))
+            .background(isSelected ? PeezyTheme.Colors.deepInk.opacity(0.22) : Color.white.opacity(0.62), in: .rect(cornerRadius: PeezyTheme.Layout.cornerRadius))
             .overlay {
                 RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadius)
                     .stroke(
@@ -127,10 +127,10 @@ struct ComparisonCardView: View {
                 Text("\(labels.footerPrefix): \(model.priceBasis)")
                     .font(.footnote)
                     .bold()
-                    .foregroundStyle(PeezyTheme.Colors.deepInk)
+                    .foregroundStyle(.white)
                     .padding(.horizontal, PeezyTheme.Layout.cardPaddingSmall)
                     .padding(.vertical, PeezyTheme.Layout.verticalSpacingSmall)
-                    .background(PeezyTheme.Colors.brandYellow.opacity(0.55), in: .capsule)
+                    .background(PeezyTheme.Colors.deepInk, in: .capsule)
             }
 
         case .compact:

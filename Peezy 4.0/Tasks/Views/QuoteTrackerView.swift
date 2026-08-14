@@ -128,7 +128,7 @@ struct QuoteTrackerView: View {
                         .foregroundStyle(PeezyTheme.Colors.deepInk)
                         .frame(maxWidth: .infinity, minHeight: PeezyTheme.Layout.buttonHeightSmall)
                         .background(
-                            PeezyTheme.Colors.brandYellow.opacity(0.42),
+                            PeezyTheme.Colors.deepInk.opacity(0.42),
                             in: RoundedRectangle(
                                 cornerRadius: PeezyTheme.Layout.cornerRadiusMedium,
                                 style: .continuous
@@ -268,10 +268,10 @@ struct QuoteTrackerView: View {
             } label: {
                 Text("Save quote")
                     .font(PeezyTheme.Typography.headline)
-                    .foregroundStyle(PeezyTheme.Colors.deepInk)
+                    .foregroundStyle(.white)
                     .frame(maxWidth: .infinity, minHeight: PeezyTheme.Layout.buttonHeightSmall)
                     .background(
-                        PeezyTheme.Colors.brandYellow,
+                        PeezyTheme.Colors.deepInk,
                         in: RoundedRectangle(
                             cornerRadius: PeezyTheme.Layout.cornerRadiusMedium,
                             style: .continuous

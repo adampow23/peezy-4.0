@@ -196,16 +196,16 @@ struct AppLoadingView: View {
                         )
                     
                     Circle()
-                        .fill(PeezyTheme.Colors.brandYellow.opacity(0.15))
+                        .fill(PeezyTheme.Colors.deepInk.opacity(0.15))
                         .frame(width: 100, height: 100)
                     
                     Circle()
-                        .strokeBorder(PeezyTheme.Colors.brandYellow.opacity(0.3), lineWidth: 1)
+                        .strokeBorder(PeezyTheme.Colors.deepInk.opacity(0.3), lineWidth: 1)
                         .frame(width: 100, height: 100)
                     
                     ProgressView()
                         .scaleEffect(1.5)
-                        .tint(PeezyTheme.Colors.brandYellow)
+                        .tint(PeezyTheme.Colors.deepInk)
                 }
                 
                 Text("Loading...")
@@ -229,7 +229,7 @@ struct AppLoadingView: View {
                         .fill(Color.white.opacity(0.08))
                     
                     RoundedRectangle(cornerRadius: 24, style: .continuous)
-                        .strokeBorder(PeezyTheme.Colors.brandYellow.opacity(0.15), lineWidth: 0.5)
+                        .strokeBorder(PeezyTheme.Colors.deepInk.opacity(0.15), lineWidth: 0.5)
                 }
             )
             .shadow(

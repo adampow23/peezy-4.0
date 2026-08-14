@@ -35,7 +35,7 @@ struct PeezyLiquidGlassModifier: ViewModifier {
                 .overlay(
                     // Subtle brand tint
                     RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .fill(PeezyTheme.Colors.brandYellow.opacity(tintOpacity))
+                        .fill(PeezyTheme.Colors.deepInk.opacity(tintOpacity))
                 )
                 .overlay(
                     // Top highlight for depth

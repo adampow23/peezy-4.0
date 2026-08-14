@@ -120,10 +120,10 @@ struct TaskDetailView: View {
                     Button(action: onStart) {
                         Label("Start", systemImage: "arrow.right.circle.fill")
                             .font(.headline)
-                            .foregroundStyle(PeezyTheme.Colors.deepInk)
+                            .foregroundStyle(.white)
                             .frame(maxWidth: .infinity, minHeight: 56)
                             .background(
-                                PeezyTheme.Gradients.brandYellow,
+                                PeezyTheme.Gradients.deepInk,
                                 in: RoundedRectangle(
                                     cornerRadius: PeezyTheme.Layout.cornerRadius,
                                     style: .continuous
@@ -172,7 +172,7 @@ struct TaskDetailView: View {
                 .padding(16)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(
-                    PeezyTheme.Colors.brandYellow.opacity(0.28),
+                    PeezyTheme.Colors.backgroundSecondary,
                     in: RoundedRectangle(
                         cornerRadius: PeezyTheme.Layout.cornerRadius,
                         style: .continuous
@@ -284,10 +284,10 @@ struct TaskDetailView: View {
             } label: {
                 Label(buttonTitle, systemImage: "sparkles")
                     .font(.headline)
-                    .foregroundStyle(PeezyTheme.Colors.deepInk)
+                    .foregroundStyle(.white)
                     .frame(maxWidth: .infinity, minHeight: 52)
                     .background(
-                        PeezyTheme.Colors.brandYellow,
+                        PeezyTheme.Colors.deepInk,
                         in: RoundedRectangle(
                             cornerRadius: PeezyTheme.Layout.cornerRadiusMedium,
                             style: .continuous
@@ -405,7 +405,7 @@ private struct ResearchPreferenceQuestion: View {
                     .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
                     .background(
                         isSelected
-                            ? PeezyTheme.Colors.brandYellow.opacity(0.42)
+                            ? PeezyTheme.Colors.deepInk.opacity(0.42)
                             : Color.white.opacity(0.42),
                         in: RoundedRectangle(
                             cornerRadius: PeezyTheme.Layout.cornerRadiusSmall,

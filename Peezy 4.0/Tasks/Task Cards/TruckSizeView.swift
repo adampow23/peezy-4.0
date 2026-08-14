@@ -92,7 +92,7 @@ struct TruckSizeView: View {
                     .padding(PeezyTheme.Layout.cardPaddingSmall)
                     .background(
                         selectedTierKey == tier.key
-                            ? PeezyTheme.Colors.brandYellow.opacity(0.35)
+                            ? PeezyTheme.Colors.deepInk.opacity(0.35)
                             : PeezyTheme.Colors.deepInk.opacity(0.04),
                         in: .rect(cornerRadius: PeezyTheme.Layout.cornerRadiusSmall)
                     )
@@ -137,7 +137,7 @@ struct TruckSizeView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(PeezyTheme.Layout.cardPaddingSmall)
             .background(
-                PeezyTheme.Colors.brandYellow.opacity(0.45),
+                PeezyTheme.Colors.backgroundSecondary,
                 in: .rect(cornerRadius: PeezyTheme.Layout.cornerRadiusSmall)
             )
 
@@ -201,7 +201,7 @@ struct TruckSizeView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(PeezyTheme.Layout.cardPaddingSmall)
         .background(
-            PeezyTheme.Colors.brandYellow.opacity(0.45),
+            PeezyTheme.Colors.backgroundSecondary,
             in: .rect(cornerRadius: PeezyTheme.Layout.cornerRadiusSmall)
         )
     }

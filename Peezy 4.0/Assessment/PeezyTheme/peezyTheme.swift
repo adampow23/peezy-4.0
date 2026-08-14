@@ -15,12 +15,6 @@ enum PeezyTheme {
     // MARK: - Colors
 
     enum Colors {
-        // Brand
-        /// Primary brand accent (#FFE36B)
-        static let brandYellow = Color(red: 1.0, green: 0.89, blue: 0.42)
-        /// Lighter brand accent to pair with primary
-        static let brandYellowLight = Color(red: 1.0, green: 0.94, blue: 0.63)
-
         // Semantic
         static let emotionalRed = Color(red: 0.95, green: 0.45, blue: 0.45)
         /// Secondary accent (#6BFFE3)
@@ -167,10 +161,6 @@ enum PeezyTheme {
         static let buttonShadowY: CGFloat = 4
 
         // Glow effects
-        static func brandGlow(opacity: Double = 0.4) -> Color {
-            Colors.brandYellow.opacity(opacity)
-        }
-
         static func infoGlow(opacity: Double = 0.4) -> Color {
             Colors.infoBlue.opacity(opacity)
         }
@@ -179,10 +169,10 @@ enum PeezyTheme {
     // MARK: - Gradients
 
     enum Gradients {
-        static let brandYellow = LinearGradient(
-            colors: [Colors.brandYellow, Colors.brandYellowLight],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
+        static let deepInk = LinearGradient(
+            colors: [Colors.deepInk.opacity(0.85), Colors.deepInk],
+            startPoint: .top,
+            endPoint: .bottom
         )
 
         static let infoBlue = LinearGradient(
@@ -194,13 +184,5 @@ enum PeezyTheme {
             endPoint: .trailing
         )
 
-        static let brandYellowBackground = LinearGradient(
-            colors: [
-                Colors.brandYellow.opacity(0.2),
-                Colors.brandYellowLight.opacity(0.32)
-            ],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
     }
 }
