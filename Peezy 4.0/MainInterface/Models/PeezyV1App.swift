@@ -22,7 +22,9 @@ final class AppDelegate: NSObject, UIApplicationDelegate, MessagingDelegate, UNU
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
-        FirebaseApp.configure()
+        if FirebaseApp.app() == nil {
+            FirebaseApp.configure()
+        }
         _ = Crashlytics.crashlytics()
 
         Messaging.messaging().delegate = self
@@ -125,6 +127,10 @@ struct PeezyV1App: App {
 
     // This runs ONCE when the app launches, before any views appear
     init() {
+        if FirebaseApp.app() == nil {
+            FirebaseApp.configure()
+        }
+
         // Start StoreKit transaction listener early
         _ = SubscriptionManager.shared
     }
