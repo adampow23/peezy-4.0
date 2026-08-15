@@ -2,9 +2,17 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // User document — only the owning user can read/write
+    // User document — owner-readable. The subscription entitlement field is
+    // backend-owned (validateSubscription / gift redemption, Admin SDK):
+    // owner writes may never create, modify, or remove it. Root-doc delete
+    // is server-side only (deleteAccount, Admin SDK).
     match /users/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow create: if request.auth != null && request.auth.uid == userId
+        && !request.resource.data.keys().hasAny(['subscription']);
+      allow update: if request.auth != null && request.auth.uid == userId
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['subscription']);
+      allow delete: if false;
     }
 
     // Support messages are owner-readable, but support replies and metadata are

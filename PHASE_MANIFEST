@@ -69,3 +69,9 @@ Peezy 4.0/Tasks/Task Cards/RentTruckFlow.swift
 Peezy 4.0Tests/MoversPreparationPagesTests.swift
 docs/plans/2026-08-15-movers-card-pacing.md
 docs/plans/2026-08-15-movers-card-pacing-review-log.md
+docs/plans/codex-review-stage1-subscription-hardening.md
+docs/plans/codex-review-stage1-subscription-hardening-review-log.md
+firestore.rules
+functions/validateSubscription.js
+functions/subscriptionDecision.js
+functions/tests/validateSubscription.test.js
