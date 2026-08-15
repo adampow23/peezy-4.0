@@ -260,11 +260,15 @@ struct RemoveItemsFlow: View {
                     answers: workflowAnswers,
                     userId: userId
                 )
-                await MainActor.run {
-                    isSubmitting = false
-                    if response.success {
+                if response.success {
+                    await TaskActionService().clearFlowState(taskId: taskId)
+                    await MainActor.run {
+                        isSubmitting = false
                         onComplete()
-                    } else {
+                    }
+                } else {
+                    await MainActor.run {
+                        isSubmitting = false
                         submissionError = "Couldn't save your answers. Check your connection, then try again."
                         submissionAttempt += 1
                     }

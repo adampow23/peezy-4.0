@@ -58,6 +58,16 @@ final class FlowExitCoordinator {
         hasRestored && isExternalAnswerStateReady && !isEvaluatingAnswerState
     }
 
+    /// Exit-lock contract (movers chain, plan v7): a flow sets this while a
+    /// spawn/complete edge is in flight and through its confirmation state.
+    /// The outer X disables whenever it holds; edge failure must clear it so
+    /// the user is never trapped.
+    private(set) var isExitLocked = false
+
+    func setExitLocked(_ locked: Bool) {
+        isExitLocked = locked
+    }
+
     init(
         userId: String,
         taskId: String,
@@ -258,7 +268,7 @@ struct OutermostTaskFlowContainer<Content: View>: View {
             .accessibilityIdentifier("flow.exit")
             .padding(.top, 8)
             .padding(.trailing, 12)
-            .disabled(!coordinator.isReadyForExit)
+            .disabled(!coordinator.isReadyForExit || coordinator.isExitLocked)
             .zIndex(100)
         }
         .task {
@@ -289,7 +299,7 @@ struct OutermostTaskFlowContainer<Content: View>: View {
     }
 
     private func requestExit() {
-        guard coordinator.isReadyForExit else { return }
+        guard coordinator.isReadyForExit, !coordinator.isExitLocked else { return }
         Task { @MainActor in
             if let prompt = await coordinator.exitPrompt() {
                 self.prompt = prompt

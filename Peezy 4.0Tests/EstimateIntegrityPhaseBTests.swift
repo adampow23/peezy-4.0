@@ -3,8 +3,6 @@ import Testing
 @testable import Peezy_4_0
 
 struct EstimateIntegrityPhaseBTests {
-    private let coverageDisclosure = "Some rooms weren't scanned."
-
     @Test func expectedRoomsNormalizeAndKeepScannedExtras() {
         let expected = InventoryCoverage.expectedRooms(
             bedroomsAnswer: "3 Bedrooms",
@@ -121,58 +119,6 @@ struct EstimateIntegrityPhaseBTests {
         #expect(resolved.unresolvedRooms.isEmpty)
     }
 
-    @Test func unresolvedCoverageWidensOnlyHighSideAndCapsAtFallback() throws {
-        let rateCard = PricingRateCard(
-            hourlyByCrew: [2: 100, 3: 150, 4: 210],
-            tripCharge: 50,
-            minimumHours: 2
-        )
-        let resolvedScope = scope(unresolvedRooms: 0)
-        let oneMissingScope = scope(unresolvedRooms: 1)
-        let manyMissingScope = scope(unresolvedRooms: 8)
-        let fallbackScope = MoveScope(
-            cubicFeet: 600,
-            driveMinutes: 0,
-            originAccess: .ground,
-            destAccess: .ground,
-            packedStatus: .packed,
-            cubeSource: .bedroomsFallback
-        )
-
-        let resolved = try #require(PricingEngine.estimate(scope: resolvedScope, rateCard: rateCard))
-        let oneMissing = try #require(PricingEngine.estimate(scope: oneMissingScope, rateCard: rateCard))
-        let manyMissing = try #require(PricingEngine.estimate(scope: manyMissingScope, rateCard: rateCard))
-        let fallback = try #require(PricingEngine.estimate(scope: fallbackScope, rateCard: rateCard))
-        let resolvedMultipliers = PricingEngine.confidenceRangeMultipliers(for: resolvedScope)
-        let oneMissingMultipliers = PricingEngine.confidenceRangeMultipliers(for: oneMissingScope)
-        let fallbackMultipliers = PricingEngine.confidenceRangeMultipliers(for: fallbackScope)
-
-        #expect(oneMissing.range.low == resolved.range.low)
-        #expect(oneMissing.range.high > resolved.range.high)
-        #expect(oneMissingMultipliers.high == min(
-            resolvedMultipliers.high * (1 + PricingConstants.unresolvedRoomHighSideIncrement),
-            fallbackMultipliers.high
-        ))
-        #expect(manyMissing.range.high == fallback.range.high)
-        #expect(
-            manyMissing.range.high - manyMissing.range.low
-                <= fallback.range.high - fallback.range.low
-        )
-        #expect(oneMissing.disclosures.contains(coverageDisclosure))
-        #expect(!resolved.disclosures.contains(coverageDisclosure))
-    }
-
-    private func scope(unresolvedRooms: Int) -> MoveScope {
-        MoveScope(
-            cubicFeet: 600,
-            driveMinutes: 0,
-            originAccess: .ground,
-            destAccess: .ground,
-            packedStatus: .packed,
-            cubeSource: .inventoryScan,
-            unresolvedUnseenRoomCount: unresolvedRooms
-        )
-    }
 }
 
 @MainActor

@@ -157,10 +157,6 @@ struct PeezyV1App: App {
             EstimateIntegrityPhaseFCheckInFixture(booked: true)
         } else if ProcessInfo.processInfo.arguments.contains("--estimate-integrity-phase-f-general") {
             EstimateIntegrityPhaseFCheckInFixture(booked: false)
-        } else if ProcessInfo.processInfo.arguments.contains("--estimate-integrity-phase-d") {
-            EstimateIntegrityPhaseDStorageFixture()
-        } else if ProcessInfo.processInfo.arguments.contains("--estimate-integrity-phase-c") {
-            EstimateIntegrityPhaseCConciergeFixture()
         } else if ProcessInfo.processInfo.arguments.contains("--estimate-integrity-phase-b") {
             EstimateIntegrityPhaseBCoverageFixture()
         } else {
@@ -327,38 +323,6 @@ private struct EstimateIntegrityPhaseFCheckInFixture: View {
             fixtureBookingContext: bookingContext,
             fixtureContextLoaded: true
         )
-    }
-}
-
-@MainActor
-private struct EstimateIntegrityPhaseDStorageFixture: View {
-    @State private var model = MoversFlowViewModel()
-
-    var body: some View {
-        ZStack {
-            InteractiveBackground()
-                .ignoresSafeArea()
-            MoveRefinementView(model: model, onContinue: {}, onBack: {})
-        }
-    }
-}
-
-private struct EstimateIntegrityPhaseCConciergeFixture: View {
-    @State private var notes = ""
-
-    var body: some View {
-        ZStack {
-            InteractiveBackground()
-                .ignoresSafeArea()
-            MoversConciergeQuoteCard(
-                copy: MoversConciergeReason.physicalHours.copy,
-                notes: $notes,
-                errorMessage: nil,
-                isSubmitting: false,
-                onBack: {},
-                onSubmit: {}
-            )
-        }
     }
 }
 

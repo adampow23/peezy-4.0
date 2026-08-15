@@ -24,6 +24,10 @@ struct InventoryLockedView: View {
     }
 
     private var shareText: String {
+        Self.shareText(for: rooms)
+    }
+
+    static func shareText(for rooms: [ScannedRoom]) -> String {
         var sections = ["MOVING INVENTORY"]
         var grandTotal = 0
 

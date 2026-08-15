@@ -2,26 +2,40 @@
 //  FindMoversFlow.swift
 //  Peezy 4.0
 //
-//  Custom Swift implementation of the mover workflow spine. BOOK_MOVERS stays
-//  in TaskFlowRouter's custom map; FlowDefinition intentionally does not model
-//  capture or comparison stages.
+//  Movers chain container (plan v7). One role-driven flow backs
+//  BOOK_MOVERS (get quotes) and COMPARE_MOVING_QUOTES (compare); legacy
+//  mid-flight BOOK_MOVERS docs resume the old quotes/matrix inline.
 //
 
 import SwiftUI
 
 struct FindMoversFlow: View {
+    let role: MoversFlowRole
     let userId: String
-    let taskId: String
+    let taskDocumentId: String
     let onComplete: () -> Void
     let onDismiss: () -> Void
     let onStatusAction: (TaskFlowStatusAction) -> Void
 
-    @State private var model = MoversFlowViewModel()
-    @State private var showCapture = false
-    @State private var captureChoice: String?
-    @State private var didPrepare = false
-    @ObservedObject private var subscriptionManager = SubscriptionManager.shared
-    @Environment(FlowExitCoordinator.self) private var exitCoordinator
+    @State private var model: MoversFlowViewModel
+    @Environment(FlowExitCoordinator.self) private var exitCoordinator: FlowExitCoordinator?
+
+    init(
+        role: MoversFlowRole,
+        userId: String,
+        taskDocumentId: String,
+        onComplete: @escaping () -> Void,
+        onDismiss: @escaping () -> Void,
+        onStatusAction: @escaping (TaskFlowStatusAction) -> Void
+    ) {
+        self.role = role
+        self.userId = userId
+        self.taskDocumentId = taskDocumentId
+        self.onComplete = onComplete
+        self.onDismiss = onDismiss
+        self.onStatusAction = onStatusAction
+        _model = State(initialValue: MoversFlowViewModel(role: role))
+    }
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -36,44 +50,24 @@ struct FindMoversFlow: View {
             }
         }
         .task {
-            let restored = await exitCoordinator.restore()
-            await model.prepare(userId: userId, taskId: taskId)
-            await model.restoreFlowProgress(restored)
-            captureChoice = restored.answers["capture_choice"]?.first
-            didPrepare = true
+            await model.prepare(userId: userId, taskDocumentId: taskDocumentId)
         }
-        .onChange(of: moversProgressSnapshot) { _, snapshot in
-            guard didPrepare else { return }
-            exitCoordinator.persist(snapshot)
+        // Exit-lock contract (plan v7): the outer X disables while an edge is
+        // in flight and through confirmation; failure unlocks it again.
+        .onChange(of: model.chain.isExitLocked, initial: true) { _, locked in
+            exitCoordinator?.setExitLocked(locked)
         }
-        .fullScreenCover(isPresented: $showCapture) {
-            if PaywallPolicy.requiresMovePass(for: .scanner),
-               !subscriptionManager.isSubscribed {
-                PaywallGateSheet(surface: .scanner) { subscribed in
-                    if !subscribed {
-                        showCapture = false
-                    }
-                }
-            } else {
-                InventoryFlowView(
-                    onUserDismiss: {
-                        showCapture = false
-                        Task {
-                            await model.captureDismissed()
-                            if model.hasInventory { captureChoice = "inventory" }
-                        }
-                    },
-                    onSubmitted: {
-                        showCapture = false
-                        captureChoice = "inventory"
-                        Task { await model.captureFinished() }
-                    },
-                    onLater: { showCapture = false }
-                )
-            }
-        }
-        .flowAnswerProbe {
-            model.isSubmitting || moversProgressSnapshot.hasRecordedAnswers
+        .accessibilityIdentifier("movers.flow")
+    }
+
+    private var headerTitle: String {
+        switch role {
+        case .getQuotes:
+            model.isLegacyInline ? "Compare your moving quotes" : "Get moving quotes"
+        case .compareQuotes:
+            "Compare your moving quotes"
+        case .bookMovers:
+            "Book your movers"
         }
     }
 
@@ -81,223 +75,129 @@ struct FindMoversFlow: View {
     private var stageContent: some View {
         switch model.stage {
         case .loading:
-            ProgressView("Preparing your move scope…")
+            ProgressView("Preparing your quote workspace…")
                 .tint(PeezyTheme.Colors.deepInk)
                 .accessibilityIdentifier("movers.loading")
 
-        case .capture:
-            MoversCaptureCard(
-                onScan: { showCapture = true },
-                onFallback: {
-                    captureChoice = "home_details"
-                    Task { await model.useHomeDetailsInstead() }
-                },
-                onDismiss: onDismiss
+        case .protectionEducation:
+            MoversEducationView(
+                headerTitle: headerTitle,
+                title: "Protection isn't insurance",
+                message: "Standard valuation is 60 cents per pound. A 10-lb TV pays out $6.",
+                callout: "Ask every company what full-value protection costs before booking.",
+                systemImage: "shield.lefthalf.filled",
+                accessibilityPrefix: "movers.education.protection",
+                showBack: false,
+                onBack: {},
+                onContinue: model.advanceEducation
             )
 
-        case .scope:
-            MoveScopeSummaryView(
-                userId: userId,
-                totalCubicFeet: model.totalCubicFeet,
-                distanceMiles: model.moveDistanceMiles,
-                homeSummary: model.homeSummary,
-                cubeSummary: model.cubeSummary,
-                accessSummary: model.accessSummary,
-                storageSummary: model.storageSummary,
-                priceBasis: model.priceBasis,
-                onContinue: model.showRefinement,
-                onBack: model.goBack
+        case .estimateEducation:
+            MoversEducationView(
+                headerTitle: headerTitle,
+                title: "How estimates really work",
+                message: "Quotes are hourly rate × crew × their guess at hours. The lower total is often just a smaller guess, and companies have an incentive to guess low.",
+                callout: "The same job costs whatever it actually takes.",
+                systemImage: "clock.badge.questionmark",
+                accessibilityPrefix: "movers.education.estimates",
+                showBack: true,
+                onBack: model.goBack,
+                onContinue: model.advanceEducation
             )
 
-        case .refinement:
-            MoveRefinementView(
-                model: model,
-                onContinue: { Task { await model.prepareComparisons() } },
-                onBack: model.goBack
+        case .equip:
+            MoversEquipView(
+                headerTitle: headerTitle,
+                callSheet: model.callSheet,
+                inventoryRooms: model.inventoryRooms,
+                hasSubmittedInventory: model.hasSubmittedInventory,
+                isCompleting: model.chain.edgeState == .inFlight,
+                actionError: model.actionError,
+                onBack: model.goBack,
+                onGetQuotes: completeGetQuotes
             )
 
-        case .comparison:
-            if model.isResearchGuidance {
-                researchGuidanceCard
-            } else {
-                MoversComparisonView(
-                    quotes: model.quotes,
-                    selectedId: model.selectedQuote?.id,
-                    arrivalWindow: model.requestedArrivalWindow,
-                    priceBasis: model.priceBasis,
-                    onSelect: selectQuote,
-                    onBack: model.goBack
-                )
-            }
+        case .quotes:
+            MoversQuotesView(model: model)
 
-        case .booking:
-            if let selectedQuote = model.selectedQuote {
-                MoversBookingReviewView(
-                    model: model,
-                    quote: selectedQuote,
-                    onSubmit: { Task { await model.submitBooking() } },
-                    onBack: model.goBack
-                )
-            }
+        case .matrix:
+            MoversScenarioMatrixView(model: model)
 
         case .confirmation:
-            MoversConfirmationView(
-                vendorName: model.selectedQuote?.vendor.name ?? "your selected company",
-                onDone: completeFlow
+            MoversChainConfirmationView(
+                message: confirmationMessage,
+                onDone: { onStatusAction(.completedAlreadyPersisted) }
             )
 
         case .failure:
             MoversFlowErrorView(
-                message: model.errorMessage ?? "An unexpected error occurred.",
-                onRetry: { Task { await model.retry() } },
+                message: model.errorMessage ?? "Your quote workspace could not be loaded.",
+                onRetry: retry,
                 onDismiss: onDismiss
             )
         }
     }
 
-    private func selectQuote(_ quote: MoversVendorQuote) {
-        model.select(quote)
-        model.showBooking()
-    }
-
-    private var researchGuidanceCard: some View {
-        MoversResearchGuidanceCard(
-            copy: model.researchGuidanceCopy,
-            onBack: model.goBack,
-            onDone: completeFlow
-        )
-    }
-
-    private func completeFlow() {
-        model.markComplete()
-        onComplete()
-    }
-
-    private var moversProgressSnapshot: FlowProgressSnapshot {
-        var snapshot = model.flowProgressSnapshot
-        if let captureChoice {
-            snapshot.answers["capture_choice"] = [captureChoice]
+    private var confirmationMessage: String {
+        switch role {
+        case .getQuotes where !model.isLegacyInline:
+            "Nice — your next step is waiting in Tasks. When quotes come in, compare them there."
+        default:
+            "Nice — your next step is waiting in Tasks. Book with the company you chose."
         }
-        return snapshot
+    }
+
+    private func completeGetQuotes() {
+        Task { await model.completeGetQuotes() }
+    }
+
+    private func retry() {
+        Task { await model.retry() }
     }
 }
 
-struct MoversResearchGuidanceCard: View {
-    let copy: MoversResearchGuidanceCopy
-    let onBack: () -> Void
+/// Terminal chain confirmation (plan A7): shown only after the edge's writes
+/// are durable. Done performs no writes — it routes the already-persisted
+/// terminal to Home for local accounting, and it is the only way out.
+struct MoversChainConfirmationView: View {
+    let message: String
     let onDone: () -> Void
 
     var body: some View {
         VStack(spacing: 0) {
-            TaskFlowHeader(taskTitle: "Mover estimate guidance", showBack: true, onBack: onBack)
-
-            Spacer()
+            Spacer(minLength: PeezyTheme.Layout.verticalSpacing)
 
             VStack(alignment: .leading, spacing: PeezyTheme.Layout.itemSpacing) {
-                Image(systemName: "map.fill")
+                Image(systemName: "checkmark.circle.fill")
                     .font(.largeTitle)
                     .foregroundStyle(PeezyTheme.Colors.deepInk)
                     .accessibilityHidden(true)
 
-                Text(copy.title)
-                    .font(.title2)
+                Text("Nice — that's done.")
+                    .font(.title)
                     .bold()
                     .foregroundStyle(PeezyTheme.Colors.deepInk)
-                    .accessibilityIdentifier("movers.quote.title")
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("movers.confirmation.title")
 
-                Text(copy.body)
+                Text(message)
                     .font(.body)
                     .foregroundStyle(PeezyTheme.Colors.deepInk)
                     .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityIdentifier("movers.quote.body")
-
-                VStack(alignment: .leading, spacing: PeezyTheme.Layout.verticalSpacingSmall) {
-                    Text("Estimate range")
-                        .font(.caption.bold())
-                        .foregroundStyle(.secondary)
-
-                    Text(copy.rangeLabel)
-                        .font(.headline)
-                        .foregroundStyle(PeezyTheme.Colors.deepInk)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(PeezyTheme.Layout.cardPaddingSmall)
-                .background(
-                    PeezyTheme.Colors.backgroundSecondary,
-                    in: .rect(cornerRadius: PeezyTheme.Layout.cornerRadiusSmall)
-                )
-                .accessibilityElement(children: .combine)
-                .accessibilityIdentifier("movers.guidance.range")
-
-                VStack(alignment: .leading, spacing: PeezyTheme.Layout.verticalSpacingSmall) {
-                    Label("Research this", systemImage: "magnifyingglass")
-                        .font(.headline)
-                        .foregroundStyle(PeezyTheme.Colors.deepInk)
-
-                    Text(copy.researchPointer)
-                        .font(.body)
-                        .foregroundStyle(PeezyTheme.Colors.deepInk)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(PeezyTheme.Layout.cardPaddingSmall)
-                .background(
-                    Color.white.opacity(0.65),
-                    in: .rect(cornerRadius: PeezyTheme.Layout.cornerRadiusSmall)
-                )
-                .accessibilityIdentifier("movers.guidance.research")
-
-                PeezyAssessmentButton(
-                    "I know what to compare",
-                    action: onDone
-                )
-                .accessibilityIdentifier("movers.guidance.done")
+                    .accessibilityIdentifier("movers.confirmation.message")
             }
-            .padding(PeezyTheme.Layout.cardPadding)
-            .background(Color.white.opacity(0.68), in: .rect(cornerRadius: PeezyTheme.Layout.cornerRadius))
-            .overlay {
-                RoundedRectangle(cornerRadius: PeezyTheme.Layout.cornerRadius)
-                    .stroke(PeezyTheme.Colors.deepInk.opacity(0.12))
-            }
-            .padding(.horizontal, 24)
-            .accessibilityElement(children: .contain)
-            .accessibilityIdentifier("movers.guidance.card")
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .taskContentCard()
+            .padding(.horizontal, PeezyTheme.Layout.horizontalPadding)
+            .accessibilityIdentifier("movers.confirmation.card")
 
-            Spacer()
+            Spacer(minLength: PeezyTheme.Layout.verticalSpacing)
+
+            PeezyAssessmentButton("Done", action: onDone)
+                .accessibilityIdentifier("movers.confirmation.done")
+                .padding(.horizontal, PeezyTheme.Layout.horizontalPadding)
+                .padding(.bottom, PeezyTheme.Layout.verticalSpacing)
         }
+        .accessibilityIdentifier("movers.confirmation.screen")
     }
 }
-
-#if DEBUG
-// Compatibility for the existing Phase C screenshot fixture. The fixture's
-// legacy symbol now renders the self-serve research guidance with no request
-// submission behavior.
-typealias MoversConciergeReason = MoversEstimateBoundaryReason
-
-struct MoversConciergeQuoteCard: View {
-    let copy: MoversResearchGuidanceCopy
-    @Binding var notes: String
-    let errorMessage: String?
-    let isSubmitting: Bool
-    let onBack: () -> Void
-    let onSubmit: () -> Void
-
-    var body: some View {
-        MoversResearchGuidanceCard(
-            copy: copy,
-            onBack: onBack,
-            onDone: onSubmit
-        )
-    }
-}
-
-#Preview("Find Movers Flow") {
-    FindMoversFlow(
-        userId: "preview-user",
-        taskId: "BOOK_MOVERS",
-        onComplete: { print("Complete") },
-        onDismiss: { print("Dismiss") },
-        onStatusAction: { action in print("Status: \(action)") }
-    )
-}
-#endif

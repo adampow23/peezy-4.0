@@ -268,7 +268,8 @@ async function seedFlowDefinitions() {
   // Cross-check: every catalog workflowId that the engine routes must have a
   // definition. The Swift-custom flows keep their screens this spec.
   const SWIFT_CUSTOM = new Set([
-    "book_movers", "book_cleaners", "setup_internet", "sell_items", "remove_items",
+    "book_movers", "compare_moving_quotes", "book_your_movers",
+    "book_cleaners", "setup_internet", "sell_items", "remove_items",
     "rent_truck", "handle_auto_insurance", "update_auto_insurance", "handle_home_insurance",
     "cancel_renters_insurance", "setup_renters_insurance", "transfer_renters_insurance",
     "cancel_condo_insurance", "setup_condo_insurance", "transfer_condo_insurance",

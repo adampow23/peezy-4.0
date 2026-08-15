@@ -1,7 +1,7 @@
 [
   {
     "taskId": "BOOK_MOVERS",
-    "title": "Book your movers",
+    "title": "Get Moving Quotes",
     "actionCategory": "book-schedule",
     "category": "moving",
     "actionType": "workflow",
@@ -42,7 +42,7 @@
         "Yes"
       ]
     },
-    "desc": "Get binding estimates from three USDOT-licensed movers. Book 8-12 weeks out for summer moves, 4-6 weeks off-season.",
+    "desc": "Learn how mover pricing really works, then start collecting binding estimates from three USDOT-licensed movers with the same facts in every hand.",
     "estHours": 3,
     "estPeezy": "90 secs",
     "tips": "Get a binding estimate — federal law caps your final bill at 110%.",
@@ -77,6 +77,53 @@
         ]
       }
     }
+  },
+  {
+    "taskId": "COMPARE_MOVING_QUOTES",
+    "title": "Compare your moving quotes",
+    "actionCategory": "book-schedule",
+    "category": "moving",
+    "actionType": "workflow",
+    "taskType": "survey",
+    "researchScope": "none",
+    "conditions": {},
+    "desc": "Enter each quote as it arrives, then compare every company at the same man-hours. This separates the price from the guess.",
+    "estHours": 1,
+    "estPeezy": "3 mins",
+    "tips": "Use the crew's total hourly rate from each written quote — Peezy converts it for fair comparison.",
+    "urgencyPercentage": 94,
+    "whyNeeded": "A lower total is often just a smaller time guess. Same-basis comparison shows the real price.",
+    "spawnedOnly": true,
+    "workflowId": "compare_moving_quotes",
+    "dateRule": {
+      "anchor": "spawn",
+      "offsetDays": 3
+    },
+    "notesEnabled": true,
+    "quoteTracker": "manHours"
+  },
+  {
+    "taskId": "BOOK_YOUR_MOVERS",
+    "title": "Book your movers",
+    "actionCategory": "book-schedule",
+    "category": "moving",
+    "actionType": "workflow",
+    "taskType": "provide_info",
+    "researchScope": "none",
+    "conditions": {},
+    "desc": "Lock in the company you chose and save the booking details Peezy should hold you—and them—to.",
+    "estHours": 0.25,
+    "estPeezy": "60 secs",
+    "tips": "Get the arrival window and crew size in writing on the confirmation.",
+    "urgencyPercentage": 95,
+    "whyNeeded": "A booking with the details on record is the booking that holds up on moving day.",
+    "spawnedOnly": true,
+    "workflowId": "book_your_movers",
+    "dateRule": {
+      "anchor": "spawn",
+      "offsetDays": 1
+    },
+    "notesEnabled": true
   },
   {
     "taskId": "BOOK_CLEANERS",

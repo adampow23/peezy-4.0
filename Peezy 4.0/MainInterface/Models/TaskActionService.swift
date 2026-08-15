@@ -93,10 +93,8 @@ struct TaskActionService {
     /// `notes` field on the user task doc, saved on editor blur.
     func updateNotes(taskId: String, notes: String) async {
         guard let userId = Auth.auth().currentUser?.uid, !taskId.isEmpty else { return }
-        let db = Firestore.firestore()
         do {
-            try await db.collection("users").document(userId).collection("tasks")
-                .document(taskId).updateData(["notes": notes])
+            try await updateNotesThrowing(userId: userId, taskId: taskId, notes: notes)
         } catch {
             print("⚠️ Failed to save notes: \(error.localizedDescription)")
         }
@@ -106,12 +104,127 @@ struct TaskActionService {
     /// `quotes` array of {company, notes} dictionaries on the user task doc.
     func updateQuotes(taskId: String, quotes: [TaskQuote]) async {
         guard let userId = Auth.auth().currentUser?.uid, !taskId.isEmpty else { return }
-        let db = Firestore.firestore()
         do {
-            try await db.collection("users").document(userId).collection("tasks")
-                .document(taskId).updateData(["quotes": quotes.map(\.firestoreData)])
+            try await updateQuotesThrowing(userId: userId, taskId: taskId, quotes: quotes)
         } catch {
             print("⚠️ Failed to save quotes: \(error.localizedDescription)")
+        }
+    }
+
+    // MARK: - Movers chain throwing core (plan v7)
+    // Shared throwing writes retained behind the catch-and-log wrappers above,
+    // so every existing caller keeps identical behavior while the movers flow
+    // advances only after a write actually succeeds.
+
+    func updateNotesThrowing(userId: String, taskId: String, notes: String) async throws {
+        guard !userId.isEmpty, !taskId.isEmpty else {
+            throw FlowProgressPersistenceError.missingIdentity
+        }
+        try await Firestore.firestore()
+            .collection("users").document(userId).collection("tasks")
+            .document(taskId).updateData(["notes": notes])
+    }
+
+    func updateQuotesThrowing(userId: String, taskId: String, quotes: [TaskQuote]) async throws {
+        guard !userId.isEmpty, !taskId.isEmpty else {
+            throw FlowProgressPersistenceError.missingIdentity
+        }
+        try await Firestore.firestore()
+            .collection("users").document(userId).collection("tasks")
+            .document(taskId).updateData(["quotes": quotes.map(\.firestoreData)])
+    }
+
+    func setStageThrowing(userId: String, taskId: String, stage: TaskStage) async throws {
+        guard !userId.isEmpty, !taskId.isEmpty else {
+            throw FlowProgressPersistenceError.missingIdentity
+        }
+        try await Firestore.firestore()
+            .collection("users").document(userId).collection("tasks")
+            .document(taskId).updateData(["stage": stage.rawValue])
+    }
+
+    /// Movers-only throwing completion write. Owns `completedAt` — written at
+    /// true completion time; the later local-accounting path never writes.
+    func completeTaskThrowing(userId: String, taskDocumentId: String) async throws {
+        guard !userId.isEmpty, !taskDocumentId.isEmpty else {
+            throw FlowProgressPersistenceError.missingIdentity
+        }
+        try await Firestore.firestore()
+            .collection("users").document(userId).collection("tasks")
+            .document(taskDocumentId).updateData([
+                "status": "Completed",
+                "completedAt": FieldValue.serverTimestamp()
+            ])
+    }
+
+    /// BOOK_YOUR_MOVERS "Yes": ONE awaited atomic update carrying status +
+    /// completedAt + bookingDetails together (plan A3).
+    func completeBookingThrowing(
+        userId: String,
+        taskDocumentId: String,
+        details: MoversBookingDetails
+    ) async throws {
+        guard !userId.isEmpty, !taskDocumentId.isEmpty else {
+            throw FlowProgressPersistenceError.missingIdentity
+        }
+        try await Firestore.firestore()
+            .collection("users").document(userId).collection("tasks")
+            .document(taskDocumentId).updateData(details.completionPayload())
+    }
+
+    /// BOOK_YOUR_MOVERS "Not yet": the existing two-day snooze semantics as an
+    /// awaited throwing write (the `.later` path's write is detached and
+    /// failure-swallowing — plan A3). Writes NO booked state.
+    func snoozeTwoDaysThrowing(userId: String, taskDocumentId: String) async throws {
+        guard !userId.isEmpty, !taskDocumentId.isEmpty else {
+            throw FlowProgressPersistenceError.missingIdentity
+        }
+        let snoozedUntil = Calendar.current.date(byAdding: .day, value: 2, to: Date()) ?? Date()
+        try await Firestore.firestore()
+            .collection("users").document(userId).collection("tasks")
+            .document(taskDocumentId).updateData([
+                "status": "Snoozed",
+                "snoozedUntil": Timestamp(date: snoozedUntil),
+                "lastSnoozedAt": FieldValue.serverTimestamp()
+            ])
+    }
+
+    // MARK: - Movers title migration (plan A5)
+
+    /// One-shot per session: the catalog retitle is denormalized onto existing
+    /// BOOK_MOVERS docs. Cosmetic, so failure is NONBLOCKING and the session
+    /// guard is set only after a successful pass (a failed attempt retries next
+    /// session).
+    @MainActor private static var didRunBookMoversMigrationThisSession = false
+
+    @MainActor
+    func migrateBookMoversPresentationIfNeeded(userId: String) async {
+        guard !Self.didRunBookMoversMigrationThisSession, !userId.isEmpty else { return }
+        do {
+            let reference = Firestore.firestore()
+                .collection("users").document(userId)
+                .collection("tasks").document("BOOK_MOVERS")
+            let snapshot = try await reference.getDocument()
+            guard let data = snapshot.data(),
+                  data["status"] as? String != "Completed" else {
+                Self.didRunBookMoversMigrationThisSession = true
+                return
+            }
+            let isLegacy = MoversLegacyClassifier.isLegacyInline(
+                stageRaw: data["stage"] as? String,
+                quotesCount: (data["quotes"] as? [[String: Any]])?.count ?? 0
+            )
+            guard let payload = MoversTitleMigration.payload(
+                isLegacyInline: isLegacy,
+                currentTitle: data["title"] as? String
+            ) else {
+                Self.didRunBookMoversMigrationThisSession = true
+                return
+            }
+            try await reference.updateData(payload)
+            Self.didRunBookMoversMigrationThisSession = true
+        } catch {
+            print("⚠️ BOOK_MOVERS presentation migration skipped: \(error.localizedDescription)")
         }
     }
 
@@ -861,6 +974,7 @@ struct TaskActionService {
             "small": kit.small,
             "medium": kit.medium,
             "large": kit.large,
+            "xl": kit.xl,
             "wardrobe": kit.wardrobe,
             "dishPack": kit.dishPack,
             "tape": kit.tape,
@@ -889,6 +1003,7 @@ struct TaskActionService {
             small: (data["small"] as? NSNumber)?.intValue ?? 0,
             medium: (data["medium"] as? NSNumber)?.intValue ?? 0,
             large: (data["large"] as? NSNumber)?.intValue ?? 0,
+            xl: (data["xl"] as? NSNumber)?.intValue ?? 0,
             wardrobe: (data["wardrobe"] as? NSNumber)?.intValue ?? 0,
             dishPack: (data["dishPack"] as? NSNumber)?.intValue ?? 0,
             tape: (data["tape"] as? NSNumber)?.intValue ?? 0,

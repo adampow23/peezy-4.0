@@ -82,14 +82,46 @@ final class SupportChatService {
         error = nil
     }
 
-    func sendMessage(_ text: String, taskContext: SupportTaskContext? = nil) async -> Bool {
+    /// Structured send result (plan v7 GOAL B). `persisted` and `adminQueued`
+    /// are SEPARATE facts: the message doc write proves persisted, while only
+    /// an awaited, successful `submitSupportMessage` callable — the thing that
+    /// updates `supportThreads` for the admin inbox — proves adminQueued.
+    struct SendResult {
+        let persisted: Bool
+        let adminQueued: Bool
+        let wasFirstUserMessage: Bool
+        let messageId: String?
+
+        static let notPersisted = SendResult(
+            persisted: false,
+            adminQueued: false,
+            wasFirstUserMessage: false,
+            messageId: nil
+        )
+    }
+
+    /// Expert-review durable marker target: when provided, the message doc and
+    /// the task doc's `expertReview {messageId, adminQueued:false}` marker are
+    /// committed in ONE batch, and `adminQueued` flips true only after the
+    /// callable succeeds.
+    struct TaskMarker {
+        let userId: String
+        let taskDocumentId: String
+    }
+
+    @discardableResult
+    func sendMessage(
+        _ text: String,
+        taskContext: SupportTaskContext? = nil,
+        atomicTaskMarker: TaskMarker? = nil
+    ) async -> SendResult {
         guard let userId = Auth.auth().currentUser?.uid else {
             error = "Not signed in"
-            return false
+            return .notPersisted
         }
 
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return false }
+        guard !trimmed.isEmpty else { return .notPersisted }
         let isFirstUserMessage = !messages.contains { $0.sender == .user }
 
         let message = SupportMessage(
@@ -103,29 +135,62 @@ final class SupportChatService {
         error = nil
 
         do {
-            try await chatCollection(userId: userId)
-                .document(message.id)
-                .setData(message.toFirestoreData())
-            sendingMessageIds.remove(message.id)
-
-            Task {
-                let callable = Functions.functions().httpsCallable("submitSupportMessage")
-                var payload: [String: Any] = [
-                    "messageId": message.id,
-                    "text": trimmed
-                ]
-                if let taskContext {
-                    payload["taskContext"] = taskContext.toFirestoreData()
-                }
-                _ = try? await callable.call(payload)
+            let messageRef = chatCollection(userId: userId).document(message.id)
+            if let atomicTaskMarker, !atomicTaskMarker.taskDocumentId.isEmpty {
+                let batch = db.batch()
+                batch.setData(message.toFirestoreData(), forDocument: messageRef)
+                batch.updateData(
+                    ["expertReview": ["messageId": message.id, "adminQueued": false]],
+                    forDocument: taskReference(atomicTaskMarker)
+                )
+                try await batch.commit()
+            } else {
+                try await messageRef.setData(message.toFirestoreData())
             }
-            return isFirstUserMessage
+            sendingMessageIds.remove(message.id)
         } catch {
             sendingMessageIds.remove(message.id)
             messages.removeAll { $0.id == message.id }
             self.error = "Failed to send: \(error.localizedDescription)"
-            return false
+            return .notPersisted
         }
+
+        // Awaited (not detached): this callable is what reaches the admin
+        // inbox. It is NOT idempotent, so it is never retried here — a
+        // failure surfaces as adminQueued=false with the marker left false.
+        var adminQueued = false
+        do {
+            let callable = Functions.functions().httpsCallable("submitSupportMessage")
+            var payload: [String: Any] = [
+                "messageId": message.id,
+                "text": trimmed
+            ]
+            if let taskContext {
+                payload["taskContext"] = taskContext.toFirestoreData()
+            }
+            _ = try await callable.call(payload)
+            adminQueued = true
+        } catch {
+            print("⚠️ submitSupportMessage not confirmed: \(error.localizedDescription)")
+        }
+
+        if adminQueued, let atomicTaskMarker, !atomicTaskMarker.taskDocumentId.isEmpty {
+            try? await taskReference(atomicTaskMarker).updateData([
+                "expertReview": ["messageId": message.id, "adminQueued": true]
+            ])
+        }
+
+        return SendResult(
+            persisted: true,
+            adminQueued: adminQueued,
+            wasFirstUserMessage: isFirstUserMessage,
+            messageId: message.id
+        )
+    }
+
+    private func taskReference(_ marker: TaskMarker) -> DocumentReference {
+        db.collection("users").document(marker.userId)
+            .collection("tasks").document(marker.taskDocumentId)
     }
 
     func receipt(for message: SupportMessage) -> SupportMessageReceipt {

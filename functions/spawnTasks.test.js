@@ -194,6 +194,27 @@ test("resolveDueDate mirrors the urgency-timeline formula", () => {
   assert.equal(clamped.toISOString(), "2026-08-08T00:00:00.000Z");
 });
 
+
+test("resolveDueDate spawn anchor preserves the instant and ignores moveDate", () => {
+  const spawnRule = { dateRule: { anchor: "spawn", offsetDays: 3 }, urgencyPercentage: 94 };
+  // Non-midnight now: exact instant + 72h, never normalized to UTC midnight.
+  const nonMidnight = new Date("2026-08-08T12:00:00Z");
+  assert.equal(
+    resolveDueDate(spawnRule, new Date("2026-09-07T00:00:00Z"), nonMidnight).toISOString(),
+    "2026-08-11T12:00:00.000Z"
+  );
+  // No moveDate required.
+  assert.equal(
+    resolveDueDate(spawnRule, null, nonMidnight).toISOString(),
+    "2026-08-11T12:00:00.000Z"
+  );
+  // offsetDays 1 (BOOK_YOUR_MOVERS shape).
+  assert.equal(
+    resolveDueDate({ dateRule: { anchor: "spawn", offsetDays: 1 } }, null, nonMidnight).toISOString(),
+    "2026-08-09T12:00:00.000Z"
+  );
+});
+
 test("resolveDueDate prefers dateRule offset over urgency math", () => {
   const moveDate = new Date("2026-09-07T00:00:00Z");
 

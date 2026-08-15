@@ -81,6 +81,12 @@ function startOfDayUTC(date) {
 function resolveDueDate(row, moveDate, now = new Date()) {
   const today = startOfDayUTC(now);
   const rule = row.dateRule;
+  // "spawn" anchor (movers chain): due = the spawn instant + whole-day offsets.
+  // Plain UTC millisecond arithmetic — no midnight normalization, which could
+  // display as the prior local date — and no moveDate requirement.
+  if (rule && rule.anchor === "spawn" && Number.isInteger(rule.offsetDays)) {
+    return new Date(now.getTime() + rule.offsetDays * MILLISECONDS_PER_DAY);
+  }
   if (rule && rule.anchor === "moveDate" && Number.isInteger(rule.offsetDays) && moveDate) {
     return new Date(startOfDayUTC(moveDate).getTime() + rule.offsetDays * MILLISECONDS_PER_DAY);
   }

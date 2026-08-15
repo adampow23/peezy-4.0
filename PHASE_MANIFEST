@@ -1,9 +1,68 @@
 PHASE_MANIFEST
-Peezy 4.0/MainInterface/Models/TaskFlowRouter.swift
-Peezy 4.0/MainInterface/Models/PaywallPolicy.swift
+Peezy 4.0/Inventory/Views/InventoryLockedView.swift
+Peezy 4.0/MainInterface/Models/ManHourNormalizer.swift
+Peezy 4.0/MainInterface/Models/MoveScopeFactory.swift
+Peezy 4.0/MainInterface/Models/MoversBookingPayload.swift
+Peezy 4.0/MainInterface/Models/MoversFlowStage.swift
+Peezy 4.0/MainInterface/Models/MoversFlowViewModel.swift
+Peezy 4.0/MainInterface/Models/MoversVendorQuote.swift
 Peezy 4.0/MainInterface/Models/PeezyHomeViewModel.swift
-Peezy 4.0/Tasks/FlowEngine/FlowEngineView.swift
-Peezy 4.0/Tasks/FlowEngine/PostFlowForkView.swift
-Peezy 4.0/Tasks/Task Cards/ScanInventoryFlow.swift
-Peezy 4.0/Tasks/Views/TaskResearchModule.swift
-Peezy 4.0/Tasks/Views/TaskDetailView.swift
+Peezy 4.0/MainInterface/Models/PeezyV1App.swift
+Peezy 4.0/MainInterface/Models/PricingCalibrationHarness.swift
+Peezy 4.0/MainInterface/Models/PricingConstants.swift
+Peezy 4.0/MainInterface/Models/PricingEngine.swift
+Peezy 4.0/MainInterface/Models/TaskActionService.swift
+Peezy 4.0/MainInterface/Models/TaskFlowRouter.swift
+Peezy 4.0/MainInterface/Models/VendorRateCard+Pricing.swift
+Peezy 4.0/Tasks/Task Cards/FindMoversFlow.swift
+Peezy 4.0/Tasks/Task Cards/MoveScopeSummaryView.swift
+Peezy 4.0/Tasks/Task Cards/MoveRefinementView.swift
+Peezy 4.0/Tasks/Task Cards/MoversEducationView.swift
+Peezy 4.0/Tasks/Task Cards/MoversEquipView.swift
+Peezy 4.0/Tasks/Task Cards/MoversFlowErrorView.swift
+Peezy 4.0/Tasks/Task Cards/MoversBookingReviewView.swift
+Peezy 4.0/Tasks/Task Cards/MoversCaptureCard.swift
+Peezy 4.0/Tasks/Task Cards/MoversComparisonView.swift
+Peezy 4.0/Tasks/Task Cards/MoversConfirmationView.swift
+Peezy 4.0/Tasks/Task Cards/MoversQuotesView.swift
+Peezy 4.0/Tasks/Task Cards/MoversScenarioMatrixView.swift
+Peezy 4.0/Tasks/Task Cards/TruckSizeView.swift
+Peezy 4.0/Tasks/Views/TaskRowHeader.swift
+Peezy 4.0/Tasks/Views/QuoteTrackerView.swift
+Peezy 4.0/Tasks/Views/TaskContentSections.swift
+Peezy 4.0Tests/MoversBookingPayloadTests.swift
+Peezy 4.0Tests/EstimateIntegrityPhaseBTests.swift
+Peezy 4.0Tests/EstimateIntegrityPhaseCTests.swift
+Peezy 4.0Tests/EstimateIntegrityPhaseDTests.swift
+Peezy 4.0Tests/EstimateIntegrityTests.swift
+Peezy 4.0UITests/EstimateIntegrityPhaseCUITests.swift
+Peezy 4.0UITests/EstimateIntegrityPhaseDUITests.swift
+Tests/ManHourNormalizerTests.swift
+Tests/PricingCalibrationRunner.swift
+Tests/PricingEngineTests.swift
+docs/plans/codex-review-movers-spawn-chain.md
+docs/plans/codex-review-movers-spawn-chain-review-log.md
+LAUNCH_CHECKLIST.md
+functions/taskCatalogData.json
+functions/seedTaskCatalog.js
+functions/spawnTasks.js
+functions/spawnTasks.test.js
+functions/tests/spawnTasks.test.js
+functions/tests/taskCatalogMovers.test.js
+Peezy 4.0/MainInterface/Models/SpawnService.swift
+Peezy 4.0/MainInterface/Models/SupportChatService.swift
+Peezy 4.0/MainInterface/Models/SupportMessage.swift
+Peezy 4.0/MainInterface/Models/MoversChainCoordinator.swift
+Peezy 4.0/MainInterface/Views/PeezyHomeView.swift
+Peezy 4.0/MainInterface/Views/SupportChatView.swift
+Peezy 4.0/Tasks/FlowEngine/FlowExitControl.swift
+Peezy 4.0/Tasks/Task Cards/BookYourMoversView.swift
+Peezy 4.0Tests/MoversChainCoordinatorTests.swift
+Peezy 4.0Tests/MoversMigrationTests.swift
+Peezy 4.0Tests/ExpertReviewTests.swift
+Peezy 4.0Tests/BookYourMoversTests.swift
+Peezy 4.0/Inventory/Views/InventoryRoomHubView.swift
+Peezy 4.0/Tasks/Task Cards/FindCleanersFlow.swift
+Peezy 4.0/Tasks/Task Cards/SellItemsFlow.swift
+Peezy 4.0/Tasks/Task Cards/RemoveItemsFlow.swift
+Peezy 4.0/Tasks/Task Cards/RentTruckFlow.swift

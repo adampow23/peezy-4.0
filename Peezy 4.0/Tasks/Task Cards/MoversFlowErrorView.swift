@@ -17,7 +17,7 @@ struct MoversFlowErrorView: View {
             Spacer()
 
             ContentUnavailableView {
-                Label("Couldn't prepare prices", systemImage: "exclamationmark.triangle.fill")
+                Label("Couldn't prepare your quote workspace", systemImage: "exclamationmark.triangle.fill")
             } description: {
                 Text(message)
             }

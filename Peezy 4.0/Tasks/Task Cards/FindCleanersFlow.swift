@@ -11,15 +11,7 @@ import SwiftUI
 // Type 6: Complex-Vendor
 //
 // Card sequence:
-//   TitleCard → Select3 (which place) → Multi4 (services)
-//   → [SKIP if move_in only] Select4 (move-out timing)
-//   → [SKIP if move_out only] Select4 (move-in timing)
-//   → SummaryCard
-//
-// Skip logic:
-//   Card 3 (move-out timing): skip if which_place contains "move_in" (only move_in chosen)
-//   Card 4 (move-in timing):  skip if which_place contains "move_out" (only move_out chosen)
-//   If "both" is chosen, BOTH timing cards show.
+//   TitleCard → Multi4 (services) → Select4 (move-out timing) → SummaryCard
 
 struct FindCleanersFlow: View {
     let taskTitle = "Find my cleaners"
@@ -42,34 +34,13 @@ struct FindCleanersFlow: View {
     // MARK: - Card Indices
 
     private let titleCard = 0
-    private let whichPlaceCard = 1
-    private let servicesCard = 2
-    private let moveOutTimingCard = 3
-    private let moveInTimingCard = 4
-    private let summaryCard = 5
-    private let totalCards = 6
-
-    // MARK: - Skip Logic
-
-    private func shouldSkip(_ index: Int) -> Bool {
-        switch index {
-        case moveOutTimingCard:
-            // Skip if only "move_in" was chosen (not "move_out" or "both")
-            return answers["which_place"]?.contains("move_in") == true
-        case moveInTimingCard:
-            // Skip if only "move_out" was chosen (not "move_in" or "both")
-            return answers["which_place"]?.contains("move_out") == true
-        default:
-            return false
-        }
-    }
+    private let servicesCard = 1
+    private let moveOutTimingCard = 2
+    private let summaryCard = 3
+    private let totalCards = 4
 
     private var cardsRemaining: Int {
-        var count = 0
-        for i in currentIndex..<totalCards {
-            if !shouldSkip(i) { count += 1 }
-        }
-        return count
+        totalCards - currentIndex
     }
 
     // MARK: - Body
@@ -88,7 +59,15 @@ struct FindCleanersFlow: View {
             answers: FlowProgressCoding.encode(answers)
         ) { restored in
             currentIndex = min(max(FlowProgressCoding.cardIndex(from: restored.path), 0), totalCards - 1)
-            answers = FlowProgressCoding.decode(restored.answers)
+            var restoredAnswers = FlowProgressCoding.decode(restored.answers)
+            if restoredAnswers["which_place"]?.contains("both") == true {
+                restoredAnswers["which_place"] = ["both"]
+                restoredAnswers["move_in_timing"] = ["flexible"]
+            } else {
+                restoredAnswers["which_place"] = ["move_out"]
+                restoredAnswers.removeValue(forKey: "move_in_timing")
+            }
+            answers = restoredAnswers
         }
     }
 
@@ -106,21 +85,7 @@ struct FindCleanersFlow: View {
                 onContinue: { advance() }
             )
 
-        // ── Card 1: Which place needs cleaning? ──
-        case whichPlaceCard:
-            TaskFlowSelect3Card(
-                taskTitle: taskTitle,
-                question: "Which place needs cleaning?",
-                option1: FlowOption(id: "move_out", label: "Old place — move-out clean", icon: "door.left.hand.open"),
-                option2: FlowOption(id: "move_in", label: "New place — move-in clean", icon: "door.right.hand.open"),
-                option3: FlowOption(id: "both", label: "Both places", icon: "arrow.left.arrow.right"),
-                selectedIds: answers["which_place"] ?? [],
-                showBack: true,
-                onSelect: { id in selectSingle("which_place", id: id) },
-                onBack: { goBack() }
-            )
-
-        // ── Card 2: Services needed (multi-select) ──
+        // ── Card 1: Services needed (multi-select) ──
         case servicesCard:
             TaskFlowMulti4Card(
                 taskTitle: taskTitle,
@@ -136,7 +101,7 @@ struct FindCleanersFlow: View {
                 onBack: { goBack() }
             )
 
-        // ── Card 3: Move-out clean timing [SKIP if only move_in chosen] ──
+        // ── Card 2: Move-out clean timing ──
         case moveOutTimingCard:
             TaskFlowSelect4Card(
                 taskTitle: taskTitle,
@@ -151,22 +116,7 @@ struct FindCleanersFlow: View {
                 onBack: { goBack() }
             )
 
-        // ── Card 4: Move-in clean timing [SKIP if only move_out chosen] ──
-        case moveInTimingCard:
-            TaskFlowSelect4Card(
-                taskTitle: taskTitle,
-                question: "When do you need the move-in clean?",
-                option1: FlowOption(id: "morning", label: "Morning", icon: "sunrise"),
-                option2: FlowOption(id: "afternoon", label: "Afternoon", icon: "sun.max"),
-                option3: FlowOption(id: "evening", label: "Evening", icon: "sunset"),
-                option4: FlowOption(id: "flexible", label: "Flexible", icon: "clock"),
-                selectedIds: answers["move_in_timing"] ?? [],
-                showBack: true,
-                onSelect: { id in selectSingle("move_in_timing", id: id) },
-                onBack: { goBack() }
-            )
-
-        // ── Card 5: Summary ──
+        // ── Card 3: Summary ──
         case summaryCard:
             TaskFlowSummaryCard(
                 taskTitle: taskTitle,
@@ -178,26 +128,35 @@ struct FindCleanersFlow: View {
                 onBack: { goBack() }
             )
             .id("summary.\(submissionAttempt)")
+            .overlay(alignment: .bottom) {
+                Toggle(
+                    "Want the new place cleaned too?",
+                    isOn: cleanersAddNewPlaceBinding
+                )
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(PeezyTheme.Colors.deepInk)
+                .tint(PeezyTheme.Colors.deepInk)
+                .frame(minHeight: 44)
+                .padding(.horizontal, 24)
+                .padding(.bottom, 92)
+                .accessibilityIdentifier("cleanersAddNewPlaceToggle")
+            }
 
         default:
             EmptyView()
         }
     }
 
-    // MARK: - Navigation (skip-aware)
+    // MARK: - Navigation
 
     private func advance() {
-        var next = currentIndex + 1
-        while next < totalCards && shouldSkip(next) { next += 1 }
-        guard next < totalCards else { return }
-        currentIndex = next
+        guard currentIndex + 1 < totalCards else { return }
+        currentIndex += 1
     }
 
     private func goBack() {
-        var prev = currentIndex - 1
-        while prev >= 0 && shouldSkip(prev) { prev -= 1 }
-        guard prev >= 0 else { return }
-        currentIndex = prev
+        guard currentIndex > 0 else { return }
+        currentIndex -= 1
     }
 
     // MARK: - Answer Handlers
@@ -214,6 +173,21 @@ struct FindCleanersFlow: View {
         } else {
             answers[key]!.insert(id)
         }
+    }
+
+    private var cleanersAddNewPlaceBinding: Binding<Bool> {
+        Binding(
+            get: { answers["which_place"]?.contains("both") == true },
+            set: { includesNewPlace in
+                if includesNewPlace {
+                    answers["which_place"] = ["both"]
+                    answers["move_in_timing"] = ["flexible"]
+                } else {
+                    answers["which_place"] = ["move_out"]
+                    answers.removeValue(forKey: "move_in_timing")
+                }
+            }
+        )
     }
 
     private var actionSheetText: String {
@@ -255,8 +229,16 @@ struct FindCleanersFlow: View {
         isSubmitting = true
         submissionError = nil
 
+        var submissionAnswers = answers
+        if submissionAnswers["which_place"]?.contains("both") == true {
+            submissionAnswers["which_place"] = ["both"]
+            submissionAnswers["move_in_timing"] = ["flexible"]
+        } else {
+            submissionAnswers["which_place"] = ["move_out"]
+            submissionAnswers.removeValue(forKey: "move_in_timing")
+        }
         var workflowAnswers = WorkflowAnswers(workflowId: workflowId)
-        workflowAnswers.answers = answers.mapValues { Array($0) }
+        workflowAnswers.answers = submissionAnswers.mapValues { Array($0) }
 
         Task {
             do {
@@ -266,11 +248,15 @@ struct FindCleanersFlow: View {
                     answers: workflowAnswers,
                     userId: userId
                 )
-                await MainActor.run {
-                    isSubmitting = false
-                    if response.success {
+                if response.success {
+                    await TaskActionService().clearFlowState(taskId: taskId)
+                    await MainActor.run {
+                        isSubmitting = false
                         onComplete()
-                    } else {
+                    }
+                } else {
+                    await MainActor.run {
+                        isSubmitting = false
                         submissionError = "Couldn't save your answers. Check your connection, then try again."
                         submissionAttempt += 1
                     }

@@ -39,6 +39,29 @@ struct ManHourNormalizerTests {
         check(trio.map(\.repricedTotal) == [950, 1020, 915], "repriced totals use the 17 man-hour fleet average")
         check(trio.map(\.lowball) == [true, true, false], "only quotes under the fleet average flag lowball")
 
+        // Company A: 3 × 5 = 15 man-hours, $150 crew rate ÷ 3 = $50/man-hour, + $100 travel.
+        // Company B: 2 × 6 = 12 man-hours, $120 crew rate ÷ 2 = $60/man-hour, + $0 travel.
+        // Peezy baseline: 18 man-hours.
+        let scenarioQuotes = [
+            MoverQuote(company: "Company A", crew: 3, hours: 5, perManRate: 50, travelFee: 100),
+            MoverQuote(company: "Company B", crew: 2, hours: 6, perManRate: 60, travelFee: 0)
+        ]
+        let scenarios = ManHourNormalizer.scenarios(
+            bases: [
+                ManHourNormalizer.Basis(name: "Company A", manHours: 15, isPeezy: false),
+                ManHourNormalizer.Basis(name: "Company B", manHours: 12, isPeezy: false),
+                ManHourNormalizer.Basis(name: "Peezy", manHours: 18, isPeezy: true)
+            ],
+            quotes: scenarioQuotes
+        )
+        check(scenarios.count == 3, "two companies plus Peezy yield three scenarios")
+        check(scenarios.map(\.basis.name) == ["Company A", "Company B", "Peezy"], "basis order is preserved")
+        check(scenarios[0].totals.map(\.total) == [850, 900], "15 man-hours reprices A/B to 850/900")
+        check(scenarios[1].totals.map(\.total) == [700, 720], "12 man-hours reprices A/B to 700/720")
+        check(scenarios[2].totals.map(\.total) == [1_000, 1_080], "18 man-hours reprices A/B to 1000/1080")
+        check(scenarios.map(\.lowballCompany) == ["Company B", nil, "Company B"], "lowest estimate below each basis is flagged")
+        check(scenarios[2].basis.isPeezy, "Peezy basis is identified for its explanatory caption")
+
         if failures.isEmpty {
             print("\nManHourNormalizerTests: PASS (\(checksRun) assertions)")
         } else {

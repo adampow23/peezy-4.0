@@ -7,39 +7,38 @@ import Foundation
 
 enum MoversFlowStage: Int, Equatable {
     case loading
-    case capture
-    case scope
-    case refinement
-    case comparison
-    case booking
+    case protectionEducation
+    case estimateEducation
+    case equip
+    case quotes
+    case matrix
+    /// Terminal chain state (plan v7): the edge's spawn + completion writes
+    /// are durable; Done is the only way out and performs no writes.
     case confirmation
     case failure
 
     var stackIndex: Int {
         switch self {
-        case .loading: 0
-        case .capture: 1
-        case .scope: 2
-        case .refinement: 3
-        case .comparison: 4
-        case .booking: 5
-        case .confirmation: 6
-        case .failure: 7
+        case .loading, .protectionEducation, .failure: 0
+        case .estimateEducation: 1
+        case .equip: 2
+        case .quotes: 3
+        case .matrix, .confirmation: 4
         }
     }
 
     var cardsRemaining: Int {
-        max(7 - stackIndex, 1)
+        max(5 - stackIndex, 1)
     }
 
     var persistedTaskStage: TaskStage? {
         switch self {
-        case .loading, .failure: nil
-        case .capture: .capture
-        case .scope, .refinement: .scope
-        case .comparison: .compare
-        case .booking: .book
-        case .confirmation: .verify
+        case .quotes:
+            .compare
+        case .matrix:
+            .verify
+        case .loading, .protectionEducation, .estimateEducation, .equip, .confirmation, .failure:
+            nil
         }
     }
 }

@@ -87,7 +87,13 @@ struct TaskRowHeader: View {
     private var badgeRow: some View {
         switch section {
         case .userInProgress:
-            badge(text: "You're on it", color: PeezyTheme.Colors.infoBlue)
+            if task.workflowId == "book_movers",
+               task.stage == .compare || task.stage == .verify {
+                badge(text: "Waiting on your quotes", color: PeezyTheme.Colors.infoBlue)
+                    .accessibilityIdentifier("tasks.row.waitingOnMoverQuotes")
+            } else {
+                badge(text: "You're on it", color: PeezyTheme.Colors.infoBlue)
+            }
         case .peezyOnIt:
             EmptyView()
         case .todo where isSnoozed:

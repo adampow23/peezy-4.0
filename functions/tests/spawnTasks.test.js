@@ -152,6 +152,39 @@ test("past or same-day move and missing moveDate both clamp to today", () => {
   assert.equal(resolveDueDate(catalogRow(), null, NOW).toISOString(), today);
 });
 
+
+test("spawn anchor: due = spawn instant + offsetDays x 24h, no midnight normalization", () => {
+  // Non-midnight `now` — the instant is preserved exactly (movers chain).
+  const nonMidnight = new Date("2026-08-14T21:37:12.000Z");
+  const compare = catalogRow({ dateRule: { anchor: "spawn", offsetDays: 3 } });
+  assert.equal(
+    resolveDueDate(compare, MOVE_DATE, nonMidnight).toISOString(),
+    "2026-08-17T21:37:12.000Z"
+  );
+
+  const book = catalogRow({ dateRule: { anchor: "spawn", offsetDays: 1 } });
+  assert.equal(
+    resolveDueDate(book, MOVE_DATE, nonMidnight).toISOString(),
+    "2026-08-15T21:37:12.000Z"
+  );
+});
+
+test("spawn anchor needs no moveDate and is DST-immune (UTC arithmetic)", () => {
+  const row = catalogRow({ dateRule: { anchor: "spawn", offsetDays: 3 } });
+  // Missing move date: spawn anchor still resolves (moveDate anchors cannot).
+  assert.equal(
+    resolveDueDate(row, null, NOW).toISOString(),
+    "2026-08-11T15:00:00.000Z"
+  );
+  // US DST fall-back boundary (2026-11-01): +3 UTC days is exactly 72h —
+  // wall-clock shifts do not change the stored instant.
+  const acrossDst = new Date("2026-10-31T18:30:00.000Z");
+  assert.equal(
+    resolveDueDate(row, MOVE_DATE, acrossDst).toISOString(),
+    "2026-11-03T18:30:00.000Z"
+  );
+});
+
 // ── Title + doc shape ──
 
 test("spawnTitle substitutes {institution} from titleParams", () => {

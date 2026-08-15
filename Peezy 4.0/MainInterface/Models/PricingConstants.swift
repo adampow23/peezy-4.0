@@ -81,14 +81,6 @@ enum PricingConstants {
         "full": 1.00
     ]
 
-    /// Only used when MapKit cannot return an ETA because one or both identity
-    /// addresses are absent or not geocodable. LOCKED-pending-calibration.
-    static let defaultDriveMinutes: Double = 30
-
-    /// Flat drive-time allowance for a moving-day storage stop whose unit
-    /// address or route is unavailable. LOCKED-pending-calibration.
-    static let storageStopFallbackDriveMinutes: Double = 30
-
     // MARK: Labor constants
 
     /// LOCKED-pending-calibration cubic feet handled per crew hour.
@@ -121,18 +113,6 @@ enum PricingConstants {
     /// LOCKED-pending-calibration handling time for an actual moving-day
     /// storage stop. Added to unrounded physical hours before ceiling checks.
     static let storageStopLoadHours: Double = 0.75
-
-    // MARK: Confidence constants
-
-    /// These widths are half-widths, expressed as a fraction of the modeled
-    /// price. They make a bedrooms-only scope materially wider than a scan.
-    static let scannedInventoryRangeWidth: Double = 0.12
-    static let bedroomsFallbackRangeWidth: Double = 0.28
-    static let defaultAccessRangeWidthIncrement: Double = 0.10
-    static let unknownPackingRangeWidthIncrement: Double = 0.04
-    /// Multiplies the scan estimate's high-side range for each unresolved
-    /// expected room. LOCKED-pending-calibration.
-    static let unresolvedRoomHighSideIncrement: Double = 0.15
 
     static func cubicFeet(
         forItemNamed name: String,

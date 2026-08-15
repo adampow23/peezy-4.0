@@ -310,8 +310,8 @@ struct SupportChatView: View {
         inputText = ""
 
         Task {
-            let wasFirstUserMessage = await chatService.sendMessage(text, taskContext: taskContext)
-            guard wasFirstUserMessage, !notificationPermissionMomentShown else { return }
+            let result = await chatService.sendMessage(text, taskContext: taskContext)
+            guard result.wasFirstUserMessage, !notificationPermissionMomentShown else { return }
 
             notificationPermissionMomentShown = true
             withAnimation(.easeOut(duration: 0.2)) {

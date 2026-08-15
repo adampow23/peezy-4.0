@@ -24,6 +24,12 @@ enum TaskFlowStatusAction {
     /// Legacy callback name retained for existing call sites. Submitted work
     /// is complete once the user has their action details.
     case submittedToPeezy
+    /// Movers chain (plan v7): the flow already performed its own awaited,
+    /// throwing completion write. Home does local accounting only — no write.
+    case completedAlreadyPersisted
+    /// Movers chain (plan v7): the flow already performed its own awaited,
+    /// throwing two-day snooze write. Home does local accounting only.
+    case laterAlreadyPersisted
 }
 
 struct TaskFlowRouter {
@@ -48,7 +54,8 @@ struct TaskFlowRouter {
         switch flowId {
         case "add_new_address", "confirm_move_date", "declutter_intent", "storage_need",
              "packing_session", "supplies_kit", "packing_readiness", "move_checkin", "box_return",
-             "rent_truck", "book_movers", "book_cleaners", "setup_internet", "sell_items", "remove_items",
+             "rent_truck", "book_movers", "compare_moving_quotes", "book_your_movers",
+             "book_cleaners", "setup_internet", "sell_items", "remove_items",
              "handle_auto_insurance", "update_auto_insurance",
              "handle_home_insurance",
              "cancel_renters_insurance", "setup_renters_insurance", "transfer_renters_insurance",
@@ -190,11 +197,30 @@ struct TaskFlowRouter {
 
         case "rent_truck":
             RentTruckFlow(userId: userId, taskId: taskId, onComplete: onComplete, onDismiss: onDismiss, onStatusAction: onStatusAction)
+        // Movers chain (plan v7): role is derived from the flowId matched here,
+        // NEVER from taskId — spawned task documents carry random ids.
         case "book_movers":
             FindMoversFlow(
+                role: .getQuotes,
                 userId: userId,
-                taskId: taskId,
+                taskDocumentId: taskId,
                 onComplete: onComplete,
+                onDismiss: onDismiss,
+                onStatusAction: onStatusAction
+            )
+        case "compare_moving_quotes":
+            FindMoversFlow(
+                role: .compareQuotes,
+                userId: userId,
+                taskDocumentId: taskId,
+                onComplete: onComplete,
+                onDismiss: onDismiss,
+                onStatusAction: onStatusAction
+            )
+        case "book_your_movers":
+            BookYourMoversView(
+                userId: userId,
+                taskDocumentId: taskId,
                 onDismiss: onDismiss,
                 onStatusAction: onStatusAction
             )

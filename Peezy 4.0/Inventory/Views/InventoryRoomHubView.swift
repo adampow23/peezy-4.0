@@ -184,8 +184,7 @@ struct InventoryRoomHubView: View {
                         HStack(spacing: 8) {
                             Button {
                                 PeezyHaptics.light()
-                                newRoomName = room.displayName
-                                showRoomNameEntry = true
+                                sessionManager.startNewRoom(name: room.displayName)
                             } label: {
                                 Label("Add a clip", systemImage: "video.badge.plus")
                                     .font(.system(size: 12, weight: .semibold))

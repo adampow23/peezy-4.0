@@ -114,14 +114,26 @@ struct RentTruckFlow: View {
                 let response = try await service.submitAnswers(
                     workflowId: workflowId, answers: workflowAnswers, userId: userId
                 )
-                await MainActor.run {
-                    isSubmitting = false
-                    if response.success {
-                        onComplete()
-                    } else {
+                guard response.success else {
+                    await MainActor.run {
+                        isSubmitting = false
                         submissionError = "Couldn't save your answers. Check your connection, then try again."
                         submissionAttempt += 1
                     }
+                    return
+                }
+                _ = try await SpawnService().spawn(
+                    token: "RENT_TRUCK->TRUCK_PICKUP_CHECKLIST:\(taskId)",
+                    source: SpawnService.Source(kind: "onComplete", id: taskId),
+                    spawns: [SpawnService.Spawn(taskId: "TRUCK_PICKUP_CHECKLIST")]
+                )
+                try await TaskActionService().completeTaskThrowing(
+                    userId: userId,
+                    taskDocumentId: taskId
+                )
+                await MainActor.run {
+                    isSubmitting = false
+                    onStatusAction(.completedAlreadyPersisted)
                 }
             } catch {
                 await MainActor.run {

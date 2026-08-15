@@ -152,6 +152,8 @@ struct PeezyHomeView: View {
                         case .later: viewModel.statusActionLater()
                         case .dismissedPermanently: viewModel.statusActionDismissedPermanently()
                         case .submittedToPeezy: viewModel.statusActionSubmittedToPeezy()
+                        case .completedAlreadyPersisted: viewModel.completeTaskFlowAlreadyPersisted()
+                        case .laterAlreadyPersisted: viewModel.statusActionLaterAlreadyPersisted()
                         }
                     }
                 )

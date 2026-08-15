@@ -2,543 +2,366 @@
 //  MoversFlowViewModel.swift
 //  Peezy 4.0
 //
+//  Movers chain view model (plan v7). One role-driven model backs the
+//  get-quotes and compare-quotes flows; BOOK_YOUR_MOVERS has its own screen.
+//  Legacy-inline BOOK_MOVERS docs (mid-flight before the chain shipped) resume
+//  the old quotes/matrix experience in place and spawn only BOOK_YOUR_MOVERS.
+//
 
-import CoreLocation
 import FirebaseFirestore
 import Foundation
 import Observation
-
-struct MoversResearchGuidanceCopy: Equatable {
-    let title: String
-    let body: String
-    let rangeLabel: String
-    let researchPointer: String
-}
-
-enum MoversEstimateBoundaryReason: Equatable {
-    case longDistance
-    case physicalHours
-
-    var copy: MoversResearchGuidanceCopy {
-        switch self {
-        case .longDistance:
-            MoversResearchGuidanceCopy(
-                title: "Long-distance mover costs have a wide range",
-                body: "Route, shipment weight, dates, access, and service level can move the total substantially.",
-                rangeLabel: "Wide — quote-dependent",
-                researchPointer: "Compare at least three FMCSA-registered movers. Ask for a written binding or not-to-exceed estimate, every access or specialty fee, and what can change the total."
-            )
-        case .physicalHours:
-            MoversResearchGuidanceCopy(
-                title: "This move is beyond a standard local estimate",
-                body: "A large load, complex access, or specialty handling makes the range wider than a standard local quote.",
-                rangeLabel: "Wide — scope-dependent",
-                researchPointer: "Compare at least three movers that can staff the load. Ask each one for its crew plan, a written range, included specialty handling, and what can change the total."
-            )
-        }
-    }
-}
 
 @MainActor
 @Observable
 final class MoversFlowViewModel {
     private(set) var stage: MoversFlowStage = .loading
-    private(set) var identity: PeezyIdentity?
-    private(set) var scope: MoveScope?
-    private(set) var quotes: [MoversVendorQuote] = []
-    private(set) var selectedQuote: MoversVendorQuote?
-    private(set) var errorMessage: String?
-    private(set) var isSubmitting = false
+    private(set) var quotes: [TaskQuote] = []
+    private(set) var callSheet: TaskCallSheet?
+    private(set) var inventoryRooms: [ScannedRoom] = []
     private(set) var hasInventory = false
-    private(set) var isResearchGuidance = false
-    private(set) var estimateBoundaryReason: MoversEstimateBoundaryReason?
-
-    var bedroomsAnswer = "1 Bedroom"
-    var destinationBedroomsAnswer = "1 Bedroom"
-    var hasStorage = false
-    var storageSize = "Small"
-    var storageFullness = "1/2"
-    var storageStopOnMovingDay = false
-    var storageUnitAddress = ""
-    var originAccessAnswer = "Unknown"
-    var destinationAccessAnswer = "Unknown"
-    var originLongCarry = false
-    var destinationLongCarry = false
-    var packedStatus: PackedStatus = .unknown
-    var coveragePreference = "standard"
-    var requestedArrivalWindow = ""
+    private(set) var hasSubmittedInventory = false
+    private(set) var peezyManHours: Double?
+    private(set) var errorMessage: String?
+    /// Transient write-failure surface: the flow stays put with retry
+    /// affordances instead of silently advancing (plan A6).
+    private(set) var actionError: String?
+    private(set) var isLegacyInline = false
+    private(set) var expertState: ExpertReviewSendState = .notSent
     var notes = ""
 
+    let role: MoversFlowRole
+    let chain: MoversChainCoordinator
+    let supportService = SupportChatService()
+
     private var userId = ""
-    private var taskId = ""
-    private var inventoryItems: [InventoryItem] = []
-    private var unresolvedUnseenRoomCount = 0
-    private var assessment: [String: Any] = [:]
-    private var baselineRefinementAnswers: [String: String] = [:]
-    private var hasRefinementBaseline = false
+    private var taskDocumentId = ""
+    private var persistedResumeStage: MoversFlowStage?
     private let actionService = TaskActionService()
+    private var persister: MoversChainPersisting
 
-    var canCompare: Bool {
-        let window = requestedArrivalWindow.trimmingCharacters(in: .whitespacesAndNewlines)
-        let storageComplete = !hasStorage || (!storageSize.isEmpty && !storageFullness.isEmpty)
-        let fallbackComplete = hasInventory || (!bedroomsAnswer.isEmpty && !destinationBedroomsAnswer.isEmpty)
-        return !window.isEmpty && storageComplete && fallbackComplete
+    init(
+        role: MoversFlowRole,
+        spawner: MoversChainSpawning = LiveMoversChainSpawner(),
+        persister: MoversChainPersisting? = nil
+    ) {
+        self.role = role
+        let resolvedPersister = persister ?? LiveMoversChainPersister(userId: "")
+        self.persister = resolvedPersister
+        self.chain = MoversChainCoordinator(spawner: spawner, persister: resolvedPersister)
     }
 
-    var cubeSummary: String {
-        guard let scope else { return "Calculating scope" }
-        return "~\(Int(scope.cubicFeet.rounded())) cu ft"
+    var canSummarize: Bool {
+        !quotes.isEmpty && quotes.allSatisfy { $0.moverQuote != nil }
     }
 
-    var totalCubicFeet: Double {
-        scope?.cubicFeet ?? 0
+    var scenarios: [ManHourNormalizer.Scenario] {
+        let moverQuotes = quotes.compactMap(\.moverQuote)
+        var bases = moverQuotes.map { quote in
+            ManHourNormalizer.Basis(
+                name: quote.company,
+                manHours: Double(quote.crew) * quote.hours,
+                isPeezy: false
+            )
+        }
+        if let peezyManHours {
+            bases.append(
+                ManHourNormalizer.Basis(
+                    name: "Peezy",
+                    manHours: peezyManHours,
+                    isPeezy: true
+                )
+            )
+        }
+        return ManHourNormalizer.scenarios(bases: bases, quotes: moverQuotes)
     }
 
-    var moveDistanceMiles: Double? {
-        identity?.moveDistanceMiles
+    var supportTaskContext: SupportTaskContext {
+        SupportTaskContext(
+            userTaskId: taskDocumentId,
+            catalogTaskId: isLegacyInline ? "BOOK_MOVERS" : role.catalogTaskId,
+            title: "Compare your moving quotes"
+        )
     }
 
-    var homeSummary: String {
-        bedroomsAnswer.isEmpty ? "Home details pending" : bedroomsAnswer
-    }
-
-    var accessSummary: String {
-        "\(Self.shortAccess(originAccessAnswer)) at origin · \(Self.shortAccess(destinationAccessAnswer)) at destination"
-    }
-
-    var storageSummary: String? {
-        guard hasStorage else { return nil }
-        let stop = storageStopOnMovingDay ? " · moving-day stop" : ""
-        return "\(storageSize) storage · \(storageFullness) full\(stop)"
-    }
-
-    var priceBasis: String {
-        scope?.cubeSource == .inventoryScan ? "your scan" : "home details"
-    }
-
-    var researchGuidanceCopy: MoversResearchGuidanceCopy {
-        (estimateBoundaryReason ?? .longDistance).copy
-    }
-
-    func prepare(userId: String, taskId: String) async {
+    func prepare(userId: String, taskDocumentId: String) async {
         self.userId = userId
-        self.taskId = taskId
+        self.taskDocumentId = taskDocumentId
         errorMessage = nil
+        actionError = nil
+        stage = .loading
 
-        guard !userId.isEmpty else {
-            fail("Sign in again to continue booking your movers.")
-            return
-        }
-
-        identity = await IdentityService.shared.loadOrMigrate(userId: userId)
-        guard identity != nil else {
-            fail("Your move details are missing. Add both addresses in Settings, then try again.")
+        guard !userId.isEmpty, !taskDocumentId.isEmpty else {
+            fail("Sign in again to continue collecting mover quotes.")
             return
         }
 
         do {
-            assessment = try await loadAssessment(userId: userId)
-            hydrateRefinementInputs()
-            baselineRefinementAnswers = refinementAnswers
-            hasRefinementBaseline = true
-            try await reloadInventory()
-            if hasInventory {
-                try await rebuildScope()
-                transition(to: .scope)
-            } else {
-                transition(to: .capture)
+            try await loadTaskWorkspace(userId: userId, taskDocumentId: taskDocumentId)
+            await loadCallSheet()
+            await loadInventoryAndEstimate(userId: userId)
+            stage = initialStage()
+            if stage == .matrix && !canSummarize {
+                stage = .quotes
             }
         } catch {
             fail(error.localizedDescription)
         }
     }
 
-    func captureFinished() async {
-        do {
-            try await reloadInventory()
-            guard hasInventory else {
-                fail("The scan finished without any move items. Try the scan again or use home details.")
-                return
+    private func initialStage() -> MoversFlowStage {
+        switch role {
+        case .getQuotes:
+            if isLegacyInline {
+                // Legacy resumes in place: verified quotes go to the matrix,
+                // everything else (incl. .complete residue) to the quote list.
+                return persistedResumeStage ?? (canSummarize ? .matrix : .quotes)
             }
-            try await rebuildScope()
-            transition(to: .scope)
-        } catch {
-            fail(error.localizedDescription)
+            return .protectionEducation
+        case .compareQuotes:
+            return persistedResumeStage ?? .quotes
+        case .bookMovers:
+            // BOOK_YOUR_MOVERS renders its own screen, never this model.
+            return .failure
         }
     }
 
-    func captureDismissed() async {
-        do {
-            try await reloadInventory()
-            if hasInventory {
-                try await rebuildScope()
-                transition(to: .scope)
-            }
-        } catch {
-            fail(error.localizedDescription)
-        }
-    }
+    // MARK: - Education / equip (get-quotes role)
 
-    var flowProgressSnapshot: FlowProgressSnapshot {
-        var recorded: [String: [String]] = hasRefinementBaseline
-            ? refinementAnswers.filter { baselineRefinementAnswers[$0.key] != $0.value }
-                .mapValues { [$0] }
-            : [:]
-        if !requestedArrivalWindow.isEmpty {
-            recorded["requested_arrival_window"] = [requestedArrivalWindow]
-        }
-        if !notes.isEmpty {
-            recorded["notes"] = [notes]
-        }
-        if let selectedQuote {
-            recorded["selected_quote"] = [selectedQuote.id]
-        }
+    func advanceEducation() {
         switch stage {
-        case .comparison, .booking, .confirmation:
-            recorded["quote_route"] = [isResearchGuidance ? "research_guidance" : "vendor"]
+        case .protectionEducation:
+            stage = .estimateEducation
+        case .estimateEducation:
+            stage = .equip
         default:
             break
-        }
-        if let estimateBoundaryReason {
-            recorded["estimate_boundary_reason"] = [
-                estimateBoundaryReason == .longDistance ? "long_distance" : "physical_hours"
-            ]
-        }
-        return FlowProgressSnapshot(
-            path: ["movers.\(stage.rawValue)"],
-            answers: recorded
-        )
-    }
-
-    func restoreFlowProgress(_ snapshot: FlowProgressSnapshot) async {
-        let values = snapshot.answers.compactMapValues(\.first)
-        bedroomsAnswer = values["bedrooms"] ?? bedroomsAnswer
-        destinationBedroomsAnswer = values["destination_bedrooms"] ?? destinationBedroomsAnswer
-        hasStorage = values["has_storage"].map { $0 == "true" } ?? hasStorage
-        storageSize = values["storage_size"] ?? storageSize
-        storageFullness = values["storage_fullness"] ?? storageFullness
-        storageStopOnMovingDay = values["storage_stop"]
-            .map { $0 == "true" } ?? storageStopOnMovingDay
-        storageUnitAddress = values["storage_address"] ?? storageUnitAddress
-        originAccessAnswer = values["origin_access"] ?? originAccessAnswer
-        destinationAccessAnswer = values["destination_access"] ?? destinationAccessAnswer
-        originLongCarry = values["origin_long_carry"].map { $0 == "true" } ?? originLongCarry
-        destinationLongCarry = values["destination_long_carry"]
-            .map { $0 == "true" } ?? destinationLongCarry
-        if let packed = values["packed_status"], let restored = PackedStatus(rawValue: packed) {
-            packedStatus = restored
-        }
-        coveragePreference = values["coverage"] ?? coveragePreference
-        requestedArrivalWindow = values["requested_arrival_window"] ?? requestedArrivalWindow
-        notes = values["notes"] ?? notes
-        if values["quote_route"] == "research_guidance" {
-            isResearchGuidance = true
-            estimateBoundaryReason = values["estimate_boundary_reason"] == "physical_hours"
-                ? .physicalHours
-                : .longDistance
-        }
-
-        guard let rawStage = snapshot.path.last?.split(separator: ".").last,
-              let rawValue = Int(rawStage),
-              let restoredStage = MoversFlowStage(rawValue: rawValue),
-              restoredStage != .loading,
-              restoredStage != .failure
-        else { return }
-
-        if restoredStage.rawValue >= MoversFlowStage.scope.rawValue, scope == nil {
-            do {
-                try await rebuildScope()
-            } catch {
-                fail(error.localizedDescription)
-                return
-            }
-        }
-
-        switch restoredStage {
-        case .comparison where isResearchGuidance:
-            stage = .comparison
-        case .comparison:
-            await prepareComparisons()
-        case .booking:
-            guard await restoreSelectedQuote(id: values["selected_quote"]) else { return }
-            stage = .booking
-        case .confirmation where isResearchGuidance:
-            stage = .comparison
-        case .confirmation:
-            guard await restoreSelectedQuote(id: values["selected_quote"]) else { return }
-            stage = .confirmation
-        default:
-            stage = restoredStage
-        }
-    }
-
-    func useHomeDetailsInstead() async {
-        do {
-            inventoryItems = []
-            unresolvedUnseenRoomCount = 0
-            hasInventory = false
-            try await rebuildScope()
-            transition(to: .scope)
-        } catch {
-            fail(error.localizedDescription)
-        }
-    }
-
-    func showCapture() {
-        transition(to: .capture)
-    }
-
-    func showRefinement() {
-        transition(to: .refinement)
-    }
-
-    func prepareComparisons() async {
-        guard canCompare else { return }
-        do {
-            try await rebuildScope()
-            guard let scope, let identity else { throw FlowError.missingScope }
-
-            if PricingEngine.quoteRoute(moveDistanceMiles: identity.moveDistanceMiles) != .instantComparison {
-                routeToResearchGuidance(reason: .longDistance)
-                return
-            }
-
-            let activeVendors = try await VendorStore().activeVendors(for: .movers)
-            let largestAvailableCrewSize = activeVendors
-                .compactMap { $0.rateCard.hourlyByCrew.largestAvailableCrewSize }
-                .max()
-            if PricingEngine.quoteRoute(
-                scope: scope,
-                largestAvailableCrewSize: largestAvailableCrewSize
-            ) != .instantComparison {
-                routeToResearchGuidance(reason: .physicalHours)
-                return
-            }
-
-            isResearchGuidance = false
-            estimateBoundaryReason = nil
-            let eligibleVendors = try await vendorsWithinRadius(activeVendors, identity: identity)
-            let prepared = eligibleVendors.compactMap { vendor -> MoversVendorQuote? in
-                guard let estimate = PricingEngine.estimate(
-                    scope: scope,
-                    rateCard: PricingRateCard(vendorRateCard: vendor.rateCard)
-                ), let tier = valuationTier(for: vendor)
-                else { return nil }
-                return MoversVendorQuote(vendor: vendor, estimate: estimate, valuationTier: tier)
-            }
-            quotes = prepared.sorted {
-                if $0.estimate.range.low == $1.estimate.range.low {
-                    return $0.vendor.name < $1.vendor.name
-                }
-                return $0.estimate.range.low < $1.estimate.range.low
-            }
-            guard !quotes.isEmpty else { throw FlowError.noEligibleVendors }
-            transition(to: .comparison)
-        } catch {
-            fail(error.localizedDescription)
-        }
-    }
-
-    func select(_ quote: MoversVendorQuote) {
-        selectedQuote = quote
-    }
-
-    func showBooking() {
-        guard selectedQuote != nil else { return }
-        transition(to: .booking)
-    }
-
-    func submitBooking() async {
-        guard !isSubmitting,
-              let identity,
-              let scope,
-              let selectedQuote
-        else { return }
-
-        isSubmitting = true
-        errorMessage = nil
-        defer { isSubmitting = false }
-
-        let payload = MoversBookingPayload(
-            identity: identity,
-            scope: scope,
-            quote: selectedQuote,
-            quoteRequest: false,
-            requestedArrivalWindow: requestedArrivalWindow.trimmingCharacters(in: .whitespacesAndNewlines),
-            notes: notes.trimmingCharacters(in: .whitespacesAndNewlines)
-        )
-        var workflowAnswers = WorkflowAnswers(workflowId: "book_movers")
-        workflowAnswers.answers = payload.workflowAnswers()
-
-        do {
-            let response = try await WorkflowService().submitAnswers(
-                workflowId: "book_movers",
-                answers: workflowAnswers,
-                userId: userId
-            )
-            guard response.success else { throw FlowError.submissionRejected }
-            transition(to: .confirmation)
-        } catch {
-            errorMessage = "We couldn't send the booking request. Nothing was booked—please try again. \(error.localizedDescription)"
         }
     }
 
     func goBack() {
         switch stage {
-        case .scope: transition(to: .capture)
-        case .refinement: transition(to: .scope)
-        case .comparison: transition(to: .refinement)
-        case .booking: transition(to: .comparison)
-        default: break
+        case .estimateEducation:
+            stage = .protectionEducation
+        case .equip:
+            stage = .estimateEducation
+        case .matrix:
+            stage = .quotes
+        default:
+            break
         }
+    }
+
+    // MARK: - Chain edges (plan A1/A2/A5)
+
+    /// "I'm getting quotes": spawn COMPARE_MOVING_QUOTES, then the throwing
+    /// completion write. Persistence yields ONLY confirmation state — zero
+    /// callbacks fire here; Done routes .completedAlreadyPersisted.
+    func completeGetQuotes() async {
+        actionError = nil
+        let reached = await chain.runEdge(
+            taskDocumentId: taskDocumentId,
+            fromCatalogTaskId: "BOOK_MOVERS",
+            toCatalogTaskId: "COMPARE_MOVING_QUOTES"
+        )
+        if reached {
+            stage = .confirmation
+        } else if case .failed(let message) = chain.edgeState {
+            actionError = message
+        }
+    }
+
+    /// Compare Done: notes persist (throwing) BEFORE the spawn — a notes
+    /// failure blocks spawning. Then BOOK_YOUR_MOVERS spawns and this task
+    /// completes durably.
+    func completeCompareChain() async {
+        actionError = nil
+        notes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
+        let predecessor = isLegacyInline ? "BOOK_MOVERS" : "COMPARE_MOVING_QUOTES"
+        let reached = await chain.runEdge(
+            taskDocumentId: taskDocumentId,
+            fromCatalogTaskId: predecessor,
+            toCatalogTaskId: "BOOK_YOUR_MOVERS",
+            notes: notes
+        )
+        if reached {
+            stage = .confirmation
+        } else if case .failed(let message) = chain.edgeState {
+            actionError = message
+        }
+    }
+
+    // MARK: - Quote collection
+
+    func stageForQuoteCollection() async {
+        actionError = nil
+        do {
+            try await persister.persistStage(taskDocumentId: taskDocumentId, stage: .compare)
+            stage = .quotes
+            persistedResumeStage = .quotes
+        } catch {
+            actionError = error.localizedDescription
+        }
+    }
+
+    func summarizeQuotes() async {
+        guard canSummarize else { return }
+        actionError = nil
+        do {
+            try await persister.persistStage(taskDocumentId: taskDocumentId, stage: .verify)
+            stage = .matrix
+            persistedResumeStage = .matrix
+        } catch {
+            actionError = error.localizedDescription
+        }
+    }
+
+    /// Throwing quote persistence (plan A6): the write succeeds before the
+    /// local list mutates, so a failure never advances or silently drops.
+    func saveQuote(_ quote: TaskQuote, editing index: Int?) async {
+        actionError = nil
+        var updated = quotes
+        if let index, updated.indices.contains(index) {
+            updated[index] = quote
+        } else {
+            updated.append(quote)
+        }
+        do {
+            try await persister.persistQuotes(taskDocumentId: taskDocumentId, quotes: updated)
+            quotes = updated
+        } catch {
+            actionError = "Couldn't save that quote — check your connection and try again."
+        }
+    }
+
+    func deleteQuote(at index: Int) async {
+        guard quotes.indices.contains(index) else { return }
+        actionError = nil
+        var updated = quotes
+        updated.remove(at: index)
+        do {
+            try await persister.persistQuotes(taskDocumentId: taskDocumentId, quotes: updated)
+            quotes = updated
+            if stage == .matrix && !canSummarize {
+                stage = .quotes
+                persistedResumeStage = .quotes
+                try? await persister.persistStage(taskDocumentId: taskDocumentId, stage: .compare)
+            }
+        } catch {
+            actionError = "Couldn't remove that quote — check your connection and try again."
+        }
+    }
+
+    // MARK: - Expert review (plan GOAL B)
+
+    /// Sends the deterministic quote summary through the existing support
+    /// pipeline. The task-doc `expertReview` marker commits atomically with the
+    /// message and makes suppression durable across dismiss/reopen. The
+    /// non-idempotent callable is never retried.
+    @discardableResult
+    func sendExpertReview() async -> Bool {
+        guard expertState == .notSent else { return false }
+        actionError = nil
+        expertState = .sending
+
+        let body = ExpertReviewMessageComposer.message(
+            quotes: quotes,
+            peezyManHours: peezyManHours
+        )
+        let result = await supportService.sendMessage(
+            body,
+            taskContext: supportTaskContext,
+            atomicTaskMarker: SupportChatService.TaskMarker(
+                userId: userId,
+                taskDocumentId: taskDocumentId
+            )
+        )
+
+        if result.persisted {
+            expertState = .sent(adminQueued: result.adminQueued)
+            return true
+        }
+        expertState = .notSent
+        actionError = "Couldn't send your quotes to support — check your connection and try again."
+        return false
     }
 
     func retry() async {
-        await prepare(userId: userId, taskId: taskId)
+        await prepare(userId: userId, taskDocumentId: taskDocumentId)
     }
 
-    func markComplete() {
-        transition(to: .confirmation, persistedStage: .complete)
+    // MARK: - Loading
+
+    private func loadTaskWorkspace(userId: String, taskDocumentId: String) async throws {
+        let snapshot = try await Firestore.firestore()
+            .collection("users").document(userId)
+            .collection("tasks").document(taskDocumentId)
+            .getDocument()
+        let data = snapshot.data() ?? [:]
+        notes = data["notes"] as? String ?? ""
+        quotes = (data["quotes"] as? [[String: Any]] ?? []).compactMap(TaskQuote.init(data:))
+        expertState = ExpertReviewSendState.fromMarker(data["expertReview"] as? [String: Any])
+
+        if role == .getQuotes {
+            isLegacyInline = MoversLegacyClassifier.isLegacyInline(
+                stageRaw: data["stage"] as? String,
+                quotesCount: (data["quotes"] as? [[String: Any]])?.count ?? 0
+            )
+        }
+
+        switch (data["stage"] as? String).flatMap(TaskStage.init(rawValue:)) {
+        case .compare:
+            persistedResumeStage = .quotes
+        case .verify:
+            persistedResumeStage = .matrix
+        default:
+            persistedResumeStage = nil
+        }
+
+        // The chain persister needs the caller identity; rebuild the live one
+        // now that it is known. Injected test persisters are kept as-is.
+        if persister is LiveMoversChainPersister {
+            persister = LiveMoversChainPersister(userId: userId)
+            chain.replacePersister(persister)
+        }
     }
 
-    private func reloadInventory() async throws {
+    private func loadCallSheet() async {
+        let catalogData = await TaskContentStore.shared.catalogData(for: "BOOK_MOVERS")
+        let contentData = catalogData["content"] as? [String: Any] ?? [:]
+        callSheet = TaskContent(data: contentData).callSheet
+    }
+
+    private func loadInventoryAndEstimate(userId: String) async {
         let manager = InventorySessionManager()
         await manager.loadExistingInventory()
-        inventoryItems = manager.allItems
-        unresolvedUnseenRoomCount = manager.coverageReport.unresolvedRoomCount
+        inventoryRooms = manager.scannedRooms
+        let inventoryItems = manager.allItems
         hasInventory = inventoryItems.contains(where: \.shouldMove)
-    }
+        hasSubmittedInventory = hasInventory && manager.submissionStatus == .submitted
+        guard hasInventory else {
+            peezyManHours = nil
+            return
+        }
 
-    private func rebuildScope() async throws {
-        guard let identity else { throw FlowError.missingIdentity }
-        var refinedAssessment = assessment
-        refinedAssessment["currentBedrooms"] = bedroomsAnswer
-        refinedAssessment["newBedrooms"] = destinationBedroomsAnswer
-        refinedAssessment["hasStorage"] = hasStorage ? "Yes" : "No"
-        refinedAssessment["storageSize"] = storageSize
-        refinedAssessment["storageFullness"] = storageFullness
-        refinedAssessment["storageStopOnMovingDay"] = storageStopOnMovingDay ? "Yes" : "No"
-        refinedAssessment["storageUnitAddress"] = storageUnitAddress
-        refinedAssessment["currentFloorAccess"] = originAccessAnswer == "Unknown" ? "" : originAccessAnswer
-        refinedAssessment["newFloorAccess"] = destinationAccessAnswer == "Unknown" ? "" : destinationAccessAnswer
-
-        let base = await MoveScopeFactory.makeScope(
+        let assessment = await loadAssessment(userId: userId)
+        let packedStatus = (assessment["packedStatus"] as? String)
+            .flatMap(PackedStatus.init(rawValue:)) ?? .unknown
+        let scope = MoveScopeFactory.makeScope(
             inventoryItems: inventoryItems,
-            assessment: refinedAssessment,
-            identity: identity,
-            packedStatus: packedStatus,
-            unresolvedUnseenRoomCount: unresolvedUnseenRoomCount
+            assessment: assessment,
+            packedStatus: packedStatus
         )
-        scope = MoveScope(
-            cubicFeet: base.cubicFeet,
-            driveMinutes: base.driveMinutes,
-            originAccess: MoveAccess(
-                route: base.originAccess.route,
-                elevatorReserved: base.originAccess.elevatorReserved,
-                longCarry: originLongCarry
-            ),
-            destAccess: MoveAccess(
-                route: base.destAccess.route,
-                elevatorReserved: base.destAccess.elevatorReserved,
-                longCarry: destinationLongCarry
-            ),
-            packedStatus: base.packedStatus,
-            specialtyItems: base.specialtyItems,
-            storageContents: base.storageContents,
-            storageStop: base.storageStop,
-            serviceDate: base.serviceDate,
-            cubeSource: base.cubeSource,
-            unresolvedUnseenRoomCount: base.unresolvedUnseenRoomCount
-        )
+        peezyManHours = PricingEngine.estimatedManHours(for: scope)
     }
 
-    private func hydrateRefinementInputs() {
-        bedroomsAnswer = Self.nonempty(assessment["currentBedrooms"] as? String) ?? "1 Bedroom"
-        destinationBedroomsAnswer = Self.nonempty(assessment["newBedrooms"] as? String) ?? "1 Bedroom"
-        hasStorage = (assessment["hasStorage"] as? String)?.lowercased() == "yes"
-        storageSize = Self.normalizedStorageSize(assessment["storageSize"] as? String)
-        storageFullness = Self.normalizedStorageFullness(assessment["storageFullness"] as? String)
-        storageStopOnMovingDay = (assessment["storageStopOnMovingDay"] as? String)?.lowercased() == "yes"
-        storageUnitAddress = Self.nonempty(assessment["storageUnitAddress"] as? String) ?? ""
-        originAccessAnswer = Self.normalizedAccess(assessment["currentFloorAccess"] as? String)
-        destinationAccessAnswer = Self.normalizedAccess(assessment["newFloorAccess"] as? String)
-    }
-
-    private var refinementAnswers: [String: String] {
-        [
-            "bedrooms": bedroomsAnswer,
-            "destination_bedrooms": destinationBedroomsAnswer,
-            "has_storage": String(hasStorage),
-            "storage_size": storageSize,
-            "storage_fullness": storageFullness,
-            "storage_stop": String(storageStopOnMovingDay),
-            "storage_address": storageUnitAddress,
-            "origin_access": originAccessAnswer,
-            "destination_access": destinationAccessAnswer,
-            "origin_long_carry": String(originLongCarry),
-            "destination_long_carry": String(destinationLongCarry),
-            "packed_status": packedStatus.rawValue,
-            "coverage": coveragePreference
-        ]
-    }
-
-    private func loadAssessment(userId: String) async throws -> [String: Any] {
-        let snapshot = try await Firestore.firestore().collection("users").document(userId)
-            .collection("user_assessments").limit(to: 1).getDocuments()
+    private func loadAssessment(userId: String) async -> [String: Any] {
+        guard let snapshot = try? await Firestore.firestore()
+            .collection("users").document(userId)
+            .collection("user_assessments").limit(to: 1)
+            .getDocuments()
+        else { return [:] }
         return snapshot.documents.first?.data() ?? [:]
-    }
-
-    private func vendorsWithinRadius(_ vendors: [Vendor], identity: PeezyIdentity) async throws -> [Vendor] {
-        guard let origin = identity.currentAddress,
-              !origin.raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        else { throw FlowError.missingOrigin }
-
-        let geocoder = CLGeocoder()
-        guard let originLocation = try await geocoder.geocodeAddressString(origin.raw).first?.location else {
-            throw FlowError.locationUnavailable
-        }
-
-        var result: [Vendor] = []
-        for vendor in vendors {
-            guard let centerLocation = try await geocoder
-                .geocodeAddressString(vendor.serviceRadius.center).first?.location
-            else { continue }
-            let miles = originLocation.distance(from: centerLocation) / 1_609.344
-            if miles <= vendor.serviceRadius.miles { result.append(vendor) }
-        }
-        return result
-    }
-
-    private func valuationTier(for vendor: Vendor) -> VendorValuationTier? {
-        vendor.rateCard.valuationTiers.first(where: { $0.id == coveragePreference })
-            ?? vendor.rateCard.valuationTiers.first
-    }
-
-    private func transition(to next: MoversFlowStage, persistedStage: TaskStage? = nil) {
-        stage = next
-        guard !taskId.isEmpty,
-              let taskStage = persistedStage ?? next.persistedTaskStage
-        else { return }
-        let id = taskId
-        Task { await actionService.setStage(taskId: id, stage: taskStage) }
-    }
-
-    private func routeToResearchGuidance(reason: MoversEstimateBoundaryReason) {
-        isResearchGuidance = true
-        estimateBoundaryReason = reason
-        quotes = []
-        selectedQuote = nil
-        transition(to: .comparison)
-    }
-
-    private func restoreSelectedQuote(id selectedQuoteID: String?) async -> Bool {
-        await prepareComparisons()
-        guard stage == .comparison,
-              let selectedQuoteID,
-              let restoredQuote = quotes.first(where: { $0.id == selectedQuoteID })
-        else { return false }
-        selectedQuote = restoredQuote
-        return true
     }
 
     private func fail(_ message: String) {
@@ -546,59 +369,22 @@ final class MoversFlowViewModel {
         stage = .failure
     }
 
-    private static func nonempty(_ value: String?) -> String? {
-        guard let value, !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
-        return value
+    #if DEBUG
+    /// Test seam: sets the workspace state that `prepare` would otherwise load
+    /// from Firestore, so the pure persistence/chain transitions are testable
+    /// with injected fakes. Never called by production code.
+    func _testConfigure(
+        userId: String,
+        taskDocumentId: String,
+        quotes: [TaskQuote],
+        stage: MoversFlowStage,
+        isLegacyInline: Bool = false
+    ) {
+        self.userId = userId
+        self.taskDocumentId = taskDocumentId
+        self.quotes = quotes
+        self.stage = stage
+        self.isLegacyInline = isLegacyInline
     }
-
-    private static func normalizedStorageSize(_ value: String?) -> String {
-        switch value?.lowercased() {
-        case "medium", "10x10": "Medium"
-        case "large", "10x20": "Large"
-        default: "Small"
-        }
-    }
-
-    private static func normalizedStorageFullness(_ value: String?) -> String {
-        switch value?.lowercased() {
-        case "1/4", "quarter": "1/4"
-        case "3/4", "three_quarter": "3/4"
-        case "full": "Full"
-        default: "1/2"
-        }
-    }
-
-    private static func normalizedAccess(_ value: String?) -> String {
-        switch value?.lowercased() {
-        case "ground floor": "Ground Floor"
-        case "stairs": "Stairs"
-        case "elevator": "Elevator"
-        case "reserved elevator": "Reserved Elevator"
-        default: "Unknown"
-        }
-    }
-
-    private static func shortAccess(_ value: String) -> String {
-        value == "Unknown" ? "access TBD" : value.lowercased()
-    }
-
-    private enum FlowError: LocalizedError {
-        case missingIdentity
-        case missingScope
-        case missingOrigin
-        case locationUnavailable
-        case noEligibleVendors
-        case submissionRejected
-
-        var errorDescription: String? {
-            switch self {
-            case .missingIdentity: "Your identity details could not be loaded."
-            case .missingScope: "Your move scope could not be calculated."
-            case .missingOrigin: "Add your current address before comparing movers."
-            case .locationUnavailable: "We couldn't verify which movers serve your current address."
-            case .noEligibleVendors: "No active movers currently cover this address."
-            case .submissionRejected: "The booking service did not accept the request."
-            }
-        }
-    }
+    #endif
 }

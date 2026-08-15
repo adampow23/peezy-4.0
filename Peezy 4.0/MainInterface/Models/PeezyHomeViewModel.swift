@@ -212,6 +212,10 @@ final class PeezyHomeViewModel {
         await MainActor.run { self.state = .loading }
         resetDailyCountIfNeeded()
 
+        // Movers chain (plan v7 A5): denormalized-title migration for existing
+        // BOOK_MOVERS docs. Cosmetic and nonblocking — never gates task load.
+        Task { await actionService.migrateBookMoversPresentationIfNeeded(userId: userId) }
+
         do {
             if let moveDate = userState?.moveDate {
                 do {
@@ -543,6 +547,41 @@ final class PeezyHomeViewModel {
     /// name. A submitted flow is complete once its action sheet is ready.
     func statusActionSubmittedToPeezy() {
         statusActionDone()
+    }
+
+    // MARK: - Already-persisted terminals (movers chain, plan v7)
+
+    /// The flow already performed its own awaited, throwing completion write
+    /// (which owns completedAt). This path does ONLY local accounting — a
+    /// second write here would move the completion timestamp to whenever the
+    /// user tapped Done on the confirmation screen.
+    func completeTaskFlowAlreadyPersisted() {
+        guard let task = currentTask else {
+            showTaskFlow = false
+            return
+        }
+
+        PeezyHaptics.taskComplete()
+        completedThisSession += 1
+        recordDoseProgress(completedTask: true)
+        allActiveTasks.removeAll { $0.id == task.id }
+
+        finishFlowAndDeferAdvance()
+    }
+
+    /// The flow already performed its own awaited, throwing two-day snooze
+    /// write. Local accounting only — mirrors statusActionLater minus the
+    /// detached writeSnooze.
+    func statusActionLaterAlreadyPersisted() {
+        guard let task = currentTask else {
+            showTaskFlow = false
+            return
+        }
+
+        allActiveTasks.removeAll { $0.id == task.id }
+        recordDoseProgress(completedTask: false)
+
+        finishFlowAndDeferAdvance()
     }
 
     // MARK: - Get Ahead
