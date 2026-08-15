@@ -262,7 +262,7 @@ struct MoversChainHandshakeTests {
     }
 
     @Test func getQuotesEdgeYieldsConfirmationOnly() async {
-        let (model, spawner, persister) = makeModel(role: .getQuotes, stage: .equip)
+        let (model, spawner, persister) = makeModel(role: .getQuotes, stage: .preparation)
         await model.completeGetQuotes()
         // Durable persistence yields ONLY confirmation state — the local Home
         // callback fires later, from confirmation Done, never here.

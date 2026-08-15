@@ -496,6 +496,24 @@ struct TaskWalkthroughSteps: View {
 /// TaskRow.rowBackground's material treatment, shared by the detail content
 /// sections and the quote tracker.
 extension View {
+    func fitOrScrollCard(idPrefix: String) -> some View {
+        ViewThatFits(in: .vertical) {
+            self
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("\(idPrefix).fit")
+
+            ScrollView {
+                self
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .top)
+            }
+            .scrollIndicators(.hidden)
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("\(idPrefix).scroll")
+        }
+    }
+
     func taskContentCard() -> some View {
         padding(PeezyTheme.Layout.horizontalPadding)
             .background(

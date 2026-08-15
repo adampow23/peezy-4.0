@@ -2,75 +2,25 @@ import SwiftUI
 
 struct MoversEquipView: View {
     let headerTitle: String
-    let callSheet: TaskCallSheet?
+    let page: MoversPreparationPage
     let inventoryRooms: [ScannedRoom]
     let hasSubmittedInventory: Bool
+    let showBack: Bool
     let isCompleting: Bool
     let actionError: String?
     let onBack: () -> Void
-    let onGetQuotes: () -> Void
+    let onPrimary: () -> Void
 
     var body: some View {
         VStack(spacing: 0) {
-            TaskFlowHeader(taskTitle: headerTitle, showBack: true, onBack: onBack)
+            TaskFlowHeader(taskTitle: headerTitle, showBack: showBack, onBack: onBack)
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: PeezyTheme.Layout.itemSpacing) {
-                    VStack(alignment: .leading, spacing: PeezyTheme.Layout.verticalSpacingSmall) {
-                        Text("Get three quotes")
-                            .font(.title)
-                            .bold()
-                            .foregroundStyle(PeezyTheme.Colors.deepInk)
-                            .accessibilityIdentifier("movers.equip.title")
+            Spacer(minLength: PeezyTheme.Layout.verticalSpacing)
 
-                        Text("Give every company the same facts, then get the rate and time estimate in writing.")
-                            .font(.body)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .accessibilityIdentifier("movers.equip.intro")
-                    }
+            pageBody
+                .fitOrScrollCard(idPrefix: page.accessibilityPrefix)
 
-                    if let callSheet {
-                        CallSheetSection(callSheet: callSheet)
-                    }
-
-                    VStack(alignment: .leading, spacing: PeezyTheme.Layout.verticalSpacing) {
-                        TaskContentSectionTitle(
-                            title: "Share your inventory",
-                            systemImage: "square.and.arrow.up"
-                        )
-
-                        if hasSubmittedInventory {
-                            ShareLink(item: InventoryLockedView.shareText(for: inventoryRooms)) {
-                                Label("Share your inventory", systemImage: "square.and.arrow.up")
-                                    .font(PeezyTheme.Typography.headline)
-                                    .foregroundStyle(.white)
-                                    .frame(
-                                        maxWidth: .infinity,
-                                        minHeight: PeezyTheme.Layout.buttonHeightSmall
-                                    )
-                                    .background(
-                                        PeezyTheme.Colors.deepInk,
-                                        in: .rect(cornerRadius: PeezyTheme.Layout.cornerRadiusMedium)
-                                    )
-                            }
-                            .accessibilityIdentifier("movers.equip.shareInventory")
-                        } else {
-                            Text("Scan your home first and every company prices the same job")
-                                .font(.body)
-                                .foregroundStyle(PeezyTheme.Colors.deepInk)
-                                .fixedSize(horizontal: false, vertical: true)
-                                .accessibilityIdentifier("movers.equip.inventoryMissing")
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .taskContentCard()
-                    .accessibilityIdentifier("movers.equip.inventoryCard")
-                }
-                .padding(.horizontal, PeezyTheme.Layout.horizontalPadding)
-                .padding(.vertical, PeezyTheme.Layout.verticalSpacing)
-            }
-            .scrollIndicators(.hidden)
+            Spacer(minLength: PeezyTheme.Layout.verticalSpacing)
 
             if let actionError {
                 Text(actionError)
@@ -82,18 +32,127 @@ struct MoversEquipView: View {
                     .accessibilityIdentifier("movers.equip.error")
             }
 
-            // Chain edge (plan A1): spawn-then-complete runs behind this button;
-            // it stays disabled while in flight and re-enables on failure so a
-            // retry re-sends the same idempotency token.
+            // Chain edge (plan A1): spawn-then-complete runs behind the final
+            // button; it stays disabled while in flight and re-enables on
+            // failure so a retry re-sends the same idempotency token.
             PeezyAssessmentButton(
-                isCompleting ? "Saving…" : "I'm getting quotes",
+                primaryTitle,
                 disabled: isCompleting,
-                action: onGetQuotes
+                action: onPrimary
             )
             .accessibilityIdentifier("movers.equip.getQuotes")
             .padding(.horizontal, PeezyTheme.Layout.horizontalPadding)
             .padding(.bottom, PeezyTheme.Layout.verticalSpacing)
         }
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("movers.equip.screen")
+    }
+
+    @ViewBuilder
+    private var pageBody: some View {
+        switch page.kind {
+        case .education:
+            EmptyView()
+                .accessibilityIdentifier(page.accessibilityPrefix)
+        case .intro:
+            introBody
+        case .callSheetSection(let items):
+            callSheetBody(items: items)
+        }
+    }
+
+    private var introBody: some View {
+        VStack(alignment: .leading, spacing: PeezyTheme.Layout.itemSpacing) {
+            VStack(alignment: .leading, spacing: PeezyTheme.Layout.verticalSpacingSmall) {
+                Text(page.title)
+                    .font(.title)
+                    .bold()
+                    .foregroundStyle(PeezyTheme.Colors.deepInk)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("movers.equip.title")
+
+                if let body = page.body {
+                    Text(body)
+                        .font(.body)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("movers.equip.intro")
+                }
+            }
+
+            VStack(alignment: .leading, spacing: PeezyTheme.Layout.verticalSpacing) {
+                TaskContentSectionTitle(
+                    title: "Share your inventory",
+                    systemImage: "square.and.arrow.up"
+                )
+
+                if hasSubmittedInventory {
+                    ShareLink(item: InventoryLockedView.shareText(for: inventoryRooms)) {
+                        Label("Share your inventory", systemImage: "square.and.arrow.up")
+                            .font(.headline)
+                            .foregroundStyle(.white)
+                            .frame(
+                                maxWidth: .infinity,
+                                minHeight: PeezyTheme.Layout.buttonHeightSmall
+                            )
+                            .background(
+                                PeezyTheme.Colors.deepInk,
+                                in: .rect(cornerRadius: PeezyTheme.Layout.cornerRadiusMedium)
+                            )
+                    }
+                    .accessibilityIdentifier("movers.equip.shareInventory")
+                } else {
+                    Text("Scan your home first and every company prices the same job")
+                        .font(.body)
+                        .foregroundStyle(PeezyTheme.Colors.deepInk)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("movers.equip.inventoryMissing")
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .taskContentCard()
+            .accessibilityIdentifier("movers.equip.inventoryCard")
+        }
+        .padding(.horizontal, PeezyTheme.Layout.horizontalPadding)
+    }
+
+    private func callSheetBody(items: [String]) -> some View {
+        VStack(alignment: .leading, spacing: PeezyTheme.Layout.itemSpacing) {
+            Label(page.title, systemImage: page.systemImage)
+                .font(.title)
+                .bold()
+                .foregroundStyle(PeezyTheme.Colors.deepInk)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityAddTraits(.isHeader)
+                .accessibilityIdentifier("movers.equip.title")
+
+            ForEach(Array(items.enumerated()), id: \.offset) { _, item in
+                HStack(alignment: .top, spacing: PeezyTheme.Layout.verticalSpacing) {
+                    Circle()
+                        .fill(PeezyTheme.Colors.deepInk.opacity(0.4))
+                        .frame(width: 7, height: 7)
+                        .padding(.top, 7)
+                        .accessibilityHidden(true)
+
+                    Text(item)
+                        .font(.body)
+                        .foregroundStyle(PeezyTheme.Colors.deepInk)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .taskContentCard()
+        .padding(.horizontal, PeezyTheme.Layout.horizontalPadding)
+        .accessibilityIdentifier(page.accessibilityPrefix)
+    }
+
+    private var primaryTitle: String {
+        switch page.primary {
+        case .advance:
+            "Continue"
+        case .getQuotes:
+            isCompleting ? "Saving…" : "I'm getting quotes"
+        }
     }
 }

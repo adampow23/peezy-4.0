@@ -66,3 +66,6 @@ Peezy 4.0/Tasks/Task Cards/FindCleanersFlow.swift
 Peezy 4.0/Tasks/Task Cards/SellItemsFlow.swift
 Peezy 4.0/Tasks/Task Cards/RemoveItemsFlow.swift
 Peezy 4.0/Tasks/Task Cards/RentTruckFlow.swift
+Peezy 4.0Tests/MoversPreparationPagesTests.swift
+docs/plans/2026-08-15-movers-card-pacing.md
+docs/plans/2026-08-15-movers-card-pacing-review-log.md

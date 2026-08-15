@@ -43,8 +43,8 @@ struct FindMoversFlow: View {
                 .ignoresSafeArea()
 
             TaskFlowStack(
-                cardsRemaining: model.stage.cardsRemaining,
-                currentIndex: model.stage.stackIndex
+                cardsRemaining: model.cardsRemaining,
+                currentIndex: model.currentCardIndex
             ) {
                 stageContent
             }
@@ -79,43 +79,10 @@ struct FindMoversFlow: View {
                 .tint(PeezyTheme.Colors.deepInk)
                 .accessibilityIdentifier("movers.loading")
 
-        case .protectionEducation:
-            MoversEducationView(
-                headerTitle: headerTitle,
-                title: "Protection isn't insurance",
-                message: "Standard valuation is 60 cents per pound. A 10-lb TV pays out $6.",
-                callout: "Ask every company what full-value protection costs before booking.",
-                systemImage: "shield.lefthalf.filled",
-                accessibilityPrefix: "movers.education.protection",
-                showBack: false,
-                onBack: {},
-                onContinue: model.advanceEducation
-            )
-
-        case .estimateEducation:
-            MoversEducationView(
-                headerTitle: headerTitle,
-                title: "How estimates really work",
-                message: "Quotes are hourly rate × crew × their guess at hours. The lower total is often just a smaller guess, and companies have an incentive to guess low.",
-                callout: "The same job costs whatever it actually takes.",
-                systemImage: "clock.badge.questionmark",
-                accessibilityPrefix: "movers.education.estimates",
-                showBack: true,
-                onBack: model.goBack,
-                onContinue: model.advanceEducation
-            )
-
-        case .equip:
-            MoversEquipView(
-                headerTitle: headerTitle,
-                callSheet: model.callSheet,
-                inventoryRooms: model.inventoryRooms,
-                hasSubmittedInventory: model.hasSubmittedInventory,
-                isCompleting: model.chain.edgeState == .inFlight,
-                actionError: model.actionError,
-                onBack: model.goBack,
-                onGetQuotes: completeGetQuotes
-            )
+        case .preparation:
+            if model.preparationPages.indices.contains(model.preparationIndex) {
+                preparationContent(model.preparationPages[model.preparationIndex])
+            }
 
         case .quotes:
             MoversQuotesView(model: model)
@@ -135,6 +102,49 @@ struct FindMoversFlow: View {
                 onRetry: retry,
                 onDismiss: onDismiss
             )
+        }
+    }
+
+    @ViewBuilder
+    private func preparationContent(_ page: MoversPreparationPage) -> some View {
+        let isCompleting = model.chain.edgeState == .inFlight
+        let showBack = model.preparationIndex > 0
+            && !(page.primary == .getQuotes && isCompleting)
+
+        switch page.kind {
+        case .education:
+            MoversEducationView(
+                headerTitle: headerTitle,
+                title: page.title,
+                message: page.body ?? "",
+                callout: nil,
+                systemImage: page.systemImage,
+                accessibilityPrefix: page.accessibilityPrefix,
+                showBack: showBack,
+                onBack: model.backPreparation,
+                onContinue: { performPrimaryAction(page.primary) }
+            )
+        case .intro, .callSheetSection:
+            MoversEquipView(
+                headerTitle: headerTitle,
+                page: page,
+                inventoryRooms: model.inventoryRooms,
+                hasSubmittedInventory: model.hasSubmittedInventory,
+                showBack: showBack,
+                isCompleting: isCompleting,
+                actionError: model.actionError,
+                onBack: model.backPreparation,
+                onPrimary: { performPrimaryAction(page.primary) }
+            )
+        }
+    }
+
+    private func performPrimaryAction(_ primary: MoversPreparationPage.PrimaryAction) {
+        switch primary {
+        case .advance:
+            model.advancePreparation()
+        case .getQuotes:
+            completeGetQuotes()
         }
     }
 

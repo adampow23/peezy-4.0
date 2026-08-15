@@ -18,6 +18,8 @@ final class MoversFlowViewModel {
     private(set) var stage: MoversFlowStage = .loading
     private(set) var quotes: [TaskQuote] = []
     private(set) var callSheet: TaskCallSheet?
+    private(set) var preparationPages: [MoversPreparationPage] = []
+    private(set) var preparationIndex = 0
     private(set) var inventoryRooms: [ScannedRoom] = []
     private(set) var hasInventory = false
     private(set) var hasSubmittedInventory = false
@@ -49,6 +51,89 @@ final class MoversFlowViewModel {
         let resolvedPersister = persister ?? LiveMoversChainPersister(userId: "")
         self.persister = resolvedPersister
         self.chain = MoversChainCoordinator(spawner: spawner, persister: resolvedPersister)
+        preparationPages = Self.buildPreparationPages(callSheet: nil)
+    }
+
+    static func buildPreparationPages(callSheet: TaskCallSheet?) -> [MoversPreparationPage] {
+        var pages = [
+            MoversPreparationPage(
+                kind: .education,
+                title: "If something breaks",
+                body: "By law, moving companies only have to pay 60 cents per pound for anything damaged beyond repair.",
+                systemImage: "shield.lefthalf.filled",
+                accessibilityPrefix: "movers.education.valuationRule",
+                primary: .advance
+            ),
+            MoversPreparationPage(
+                kind: .education,
+                title: "What that means in real money",
+                body: "Say your $1,000 TV weighs 50 pounds and gets destroyed. They legally owe you $30. Not $1,000 — $30.",
+                systemImage: "shield.lefthalf.filled",
+                accessibilityPrefix: "movers.education.valuationMath",
+                primary: .advance
+            ),
+            MoversPreparationPage(
+                kind: .education,
+                title: "What to do about it",
+                body: "If that doesn't worry you, skip it. If it does, ask every company what additional coverage costs and exactly what it covers — before you book.",
+                systemImage: "shield.lefthalf.filled",
+                accessibilityPrefix: "movers.education.valuationAction",
+                primary: .advance
+            ),
+            MoversPreparationPage(
+                kind: .education,
+                title: "How quotes really work",
+                body: "A quote is a guess: their hourly rate × how long they think it'll take. A lower total usually just means a smaller guess — the job costs whatever it actually takes. Compare the hourly rates and crew sizes, not the totals.",
+                systemImage: "clock.badge.questionmark",
+                accessibilityPrefix: "movers.education.estimates",
+                primary: .advance
+            ),
+            MoversPreparationPage(
+                kind: .intro,
+                title: "Get three quotes",
+                body: "Give every company the same facts, then get the rate and time estimate in writing.",
+                systemImage: "phone.fill",
+                accessibilityPrefix: "movers.equip",
+                primary: .advance
+            )
+        ]
+
+        if let callSheet {
+            let sections: [(String, [String], String, String)] = [
+                ("What to say", callSheet.say, "text.bubble.fill", "movers.equip.say"),
+                ("What to ask", callSheet.ask, "questionmark.bubble.fill", "movers.equip.ask"),
+                ("What to get", callSheet.get, "checkmark.seal.fill", "movers.equip.get")
+            ]
+
+            for (title, sourceItems, systemImage, accessibilityPrefix) in sections {
+                let survivingItems = sourceItems.filter {
+                    !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                }
+                guard !survivingItems.isEmpty else { continue }
+                pages.append(
+                    MoversPreparationPage(
+                        kind: .callSheetSection(items: survivingItems),
+                        title: title,
+                        body: nil,
+                        systemImage: systemImage,
+                        accessibilityPrefix: accessibilityPrefix,
+                        primary: .advance
+                    )
+                )
+            }
+        }
+
+        let finalIndex = pages.count - 1
+        return pages.enumerated().map { index, page in
+            MoversPreparationPage(
+                kind: page.kind,
+                title: page.title,
+                body: page.body,
+                systemImage: page.systemImage,
+                accessibilityPrefix: page.accessibilityPrefix,
+                primary: index == finalIndex ? .getQuotes : .advance
+            )
+        }
     }
 
     var canSummarize: Bool {
@@ -84,6 +169,56 @@ final class MoversFlowViewModel {
         )
     }
 
+    var currentCardIndex: Int {
+        if role == .getQuotes && !isLegacyInline {
+            switch stage {
+            case .loading, .failure:
+                return 0
+            case .preparation:
+                return preparationIndex
+            case .confirmation:
+                return preparationPages.count
+            case .quotes:
+                return 3
+            case .matrix:
+                return 4
+            }
+        }
+
+        switch stage {
+        case .loading, .preparation, .failure:
+            return 0
+        case .quotes:
+            return 3
+        case .matrix, .confirmation:
+            return 4
+        }
+    }
+
+    var cardsRemaining: Int {
+        if role == .getQuotes && !isLegacyInline {
+            switch stage {
+            case .loading, .failure:
+                return preparationPages.count + 1
+            case .preparation:
+                return (preparationPages.count + 1) - preparationIndex
+            case .confirmation, .matrix:
+                return 1
+            case .quotes:
+                return 2
+            }
+        }
+
+        switch stage {
+        case .loading, .preparation, .failure:
+            return 5
+        case .quotes:
+            return 2
+        case .matrix, .confirmation:
+            return 1
+        }
+    }
+
     func prepare(userId: String, taskDocumentId: String) async {
         self.userId = userId
         self.taskDocumentId = taskDocumentId
@@ -99,6 +234,7 @@ final class MoversFlowViewModel {
         do {
             try await loadTaskWorkspace(userId: userId, taskDocumentId: taskDocumentId)
             await loadCallSheet()
+            rebuildPreparationPages()
             await loadInventoryAndEstimate(userId: userId)
             stage = initialStage()
             if stage == .matrix && !canSummarize {
@@ -117,7 +253,7 @@ final class MoversFlowViewModel {
                 // everything else (incl. .complete residue) to the quote list.
                 return persistedResumeStage ?? (canSummarize ? .matrix : .quotes)
             }
-            return .protectionEducation
+            return .preparation
         case .compareQuotes:
             return persistedResumeStage ?? .quotes
         case .bookMovers:
@@ -126,25 +262,18 @@ final class MoversFlowViewModel {
         }
     }
 
-    // MARK: - Education / equip (get-quotes role)
+    // MARK: - Preparation (get-quotes role)
 
-    func advanceEducation() {
-        switch stage {
-        case .protectionEducation:
-            stage = .estimateEducation
-        case .estimateEducation:
-            stage = .equip
-        default:
-            break
-        }
+    func advancePreparation() {
+        preparationIndex = min(preparationIndex + 1, preparationPages.count - 1)
+    }
+
+    func backPreparation() {
+        preparationIndex = max(preparationIndex - 1, 0)
     }
 
     func goBack() {
         switch stage {
-        case .estimateEducation:
-            stage = .protectionEducation
-        case .equip:
-            stage = .estimateEducation
         case .matrix:
             stage = .quotes
         default:
@@ -332,6 +461,11 @@ final class MoversFlowViewModel {
         callSheet = TaskContent(data: contentData).callSheet
     }
 
+    private func rebuildPreparationPages() {
+        preparationPages = Self.buildPreparationPages(callSheet: callSheet)
+        preparationIndex = 0
+    }
+
     private func loadInventoryAndEstimate(userId: String) async {
         let manager = InventorySessionManager()
         await manager.loadExistingInventory()
@@ -378,13 +512,18 @@ final class MoversFlowViewModel {
         taskDocumentId: String,
         quotes: [TaskQuote],
         stage: MoversFlowStage,
-        isLegacyInline: Bool = false
+        isLegacyInline: Bool = false,
+        callSheet: TaskCallSheet? = nil,
+        preparationIndex: Int = 0
     ) {
         self.userId = userId
         self.taskDocumentId = taskDocumentId
         self.quotes = quotes
         self.stage = stage
         self.isLegacyInline = isLegacyInline
+        self.callSheet = callSheet
+        rebuildPreparationPages()
+        self.preparationIndex = min(max(preparationIndex, 0), preparationPages.count - 1)
     }
     #endif
 }

@@ -4,7 +4,7 @@ struct MoversEducationView: View {
     let headerTitle: String
     let title: String
     let message: String
-    let callout: String
+    let callout: String?
     let systemImage: String
     let accessibilityPrefix: String
     let showBack: Bool
@@ -21,25 +21,41 @@ struct MoversEducationView: View {
 
             Spacer(minLength: PeezyTheme.Layout.verticalSpacing)
 
-            VStack(alignment: .leading, spacing: PeezyTheme.Layout.itemSpacing) {
-                Image(systemName: systemImage)
-                    .font(.largeTitle)
-                    .foregroundStyle(PeezyTheme.Colors.deepInk)
-                    .accessibilityHidden(true)
+            educationBody
+                .fitOrScrollCard(idPrefix: accessibilityPrefix)
 
-                Text(title)
-                    .font(.title)
-                    .bold()
-                    .foregroundStyle(PeezyTheme.Colors.deepInk)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityIdentifier("\(accessibilityPrefix).title")
+            Spacer(minLength: PeezyTheme.Layout.verticalSpacing)
 
-                Text(message)
-                    .font(.body)
-                    .foregroundStyle(PeezyTheme.Colors.deepInk)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityIdentifier("\(accessibilityPrefix).message")
+            PeezyAssessmentButton("Continue", action: onContinue)
+                .accessibilityIdentifier("\(accessibilityPrefix).continue")
+                .padding(.horizontal, PeezyTheme.Layout.horizontalPadding)
+                .padding(.bottom, PeezyTheme.Layout.verticalSpacing)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("\(accessibilityPrefix).screen")
+    }
 
+    private var educationBody: some View {
+        VStack(alignment: .leading, spacing: PeezyTheme.Layout.itemSpacing) {
+            Image(systemName: systemImage)
+                .font(.largeTitle)
+                .foregroundStyle(PeezyTheme.Colors.deepInk)
+                .accessibilityHidden(true)
+
+            Text(title)
+                .font(.title)
+                .bold()
+                .foregroundStyle(PeezyTheme.Colors.deepInk)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("\(accessibilityPrefix).title")
+
+            Text(message)
+                .font(.body)
+                .foregroundStyle(PeezyTheme.Colors.deepInk)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("\(accessibilityPrefix).message")
+
+            if let callout {
                 Text(callout)
                     .font(.headline)
                     .foregroundStyle(PeezyTheme.Colors.deepInk)
@@ -52,18 +68,10 @@ struct MoversEducationView: View {
                     )
                     .accessibilityIdentifier("\(accessibilityPrefix).callout")
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .taskContentCard()
-            .padding(.horizontal, PeezyTheme.Layout.horizontalPadding)
-            .accessibilityIdentifier("\(accessibilityPrefix).card")
-
-            Spacer(minLength: PeezyTheme.Layout.verticalSpacing)
-
-            PeezyAssessmentButton("Continue", action: onContinue)
-                .accessibilityIdentifier("\(accessibilityPrefix).continue")
-                .padding(.horizontal, PeezyTheme.Layout.horizontalPadding)
-                .padding(.bottom, PeezyTheme.Layout.verticalSpacing)
         }
-        .accessibilityIdentifier("\(accessibilityPrefix).screen")
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .taskContentCard()
+        .padding(.horizontal, PeezyTheme.Layout.horizontalPadding)
+        .accessibilityIdentifier("\(accessibilityPrefix).card")
     }
 }
