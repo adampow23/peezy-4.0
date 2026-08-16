@@ -231,7 +231,12 @@ struct TaskDetailView: View {
     private func performResearchRequest(_ request: TaskResearchRequest) {
         switch request {
         case .generate(let force):
-            Task { await model.research.generateResearch(force: force) }
+            Task {
+                let outcome = await model.research.generateResearch(force: force)
+                if outcome == .movePassRequired {
+                    pendingResearchRequest = request
+                }
+            }
         case .reveal:
             break
         }

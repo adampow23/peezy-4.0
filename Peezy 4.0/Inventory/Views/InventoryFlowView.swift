@@ -9,7 +9,13 @@
 
 import SwiftUI
 
+enum InventoryFlowHostingMode {
+    case task
+    case settings
+}
+
 struct InventoryFlowView: View {
+    var hostingMode: InventoryFlowHostingMode = .settings
     var onUserDismiss: (() -> Void)? = nil
     var onSubmitted: (() -> Void)? = nil
     var onLater: (() -> Void)? = nil
@@ -73,20 +79,21 @@ struct InventoryFlowView: View {
                             onSubmitted: {
                                 pendingLockedView = true
                                 showSubmissionComplete = true
-                            }
+                            },
+                            showsDismissControl: hostingMode == .settings
                         )
 
-                        // ── Camera ──
-                                            case .scanning(let roomName):
-                                                InventoryCameraView(
-                                                    roomName: roomName,
-                                                    onComplete: { frames in
-                                                        sessionManager.handleFramesExtracted(frames, roomName: roomName)
-                                                    },
-                                                    onCancel: {
-                                                        sessionManager.state = .roomList
-                                                    }
-                                                )
+                    // ── Camera ──
+                    case .scanning(let roomName):
+                        InventoryCameraView(
+                            roomName: roomName,
+                            onComplete: { frames in
+                                sessionManager.handleFramesExtracted(frames, roomName: roomName)
+                            },
+                            onCancel: {
+                                sessionManager.state = .roomList
+                            }
+                        )
 
                     // ── Processing ──
                     case .processing(_, let progress):
@@ -128,7 +135,8 @@ struct InventoryFlowView: View {
                             onSubmitted: {
                                 pendingLockedView = true
                                 showSubmissionComplete = true
-                            }
+                            },
+                            showsDismissControl: hostingMode == .settings
                         )
                     }
                 }
@@ -137,6 +145,10 @@ struct InventoryFlowView: View {
             // Room saved popup overlay
             if showSavedPopup {
                 savedPopupOverlay
+            }
+
+            if showsSettingsHostDismissControl {
+                settingsHostDismissControl
             }
         }
         .animation(.spring(response: 0.4, dampingFraction: 0.85), value: sessionManager.stateDescription)
@@ -175,6 +187,15 @@ struct InventoryFlowView: View {
             guard didFinishInitialLoad, newValue != lastAnswerFingerprint else { return }
             lastAnswerFingerprint = newValue
             onLocalAnswerChange?(hasLocalAnswers)
+        }
+        .fullScreenCover(isPresented: movePassPaywallBinding) {
+            PaywallGateSheet(surface: .scanner) { subscribed in
+                if subscribed {
+                    Task { await sessionManager.retryRetainedProcessingRequest() }
+                } else {
+                    sessionManager.discardRetainedProcessingRequest()
+                }
+            }
         }
     }
 
@@ -256,6 +277,53 @@ struct InventoryFlowView: View {
         if dismissesAfterUserAction {
             dismiss()
         }
+    }
+
+    private var movePassPaywallBinding: Binding<Bool> {
+        Binding(
+            get: { sessionManager.movePassRequired },
+            set: { isPresented in
+                if !isPresented, sessionManager.movePassRequired {
+                    sessionManager.discardRetainedProcessingRequest()
+                }
+            }
+        )
+    }
+
+    private var showsSettingsHostDismissControl: Bool {
+        guard hostingMode == .settings,
+              !(sessionManager.submissionStatus == .submitted && !pendingLockedView) else {
+            return false
+        }
+
+        switch sessionManager.state {
+        case .roomList, .enteringRoomName, .estimate:
+            return false
+        case .intro, .info, .scanning, .processing, .confirming, .reviewing:
+            return true
+        }
+    }
+
+    private var settingsHostDismissControl: some View {
+        VStack {
+            HStack {
+                Spacer()
+                Button(action: closeFlow) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(PeezyTheme.Colors.deepInk)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Close scanner")
+                .accessibilityIdentifier("inventory.settings.close")
+                .padding(.top, 8)
+                .padding(.trailing, 12)
+            }
+            Spacer()
+        }
+        .zIndex(200)
     }
 
     // MARK: - Saved Popup

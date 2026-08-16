@@ -75,6 +75,7 @@ final class InventorySessionManager {
     var submissionStatus: SubmissionStatus = .draft
     var error: String?
     var isProcessing = false
+    private(set) var movePassRequired = false
     private(set) var expectedCoverageRooms: [ExpectedCoverageRoom] = []
     private(set) var coverageConfirmedRoomIDs: Set<String> = []
 
@@ -84,11 +85,12 @@ final class InventorySessionManager {
     // MARK: - Services
 
     private let storageService = InventoryStorageService()
-    private let apiClient = InventoryAPIClient()
+    private let apiClient: any InventoryProcessingCalling
     private let coverageConfirmationStore: any CoverageConfirmationPersisting
     private let userIDProvider: () -> String?
 
     init() {
+        self.apiClient = InventoryAPIClient()
         self.coverageConfirmationStore = FirestoreCoverageConfirmationStore()
         self.userIDProvider = { Auth.auth().currentUser?.uid }
     }
@@ -97,6 +99,17 @@ final class InventorySessionManager {
         coverageConfirmationStore: any CoverageConfirmationPersisting,
         userIDProvider: @escaping () -> String?
     ) {
+        self.apiClient = InventoryAPIClient()
+        self.coverageConfirmationStore = coverageConfirmationStore
+        self.userIDProvider = userIDProvider
+    }
+
+    init(
+        coverageConfirmationStore: any CoverageConfirmationPersisting,
+        userIDProvider: @escaping () -> String?,
+        apiClient: any InventoryProcessingCalling
+    ) {
+        self.apiClient = apiClient
         self.coverageConfirmationStore = coverageConfirmationStore
         self.userIDProvider = userIDProvider
     }
@@ -113,6 +126,7 @@ final class InventorySessionManager {
     /// The processing pipeline task. Owned by the manager so it survives
     /// view-tree changes. Cancelled on reset or when user navigates away.
     private var processingTask: Task<Void, Never>?
+    private var retainedProcessingRequest: InventoryProcessingRequest?
 
     // MARK: - Computed
 
@@ -134,6 +148,10 @@ final class InventorySessionManager {
 
     var userId: String? {
         userIDProvider()
+    }
+
+    var hasRetainedProcessingRequest: Bool {
+        retainedProcessingRequest != nil
     }
 
     /// String key for animating state transitions
@@ -329,31 +347,72 @@ final class InventorySessionManager {
 
             state = .processing(roomName: roomName, progress: "Analyzing room...")
 
-            // Phase 2 — kick off Cloud Function
-            try await apiClient.processInventory(
+            // Phase 2 — kick off Cloud Function. The complete callable payload
+            // is retained if entitlement is denied so a purchase can retry it
+            // without uploading or scanning again.
+            let request = InventoryProcessingRequest(
                 userId: userId,
                 sessionId: session.id,
                 roomName: roomName,
                 frameCount: session.frameCount
             )
-
-            guard !Task.isCancelled else { return }
-
-            // Phase 3 — install Firestore listener and return.
-            // State transitions out of .processing happen in handleSessionUpdate.
-            installSessionListener(
-                userId: userId,
-                sessionId: session.id,
-                roomName: roomName
-            )
+            await processUploadedSession(request)
 
         } catch {
-            // Caught here on upload failure or Cloud Function failure.
-            // Listener errors are handled in handleSessionUpdate.
+            // Callable failures are handled in processUploadedSession. This
+            // catch is for the frame upload/session-creation phase.
             self.isProcessing = false
             self.error = error.localizedDescription
             self.state = .roomList
         }
+    }
+
+    func processUploadedSession(_ request: InventoryProcessingRequest) async {
+        do {
+            try await apiClient.processInventory(request)
+            guard !Task.isCancelled else { return }
+
+            retainedProcessingRequest = nil
+            movePassRequired = false
+
+            // State transitions out of .processing happen in
+            // handleSessionUpdate after the callable accepts this payload.
+            installSessionListener(
+                userId: request.userId,
+                sessionId: request.sessionId,
+                roomName: request.roomName
+            )
+        } catch InventoryError.movePassRequired {
+            isProcessing = false
+            error = nil
+            retainedProcessingRequest = request
+            movePassRequired = true
+            state = .roomList
+        } catch {
+            isProcessing = false
+            self.error = error.localizedDescription
+            retainedProcessingRequest = nil
+            movePassRequired = false
+            state = .roomList
+        }
+    }
+
+    func retryRetainedProcessingRequest() async {
+        guard let request = retainedProcessingRequest else {
+            movePassRequired = false
+            return
+        }
+
+        movePassRequired = false
+        error = nil
+        isProcessing = true
+        state = .processing(roomName: request.roomName, progress: "Analyzing room...")
+        await processUploadedSession(request)
+    }
+
+    func discardRetainedProcessingRequest() {
+        retainedProcessingRequest = nil
+        movePassRequired = false
     }
 
     /// Install the Firestore listener for a session. The callback may fire
@@ -441,6 +500,8 @@ final class InventorySessionManager {
         sessionListener = nil
 
         observedSessionId = nil
+        retainedProcessingRequest = nil
+        movePassRequired = false
     }
 
     // MARK: - Confirmation / review handoffs
@@ -610,6 +671,8 @@ final class InventorySessionManager {
         submissionStatus = .draft
         error = nil
         isProcessing = false
+        retainedProcessingRequest = nil
+        movePassRequired = false
         state = .intro
     }
 

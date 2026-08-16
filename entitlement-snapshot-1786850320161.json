@@ -1,0 +1,165 @@
+{
+ "0BjhPbjjNZcTpRb8UyRsMTP89k52": {
+  "isUpgraded": false,
+  "environment": "Xcode",
+  "purchaseDate": "2026-08-15T06:01:16Z",
+  "originalTransactionId": "0",
+  "productId": "peezy.plus.move",
+  "isActive": true,
+  "transactionId": "0",
+  "expirationDate": "2027-02-15T07:01:16Z",
+  "updatedAt": {
+   "_seconds": 1786773682,
+   "_nanoseconds": 318000000
+  }
+ },
+ "2q1wfHZl68bBauSYHAO6Lzaf4b33": {
+  "isUpgraded": false,
+  "environment": "Xcode",
+  "purchaseDate": "2026-04-17T05:15:29Z",
+  "originalTransactionId": "0",
+  "productId": "peezy.plus.annual",
+  "isActive": true,
+  "transactionId": "0",
+  "expirationDate": "2026-04-20T05:15:29Z",
+  "updatedAt": {
+   "_seconds": 1776404363,
+   "_nanoseconds": 743000000
+  }
+ },
+ "4l3CWZYKMRezatYqFZSuEGnXUsg1": {
+  "isUpgraded": false,
+  "productId": "peezy.plus.move",
+  "source": "giftCode",
+  "isActive": true,
+  "environment": "Xcode",
+  "purchaseDate": "2026-08-04T18:23:12Z",
+  "originalTransactionId": "0",
+  "transactionId": "0",
+  "expirationDate": "2027-02-04T19:23:12Z",
+  "updatedAt": {
+   "_seconds": 1785867812,
+   "_nanoseconds": 671000000
+  }
+ },
+ "8yu2Eecaqfh37d71eAW9ZhBFW4y1": {
+  "source": "giftCode",
+  "expirationDate": {
+   "_seconds": 1801774500,
+   "_nanoseconds": 0
+  }
+ },
+ "HGyiA7zTH0X6pwXg3inLPqgx7eq1": {
+  "isUpgraded": false,
+  "environment": "Sandbox",
+  "purchaseDate": "2026-05-02T02:32:32Z",
+  "originalTransactionId": "2000001163554476",
+  "productId": "peezy.plus.annual",
+  "isActive": true,
+  "transactionId": "2000001163554476",
+  "expirationDate": "2026-05-03T02:32:32Z",
+  "updatedAt": {
+   "_seconds": 1777689168,
+   "_nanoseconds": 778000000
+  }
+ },
+ "JHacDgKZHZQlA3awqiwFG4qFO1t1": {
+  "isUpgraded": false,
+  "environment": "Xcode",
+  "purchaseDate": "2026-04-17T05:15:29Z",
+  "originalTransactionId": "0",
+  "productId": "peezy.plus.annual",
+  "isActive": true,
+  "transactionId": "0",
+  "expirationDate": "2026-04-20T05:15:29Z",
+  "updatedAt": {
+   "_seconds": 1776413343,
+   "_nanoseconds": 108000000
+  }
+ },
+ "Lzxr9gIQlnUzSbvxiNx9mMZYMFt2": {
+  "isUpgraded": false,
+  "environment": "Xcode",
+  "purchaseDate": "2026-07-26T00:00:45Z",
+  "originalTransactionId": "0",
+  "productId": "peezy.plus.annual",
+  "isActive": true,
+  "transactionId": "0",
+  "expirationDate": "2026-07-29T00:00:45Z",
+  "updatedAt": {
+   "_seconds": 1785024058,
+   "_nanoseconds": 324000000
+  }
+ },
+ "NNZCLqjujGh2zueuIyEaW53AVxf1": {
+  "isUpgraded": false,
+  "environment": "Sandbox",
+  "purchaseDate": "2026-08-13T21:40:11Z",
+  "originalTransactionId": "2000001221101352",
+  "productId": "peezy.plus.move",
+  "isActive": true,
+  "transactionId": "2000001221101352",
+  "expirationDate": "2027-02-13T22:40:11Z",
+  "updatedAt": {
+   "_seconds": 1786657218,
+   "_nanoseconds": 583000000
+  }
+ },
+ "OBybGXh6akYoYJXJeNkjLSooFI62": {
+  "isUpgraded": false,
+  "environment": "Xcode",
+  "purchaseDate": "2026-08-04T07:19:14Z",
+  "originalTransactionId": "0",
+  "productId": "peezy.plus.move",
+  "isActive": true,
+  "transactionId": "0",
+  "expirationDate": "2027-02-04T08:19:14Z",
+  "updatedAt": {
+   "_seconds": 1785827963,
+   "_nanoseconds": 931000000
+  }
+ },
+ "TGXVadsOB7QN15RKhBnzEYflXxa2": {
+  "isUpgraded": false,
+  "environment": null,
+  "purchaseDate": "2026-08-04T23:13:19.064Z",
+  "originalTransactionId": null,
+  "productId": "peezy.plus.move",
+  "source": "giftCode",
+  "isActive": true,
+  "transactionId": null,
+  "expirationDate": "2027-02-04T23:13:19.064Z",
+  "updatedAt": {
+   "_seconds": 1785885199,
+   "_nanoseconds": 626000000
+  }
+ },
+ "WYpH5JIZtrWGYGn5Az4AFyZmeAK2": {
+  "isUpgraded": false,
+  "environment": "Xcode",
+  "purchaseDate": "2026-08-04T09:09:52Z",
+  "originalTransactionId": "0",
+  "productId": "peezy.plus.move",
+  "isActive": true,
+  "transactionId": "0",
+  "expirationDate": "2027-02-04T10:09:52Z",
+  "updatedAt": {
+   "_seconds": 1785834604,
+   "_nanoseconds": 225000000
+  }
+ },
+ "XOIifBMNNlZoJFm14CPv9Y4HBKA2": {
+  "isUpgraded": false,
+  "environment": "Xcode",
+  "purchaseDate": "2026-08-04T15:21:25Z",
+  "originalTransactionId": "0",
+  "productId": "peezy.plus.move",
+  "isActive": true,
+  "transactionId": "0",
+  "expirationDate": "2027-02-04T16:21:25Z",
+  "updatedAt": {
+   "_seconds": 1785856896,
+   "_nanoseconds": 637000000
+  }
+ }
+}

@@ -223,7 +223,7 @@ struct PeezySettingsView: View {
                     }
                 }
             } else {
-                InventoryFlowView()
+                InventoryFlowView(hostingMode: .settings)
             }
         }
     }

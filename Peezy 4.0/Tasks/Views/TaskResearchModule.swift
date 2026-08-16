@@ -177,6 +177,12 @@ enum TaskResearchRequest {
     case reveal
 }
 
+enum TaskResearchGenerationOutcome: Equatable {
+    case completed
+    case movePassRequired
+    case failed
+}
+
 @MainActor
 @Observable
 final class TaskResearchModel {
@@ -243,8 +249,8 @@ final class TaskResearchModel {
         selectedPreferences[preferenceId] = option
     }
 
-    func generateResearch(force: Bool) async {
-        guard let configuration, canGenerateResearch else { return }
+    func generateResearch(force: Bool) async -> TaskResearchGenerationOutcome {
+        guard let configuration, canGenerateResearch else { return .failed }
         shouldAnimateBrief = false
         researchState = .generating
 
@@ -264,8 +270,14 @@ final class TaskResearchModel {
             _ = try await Functions.functions()
                 .httpsCallable("researchTask")
                 .call(payload)
+            return .completed
         } catch {
+            if FunctionsErrorClassifier.classify(error) == .movePassRequired {
+                researchState = .absent
+                return .movePassRequired
+            }
             researchState = .failed
+            return .failed
         }
     }
 

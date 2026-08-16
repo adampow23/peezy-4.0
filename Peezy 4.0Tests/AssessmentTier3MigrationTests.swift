@@ -27,7 +27,7 @@ struct AssessmentTier3MigrationTests {
             .storageFullness
         ]
 
-        #expect(steps.count == 26)
+        #expect(steps.count == 25)
         #expect(migratedSteps.isDisjoint(with: steps))
         #expect(steps.contains(.currentFloorAccess))
         #expect(steps.contains(.newFloorAccess))

@@ -1,21 +1,29 @@
 import Foundation
 import FirebaseFunctions
 
-final class InventoryAPIClient {
+nonisolated struct InventoryProcessingRequest: Equatable, Sendable {
+    let userId: String
+    let sessionId: String
+    let roomName: String
+    let frameCount: Int
+}
+
+@MainActor
+protocol InventoryProcessingCalling {
+    func processInventory(_ request: InventoryProcessingRequest) async throws
+}
+
+@MainActor
+final class InventoryAPIClient: InventoryProcessingCalling {
     private let functions = Functions.functions()
 
     /// Trigger inventory processing for an uploaded session
-    func processInventory(
-        userId: String,
-        sessionId: String,
-        roomName: String,
-        frameCount: Int
-    ) async throws {
+    func processInventory(_ request: InventoryProcessingRequest) async throws {
         let data: [String: Any] = [
-            "userId": userId,
-            "sessionId": sessionId,
-            "roomName": roomName,
-            "frameCount": frameCount
+            "userId": request.userId,
+            "sessionId": request.sessionId,
+            "roomName": request.roomName,
+            "frameCount": request.frameCount
         ]
 
         do {
@@ -26,7 +34,12 @@ final class InventoryAPIClient {
                let success = response["success"] as? Bool, !success {
                 throw InventoryError.processingFailed("Server returned success=false")
             }
+        } catch let error as InventoryError {
+            throw error
         } catch let error as NSError {
+            if FunctionsErrorClassifier.classify(error) == .movePassRequired {
+                throw InventoryError.movePassRequired
+            }
             if error.domain == FunctionsErrorDomain {
                 let code = FunctionsErrorCode(rawValue: error.code)
                 switch code {
@@ -60,6 +73,7 @@ final class InventoryAPIClient {
 }
 
 enum InventoryError: LocalizedError {
+    case movePassRequired
     case notAuthenticated
     case invalidRequest(String)
     case processingFailed(String)
@@ -68,6 +82,7 @@ enum InventoryError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
+        case .movePassRequired: return "Move Pass required"
         case .notAuthenticated: return "You must be signed in to scan inventory"
         case .invalidRequest(let msg): return "Invalid request: \(msg)"
         case .processingFailed(let msg): return "Processing failed: \(msg)"

@@ -31,6 +31,7 @@ struct ScanInventoryFlow: View {
 
     var body: some View {
         InventoryFlowView(
+            hostingMode: .task,
             onUserDismiss: {
                 // User dismissed without submitting.
                 guard !didFireCallback, !isCheckingDismiss else { return }

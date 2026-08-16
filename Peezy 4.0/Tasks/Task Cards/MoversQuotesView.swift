@@ -122,35 +122,53 @@ struct MoversQuotesView: View {
                 .bold()
                 .foregroundStyle(PeezyTheme.Colors.deepInk)
 
-            TextField("Company name", text: $companyName)
-                .textInputAutocapitalization(.words)
-                .textFieldStyle(.roundedBorder)
-                .accessibilityIdentifier("movers.quotes.company")
+            labeledQuoteField("Company name") {
+                TextField("Company name", text: $companyName)
+                    .textInputAutocapitalization(.words)
+                    .textFieldStyle(.roundedBorder)
+                    .accessibilityLabel("Company name")
+                    .accessibilityIdentifier("movers.quotes.company")
+            }
 
-            TextField("Crew size", value: $crewSize, format: .number)
-                .keyboardType(.numberPad)
-                .textFieldStyle(.roundedBorder)
-                .accessibilityIdentifier("movers.quotes.crew")
+            labeledQuoteField("Crew size") {
+                TextField("Crew size", value: $crewSize, format: .number)
+                    .keyboardType(.numberPad)
+                    .textFieldStyle(.roundedBorder)
+                    .accessibilityLabel("Crew size")
+                    .accessibilityIdentifier("movers.quotes.crew")
+            }
 
-            TextField("Estimated hours", value: $estimatedHours, format: .number)
-                .keyboardType(.decimalPad)
-                .textFieldStyle(.roundedBorder)
-                .accessibilityIdentifier("movers.quotes.hours")
+            labeledQuoteField("Hours they quoted") {
+                TextField("Hours they quoted", value: $estimatedHours, format: .number)
+                    .keyboardType(.decimalPad)
+                    .textFieldStyle(.roundedBorder)
+                    .accessibilityLabel("Hours they quoted")
+                    .accessibilityIdentifier("movers.quotes.hours")
+            }
 
-            TextField("Hourly rate for the crew", value: $hourlyRate, format: .currency(code: "USD"))
-                .keyboardType(.decimalPad)
-                .textFieldStyle(.roundedBorder)
-                .accessibilityIdentifier("movers.quotes.hourlyRate")
+            labeledQuoteField("Hourly rate ($)") {
+                TextField("Hourly rate ($)", value: $hourlyRate, format: .currency(code: "USD"))
+                    .keyboardType(.decimalPad)
+                    .textFieldStyle(.roundedBorder)
+                    .accessibilityLabel("Hourly rate ($)")
+                    .accessibilityIdentifier("movers.quotes.hourlyRate")
+            }
 
-            TextField("Travel or trip fee", value: $travelFee, format: .currency(code: "USD"))
-                .keyboardType(.decimalPad)
-                .textFieldStyle(.roundedBorder)
-                .accessibilityIdentifier("movers.quotes.travelFee")
+            labeledQuoteField("Travel fee ($)") {
+                TextField("Travel fee ($)", value: $travelFee, format: .currency(code: "USD"))
+                    .keyboardType(.decimalPad)
+                    .textFieldStyle(.roundedBorder)
+                    .accessibilityLabel("Travel fee ($)")
+                    .accessibilityIdentifier("movers.quotes.travelFee")
+            }
 
-            TextField("Notes", text: $quoteNotes, axis: .vertical)
-                .lineLimit(3...6)
-                .textFieldStyle(.roundedBorder)
-                .accessibilityIdentifier("movers.quotes.notes")
+            labeledQuoteField("Notes") {
+                TextField("Notes", text: $quoteNotes, axis: .vertical)
+                    .lineLimit(3...6)
+                    .textFieldStyle(.roundedBorder)
+                    .accessibilityLabel("Notes")
+                    .accessibilityIdentifier("movers.quotes.notes")
+            }
 
             PeezyAssessmentButton(
                 "Save quote",
@@ -165,7 +183,21 @@ struct MoversQuotesView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .taskContentCard()
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("movers.quotes.editor")
+    }
+
+    private func labeledQuoteField<Field: View>(
+        _ title: String,
+        @ViewBuilder field: () -> Field
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.7))
+                .accessibilityHidden(true)
+            field()
+        }
     }
 
     private var canSave: Bool {

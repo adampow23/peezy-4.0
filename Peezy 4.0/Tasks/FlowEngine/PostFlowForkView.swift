@@ -42,7 +42,6 @@ struct PostFlowForkView: View {
         .onDisappear {
             research.stop()
         }
-        .accessibilityIdentifier("post_flow.surface")
     }
 
     private var forkView: some View {
@@ -111,7 +110,7 @@ struct PostFlowForkView: View {
     }
 
     private var researchView: some View {
-        ZStack {
+        ZStack(alignment: .topTrailing) {
             InteractiveBackground()
                 .ignoresSafeArea()
 
@@ -136,6 +135,20 @@ struct PostFlowForkView: View {
                 }
                 .accessibilityIdentifier("post_flow.research_card")
             }
+
+            Button(action: finish) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(PeezyTheme.Colors.deepInk)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Close research")
+            .accessibilityIdentifier("researchCloseButton")
+            .padding(.top, 8)
+            .padding(.trailing, 12)
+            .zIndex(100)
         }
     }
 
@@ -167,7 +180,7 @@ struct PostFlowForkView: View {
         phase = .research
         research.start()
         guard automaticallyGenerate, !research.hasPreferences else { return }
-        Task { await research.generateResearch(force: false) }
+        performResearchRequest(.generate(force: false))
     }
 
     private func handleResearchRequest(_ request: TaskResearchRequest) {
@@ -182,7 +195,13 @@ struct PostFlowForkView: View {
     private func performResearchRequest(_ request: TaskResearchRequest) {
         switch request {
         case .generate(let force):
-            Task { await research.generateResearch(force: force) }
+            Task {
+                let outcome = await research.generateResearch(force: force)
+                if outcome == .movePassRequired {
+                    pendingResearchRequest = request
+                    phase = .paywall
+                }
+            }
         case .reveal:
             break
         }

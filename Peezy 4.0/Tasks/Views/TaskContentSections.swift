@@ -7,7 +7,7 @@ import SwiftUI
 /// Catalog-owned surface content for the gated task detail. Content lives on
 /// `taskCatalog/{taskId}` only — never copied onto user task docs — so a
 /// Firestore edit ships new copy without a release.
-struct TaskContent: Equatable {
+nonisolated struct TaskContent: Equatable {
     let reframe: String
     let insiderItems: [String]
     let callSheet: TaskCallSheet?
@@ -18,12 +18,15 @@ struct TaskContent: Equatable {
     let quoteTracker: String
 
     init(data: [String: Any]) {
-        reframe = data["reframe"] as? String ?? ""
-        insiderItems = data["insiderItems"] as? [String] ?? []
-        callSheet = (data["callSheet"] as? [String: Any]).flatMap(TaskCallSheet.init(data:))
-        tripKit = (data["tripKit"] as? [String: Any]).flatMap(TaskTripKit.init(data:))
-        walkthrough = data["walkthrough"] as? [String] ?? []
-        deepLink = (data["deepLink"] as? String).flatMap(Self.safeURL(from:))
+        let presentation = data["content"] as? [String: Any] ?? data
+        reframe = presentation["reframe"] as? String ?? ""
+        insiderItems = presentation["insiderItems"] as? [String] ?? []
+        callSheet = (presentation["callSheet"] as? [String: Any])
+            .flatMap(TaskCallSheet.init(data:))
+        tripKit = (presentation["tripKit"] as? [String: Any])
+            .flatMap(TaskTripKit.init(data:))
+        walkthrough = presentation["walkthrough"] as? [String] ?? []
+        deepLink = (presentation["deepLink"] as? String).flatMap(Self.safeURL(from:))
         notesEnabled = (data["notesEnabled"] as? NSNumber)?.boolValue ?? false
         quoteTracker = (data["quoteTracker"] as? String)
             .flatMap { $0.isEmpty ? nil : $0 } ?? "none"
@@ -48,7 +51,12 @@ struct TaskContent: Equatable {
     }
 }
 
-struct TaskCallSheet: Equatable {
+nonisolated enum TaskContentHeader {
+    static let tripKit = "What to bring"
+    static let walkthrough = "Guided next steps"
+}
+
+nonisolated struct TaskCallSheet: Equatable {
     let say: [String]
     let ask: [String]
     let get: [String]
@@ -61,7 +69,7 @@ struct TaskCallSheet: Equatable {
     }
 }
 
-struct TaskTripKit: Equatable {
+nonisolated struct TaskTripKit: Equatable {
     let docs: [String]
 
     init?(data: [String: Any]) {
@@ -235,7 +243,7 @@ struct TripKitSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: PeezyTheme.Layout.verticalSpacing) {
-            TaskContentSectionTitle(title: "Bring with you", systemImage: "doc.on.doc.fill")
+            TaskContentSectionTitle(title: TaskContentHeader.tripKit, systemImage: "doc.on.doc.fill")
 
             ForEach(Array(tripKit.docs.enumerated()), id: \.offset) { index, doc in
                 Button {
@@ -310,7 +318,7 @@ struct WalkthroughDisclosure: View {
                 }
             } label: {
                 HStack {
-                    Label("Walk me through it", systemImage: "list.number")
+                    Label(TaskContentHeader.walkthrough, systemImage: "list.number")
                         .font(PeezyTheme.Typography.headline)
                     Spacer()
                     Image(systemName: "chevron.down")
@@ -354,7 +362,7 @@ struct DeepLinkFork: View {
                     }
                 } label: {
                     HStack {
-                        Label("Walk me through it", systemImage: "list.number")
+                        Label(TaskContentHeader.walkthrough, systemImage: "list.number")
                             .font(PeezyTheme.Typography.headline)
                         Spacer()
                         Image(systemName: "chevron.down")

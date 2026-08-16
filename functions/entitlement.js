@@ -41,7 +41,7 @@ async function requireMovePass(uid) {
   const expirationDate = parseExpirationDate(userSnapshot.data()?.subscription?.expirationDate);
 
   if (!expirationDate || expirationDate.getTime() <= Date.now()) {
-    throw new HttpsError('permission-denied', 'Move Pass required');
+    throw new HttpsError('permission-denied', 'Move Pass required', { reason: 'move-pass-required' });
   }
 }
 

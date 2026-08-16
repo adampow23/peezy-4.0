@@ -181,8 +181,10 @@ class SubscriptionManager: ObservableObject {
                     await updateSubscriptionStatus()
                     await refreshTrialEligibility()
 
-                    // Fire-and-forget server sync
-                    Task { await syncToServer(transaction: transaction) }
+                    // Give the entitlement write a short head start before the
+                    // paywall reports success. A failed or timed-out sync stays
+                    // non-fatal so local StoreKit entitlement remains enough.
+                    await syncToServerBeforePurchaseSuccess(transaction: transaction)
 
                     await transaction.finish()
                     isPurchasing = false
@@ -429,6 +431,28 @@ class SubscriptionManager: ObservableObject {
     }
 
     // MARK: - Server Sync
+
+    private func syncToServerBeforePurchaseSuccess(
+        transaction: StoreKit.Transaction
+    ) async {
+        let (events, continuation) = AsyncStream<Void>.makeStream()
+        let syncTask = Task {
+            await syncToServer(transaction: transaction)
+            continuation.yield()
+            continuation.finish()
+        }
+        let timeoutTask = Task {
+            try? await Task.sleep(for: .seconds(5))
+            guard !Task.isCancelled else { return }
+            continuation.yield()
+            continuation.finish()
+        }
+
+        var iterator = events.makeAsyncIterator()
+        _ = await iterator.next()
+        syncTask.cancel()
+        timeoutTask.cancel()
+    }
 
     private func syncToServer(transaction: StoreKit.Transaction) async {
         guard let uid = Auth.auth().currentUser?.uid else { return }

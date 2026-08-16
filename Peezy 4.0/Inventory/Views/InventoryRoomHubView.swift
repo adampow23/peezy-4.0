@@ -13,6 +13,7 @@ struct InventoryRoomHubView: View {
     var sessionManager: InventorySessionManager
     var onDismiss: () -> Void
     var onSubmitted: () -> Void = {}
+    var showsDismissControl = true
 
     @State private var showRoomNameEntry = false
     @State private var newRoomName = ""
@@ -45,24 +46,30 @@ struct InventoryRoomHubView: View {
                     .padding(.bottom, 20)
             }
 
-            // Close button — top right
-            VStack {
-                HStack {
-                    Spacer()
-                    Button {
-                        onDismiss()
-                    } label: {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.6))
-                            .frame(width: 32, height: 32)
-                            .background(.regularMaterial.opacity(0.8))
-                            .clipShape(Circle())
+            if showsDismissControl {
+                // Settings-hosted ownership: this is the whole-flow dismiss
+                // while the room hub is visible.
+                VStack {
+                    HStack {
+                        Spacer()
+                        Button {
+                            onDismiss()
+                        } label: {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.6))
+                                .frame(width: 32, height: 32)
+                                .background(.regularMaterial.opacity(0.8))
+                                .clipShape(Circle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Close scanner")
+                        .accessibilityIdentifier("inventory.roomHub.close")
+                        .padding(.trailing, 20)
+                        .padding(.top, 16)
                     }
-                    .padding(.trailing, 20)
-                    .padding(.top, 16)
+                    Spacer()
                 }
-                Spacer()
             }
         }
         .alert("Delete Room", isPresented: $showDeleteConfirmation) {
