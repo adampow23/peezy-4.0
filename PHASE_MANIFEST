@@ -1,18 +1,5 @@
 PHASE_MANIFEST
-BUILD24_REPORT.md
-functions/entitlement.js
-functions/tests/entitlement.test.js
-Peezy 4.0/MainInterface/Models/FunctionsErrorClassifier.swift
-Peezy 4.0/MainInterface/Models/SubscriptionManager.swift
-Peezy 4.0/Inventory/Services/InventoryAPIClient.swift
-Peezy 4.0/Inventory/Models/InventorySessionManager.swift
-Peezy 4.0/Inventory/Views/InventoryFlowView.swift
-Peezy 4.0/Inventory/Views/InventoryRoomHubView.swift
-Peezy 4.0/Tasks/Task Cards/ScanInventoryFlow.swift
-Peezy 4.0/Menu/PeezySettingsView.swift
-Peezy 4.0/Tasks/FlowEngine/PostFlowForkView.swift
-Peezy 4.0/Tasks/Views/TaskResearchModule.swift
-Peezy 4.0/Tasks/Views/TaskDetailView.swift
-Peezy 4.0/Tasks/Task Cards/MoversQuotesView.swift
-Peezy 4.0/Tasks/Views/TaskContentSections.swift
-Peezy 4.0Tests/Build24RegressionTests.swift
+docs/plans/codex-review-peezy-state-doc.md
+docs/plans/codex-review-peezy-state-doc-review-log.md
+PEEZY_STATE.md
+ARCHIVE_MANIFEST.md
