@@ -15,7 +15,14 @@
         ".git",
         "firebase-debug.log",
         "firebase-debug.*.log",
-        "*.local"
+        "*.local",
+        ".env.example",
+        "liveValidatePhaseB.js",
+        "seedAppReviewGiftCode.js",
+        "serviceAccountKey.json",
+        "seedTestUser.js",
+        "teardownTestUser.js",
+        "validateSubscription.test.js"
       ]
     }
   ],

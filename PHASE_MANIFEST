@@ -1,5 +1,6 @@
 PHASE_MANIFEST
-docs/plans/codex-review-peezy-state-doc.md
-docs/plans/codex-review-peezy-state-doc-review-log.md
-PEEZY_STATE.md
-ARCHIVE_MANIFEST.md
+firebase.json
+firestore.rules
+functions/getWorkflowQualifying.js
+functions/index.js
+functions/tests/callableAuth.test.js

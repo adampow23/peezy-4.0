@@ -137,10 +137,15 @@ const getWorkflowQualifying = onCall(
 const submitWorkflowAnswers = onCall(
   { timeoutSeconds: 15, memory: '256MiB' },
   async (request) => {
-    const { workflowId, answers, userId } = request.data;
+    const userId = request.auth?.uid;
+    if (!userId) {
+      throw new HttpsError('unauthenticated', 'Must be signed in to submit workflow answers.');
+    }
+
+    const { workflowId, answers } = request.data || {};
     
-    if (!workflowId || !answers || !userId) {
-      throw new HttpsError('invalid-argument', 'workflowId, answers, and userId are required');
+    if (!workflowId || !answers) {
+      throw new HttpsError('invalid-argument', 'workflowId and answers are required');
     }
     
     console.log(`Submitting answers for workflow: ${workflowId}, user: ${userId}`);

@@ -40,14 +40,19 @@ const FIRST_SUPPORT_AUTO_ACK_TEXT = "Thanks — a real person on the Peezy team 
 exports.requestConcierge = onCall(
   { region: 'us-central1', timeoutSeconds: 10, memory: '256MiB' },
   async (request) => {
-    const { taskId, taskTitle, taskCategory, userId, userName, currentAddress, newAddress, moveDate, moveDistance } = request.data;
+    const userId = request.auth?.uid;
+    if (!userId) {
+      throw new HttpsError('unauthenticated', 'Must be signed in to request concierge help.');
+    }
+
+    const { taskId, taskTitle, taskCategory, userName, currentAddress, newAddress, moveDate, moveDistance } = request.data || {};
 
     const db = admin.firestore();
     await db.collection('conciergeRequests').add({
       taskId: taskId || '',
       taskTitle: taskTitle || '',
       taskCategory: taskCategory || '',
-      userId: userId || '',
+      userId,
       userName: userName || '',
       currentAddress: currentAddress || '',
       newAddress: newAddress || '',
@@ -68,11 +73,16 @@ exports.requestConcierge = onCall(
 exports.submitTaskFlow = onCall(
   { region: 'us-central1', timeoutSeconds: 10, memory: '256MiB' },
   async (request) => {
-    const { userId, userName, taskId, taskTitle, taskType, confirmedFields, transferChoice } = request.data;
+    const userId = request.auth?.uid;
+    if (!userId) {
+      throw new HttpsError('unauthenticated', 'Must be signed in to submit a task flow.');
+    }
+
+    const { userName, taskId, taskTitle, taskType, confirmedFields, transferChoice } = request.data || {};
 
     const db = admin.firestore();
     await db.collection('taskFlowSubmissions').add({
-      userId: userId || '',
+      userId,
       userName: userName || '',
       taskId: taskId || '',
       taskTitle: taskTitle || '',
