@@ -14,6 +14,13 @@ import FirebaseFirestore
 import FirebaseMessaging
 import GoogleSignIn
 
+#if DEBUG
+enum PeezyRuntime {
+    static let isRunningUnderXCTest = NSClassFromString("XCTestCase") != nil
+        || ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+}
+#endif
+
 final class AppDelegate: NSObject, UIApplicationDelegate, MessagingDelegate, UNUserNotificationCenterDelegate {
     private var authStateHandle: AuthStateDidChangeListenerHandle?
     private var pendingFCMToken: String?
@@ -22,6 +29,10 @@ final class AppDelegate: NSObject, UIApplicationDelegate, MessagingDelegate, UNU
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
+        #if DEBUG
+        if PeezyRuntime.isRunningUnderXCTest { return true }
+        #endif
+
         if FirebaseApp.app() == nil {
             FirebaseApp.configure()
         }
@@ -127,6 +138,10 @@ struct PeezyV1App: App {
 
     // This runs ONCE when the app launches, before any views appear
     init() {
+        #if DEBUG
+        if PeezyRuntime.isRunningUnderXCTest { return }
+        #endif
+
         if FirebaseApp.app() == nil {
             FirebaseApp.configure()
         }
@@ -137,17 +152,29 @@ struct PeezyV1App: App {
 
     var body: some Scene {
         WindowGroup {
-            rootView
-                .preferredColorScheme(.light)
-                .environmentObject(SubscriptionManager.shared)
-                .onOpenURL { url in
-                    // Handle Google Sign-In URL callback
-                    GIDSignIn.sharedInstance.handle(url)
-                }
-                .onReceive(SubscriptionManager.shared.$subscriptionStatus) { status in
-                    AnalyticsEvents.setHasSubscription(status.isActive)
-                }
+            #if DEBUG
+            if PeezyRuntime.isRunningUnderXCTest {
+                Color.clear
+            } else {
+                productionRootView
+            }
+            #else
+            productionRootView
+            #endif
         }
+    }
+
+    private var productionRootView: some View {
+        rootView
+            .preferredColorScheme(.light)
+            .environmentObject(SubscriptionManager.shared)
+            .onOpenURL { url in
+                // Handle Google Sign-In URL callback
+                GIDSignIn.sharedInstance.handle(url)
+            }
+            .onReceive(SubscriptionManager.shared.$subscriptionStatus) { status in
+                AnalyticsEvents.setHasSubscription(status.isActive)
+            }
     }
 
     @ViewBuilder

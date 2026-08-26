@@ -4,3 +4,15 @@ firestore.rules
 functions/getWorkflowQualifying.js
 functions/index.js
 functions/tests/callableAuth.test.js
+docs/plans/codex-review-phase0-build.md
+docs/plans/codex-review-phase0-build-review-log.md
+functions/spawnTasks.js
+functions/tests/spawnTasks.test.js
+functions/spawnTasks.test.js
+Peezy 4.0/MainInterface/Models/PeezyHomeViewModel.swift
+Peezy 4.0/MainInterface/Models/TaskActionService.swift
+Peezy 4.0/MainInterface/Models/PeezyV1App.swift
+Peezy 4.0/MainInterface/Models/SpawnService.swift
+Peezy 4.0/MainInterface/Views/PeezyHomeView.swift
+Peezy 4.0/MainInterface/Views/NudgeCardView.swift
+Peezy 4.0Tests/PeezyNudgeAnswerTests.swift

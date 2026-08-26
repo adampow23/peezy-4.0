@@ -31,7 +31,8 @@ struct SpawnService {
         token: String,
         source: Source,
         spawns: [Spawn],
-        answers: [String: Any]? = nil
+        answers: [String: Any]? = nil,
+        expectedUserId: String? = nil
     ) async throws -> Response {
         var payload: [String: Any] = [
             "token": token,
@@ -46,6 +47,9 @@ struct SpawnService {
         ]
         if let answers {
             payload["answers"] = answers
+        }
+        if let expectedUserId {
+            payload["expectedUserId"] = expectedUserId
         }
 
         let result = try await Functions.functions().httpsCallable("spawnTasks").call(payload)

@@ -78,6 +78,7 @@ function makeFakeDb({ catalog = {}, tokenResult = null, identityMoveDate = "2026
     batch() {
       const ops = [];
       return {
+        create: (ref, data) => ops.push({ path: ref.path, data }),
         set: (ref, data, opts) => ops.push({ path: ref.path, data, opts }),
         async commit() { writes.push(...ops); }
       };

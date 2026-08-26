@@ -350,8 +350,11 @@ struct PeezyHomeView: View {
             // Nudge cards render inline (Spec 09 Phase 3) — no flow cover.
             NudgeCardView(
                 prompt: task.nudgePrompt ?? task.title,
+                answerState: viewModel.nudgeAnswerState,
+                errorMessage: viewModel.nudgeAnswerError,
                 onYes: { viewModel.answerNudge(yes: true) },
-                onNo: { viewModel.answerNudge(yes: false) }
+                onNo: { viewModel.answerNudge(yes: false) },
+                onRetry: { viewModel.retryNudgeAnswer() }
             )
         } else {
             activeTaskLoadingContent

@@ -2,10 +2,96 @@ import FirebaseAuth
 import FirebaseFirestore
 import Foundation
 
+nonisolated enum NudgeChoice: String, Equatable {
+    case dismissed = "Dismissed"
+    case converted = "Converted"
+}
+
+nonisolated enum ClaimResult: Equatable {
+    case won
+    case alreadyTerminal(choice: String, opId: String?)
+}
+
+nonisolated struct TransactionMutation {
+    let updates: [String: Any]
+    let result: ClaimResult
+}
+
+protocol TransactionRunner {
+    func runTransaction(
+        userId: String,
+        taskId: String,
+        _ operation: @escaping ([String: Any]) -> TransactionMutation
+    ) async throws -> ClaimResult
+}
+
+nonisolated struct FirestoreTransactionRunner: TransactionRunner {
+    nonisolated func runTransaction(
+        userId: String,
+        taskId: String,
+        _ operation: @escaping ([String: Any]) -> TransactionMutation
+    ) async throws -> ClaimResult {
+        let database = Firestore.firestore()
+        let reference = database.collection("users").document(userId)
+            .collection("tasks").document(taskId)
+        let value = try await database.runTransaction { transaction, errorPointer in
+            do {
+                let snapshot = try transaction.getDocument(reference)
+                guard snapshot.exists else {
+                    throw FirestoreTransactionRunnerError.missingDocument
+                }
+                let mutation = operation(snapshot.data() ?? [:])
+                if !mutation.updates.isEmpty {
+                    transaction.updateData(mutation.updates, forDocument: reference)
+                }
+                return ClaimResultBox(mutation.result)
+            } catch {
+                errorPointer?.pointee = error as NSError
+                return nil
+            }
+        }
+        guard let box = value as? ClaimResultBox else {
+            throw FirestoreTransactionRunnerError.missingResult
+        }
+        return box.result
+    }
+}
+
+private nonisolated final class ClaimResultBox: NSObject {
+    let result: ClaimResult
+
+    init(_ result: ClaimResult) {
+        self.result = result
+    }
+}
+
+private nonisolated enum FirestoreTransactionRunnerError: LocalizedError {
+    case missingDocument
+    case missingResult
+
+    var errorDescription: String? {
+        switch self {
+        case .missingDocument:
+            return "This nudge no longer exists."
+        case .missingResult:
+            return "The nudge response could not be saved."
+        }
+    }
+}
+
 /// Firestore write side of task actions (Spec 03 Phases B–C). Bodies of the
 /// status/snooze/complete writes are moved VERBATIM from PeezyHomeViewModel —
 /// the update payloads are load-bearing; do not change field names or shapes.
 struct TaskActionService {
+
+    private nonisolated static let nudgeNonterminalStatuses: Set<String> = [
+        "Upcoming",
+        "InProgress",
+        "pending",
+        "matching_in_progress",
+        "UserInProgress",
+        "Snoozed"
+    ]
 
     /// Persists the workflow spine stage on the task doc — direct write,
     /// matching the existing status-write pattern (no callable).
@@ -73,6 +159,54 @@ struct TaskActionService {
                 ])
         } catch {
             print("⚠️ Failed to clear flow state: \(error.localizedDescription)")
+        }
+    }
+
+    func claimNudgeTerminal(
+        userId: String,
+        taskId: String,
+        choice: NudgeChoice,
+        opId: String,
+        runner: any TransactionRunner
+    ) async throws -> ClaimResult {
+        guard !userId.isEmpty, !taskId.isEmpty else {
+            throw FlowProgressPersistenceError.missingIdentity
+        }
+
+        return try await runner.runTransaction(
+            userId: userId,
+            taskId: taskId,
+            Self.nudgeTransactionOperation(choice: choice, opId: opId)
+        )
+    }
+
+    private nonisolated static func nudgeTransactionOperation(
+        choice: NudgeChoice,
+        opId: String
+    ) -> ([String: Any]) -> TransactionMutation {
+        { data in
+            let status = data["status"] as? String ?? ""
+            guard Self.nudgeNonterminalStatuses.contains(status) else {
+                let answeredBy = data["answeredBy"] as? [String: Any]
+                return TransactionMutation(
+                    updates: [:],
+                    result: .alreadyTerminal(
+                        choice: answeredBy?["choice"] as? String ?? status,
+                        opId: answeredBy?["opId"] as? String
+                    )
+                )
+            }
+
+            return TransactionMutation(
+                updates: [
+                    "status": choice.rawValue,
+                    "answeredBy": [
+                        "choice": choice.rawValue,
+                        "opId": opId
+                    ]
+                ],
+                result: .won
+            )
         }
     }
 

@@ -1,5 +1,6 @@
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const admin = require("firebase-admin");
+const { createHash } = require("node:crypto");
 
 if (!admin.apps.length) {
   admin.initializeApp();
@@ -7,24 +8,129 @@ if (!admin.apps.length) {
 
 const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000;
 const SOURCE_KINDS = ["conversation", "nudge", "onComplete"];
+const MAX_REQUEST_BYTES = 48 * 1024;
 
 class SpawnValidationError extends Error {}
 
+function canonicalJSON(value) {
+  const ancestors = new Set();
+
+  function encode(current) {
+    if (current === null) return "null";
+    if (typeof current === "string" || typeof current === "boolean") {
+      return JSON.stringify(current);
+    }
+    if (typeof current === "number") {
+      return Number.isFinite(current) ? JSON.stringify(current) : "null";
+    }
+    if (typeof current === "undefined" || typeof current === "function" ||
+        typeof current === "symbol") {
+      return undefined;
+    }
+    if (typeof current === "bigint") {
+      throw new TypeError("BigInt is not JSON serializable");
+    }
+    if (typeof current.toJSON === "function") {
+      return encode(current.toJSON());
+    }
+    if (ancestors.has(current)) {
+      throw new TypeError("Circular value is not JSON serializable");
+    }
+
+    ancestors.add(current);
+    let encoded;
+    if (Array.isArray(current)) {
+      encoded = `[${current.map((item) => encode(item) ?? "null").join(",")}]`;
+    } else {
+      const entries = [];
+      for (const key of Object.keys(current).sort()) {
+        const item = encode(current[key]);
+        if (item !== undefined) entries.push(`${JSON.stringify(key)}:${item}`);
+      }
+      encoded = `{${entries.join(",")}}`;
+    }
+    ancestors.delete(current);
+    return encoded;
+  }
+
+  return encode(value);
+}
+
+function sha256Hex(value) {
+  return createHash("sha256").update(value, "utf8").digest("hex");
+}
+
+function requestFingerprint(request) {
+  return `f1_${sha256Hex(canonicalJSON({
+    source: request.source,
+    spawns: request.spawns,
+    answers: request.answers
+  }))}`;
+}
+
+function deterministicTaskId(token, ordinal) {
+  return `t1_${sha256Hex(`${token}|${ordinal}`).slice(0, 40)}`;
+}
+
+function isValidDocumentId(value) {
+  return Buffer.byteLength(value, "utf8") <= 256 &&
+    !value.includes("/") &&
+    value !== "." &&
+    value !== ".." &&
+    !(value.startsWith("__") && value.endsWith("__"));
+}
+
+function validateAnswersDepth(value, depth = 1, ancestors = new Set()) {
+  if (value === null || typeof value !== "object") return;
+  if (depth > 4) {
+    throw new SpawnValidationError("answers nesting depth must not exceed 4");
+  }
+  if (ancestors.has(value)) {
+    throw new SpawnValidationError("answers must be JSON serializable");
+  }
+  ancestors.add(value);
+  for (const item of Array.isArray(value) ? value : Object.values(value)) {
+    validateAnswersDepth(item, depth + 1, ancestors);
+  }
+  ancestors.delete(value);
+}
+
 // Request: { token, source:{kind:"conversation"|"nudge"|"onComplete", id},
-//            spawns:[{taskId, titleParams?:{institution}}], answers?:{k:v} }
+//            spawns:[{taskId, titleParams?:{institution}}], answers?:{k:v}, expectedUserId? }
 function validateRequest(data) {
-  const { token, source, spawns, answers } = data || {};
+  const requestData = data || {};
+  let serialized;
+  try {
+    serialized = canonicalJSON(requestData);
+  } catch (error) {
+    throw new SpawnValidationError("request must be JSON serializable");
+  }
+  if (serialized !== undefined && Buffer.byteLength(serialized, "utf8") > MAX_REQUEST_BYTES) {
+    throw new SpawnValidationError("request must not exceed 48KB");
+  }
+
+  const { token, source, spawns, answers } = requestData;
 
   if (typeof token !== "string" || token.trim().length === 0) {
     throw new SpawnValidationError("A non-empty idempotency token is required");
+  }
+  const cleanedToken = token.trim();
+  if (!isValidDocumentId(cleanedToken)) {
+    throw new SpawnValidationError("token must be a valid Firestore document ID of at most 256 bytes");
   }
   if (!source || typeof source !== "object" ||
       !SOURCE_KINDS.includes(source.kind) ||
       typeof source.id !== "string" || source.id.length === 0) {
     throw new SpawnValidationError("source requires kind (conversation|nudge|onComplete) and id");
   }
+  if (Buffer.byteLength(source.id, "utf8") > 256) {
+    throw new SpawnValidationError("source.id must not exceed 256 bytes");
+  }
   if (!Array.isArray(spawns) || spawns.length === 0) {
     throw new SpawnValidationError("spawns must be a non-empty array");
+  }
+  if (spawns.length > 20) {
+    throw new SpawnValidationError("spawns must not contain more than 20 items");
   }
 
   const cleanedSpawns = spawns.map((spawn) => {
@@ -32,8 +138,15 @@ function validateRequest(data) {
         typeof spawn.taskId !== "string" || spawn.taskId.trim().length === 0) {
       throw new SpawnValidationError("Every spawn requires a non-empty taskId");
     }
-    const cleaned = { taskId: spawn.taskId.trim() };
+    const taskId = spawn.taskId.trim();
+    if (!isValidDocumentId(taskId)) {
+      throw new SpawnValidationError("Every taskId must be a valid Firestore document ID of at most 256 bytes");
+    }
+    const cleaned = { taskId };
     const institution = spawn.titleParams?.institution;
+    if (typeof institution === "string" && Buffer.byteLength(institution, "utf8") > 512) {
+      throw new SpawnValidationError("titleParams.institution must not exceed 512 bytes");
+    }
     if (typeof institution === "string" && institution.length > 0) {
       cleaned.titleParams = { institution };
     }
@@ -45,15 +158,27 @@ function validateRequest(data) {
     if (typeof answers !== "object" || Array.isArray(answers)) {
       throw new SpawnValidationError("answers must be a map of key/value pairs");
     }
+    if (Object.keys(answers).length > 200) {
+      throw new SpawnValidationError("answers must not contain more than 200 keys");
+    }
+    validateAnswersDepth(answers);
     cleanedAnswers = answers;
   }
 
-  return {
-    token: token.trim(),
+  const cleaned = {
+    token: cleanedToken,
     source: { kind: source.kind, id: source.id },
     spawns: cleanedSpawns,
     answers: cleanedAnswers
   };
+  if (Object.prototype.hasOwnProperty.call(requestData, "expectedUserId")) {
+    if (typeof requestData.expectedUserId !== "string" ||
+        Buffer.byteLength(requestData.expectedUserId, "utf8") > 128) {
+      throw new SpawnValidationError("expectedUserId must be a string of at most 128 bytes");
+    }
+    cleaned.expectedUserId = requestData.expectedUserId;
+  }
+  return cleaned;
 }
 
 // Same tolerance as peezyChat's dateFromValue: Timestamp.toDate / string / number.
@@ -157,13 +282,30 @@ async function readMoveDate(db, userId) {
   return dateFromValue(identity.moveDate) || dateFromValue(assessment.moveDate);
 }
 
+function replayToken(snapshot, fingerprint) {
+  const storedFingerprint = snapshot.get("fingerprint");
+  if (storedFingerprint === undefined || storedFingerprint === fingerprint) {
+    return snapshot.get("result");
+  }
+  throw new HttpsError(
+    "failed-precondition",
+    "This idempotency token was already used for a different spawn request"
+  );
+}
+
+function isAlreadyExists(error) {
+  return error?.code === 6 || error?.code === "6" ||
+    error?.code === "already-exists" || error?.code === "ALREADY_EXISTS" ||
+    error?.code === "already_exists";
+}
+
 async function executeSpawn(db, userId, request, now = new Date()) {
-  // Idempotency: a replayed token returns the stored result, writes nothing.
+  const fingerprint = requestFingerprint(request);
   const tokenRef = db.collection("users").doc(userId)
     .collection("spawnTokens").doc(request.token);
   const existingToken = await tokenRef.get();
   if (existingToken.exists) {
-    return existingToken.get("result");
+    return replayToken(existingToken, fingerprint);
   }
 
   // All catalog reads before any write — an unknown id rejects with nothing written.
@@ -181,11 +323,11 @@ async function executeSpawn(db, userId, request, now = new Date()) {
   const batch = db.batch();
   const tasksCollection = db.collection("users").doc(userId).collection("tasks");
   const created = [];
-  for (const { spawn, row } of resolvedSpawns) {
-    const docRef = tasksCollection.doc();
+  for (const [ordinal, { spawn, row }] of resolvedSpawns.entries()) {
+    const docRef = tasksCollection.doc(deterministicTaskId(request.token, ordinal));
     const dueDate = resolveDueDate(row, moveDate, now);
     const title = spawnTitle(row, spawn.titleParams);
-    batch.set(docRef, buildTaskDoc({
+    batch.create(docRef, buildTaskDoc({
       row,
       docId: docRef.id,
       userId,
@@ -206,31 +348,56 @@ async function executeSpawn(db, userId, request, now = new Date()) {
   }
 
   const result = { created };
-  batch.set(tokenRef, { result, at: admin.firestore.FieldValue.serverTimestamp() });
-  await batch.commit();
-  return result;
+  batch.create(tokenRef, {
+    result,
+    fingerprint,
+    at: admin.firestore.FieldValue.serverTimestamp()
+  });
+  try {
+    await batch.commit();
+    return result;
+  } catch (error) {
+    if (!isAlreadyExists(error)) throw error;
+    const winnerToken = await tokenRef.get();
+    if (!winnerToken.exists) throw error;
+    return replayToken(winnerToken, fingerprint);
+  }
+}
+
+async function handleSpawnRequest(
+  request,
+  dbFactory = () => admin.firestore(),
+  now = undefined
+) {
+  const userId = request.auth?.uid;
+  if (!userId) {
+    throw new HttpsError("unauthenticated", "Sign in before spawning tasks");
+  }
+
+  let cleaned;
+  try {
+    cleaned = validateRequest(request.data);
+  } catch (error) {
+    if (error instanceof SpawnValidationError) {
+      throw new HttpsError("invalid-argument", error.message);
+    }
+    throw error;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(cleaned, "expectedUserId") &&
+      cleaned.expectedUserId !== userId) {
+    throw new HttpsError(
+      "failed-precondition",
+      "expectedUserId does not match the authenticated user"
+    );
+  }
+
+  return executeSpawn(dbFactory(), userId, cleaned, now);
 }
 
 const spawnTasks = onCall(
   { region: "us-central1", timeoutSeconds: 15, memory: "256MiB" },
-  async (request) => {
-    const userId = request.auth?.uid;
-    if (!userId) {
-      throw new HttpsError("unauthenticated", "Sign in before spawning tasks");
-    }
-
-    let cleaned;
-    try {
-      cleaned = validateRequest(request.data);
-    } catch (error) {
-      if (error instanceof SpawnValidationError) {
-        throw new HttpsError("invalid-argument", error.message);
-      }
-      throw error;
-    }
-
-    return executeSpawn(admin.firestore(), userId, cleaned);
-  }
+  (request) => handleSpawnRequest(request)
 );
 
 module.exports = {
@@ -241,5 +408,9 @@ module.exports = {
   resolveDueDate,
   spawnTitle,
   buildTaskDoc,
-  executeSpawn
+  executeSpawn,
+  canonicalJSON,
+  requestFingerprint,
+  deterministicTaskId,
+  handleSpawnRequest
 };

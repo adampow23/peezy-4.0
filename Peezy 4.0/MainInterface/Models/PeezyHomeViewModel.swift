@@ -14,6 +14,92 @@ import Observation
 import FirebaseFirestore
 import FirebaseAuth
 
+enum NudgeAnswerPhase: Equatable {
+    case preSpawn
+    case postSpawn
+    case claim
+}
+
+enum NudgeAnswerState: Equatable {
+    case idle
+    case inFlight(NudgeChoice)
+    case failed(NudgeChoice, NudgeAnswerPhase)
+}
+
+protocol NudgeSpawnClient {
+    func spawn(
+        token: String,
+        source: SpawnService.Source,
+        spawns: [SpawnService.Spawn],
+        answers: [String: Any]?,
+        expectedUserId: String?
+    ) async throws -> SpawnService.Response
+}
+
+extension SpawnService: NudgeSpawnClient {}
+
+protocol NudgeAnswerClock {
+    func sleep(for duration: Duration) async throws
+}
+
+struct SystemNudgeAnswerClock: NudgeAnswerClock {
+    func sleep(for duration: Duration) async throws {
+        try await Task.sleep(for: duration)
+    }
+}
+
+private enum NudgeAnswerOperationError: LocalizedError {
+    case missingAuthentication
+    case missingTaskID
+    case missingSpawnID
+    case timedOut
+
+    var errorDescription: String? {
+        switch self {
+        case .missingAuthentication:
+            return "Please sign in again before answering this card."
+        case .missingTaskID:
+            return "This nudge is missing the task identity needed to save your answer."
+        case .missingSpawnID:
+            return "This nudge is missing the task it should create."
+        case .timedOut:
+            return "That took too long. Your card is still here — try the same answer again."
+        }
+    }
+}
+
+private final class NudgeTimeoutResolver<Value> {
+    private var continuation: CheckedContinuation<Value, Error>?
+    private var operationTask: Task<Void, Never>?
+    private var timeoutTask: Task<Void, Never>?
+    private var isResolved = false
+
+    init(continuation: CheckedContinuation<Value, Error>) {
+        self.continuation = continuation
+    }
+
+    func install(operationTask: Task<Void, Never>, timeoutTask: Task<Void, Never>) {
+        guard !isResolved else {
+            operationTask.cancel()
+            timeoutTask.cancel()
+            return
+        }
+        self.operationTask = operationTask
+        self.timeoutTask = timeoutTask
+    }
+
+    func resolve(_ result: Result<Value, Error>) {
+        guard !isResolved, let continuation else { return }
+        isResolved = true
+        self.continuation = nil
+        operationTask?.cancel()
+        timeoutTask?.cancel()
+        operationTask = nil
+        timeoutTask = nil
+        continuation.resume(with: result)
+    }
+}
+
 @Observable
 final class PeezyHomeViewModel {
 
@@ -37,6 +123,8 @@ final class PeezyHomeViewModel {
     var taskQueue: [PeezyCard] = []
     var currentTask: PeezyCard?
     var completedThisSession: Int = 0
+    private(set) var nudgeAnswerState: NudgeAnswerState = .idle
+    private(set) var nudgeAnswerError: String?
 
     // MARK: - Daily Dose State
 
@@ -54,16 +142,50 @@ final class PeezyHomeViewModel {
     // MARK: - UserDefaults Keys
 
     private var userId: String { Auth.auth().currentUser?.uid ?? "anon" }
-    private var kDailyDoseCompletedCount: String { "peezy.\(userId).dailyDose.completedCount" }
-    private var kDailyDoseLastDate: String { "peezy.\(userId).dailyDose.lastDate" }
-    private var kDailyDoseFirstLaunchDate: String { "peezy.\(userId).dailyDose.firstLaunchDate" }
-    private var kHasSeenFirstTimeWelcome: String { "peezy.\(userId).hasSeenFirstTimeWelcome" }
-    private var kLastGreetingDate: String { "peezy.\(userId).lastGreetingDate" }
-    private var kTotalCompletedCount: String { "peezy.\(userId).totalCompletedCount" }
+    private var kDailyDoseCompletedCount: String { dailyDoseCompletedKey(for: userId) }
+    private var kDailyDoseLastDate: String { dailyDoseLastDateKey(for: userId) }
+    private var kDailyDoseFirstLaunchDate: String { dailyDoseFirstLaunchDateKey(for: userId) }
+    private var kHasSeenFirstTimeWelcome: String { hasSeenFirstTimeWelcomeKey(for: userId) }
+    private var kLastGreetingDate: String { lastGreetingDateKey(for: userId) }
+    private var kTotalCompletedCount: String { totalCompletedKey(for: userId) }
 
     var totalCompletedCount: Int {
         get { UserDefaults.standard.integer(forKey: kTotalCompletedCount) }
         set { UserDefaults.standard.set(newValue, forKey: kTotalCompletedCount) }
+    }
+
+    private let transactionRunner: any TransactionRunner
+    private let spawnClient: any NudgeSpawnClient
+    private let uidProvider: () -> String?
+    private let nudgeClock: any NudgeAnswerClock
+    private let spawnTimeout: Duration
+    private let claimTimeout: Duration
+
+    private struct NudgeOperation {
+        let task: PeezyCard
+        let choice: NudgeChoice
+        let userId: String?
+        let opId: String
+        let token: String
+        var hasCredited = false
+    }
+
+    private var nudgeOperation: NudgeOperation?
+
+    init(
+        transactionRunner: any TransactionRunner = FirestoreTransactionRunner(),
+        spawnClient: any NudgeSpawnClient = SpawnService(),
+        uidProvider: @escaping () -> String? = { Auth.auth().currentUser?.uid },
+        clock: any NudgeAnswerClock = SystemNudgeAnswerClock(),
+        spawnTimeout: Duration = .seconds(15),
+        claimTimeout: Duration = .seconds(10)
+    ) {
+        self.transactionRunner = transactionRunner
+        self.spawnClient = spawnClient
+        self.uidProvider = uidProvider
+        self.nudgeClock = clock
+        self.spawnTimeout = spawnTimeout
+        self.claimTimeout = claimTimeout
     }
 
     // MARK: - Task Flow System
@@ -331,62 +453,187 @@ final class PeezyHomeViewModel {
 
     // MARK: - Nudge Card Actions (Spec 09 Phase 3)
 
-    /// No: terminal "Dismissed" — the nudge never resurfaces anywhere and
-    /// earns no dose credit. Yes: convert through the spawnTasks callable
-    /// first; only on success persist "Converted" and credit the dose like a
-    /// completion. On failure the card stays put and the error toast shows.
+    /// The card advances only after its terminal claim commits. Retry retains
+    /// the captured identity, operation id, choice, and conversion token.
     func answerNudge(yes: Bool) {
-        guard let task = currentTask, task.tier == "nudge" else { return }
+        guard nudgeAnswerState == .idle,
+              nudgeOperation == nil,
+              let task = currentTask,
+              task.tier == "nudge" else { return }
 
-        if !yes {
-            Task { await actionService.setStatus(taskId: task.id, status: "Dismissed") }
-            allActiveTasks.removeAll { $0.id == task.id }
-            currentTask = nil
-            isFocusedTask = false
-            advanceAfterTask()
-            return
-        }
+        let choice: NudgeChoice = yes ? .converted : .dismissed
+        let operationUid = uidProvider()
+        let operation = NudgeOperation(
+            task: task,
+            choice: choice,
+            userId: operationUid,
+            opId: UUID().uuidString,
+            token: "\(task.id)-convert"
+        )
+        nudgeOperation = operation
+        nudgeAnswerError = nil
+        error = nil
+        nudgeAnswerState = .inFlight(choice)
+        Task { await performNudgeOperation() }
+    }
 
-        guard let spawnsId = task.nudgeSpawnsId else { return }
-        Task {
-            do {
-                _ = try await SpawnService().spawn(
-                    token: "\(task.id)-convert",
-                    source: SpawnService.Source(kind: "nudge", id: task.taskId ?? task.id),
-                    spawns: [SpawnService.Spawn(taskId: spawnsId)]
+    func retryNudgeAnswer() {
+        guard case .failed(let failedChoice, _) = nudgeAnswerState,
+              let operation = nudgeOperation,
+              operation.choice == failedChoice else { return }
+
+        nudgeAnswerError = nil
+        error = nil
+        nudgeAnswerState = .inFlight(operation.choice)
+        Task { await performNudgeOperation() }
+    }
+
+    private func performNudgeOperation() async {
+        guard let operation = nudgeOperation else { return }
+        var failurePhase: NudgeAnswerPhase = operation.choice == .converted ? .preSpawn : .claim
+
+        do {
+            guard let operationUid = operation.userId, !operationUid.isEmpty else {
+                throw NudgeAnswerOperationError.missingAuthentication
+            }
+            guard !operation.task.id.isEmpty else {
+                throw NudgeAnswerOperationError.missingTaskID
+            }
+
+            if operation.choice == .converted {
+                guard let spawnId = operation.task.nudgeSpawnsId, !spawnId.isEmpty else {
+                    throw NudgeAnswerOperationError.missingSpawnID
+                }
+                _ = try await bounded(to: spawnTimeout) {
+                    try await self.spawnClient.spawn(
+                        token: operation.token,
+                        source: SpawnService.Source(
+                            kind: "nudge",
+                            id: operation.task.taskId ?? operation.task.id
+                        ),
+                        spawns: [SpawnService.Spawn(taskId: spawnId)],
+                        answers: nil,
+                        expectedUserId: operationUid
+                    )
+                }
+                failurePhase = .postSpawn
+            }
+
+            let claimResult = try await bounded(to: claimTimeout) {
+                try await TaskActionService().claimNudgeTerminal(
+                    userId: operationUid,
+                    taskId: operation.task.id,
+                    choice: operation.choice,
+                    opId: operation.opId,
+                    runner: self.transactionRunner
                 )
-            } catch {
-                await MainActor.run { self.error = error.localizedDescription }
-                return
             }
-            await actionService.setStatus(taskId: task.id, status: "Converted")
-            await MainActor.run {
-                PeezyHaptics.taskComplete()
-                self.completedThisSession += 1
-                self.recordDoseProgress(completedTask: true)
-                self.allActiveTasks.removeAll { $0.id == task.id }
-                self.currentTask = nil
-                self.isFocusedTask = false
-                self.advanceAfterTask()
-            }
+            applyNudgeClaimResult(claimResult, operation: operation, userId: operationUid)
+        } catch {
+            failNudgeOperation(operation, phase: failurePhase, error: error)
         }
+    }
+
+    private func bounded<Value>(
+        to timeout: Duration,
+        operation: @escaping () async throws -> Value
+    ) async throws -> Value {
+        try await withCheckedThrowingContinuation { continuation in
+            let resolver = NudgeTimeoutResolver(continuation: continuation)
+            let operationTask = Task {
+                do {
+                    resolver.resolve(.success(try await operation()))
+                } catch {
+                    resolver.resolve(.failure(error))
+                }
+            }
+            let timeoutTask = Task {
+                do {
+                    try await nudgeClock.sleep(for: timeout)
+                    resolver.resolve(.failure(NudgeAnswerOperationError.timedOut))
+                } catch {
+                    resolver.resolve(.failure(error))
+                }
+            }
+            resolver.install(operationTask: operationTask, timeoutTask: timeoutTask)
+        }
+    }
+
+    private func applyNudgeClaimResult(
+        _ result: ClaimResult,
+        operation: NudgeOperation,
+        userId: String
+    ) {
+        guard nudgeOperation?.opId == operation.opId else { return }
+
+        let shouldCredit: Bool
+        switch result {
+        case .won:
+            shouldCredit = operation.choice == .converted
+        case .alreadyTerminal(let storedChoice, let storedOpId):
+            shouldCredit = operation.choice == .converted
+                && storedChoice == NudgeChoice.converted.rawValue
+                && storedOpId == operation.opId
+        }
+
+        if shouldCredit {
+            creditNudgeOperationIfNeeded(opId: operation.opId, userId: userId)
+        }
+        finishNudgeOperation(operation, accountingUserId: userId)
+    }
+
+    private func creditNudgeOperationIfNeeded(opId: String, userId: String) {
+        guard var operation = nudgeOperation,
+              operation.opId == opId,
+              !operation.hasCredited else { return }
+
+        operation.hasCredited = true
+        nudgeOperation = operation
+        PeezyHaptics.taskComplete()
+        completedThisSession += 1
+        recordDoseProgress(completedTask: true, userId: userId)
+    }
+
+    private func finishNudgeOperation(_ operation: NudgeOperation, accountingUserId: String) {
+        allActiveTasks.removeAll { $0.id == operation.task.id }
+        currentTask = nil
+        isFocusedTask = false
+        nudgeAnswerState = .idle
+        nudgeAnswerError = nil
+        error = nil
+        nudgeOperation = nil
+        advanceAfterTask(accountingUserId: accountingUserId)
+    }
+
+    private func failNudgeOperation(
+        _ operation: NudgeOperation,
+        phase: NudgeAnswerPhase,
+        error: Error
+    ) {
+        guard nudgeOperation?.opId == operation.opId else { return }
+        let message = error.localizedDescription
+        nudgeAnswerError = message
+        self.error = message
+        nudgeAnswerState = .failed(operation.choice, phase)
     }
 
     // MARK: - Advance After Task
 
-    private func advanceAfterTask() {
+    private func advanceAfterTask(accountingUserId: String? = nil) {
+        let completedCount = accountingUserId.map { dailyDoseCompletedCount(for: $0) }
+            ?? dailyDoseCompletedCount
         if allActiveTasks.isEmpty {
             currentTask = nil
             isFocusedTask = false
             state = .allComplete
-        } else if dailyDoseCompletedCount >= dailyTarget {
+        } else if completedCount >= dailyTarget {
             currentTask = nil
             isFocusedTask = false
             state = .dailyComplete
         } else if !taskQueue.isEmpty {
             startNextTask()
         } else {
-            determineHomeState()
+            determineHomeState(accountingUserId: accountingUserId)
         }
     }
 
@@ -398,18 +645,25 @@ final class PeezyHomeViewModel {
     }
 
     private func recordDoseProgress(completedTask: Bool) {
-        let wasFirstCompletion = totalCompletedCount == 0
-        let wasDayComplete = isTodayComplete
+        recordDoseProgress(completedTask: completedTask, userId: userId)
+    }
 
-        dailyDoseCompletedCount += 1
+    private func recordDoseProgress(completedTask: Bool, userId: String) {
+        let previousDoseCount = dailyDoseCompletedCount(for: userId)
+        let previousTotalCount = totalCompletedCount(for: userId)
+        let wasFirstCompletion = previousTotalCount == 0
+        let wasDayComplete = isTodayComplete(completedCount: previousDoseCount)
+        let updatedDoseCount = previousDoseCount + 1
+
+        setDailyDoseCompletedCount(updatedDoseCount, for: userId)
         if completedTask {
-            totalCompletedCount += 1
+            setTotalCompletedCount(previousTotalCount + 1, for: userId)
             if wasFirstCompletion {
                 AnalyticsEvents.firstDoseCompleted()
             }
         }
-        if !wasDayComplete && isTodayComplete {
-            AnalyticsEvents.dayDoseCompleted(dayNumber: dayNumber)
+        if !wasDayComplete && isTodayComplete(completedCount: updatedDoseCount) {
+            AnalyticsEvents.dayDoseCompleted(dayNumber: dayNumber(for: userId))
         }
     }
 
@@ -603,10 +857,12 @@ final class PeezyHomeViewModel {
 
     // MARK: - State Determination
 
-    func determineHomeState() {
+    func determineHomeState(accountingUserId: String? = nil) {
         if isFocusedTask { return }
 
-        if !UserDefaults.standard.bool(forKey: kHasSeenFirstTimeWelcome) {
+        let resolvedUserId = accountingUserId ?? userId
+
+        if !UserDefaults.standard.bool(forKey: hasSeenFirstTimeWelcomeKey(for: resolvedUserId)) {
             state = .firstTimeWelcome
             return
         }
@@ -617,22 +873,23 @@ final class PeezyHomeViewModel {
         }
 
         let today = Calendar.current.startOfDay(for: Date())
-        let lastGreeting = UserDefaults.standard.object(forKey: kLastGreetingDate) as? Date
+        let greetingKey = lastGreetingDateKey(for: resolvedUserId)
+        let lastGreeting = UserDefaults.standard.object(forKey: greetingKey) as? Date
         let isNewDay = lastGreeting == nil || !Calendar.current.isDate(lastGreeting!, inSameDayAs: today)
 
         if isNewDay {
             state = .dailyGreeting
-            UserDefaults.standard.set(today, forKey: kLastGreetingDate)
+            UserDefaults.standard.set(today, forKey: greetingKey)
             return
         }
 
-        let completedToday = dailyDoseCompletedCount
+        let completedToday = dailyDoseCompletedCount(for: resolvedUserId)
         if completedToday > 0 && completedToday < dailyTarget {
             state = .returningMidDay
             return
         }
 
-        if isTodayComplete {
+        if isTodayComplete(completedCount: completedToday) {
             state = .dailyComplete
             return
         }
@@ -658,6 +915,61 @@ final class PeezyHomeViewModel {
     private var dailyDoseCompletedCount: Int {
         get { UserDefaults.standard.integer(forKey: kDailyDoseCompletedCount) }
         set { UserDefaults.standard.set(newValue, forKey: kDailyDoseCompletedCount) }
+    }
+
+    private func dailyDoseCompletedCount(for userId: String) -> Int {
+        UserDefaults.standard.integer(forKey: dailyDoseCompletedKey(for: userId))
+    }
+
+    private func setDailyDoseCompletedCount(_ count: Int, for userId: String) {
+        UserDefaults.standard.set(count, forKey: dailyDoseCompletedKey(for: userId))
+    }
+
+    private func totalCompletedCount(for userId: String) -> Int {
+        UserDefaults.standard.integer(forKey: totalCompletedKey(for: userId))
+    }
+
+    private func setTotalCompletedCount(_ count: Int, for userId: String) {
+        UserDefaults.standard.set(count, forKey: totalCompletedKey(for: userId))
+    }
+
+    private func isTodayComplete(completedCount: Int) -> Bool {
+        completedCount >= dailyTarget && dailyTarget > 0
+    }
+
+    private func dayNumber(for userId: String) -> Int {
+        let firstLaunchStr = UserDefaults.standard.string(
+            forKey: dailyDoseFirstLaunchDateKey(for: userId)
+        ) ?? todayISOString()
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withFullDate]
+        guard let firstDate = formatter.date(from: firstLaunchStr) else { return 1 }
+        let days = Calendar.current.dateComponents([.day], from: firstDate, to: Date()).day ?? 0
+        return days + 1
+    }
+
+    private func dailyDoseCompletedKey(for userId: String) -> String {
+        "peezy.\(userId).dailyDose.completedCount"
+    }
+
+    private func dailyDoseLastDateKey(for userId: String) -> String {
+        "peezy.\(userId).dailyDose.lastDate"
+    }
+
+    private func dailyDoseFirstLaunchDateKey(for userId: String) -> String {
+        "peezy.\(userId).dailyDose.firstLaunchDate"
+    }
+
+    private func hasSeenFirstTimeWelcomeKey(for userId: String) -> String {
+        "peezy.\(userId).hasSeenFirstTimeWelcome"
+    }
+
+    private func lastGreetingDateKey(for userId: String) -> String {
+        "peezy.\(userId).lastGreetingDate"
+    }
+
+    private func totalCompletedKey(for userId: String) -> String {
+        "peezy.\(userId).totalCompletedCount"
     }
 
     private func todayISOString() -> String {
