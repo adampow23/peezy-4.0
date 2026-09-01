@@ -70,6 +70,15 @@ enum FlowProgressCoding {
         answers.mapValues(Set.init)
     }
 
+    static func workflowAnswers(
+        workflowId: String,
+        setAnswers: [String: Set<String>]
+    ) -> WorkflowAnswers {
+        var result = WorkflowAnswers(workflowId: workflowId)
+        result.answers = encode(setAnswers)
+        return result
+    }
+
     static func cardIndex(from path: [String], fallback: Int = 0) -> Int {
         guard let raw = path.last?.split(separator: ".").last,
               let index = Int(raw)

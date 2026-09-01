@@ -481,6 +481,8 @@
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "";
 				INFOPLIST_KEY_NSCameraUsageDescription = "Peezy uses your camera to scan rooms and create your moving inventory.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Peezy listens while you scan so you can call out what's staying, what's full, and what's not yours. Audio never leaves your iPhone.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Peezy transcribes what you say during a scan on this iPhone and sends only the text with your room frames to build your inventory.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -527,6 +529,8 @@
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "";
 				INFOPLIST_KEY_NSCameraUsageDescription = "Peezy uses your camera to scan rooms and create your moving inventory.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Peezy listens while you scan so you can call out what's staying, what's full, and what's not yours. Audio never leaves your iPhone.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Peezy transcribes what you say during a scan on this iPhone and sends only the text with your room frames to build your inventory.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

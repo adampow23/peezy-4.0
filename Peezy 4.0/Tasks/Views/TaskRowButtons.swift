@@ -104,6 +104,7 @@ struct TaskRowButtons: View {
     // MARK: - Layout resolver
 
     static func layout(for task: PeezyCard, section: TaskSection) -> TaskRowButtonLayout {
+        guard task.dispositionContract == nil else { return .none }
         switch (section, task.status, task.isScanInventory) {
         case (.todo, _, _):
             return .single(.init(title: "Open Task", style: .primary, action: .open(task)))

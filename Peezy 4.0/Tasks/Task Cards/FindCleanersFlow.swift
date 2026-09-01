@@ -23,6 +23,8 @@ struct FindCleanersFlow: View {
     let onDismiss: () -> Void
     let onStatusAction: (TaskFlowStatusAction) -> Void
 
+    @Environment(FlowExitCoordinator.self) private var exitCoordinator
+
     // MARK: - State
 
     @State private var currentIndex = 0
@@ -30,6 +32,7 @@ struct FindCleanersFlow: View {
     @State private var isSubmitting = false
     @State private var submissionError: String?
     @State private var submissionAttempt = 0
+    @State private var terminalSubmissionState = FlowTerminalSubmissionState()
 
     // MARK: - Card Indices
 
@@ -139,6 +142,7 @@ struct FindCleanersFlow: View {
                 .frame(minHeight: 44)
                 .padding(.horizontal, 24)
                 .padding(.bottom, 92)
+                .disabled(isSubmitting || exitCoordinator.isTerminalizing)
                 .accessibilityIdentifier("cleanersAddNewPlaceToggle")
             }
 
@@ -150,11 +154,13 @@ struct FindCleanersFlow: View {
     // MARK: - Navigation
 
     private func advance() {
+        guard !isSubmitting, !exitCoordinator.isTerminalizing else { return }
         guard currentIndex + 1 < totalCards else { return }
         currentIndex += 1
     }
 
     private func goBack() {
+        guard !isSubmitting, !exitCoordinator.isTerminalizing else { return }
         guard currentIndex > 0 else { return }
         currentIndex -= 1
     }
@@ -162,16 +168,26 @@ struct FindCleanersFlow: View {
     // MARK: - Answer Handlers
 
     private func selectSingle(_ key: String, id: String) {
-        answers[key] = [id]
-        advance()
+        if FlowAnswerMutationGate.apply(
+            isSubmitting: isSubmitting,
+            isTerminalizing: exitCoordinator.isTerminalizing,
+            mutation: { answers[key] = [id] }
+        ) {
+            advance()
+        }
     }
 
     private func toggleMulti(_ key: String, id: String) {
-        if answers[key] == nil { answers[key] = [] }
-        if answers[key]!.contains(id) {
-            answers[key]!.remove(id)
-        } else {
-            answers[key]!.insert(id)
+        FlowAnswerMutationGate.apply(
+            isSubmitting: isSubmitting,
+            isTerminalizing: exitCoordinator.isTerminalizing
+        ) {
+            if answers[key] == nil { answers[key] = [] }
+            if answers[key]!.contains(id) {
+                answers[key]!.remove(id)
+            } else {
+                answers[key]!.insert(id)
+            }
         }
     }
 
@@ -179,12 +195,17 @@ struct FindCleanersFlow: View {
         Binding(
             get: { answers["which_place"]?.contains("both") == true },
             set: { includesNewPlace in
-                if includesNewPlace {
-                    answers["which_place"] = ["both"]
-                    answers["move_in_timing"] = ["flexible"]
-                } else {
-                    answers["which_place"] = ["move_out"]
-                    answers.removeValue(forKey: "move_in_timing")
+                FlowAnswerMutationGate.apply(
+                    isSubmitting: isSubmitting,
+                    isTerminalizing: exitCoordinator.isTerminalizing
+                ) {
+                    if includesNewPlace {
+                        answers["which_place"] = ["both"]
+                        answers["move_in_timing"] = ["flexible"]
+                    } else {
+                        answers["which_place"] = ["move_out"]
+                        answers.removeValue(forKey: "move_in_timing")
+                    }
                 }
             }
         )
@@ -228,6 +249,7 @@ struct FindCleanersFlow: View {
         guard !isSubmitting else { return }
         isSubmitting = true
         submissionError = nil
+        let preSubmitBarrier = exitCoordinator.beginPreSubmitBarrier()
 
         var submissionAnswers = answers
         if submissionAnswers["which_place"]?.contains("both") == true {
@@ -237,36 +259,49 @@ struct FindCleanersFlow: View {
             submissionAnswers["which_place"] = ["move_out"]
             submissionAnswers.removeValue(forKey: "move_in_timing")
         }
-        var workflowAnswers = WorkflowAnswers(workflowId: workflowId)
-        workflowAnswers.answers = submissionAnswers.mapValues { Array($0) }
+        let workflowAnswers = FlowProgressCoding.workflowAnswers(
+            workflowId: workflowId,
+            setAnswers: submissionAnswers
+        )
 
-        Task {
+        Task { @MainActor in
             do {
-                let service = WorkflowService()
-                let response = try await service.submitAnswers(
-                    workflowId: workflowId,
-                    answers: workflowAnswers,
-                    userId: userId
-                )
-                if response.success {
-                    await TaskActionService().clearFlowState(taskId: taskId)
-                    await MainActor.run {
+                let persistedFlowAttemptId = try await preSubmitBarrier.value
+                try await terminalSubmissionState.run(
+                    submit: {
+                        let response = try await WorkflowService().submitAnswers(
+                            workflowId: workflowId,
+                            answers: workflowAnswers,
+                            userId: userId,
+                            submissionToken: WorkflowSubmissionToken.make(
+                                userId: userId,
+                                taskId: taskId,
+                                workflowId: workflowId,
+                                flowAttemptId: persistedFlowAttemptId
+                            )
+                        )
+                        guard response.success else { throw FlowTerminalSubmissionError.rejected }
+                    },
+                    clear: {
+                        exitCoordinator.beginTerminalization()
+                        try await exitCoordinator.terminalize {
+                            try await TaskActionService().clearFlowState(taskId: taskId)
+                        }
+                    },
+                    onSuccess: {
                         isSubmitting = false
                         onComplete()
                     }
-                } else {
-                    await MainActor.run {
-                        isSubmitting = false
-                        submissionError = "Couldn't save your answers. Check your connection, then try again."
-                        submissionAttempt += 1
-                    }
-                }
+                )
             } catch {
-                await MainActor.run {
-                    isSubmitting = false
+                isSubmitting = false
+                exitCoordinator.releaseSubmissionLockAfterFailure()
+                if terminalSubmissionState.submissionSucceeded {
+                    submissionError = "Your answers were saved, but the completed flow couldn't be cleared. Check your connection, then try again."
+                } else {
                     submissionError = "Couldn't save your answers. Check your connection, then try again."
-                    submissionAttempt += 1
                 }
+                submissionAttempt += 1
             }
         }
     }

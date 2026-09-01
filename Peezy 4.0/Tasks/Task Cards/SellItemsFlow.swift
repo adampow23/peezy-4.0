@@ -24,6 +24,8 @@ struct SellItemsFlow: View {
     let onDismiss: () -> Void
     let onStatusAction: (TaskFlowStatusAction) -> Void
 
+    @Environment(FlowExitCoordinator.self) private var exitCoordinator
+
     // MARK: - State
 
     @State private var currentIndex = 0
@@ -31,6 +33,7 @@ struct SellItemsFlow: View {
     @State private var isSubmitting = false
     @State private var submissionError: String?
     @State private var submissionAttempt = 0
+    @State private var terminalSubmissionState = FlowTerminalSubmissionState()
 
     // MARK: - Card Indices
 
@@ -141,11 +144,13 @@ struct SellItemsFlow: View {
     // MARK: - Navigation
 
     private func advance() {
+        guard !exitCoordinator.isTerminalizing else { return }
         guard currentIndex + 1 < totalCards else { return }
         currentIndex += 1
     }
 
     private func goBack() {
+        guard !isSubmitting, !exitCoordinator.isTerminalizing else { return }
         guard currentIndex > 0 else { return }
         currentIndex -= 1
     }
@@ -207,37 +212,51 @@ struct SellItemsFlow: View {
         guard !isSubmitting else { return }
         isSubmitting = true
         submissionError = nil
+        let preSubmitBarrier = exitCoordinator.beginPreSubmitBarrier()
 
-        var workflowAnswers = WorkflowAnswers(workflowId: workflowId)
-        workflowAnswers.answers = answers.mapValues { Array($0) }
+        let workflowAnswers = FlowProgressCoding.workflowAnswers(
+            workflowId: workflowId,
+            setAnswers: answers
+        )
 
-        Task {
+        Task { @MainActor in
             do {
-                let service = WorkflowService()
-                let response = try await service.submitAnswers(
-                    workflowId: workflowId,
-                    answers: workflowAnswers,
-                    userId: userId
-                )
-                if response.success {
-                    await TaskActionService().clearFlowState(taskId: taskId)
-                    await MainActor.run {
+                let persistedFlowAttemptId = try await preSubmitBarrier.value
+                try await terminalSubmissionState.run(
+                    submit: {
+                        let response = try await WorkflowService().submitAnswers(
+                            workflowId: workflowId,
+                            answers: workflowAnswers,
+                            userId: userId,
+                            submissionToken: WorkflowSubmissionToken.make(
+                                userId: userId,
+                                taskId: taskId,
+                                workflowId: workflowId,
+                                flowAttemptId: persistedFlowAttemptId
+                            )
+                        )
+                        guard response.success else { throw FlowTerminalSubmissionError.rejected }
+                    },
+                    clear: {
+                        exitCoordinator.beginTerminalization()
+                        try await exitCoordinator.terminalize {
+                            try await TaskActionService().clearFlowState(taskId: taskId)
+                        }
+                    },
+                    onSuccess: {
                         isSubmitting = false
                         onComplete()
                     }
-                } else {
-                    await MainActor.run {
-                        isSubmitting = false
-                        submissionError = "Couldn't save your answers. Check your connection, then try again."
-                        submissionAttempt += 1
-                    }
-                }
+                )
             } catch {
-                await MainActor.run {
-                    isSubmitting = false
+                isSubmitting = false
+                exitCoordinator.releaseSubmissionLockAfterFailure()
+                if terminalSubmissionState.submissionSucceeded {
+                    submissionError = "Your answers were saved, but the completed flow couldn't be cleared. Check your connection, then try again."
+                } else {
                     submissionError = "Couldn't save your answers. Check your connection, then try again."
-                    submissionAttempt += 1
                 }
+                submissionAttempt += 1
             }
         }
     }

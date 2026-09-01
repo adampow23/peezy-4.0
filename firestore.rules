@@ -2,29 +2,105 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    function isOwner(userId) {
+      return request.auth != null && request.auth.uid == userId;
+    }
+
+    function taskResetInactive(userId) {
+      let user = get(/databases/$(database)/documents/users/$(userId));
+      return !('taskReset' in user.data)
+        || !(user.data.taskReset.state in ['deleting', 'awaiting_local_reset']);
+    }
+
+    function isReservedTaskId(taskId) {
+      return taskId.matches('^(t1_|t2_|a2_).*');
+    }
+
+    function hasDispositionContract(data) {
+      return data.keys().hasAny(['dispositionContract']);
+    }
+
+    function hasPlanAudit(data) {
+      return data.keys().hasAny([
+        'planChangeRevision',
+        'planChangeState',
+        'planChangeHistory',
+        'pendingAmendmentTaskId',
+        'firstConfirmationUndoUntil',
+        'confirmationUndoUsed',
+        'confirmationOriginalFingerprint',
+        'confirmationAmendmentFingerprint'
+      ]);
+    }
+
+    function hasServerTaskCreateFields(data) {
+      return data.keys().hasAny([
+        'dispositionContract',
+        'spawnedFrom',
+        'subject',
+        'institutionId',
+        'institution',
+        'canonicalKeyVersion',
+        'supersedes',
+        'supersededBy',
+        'planChangeRevision',
+        'planChangeState',
+        'planChangeHistory',
+        'pendingAmendmentTaskId',
+        'firstConfirmationUndoUntil',
+        'confirmationUndoUsed',
+        'confirmationOriginalFingerprint',
+        'confirmationAmendmentFingerprint'
+      ]);
+    }
+
+    function changesServerTaskFields() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasAny([
+        'dispositionContract',
+        'spawnedFrom',
+        'subject',
+        'institutionId',
+        'institution',
+        'canonicalKeyVersion',
+        'supersedes',
+        'supersededBy',
+        'planChangeRevision',
+        'planChangeState',
+        'planChangeHistory',
+        'pendingAmendmentTaskId',
+        'firstConfirmationUndoUntil',
+        'confirmationUndoUsed',
+        'confirmationOriginalFingerprint',
+        'confirmationAmendmentFingerprint',
+        'flowRows',
+        'id',
+        'userId',
+        'taskId'
+      ]);
+    }
+
     // User document — owner-readable. The subscription entitlement field is
     // backend-owned (validateSubscription / gift redemption, Admin SDK):
     // owner writes may never create, modify, or remove it. Root-doc delete
     // is server-side only (deleteAccount, Admin SDK).
     match /users/{userId} {
-      allow read: if request.auth != null && request.auth.uid == userId;
-      allow create: if request.auth != null && request.auth.uid == userId
-        && !request.resource.data.keys().hasAny(['subscription']);
-      allow update: if request.auth != null && request.auth.uid == userId
-        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['subscription']);
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId)
+        && !request.resource.data.keys().hasAny(['subscription', 'taskReset']);
+      allow update: if isOwner(userId)
+        && !request.resource.data.diff(resource.data).affectedKeys()
+          .hasAny(['subscription', 'taskReset']);
       allow delete: if false;
     }
 
     // Support messages are owner-readable, but support replies and metadata are
     // backend-owned. Owners may create user messages and mark support replies read.
     match /users/{userId}/supportChat/{messageId} {
-      allow read: if request.auth != null && request.auth.uid == userId;
-      allow create: if request.auth != null
-        && request.auth.uid == userId
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId)
         && messageId != '_meta'
         && request.resource.data.sender == 'user';
-      allow update: if request.auth != null
-        && request.auth.uid == userId
+      allow update: if isOwner(userId)
         && messageId != '_meta'
         && resource.data.sender == 'support'
         && request.resource.data.read is bool
@@ -34,46 +110,115 @@ service cloud.firestore {
 
     // Read receipts are written only by Admin SDK support callables.
     match /users/{userId}/supportChat/_meta {
-      allow read: if request.auth != null && request.auth.uid == userId;
+      allow read: if isOwner(userId);
       allow write: if false;
     }
 
-    // Preserve the original recursive owner grant for every other user
-    // subcollection. supportChat and moveAnswers are deliberately excluded.
-    match /users/{userId}/{collectionId}/{document=**} {
-      allow read, write: if request.auth != null
-        && request.auth.uid == userId
-        && collectionId != 'supportChat'
-        && collectionId != 'moveAnswers';
+    // Task lifecycle is client-writable only for contractless, audit-free rows.
+    // Server-authored identity/provenance and generated flow rows are immutable.
+    match /users/{userId}/tasks/{taskId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId)
+        && taskResetInactive(userId)
+        && !isReservedTaskId(taskId)
+        && !hasServerTaskCreateFields(request.resource.data);
+      allow update: if isOwner(userId)
+        && taskResetInactive(userId)
+        && !taskId.matches('^a2_.*')
+        && !hasDispositionContract(resource.data)
+        && !hasDispositionContract(request.resource.data)
+        && !hasPlanAudit(resource.data)
+        && !hasPlanAudit(request.resource.data)
+        && !changesServerTaskFields();
+      allow delete: if isOwner(userId)
+        && taskResetInactive(userId)
+        && !taskId.matches('^a2_.*')
+        && !hasDispositionContract(resource.data)
+        && !hasPlanAudit(resource.data);
+    }
+
+    // Inventoried client-owned user collections.
+    match /users/{userId}/fcmTokens/{document=**} {
+      allow read, write: if isOwner(userId);
+    }
+    match /users/{userId}/packingPlan/{document=**} {
+      allow read, write: if isOwner(userId);
+    }
+    match /users/{userId}/readiness/{document=**} {
+      allow read, write: if isOwner(userId);
+    }
+    match /users/{userId}/user_assessments/{document=**} {
+      allow read, write: if isOwner(userId);
+    }
+
+    // Server-owned lifecycle and scheduler inputs are owner-readable only.
+    match /users/{userId}/spawnTokens/{document=**} {
+      allow read: if isOwner(userId);
+      allow write: if false;
+    }
+    match /users/{userId}/events/{document=**} {
+      allow read: if isOwner(userId);
+      allow write: if false;
+    }
+    match /users/{userId}/eventState/{document=**} {
+      allow read: if isOwner(userId);
+      allow write: if false;
+    }
+    match /users/{userId}/taskPlanOperations/{document=**} {
+      allow read: if isOwner(userId);
+      allow write: if false;
+    }
+
+    // Existing server-owned output surfaces retain owner read access.
+    match /users/{userId}/packingAggregate/{document=**} {
+      allow read: if isOwner(userId);
+      allow write: if false;
+    }
+    match /users/{userId}/research/{document=**} {
+      allow read: if isOwner(userId);
+      allow write: if false;
+    }
+    match /users/{userId}/workflowResponses/{document=**} {
+      allow read: if isOwner(userId);
+      allow write: if false;
+    }
+    match /users/{userId}/chats/{chatId}/messages/{messageId} {
+      allow read: if isOwner(userId);
+      allow write: if false;
+    }
+
+    match /phase1System/{document=**} {
+      allow read, write: if false;
     }
 
     // Inventory sessions (temporary processing data)
     match /users/{userId}/inventorySessions/{document=**} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read, write: if isOwner(userId);
     }
 
     // Permanent inventory storage
     match /users/{userId}/inventory/{document=**} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read, write: if isOwner(userId);
     }
 
     // Identity doc (users/{uid}/identity/identity) — written at assessment
     // completion, migrated on launch, edited from Settings. NOT DEPLOYED:
     // reconcile with the live waitlist rule before deploying (Adam's batch).
     match /users/{userId}/identity/{document=**} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read, write: if isOwner(userId);
     }
 
     // Per-user knowledge doc (assessment data keyed by uid) — written by
     // AssessmentDataManager.saveAssessment and edited from Settings
     match /userKnowledge/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read, write: if isOwner(userId);
     }
 
     // Remembered conversation answers (users/{uid}/moveAnswers/answers) —
     // written only by the spawnTasks Cloud Function (Admin SDK). Owner read.
     match /users/{userId}/moveAnswers/{doc} {
-      allow read: if request.auth != null && request.auth.uid == userId;
+      allow read: if isOwner(userId);
+      allow write: if false;
     }
 
     // Task catalog — readable by any authenticated user

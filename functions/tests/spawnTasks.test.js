@@ -14,6 +14,8 @@ const {
   canonicalJSON,
   requestFingerprint,
   deterministicTaskId,
+  canonicalTaskIdV2,
+  isSubjectAwareSpawn,
   handleSpawnRequest
 } = require("../spawnTasks");
 
@@ -83,7 +85,8 @@ function fakeDb({
     return {
       exists: data !== undefined,
       data: () => data,
-      get: (field) => (data === undefined ? undefined : data[field])
+      get: (field) => (data === undefined ? undefined : data[field]),
+      ref: null
     };
   }
 
@@ -148,6 +151,37 @@ function fakeDb({
     writes,
     state,
     collection: (name) => makeCollection(name),
+    async runTransaction(callback) {
+      async function attempt(allowRetry) {
+        const ops = [];
+        const transaction = {
+          get: (ref) => getForPath(ref.path),
+          create(ref, data) { ops.push({ type: "create", path: ref.path, data }); },
+          set(ref, data, options) { ops.push({ type: "set", path: ref.path, data, options }); }
+        };
+        const result = await callback(transaction);
+        if (ops.length === 0) return result;
+        state.commitAttempts += 1;
+        if (barrierCommits > 0 && state.commitAttempts <= barrierCommits) {
+          barrierArrivals += 1;
+          if (barrierArrivals === barrierCommits) releaseBarrier();
+          await barrier;
+        }
+        if (beforeCommit) {
+          commitHookCalls += 1;
+          await beforeCommit({ docs, ops, call: commitHookCalls });
+        }
+        try {
+          applyAtomically(ops);
+          return result;
+        } catch (error) {
+          state.failedCommits += 1;
+          if (allowRetry && isRetryableCollision(error)) return attempt(false);
+          throw error;
+        }
+      }
+      return attempt(true);
+    },
     batch() {
       const ops = [];
       return {
@@ -179,6 +213,10 @@ function fakeDb({
     }
   };
   return db;
+}
+
+function isRetryableCollision(error) {
+  return error?.code === 6 || error?.code === "already-exists";
 }
 
 function expectedTaskDocId(token, ordinal) {
@@ -461,7 +499,7 @@ test("concurrent same-token calls atomically create one request and replay the w
   assert.equal(db.state.commits, 1);
   assert.equal(db.state.failedCommits, 1);
   const tokenReads = db.state.reads.filter(({ path }) => path === "users/u1/spawnTokens/task-1-spawn");
-  assert.deepEqual(tokenReads.map(({ exists }) => exists), [false, false, true]);
+  assert.deepEqual(tokenReads.map(({ exists }) => exists), [false, false, false, false, true]);
   const taskPaths = [...db.state.documents.keys()].filter((path) => path.startsWith("users/u1/tasks/"));
   const tokenPaths = [...db.state.documents.keys()].filter((path) => path.startsWith("users/u1/spawnTokens/"));
   assert.deepEqual(taskPaths.sort(), [
@@ -489,7 +527,7 @@ test("ALREADY_EXISTS without a token after reread propagates the original error"
 
   assert.equal(caught?.code, 6);
   assert.match(caught?.message || "", /already exists/i);
-  assert.equal(db.state.commitAttempts, 1);
+  assert.equal(db.state.commitAttempts, 0);
   assert.equal(db.state.commits, 0);
   assert.equal(db.state.documents.get(collisionPath), existingTask);
   assert.equal(db.state.documents.has("users/u1/spawnTokens/task-1-spawn"), false);
@@ -784,4 +822,159 @@ test("deterministic task IDs use the token and zero-based ordinal", () => {
   assert.equal(deterministicTaskId("task-1-spawn", 0), expectedTaskDocId("task-1-spawn", 0));
   assert.equal(deterministicTaskId("task-1-spawn", 1), expectedTaskDocId("task-1-spawn", 1));
   assert.match(deterministicTaskId("task-1-spawn", 0), /^t1_[0-9a-f]{40}$/);
+});
+
+test("subject-aware identity validates atomically and has a stable t2 key", () => {
+  const cleaned = validateRequest(rawRequest({
+    spawns: [{
+      taskId: "FORWARD_MAIL",
+      subject: { kind: "service", id: "row-1" },
+      institutionId: "mapkit:chase",
+      institution: "Chase",
+      titleParams: { institution: "Chase" }
+    }]
+  }));
+  assert.equal(isSubjectAwareSpawn(cleaned.spawns[0]), true);
+  assert.equal(
+    canonicalTaskIdV2("u1", cleaned.spawns[0]),
+    "t2_faa7305e36938c17880fe0959d1e27c9f1e288b2"
+  );
+  assert.throws(() => validateRequest(rawRequest({
+    spawns: [
+      { taskId: "FORWARD_MAIL" },
+      { taskId: "FORWARD_MAIL", subject: { kind: "service", id: "row-1" }, institutionId: "i", institution: "I" }
+    ]
+  })), SpawnValidationError);
+});
+
+function t2Spawn(overrides = {}) {
+  return {
+    taskId: "FORWARD_MAIL",
+    subject: { kind: "service", id: "row-1" },
+    institutionId: "mapkit:chase",
+    institution: "Chase",
+    titleParams: { institution: "Chase" },
+    ...overrides
+  };
+}
+
+test("legacy t1 ID and request fingerprint vectors remain byte stable", () => {
+  const cleaned = request();
+  assert.equal(deterministicTaskId("task-1-spawn", 0), "t1_8f6a391fbb328132fb34e93a5a059d4d8d36fb2a");
+  assert.equal(requestFingerprint(cleaned), "f1_82da0a95d4f05a3cf6445417f8d74294d360a8502265edb84f64d3e9615d7c6c");
+  assert.deepEqual(cleaned.spawns, [{ taskId: "FORWARD_MAIL" }]);
+});
+
+test("subject-aware validation rejects every partial or unstable identity before DB access", async (t) => {
+  const cases = [
+    t2Spawn({ subject: undefined }),
+    t2Spawn({ institutionId: undefined }),
+    t2Spawn({ institution: undefined }),
+    t2Spawn({ subject: { kind: "household", id: "row-1" } }),
+    t2Spawn({ subject: { kind: "service", id: " " } }),
+    t2Spawn({ subject: { kind: "service", id: "é".repeat(129) } }),
+    t2Spawn({ institutionId: "é".repeat(129) }),
+    t2Spawn({ institution: "é".repeat(257) }),
+    t2Spawn({ institution: "Chase Bank" })
+  ];
+  for (const [index, spawn] of cases.entries()) {
+    await t.test(`invalid identity ${index}`, () => assertCallableRejectsBeforeDb(
+      rawRequest({ spawns: [spawn] }),
+      "invalid-argument"
+    ));
+  }
+});
+
+test("duplicate t2 canonical identities fail before database creation", async () => {
+  await assertCallableRejectsBeforeDb(rawRequest({
+    spawns: [t2Spawn(), t2Spawn()]
+  }), "invalid-argument");
+});
+
+test("t2 requests converge by tuple across tokens and preserve lifecycle state", async () => {
+  const db = fakeDb({
+    catalog: { FORWARD_MAIL: catalogRow({ title: "Update {institution}" }) }
+  });
+  const firstRequest = request({ token: "subject-token-a", spawns: [t2Spawn()] });
+  const secondRequest = request({ token: "subject-token-b", spawns: [t2Spawn()] });
+  const expectedId = canonicalTaskIdV2("u1", firstRequest.spawns[0]);
+
+  const first = await executeSpawn(db, "u1", firstRequest, NOW);
+  const taskPath = `users/u1/tasks/${expectedId}`;
+  db.state.documents.set(taskPath, {
+    ...db.state.documents.get(taskPath),
+    status: "Snoozed",
+    custom: "keep"
+  });
+  db.state.documents.set("users/u1/identity/identity", {
+    moveDate: "2026-12-31T00:00:00.000Z"
+  });
+  const second = await executeSpawn(db, "u1", secondRequest, new Date("2026-08-09T12:00:00Z"));
+
+  assert.deepEqual(second, first);
+  assert.equal(first.created[0].id, expectedId);
+  assert.equal(second.created[0].id, expectedId);
+  assert.equal(db.state.documents.get(taskPath).status, "Snoozed");
+  assert.equal(db.state.documents.get(taskPath).custom, "keep");
+  assert.deepEqual(db.state.documents.get(taskPath).subject, { kind: "service", id: "row-1" });
+  assert.equal(db.state.documents.get(taskPath).institutionId, "mapkit:chase");
+  assert.equal(db.state.documents.get(taskPath).canonicalKeyVersion, 2);
+  assert.equal(db.state.documents.has("users/u1/spawnTokens/subject-token-a"), true);
+  assert.equal(db.state.documents.has("users/u1/spawnTokens/subject-token-b"), true);
+  assert.deepEqual(
+    db.state.documents.get("users/u1/spawnTokens/subject-token-a").result,
+    db.state.documents.get("users/u1/spawnTokens/subject-token-b").result
+  );
+  assert.deepEqual(
+    db.state.documents.get("users/u1/spawnTokens/subject-token-b").result,
+    first
+  );
+});
+
+test("t2 identity varies by subject, institution, or catalog task while display rename reuses", async () => {
+  const base = t2Spawn();
+  assert.notEqual(canonicalTaskIdV2("u1", base), canonicalTaskIdV2("u1", {
+    ...base, subject: { ...base.subject, id: "row-2" }
+  }));
+  assert.notEqual(canonicalTaskIdV2("u1", base), canonicalTaskIdV2("u1", {
+    ...base, institutionId: "mapkit:ally"
+  }));
+  assert.notEqual(canonicalTaskIdV2("u1", base), canonicalTaskIdV2("u1", {
+    ...base, taskId: "UPDATE_BANK"
+  }));
+  assert.equal(canonicalTaskIdV2("u1", base), canonicalTaskIdV2("u1", {
+    ...base, institution: "Chase Bank", titleParams: { institution: "Chase Bank" }
+  }));
+});
+
+test("t2 preclaim without exact provenance fails closed and writes no token", async () => {
+  const cleaned = request({ token: "preclaim-token", spawns: [t2Spawn()] });
+  const path = `users/u1/tasks/${canonicalTaskIdV2("u1", cleaned.spawns[0])}`;
+  const db = fakeDb({
+    catalog: { FORWARD_MAIL: catalogRow() },
+    documents: { [path]: { id: path.split("/").pop(), taskId: "FORWARD_MAIL" } }
+  });
+  await assert.rejects(
+    executeSpawn(db, "u1", cleaned, NOW),
+    (error) => error.code === "failed-precondition"
+  );
+  assert.equal(db.state.documents.has("users/u1/spawnTokens/preclaim-token"), false);
+  assert.equal(db.writes.length, 0);
+});
+
+test("task reset marker blocks both t1 and t2 transactions with zero writes", async () => {
+  for (const [token, spawns] of [
+    ["reset-t1", [{ taskId: "FORWARD_MAIL" }]],
+    ["reset-t2", [t2Spawn()]]
+  ]) {
+    const db = fakeDb({
+      catalog: { FORWARD_MAIL: catalogRow() },
+      documents: { "users/u1": { taskReset: { state: "deleting" } } }
+    });
+    await assert.rejects(
+      executeSpawn(db, "u1", request({ token, spawns }), NOW),
+      (error) => error.code === "failed-precondition"
+    );
+    assert.equal(db.writes.length, 0);
+  }
 });

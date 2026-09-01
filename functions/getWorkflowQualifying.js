@@ -8,8 +8,14 @@
 
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
+const { createHash } = require('node:crypto');
 const { WORKFLOW_QUALIFYING } = require('./workflowQualifying');
 const { MINI_ASSESSMENT_WORKFLOWS } = require('./miniAssessmentWorkflows');
+const {
+  buildCompletedContract,
+  buildWaitingOnExternalContract,
+  validateDispositionContract
+} = require('./dispositionContract');
 
 // Initialize Firebase Admin if not already
 if (!admin.apps.length) {
@@ -147,153 +153,298 @@ const submitWorkflowAnswers = onCall(
     if (!workflowId || !answers) {
       throw new HttpsError('invalid-argument', 'workflowId and answers are required');
     }
+    const submissionToken = validateSubmissionToken(request.data?.submissionToken);
     
     console.log(`Submitting answers for workflow: ${workflowId}, user: ${userId}`);
-    
     try {
-      const db = admin.firestore();
-      
-      // Determine workflow type: mini-assessment, guidance, or vendor
-      const isMiniAssessment = workflowId in MINI_ASSESSMENT_WORKFLOWS;
-      const isGuidance = WORKFLOW_QUALIFYING[workflowId]?.workflowType === 'guidance';
-      
-      if (isGuidance) {
-        // Guidance workflow: user acknowledged the guidance — mark task complete
-        console.log(`Guidance workflow completed: ${workflowId} for user ${userId}`);
-        
-        // Save the answers (may be empty for zero-question workflows)
-        await db.collection('users')
-          .doc(userId)
-          .collection('workflowResponses')
-          .doc(workflowId)
-          .set({
-            workflowId,
-            answers,
-            workflowType: 'guidance',
-            completedAt: admin.firestore.FieldValue.serverTimestamp()
-          });
-
-        // Mark the task as Completed
-        try {
-          await db.collection('users')
-            .doc(userId)
-            .collection('tasks')
-            .doc(workflowId)
-            .update({
-              status: 'Completed',
-              completedAt: admin.firestore.FieldValue.serverTimestamp(),
-              qualifyingAnswers: answers
-            });
-        } catch (updateErr) {
-          // Task doc may use the catalog taskId (uppercase) instead of workflowId
-          console.warn(`Could not update task ${workflowId}: ${updateErr.message}`);
-        }
-
-        return {
-          success: true,
-          status: 'completed'
-        };
-
-      } else if (isMiniAssessment) {
-        // Mini-assessment: answers is an array of { id, displayName, textEntry? }
-        await db.collection('users')
-          .doc(userId)
-          .collection('mini_assessments')
-          .doc(workflowId)
-          .set({
-            workflowId,
-            answers,
-            completedAt: admin.firestore.FieldValue.serverTimestamp(),
-            status: 'completed'
-          });
-        
-        // Generate tasks for each answer
-        const workflow = MINI_ASSESSMENT_WORKFLOWS[workflowId];
-        const batch = db.batch();
-        const tasksRef = db.collection('users').doc(userId).collection('tasks');
-        
-        for (const answer of answers) {
-          const taskId = `${workflowId}_${answer.id}`;
-          const taskRef = tasksRef.doc(taskId);
-          
-          let taskTitle = `${workflow.taskTemplate.titlePrefix} ${answer.displayName}`;
-          if (answer.textEntry) {
-            taskTitle = `${workflow.taskTemplate.titlePrefix} ${answer.textEntry}`;
-          }
-          
-          batch.set(taskRef, {
-            id: taskId,
-            title: taskTitle,
-            subtitle: 'Update your address',
-            category: workflow.taskTemplate.category,
-            subcategory: workflow.taskTemplate.subcategory,
-            status: 'pending',
-            priority: workflow.taskTemplate.priority,
-            createdAt: admin.firestore.FieldValue.serverTimestamp(),
-            source: 'mini_assessment'
-          });
-        }
-        
-        await batch.commit();
-        
-        return {
-          success: true,
-          tasksCreated: answers.length
-        };
-        
-      } else {
-        // Vendor workflow: answers is { questionId: [optionIds] }
-        await db.collection('workflowSubmissions').add({
-          workflowId,
-          userId,
-          answers,
-          submittedAt: admin.firestore.FieldValue.serverTimestamp(),
-          status: 'pending_matching'
-        });
-
-        // Save to user's workflowResponses for easy per-user lookup and manual review
-        await db.collection('users')
-          .doc(userId)
-          .collection('workflowResponses')
-          .doc(workflowId)
-          .set({
-            workflowId,
-            answers,
-            submittedAt: admin.firestore.FieldValue.serverTimestamp()
-          });
-
-        console.log(`Workflow submission saved — user: ${userId}, workflowId: ${workflowId}, answers:`, JSON.stringify(answers));
-
-        // Update the user's task status (best-effort: task doc may not exist for generic workflows)
-        try {
-          const taskDocumentId = workflowId === 'supplies_kit'
-            ? 'PACKING_SUPPLIES_KIT'
-            : workflowId;
-          await db.collection('users')
-            .doc(userId)
-            .collection('tasks')
-            .doc(taskDocumentId)
-            .update({
-              status: 'matching_in_progress',
-              qualifyingAnswers: answers,
-              qualifyingCompletedAt: admin.firestore.FieldValue.serverTimestamp()
-            });
-        } catch (updateErr) {
-          console.warn(`Could not update task status for ${workflowId} (task may not exist):`, updateErr.message);
-        }
-        
-        return {
-          success: true,
-          status: 'matching_in_progress'
-        };
-      }
+      return await executeWorkflowAnswers(
+        admin.firestore(), userId, workflowId, answers, undefined, undefined, submissionToken
+      );
 
     } catch (error) {
       console.error('Error submitting workflow answers:', error);
+      if (error instanceof HttpsError) throw error;
       throw new HttpsError('internal', 'Failed to submit answers');
     }
   }
 );
+
+function taskResetIsActive(snapshot) {
+  const state = snapshot.get('taskReset')?.state;
+  return state === 'deleting' || state === 'awaiting_local_reset';
+}
+
+function canonicalJSON(value) {
+  const ancestors = new Set();
+
+  function encode(current) {
+    if (current === null) return 'null';
+    if (typeof current === 'string' || typeof current === 'boolean') {
+      return JSON.stringify(current);
+    }
+    if (typeof current === 'number') {
+      return Number.isFinite(current) ? JSON.stringify(current) : 'null';
+    }
+    if (typeof current === 'undefined' || typeof current === 'function' ||
+        typeof current === 'symbol') {
+      return undefined;
+    }
+    if (typeof current === 'bigint') {
+      throw new TypeError('BigInt is not JSON serializable');
+    }
+    if (typeof current.toJSON === 'function') {
+      return encode(current.toJSON());
+    }
+    if (ancestors.has(current)) {
+      throw new TypeError('Circular value is not JSON serializable');
+    }
+
+    ancestors.add(current);
+    let encoded;
+    if (Array.isArray(current)) {
+      encoded = `[${current.map((item) => encode(item) ?? 'null').join(',')}]`;
+    } else {
+      const entries = [];
+      for (const key of Object.keys(current).sort()) {
+        const item = encode(current[key]);
+        if (item !== undefined) entries.push(`${JSON.stringify(key)}:${item}`);
+      }
+      encoded = `{${entries.join(',')}}`;
+    }
+    ancestors.delete(current);
+    return encoded;
+  }
+
+  return encode(value);
+}
+
+function sha256Hex(value) {
+  return createHash('sha256').update(value, 'utf8').digest('hex');
+}
+
+function validateSubmissionToken(value) {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== 'string' || value.length === 0 || value.trim() !== value ||
+      Buffer.byteLength(value, 'utf8') > 256) {
+    throw new HttpsError(
+      'invalid-argument',
+      'submissionToken must be a trimmed, non-empty string of at most 256 UTF-8 bytes'
+    );
+  }
+  return value;
+}
+
+function workflowSubmissionFingerprint(workflowId, answers) {
+  let canonical;
+  try {
+    canonical = canonicalJSON({ workflowId, answers });
+  } catch (error) {
+    throw new HttpsError('invalid-argument', 'workflow submission must be JSON serializable');
+  }
+  return `wf1_${sha256Hex(canonical)}`;
+}
+
+function workflowSubmissionId(userId, submissionToken) {
+  const token = validateSubmissionToken(submissionToken);
+  if (!token) {
+    throw new HttpsError('invalid-argument', 'submissionToken is required for deterministic identity');
+  }
+  return `ws1_${sha256Hex(canonicalJSON({ owner: userId, submissionToken: token })).slice(0, 40)}`;
+}
+
+function replayWorkflowSubmission(snapshot, { fingerprint, owner, workflowId }) {
+  const data = snapshot.data() || {};
+  const exactIntent = data.fingerprint === fingerprint && data.owner === owner &&
+    data.workflowId === workflowId && Object.prototype.hasOwnProperty.call(data, 'result');
+  if (!exactIntent) {
+    throw new HttpsError(
+      'failed-precondition',
+      'This submissionToken was already used for a different workflow submission'
+    );
+  }
+  return data.result;
+}
+
+function requireWaitingInput(answers, workflowId) {
+  const owner = answers?.waiting_owner;
+  const nextAction = answers?.waiting_next_action;
+  const resumeDestination = answers?.waiting_resume_destination;
+  const nextTrigger = answers?.waiting_next_trigger;
+  if (![owner, nextAction, resumeDestination].every((value) =>
+    typeof value === 'string' && value.trim()
+  ) || !nextTrigger) {
+    throw new HttpsError(
+      'failed-precondition',
+      `Contracted vendor workflow ${workflowId} requires explicit waiting evidence`
+    );
+  }
+  return {
+    owner,
+    nextAction,
+    resumeDestination,
+    nextTrigger,
+    visibleStatusCopy: `Waiting on ${owner.trim()} for ${workflowId.replaceAll('_', ' ')}`,
+    externalSubmission: true
+  };
+}
+
+async function executeWorkflowAnswers(
+  db,
+  userId,
+  workflowId,
+  answers,
+  now = new Date(),
+  serverTimestamp = () => admin.firestore.FieldValue.serverTimestamp(),
+  submissionToken = null
+) {
+  const normalizedSubmissionToken = validateSubmissionToken(submissionToken);
+  const userRef = db.collection('users').doc(userId);
+  const tasksRef = userRef.collection('tasks');
+  const isMiniAssessment = workflowId in MINI_ASSESSMENT_WORKFLOWS;
+  const isGuidance = WORKFLOW_QUALIFYING[workflowId]?.workflowType === 'guidance';
+  const taskDocumentId = workflowId === 'supplies_kit' ? 'PACKING_SUPPLIES_KIT' : workflowId;
+  const taskRefs = [];
+  if (isMiniAssessment) {
+    for (const answer of answers) {
+      taskRefs.push(tasksRef.doc(`${workflowId}_${answer.id}`));
+    }
+  } else {
+    taskRefs.push(tasksRef.doc(taskDocumentId));
+  }
+  const isVendorSubmission = !isGuidance && !isMiniAssessment;
+  const fingerprint = isVendorSubmission && normalizedSubmissionToken
+    ? workflowSubmissionFingerprint(workflowId, answers)
+    : null;
+  let submissionRef = null;
+  if (isVendorSubmission) {
+    const submissionsRef = db.collection('workflowSubmissions');
+    submissionRef = normalizedSubmissionToken
+      ? submissionsRef.doc(workflowSubmissionId(userId, normalizedSubmissionToken))
+      : submissionsRef.doc();
+  }
+
+  return db.runTransaction(async (transaction) => {
+    const rootSnapshot = await transaction.get(userRef);
+    const priorSubmission = fingerprint
+      ? await transaction.get(submissionRef)
+      : null;
+    if (priorSubmission?.exists) {
+      return replayWorkflowSubmission(priorSubmission, {
+        fingerprint,
+        owner: userId,
+        workflowId
+      });
+    }
+    if (taskResetIsActive(rootSnapshot)) {
+      throw new HttpsError('failed-precondition', 'Task reset is active');
+    }
+    const taskSnapshots = [];
+    for (const ref of taskRefs) taskSnapshots.push(await transaction.get(ref));
+
+    if (isGuidance) {
+      transaction.set(userRef.collection('workflowResponses').doc(workflowId), {
+        workflowId,
+        answers,
+        workflowType: 'guidance',
+        completedAt: serverTimestamp()
+      });
+      const snapshot = taskSnapshots[0];
+      if (snapshot.exists) {
+        const data = snapshot.data() || {};
+        const update = {
+          status: 'Completed',
+          completedAt: serverTimestamp(),
+          qualifyingAnswers: answers
+        };
+        if (data.dispositionContract !== undefined) {
+          validateDispositionContract(data.status, data.dispositionContract, now);
+          update.dispositionContract = buildCompletedContract(
+            data.dispositionContract,
+            'Guidance complete'
+          );
+        }
+        transaction.update(taskRefs[0], update);
+      }
+      return { success: true, status: 'completed' };
+    }
+
+    if (isMiniAssessment) {
+      for (const snapshot of taskSnapshots) {
+        if (snapshot.exists && snapshot.data()?.dispositionContract !== undefined) {
+          throw new HttpsError(
+            'failed-precondition',
+            'Mini-assessment may not overwrite a contracted task'
+          );
+        }
+      }
+      transaction.set(userRef.collection('mini_assessments').doc(workflowId), {
+        workflowId,
+        answers,
+        completedAt: serverTimestamp(),
+        status: 'completed'
+      });
+      const workflow = MINI_ASSESSMENT_WORKFLOWS[workflowId];
+      for (const [index, answer] of answers.entries()) {
+        const taskId = `${workflowId}_${answer.id}`;
+        const taskTitle = `${workflow.taskTemplate.titlePrefix} ${answer.textEntry || answer.displayName}`;
+        transaction.set(taskRefs[index], {
+          id: taskId,
+          title: taskTitle,
+          subtitle: 'Update your address',
+          category: workflow.taskTemplate.category,
+          subcategory: workflow.taskTemplate.subcategory,
+          status: 'pending',
+          priority: workflow.taskTemplate.priority,
+          createdAt: serverTimestamp(),
+          source: 'mini_assessment'
+        });
+      }
+      return { success: true, tasksCreated: answers.length };
+    }
+
+    const result = { success: true, status: 'matching_in_progress' };
+    const submission = {
+      workflowId,
+      userId,
+      answers,
+      submittedAt: serverTimestamp(),
+      status: 'pending_matching'
+    };
+    if (normalizedSubmissionToken) {
+      Object.assign(submission, {
+        owner: userId,
+        submissionToken: normalizedSubmissionToken,
+        fingerprint,
+        result
+      });
+    }
+    transaction.create(submissionRef, submission);
+    transaction.set(userRef.collection('workflowResponses').doc(workflowId), {
+      workflowId,
+      answers,
+      submittedAt: serverTimestamp()
+    });
+    const snapshot = taskSnapshots[0];
+    if (snapshot.exists) {
+      const data = snapshot.data() || {};
+      const update = {
+        status: 'matching_in_progress',
+        qualifyingAnswers: answers,
+        qualifyingCompletedAt: serverTimestamp()
+      };
+      if (data.dispositionContract !== undefined) {
+        validateDispositionContract(data.status, data.dispositionContract, now);
+        update.dispositionContract = buildWaitingOnExternalContract(
+          data.dispositionContract,
+          requireWaitingInput(answers, workflowId),
+          now
+        );
+      }
+      transaction.update(taskRefs[0], update);
+    }
+    return result;
+  });
+}
 
 /**
  * Get all available mini-assessment workflow IDs
@@ -313,5 +464,13 @@ const getMiniAssessmentTypes = onCall(
 module.exports = {
   getWorkflowQualifying,
   submitWorkflowAnswers,
-  getMiniAssessmentTypes
+  getMiniAssessmentTypes,
+  executeWorkflowAnswers,
+  requireWaitingInput,
+  taskResetIsActive,
+  canonicalJSON,
+  validateSubmissionToken,
+  workflowSubmissionFingerprint,
+  workflowSubmissionId,
+  replayWorkflowSubmission
 };

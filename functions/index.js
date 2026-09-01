@@ -15,6 +15,8 @@ const { researchTask } = require('./researchTask');
 const { submitCheckIn } = require('./submitCheckIn');
 const { redeemGiftCode } = require('./entitlement');
 const { spawnTasks } = require('./spawnTasks');
+const { changeTaskPlan } = require('./taskPlan');
+const { evaluateDispositionTriggers } = require('./dispositionTriggers');
 const { notifySupport } = require('./notifySupport');
 const {
   adminListThreads,
@@ -291,6 +293,8 @@ exports.peezyChat = peezyChat;
 exports.submitCheckIn = submitCheckIn;
 exports.redeemGiftCode = redeemGiftCode;
 exports.spawnTasks = spawnTasks;
+exports.changeTaskPlan = changeTaskPlan;
+exports.evaluateDispositionTriggers = evaluateDispositionTriggers;
 exports.adminListThreads = adminListThreads;
 exports.adminGetThread = adminGetThread;
 exports.adminReplySupport = adminReplySupport;

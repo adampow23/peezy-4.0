@@ -61,6 +61,8 @@ enum PeezyCardFirestoreMapper {
                 }
                 return PeezyCard.CompletionSpawn(id: id, dateRule: dateRule)
             }
+        let dispositionContract = (data["dispositionContract"] as? [String: Any])
+            .map(dispositionContract(from:))
 
         return PeezyCard(
             id: documentID,
@@ -102,8 +104,66 @@ enum PeezyCardFirestoreMapper {
             spawnedFrom: spawnedFrom,
             onCompleteSpawns: onCompleteSpawns,
             notesEnabled: data["notesEnabled"] as? Bool ?? false,
-            quoteTracker: data["quoteTracker"] as? String ?? "none"
+            quoteTracker: data["quoteTracker"] as? String ?? "none",
+            dispositionContract: dispositionContract
         )
+    }
+
+    private static func dispositionContract(from raw: [String: Any]) -> PeezyCard.DispositionContract {
+        let trigger = (raw["next_trigger"] as? [String: Any]).flatMap { value -> PeezyCard.DispositionContract.Trigger? in
+            guard let kindRaw = value["kind"] as? String,
+                  let kind = PeezyCard.DispositionContract.Trigger.Kind(rawValue: kindRaw) else { return nil }
+            let payload = (value["payload"] as? [String: Any])?.compactMapValues(firestoreValue(from:))
+            return .init(
+                kind: kind,
+                at: date(from: value["at"]),
+                eventName: value["event_name"] as? String,
+                canonicalKey: value["canonical_key"] as? String,
+                afterSourceVersion: (value["after_source_version"] as? NSNumber)?.intValue,
+                payload: payload?.isEmpty == true ? nil : payload,
+                fired: value["fired"] as? Bool ?? false
+            )
+        }
+        return .init(
+            disposition: (raw["disposition"] as? String).flatMap(PeezyCard.DispositionContract.Disposition.init(rawValue:)),
+            terminalKind: (raw["terminal_kind"] as? String).flatMap(PeezyCard.DispositionContract.TerminalKind.init(rawValue:)),
+            owner: raw["owner"] as? String,
+            nextAction: raw["next_action"] as? String,
+            nextTrigger: trigger,
+            resumeDestination: raw["resume_destination"] as? String,
+            visibleStatusCopy: raw["visible_status_copy"] as? String,
+            profileVersion: (raw["profile_version"] as? NSNumber)?.intValue,
+            externalSubmission: raw["external_submission"] as? Bool ?? false,
+            supersededBy: raw["superseded_by"] as? String
+        )
+    }
+
+    private static func date(from value: Any?) -> Date? {
+        if let timestamp = value as? Timestamp { return timestamp.dateValue() }
+        return value as? Date
+    }
+
+    private static func firestoreValue(from raw: Any) -> PeezyCard.FirestoreValue? {
+        if raw is NSNull { return .null }
+        if let timestamp = raw as? Timestamp { return .date(timestamp.dateValue()) }
+        if let date = raw as? Date { return .date(date) }
+        if let number = raw as? NSNumber {
+            if CFGetTypeID(number) == CFBooleanGetTypeID() { return .bool(number.boolValue) }
+            let decimal = number.doubleValue
+            if decimal.rounded() == decimal,
+               decimal >= Double(Int64.min), decimal <= Double(Int64.max) {
+                return .int(number.int64Value)
+            }
+            return .double(decimal)
+        }
+        if let string = raw as? String { return .string(string) }
+        if let array = raw as? [Any] {
+            return .array(array.compactMap(firestoreValue(from:)))
+        }
+        if let map = raw as? [String: Any] {
+            return .map(map.compactMapValues(firestoreValue(from:)))
+        }
+        return nil
     }
 
     private static func packingSession(

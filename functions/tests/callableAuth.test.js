@@ -35,10 +35,15 @@ const {
 
 function makeFakeDb() {
   const writes = [];
+  const stored = new Map([
+    [`users/${AUTH_UID}/tasks/arrange_parking_new`, { status: "Upcoming" }],
+    [`users/${AUTH_UID}/tasks/book_movers`, { status: "Upcoming" }]
+  ]);
   let autoId = 0;
 
   function document(path) {
     return {
+      id: path.split("/").pop(),
       path,
       collection(name) {
         return collection(`${path}/${name}`);
@@ -54,7 +59,11 @@ function makeFakeDb() {
 
   function collection(path) {
     return {
-      doc(id) {
+      doc(...args) {
+        if (args.length === 1 && args[0] === undefined) {
+          throw new TypeError("Admin SDK doc() rejects an explicit undefined path");
+        }
+        const id = args.length === 0 ? `auto-${++autoId}` : args[0];
         return document(`${path}/${id}`);
       },
       async add(data) {
@@ -68,6 +77,36 @@ function makeFakeDb() {
   return {
     writes,
     collection,
+    async runTransaction(callback) {
+      const pending = [];
+      const transaction = {
+        get: async (reference) => {
+          const data = stored.get(reference.path);
+          return {
+            exists: data !== undefined,
+            data: () => data,
+            get: (field) => data?.[field]
+          };
+        },
+        create(reference, data) {
+          pending.push({ operation: "create", path: reference.path, data });
+        },
+        set(reference, data, options) {
+          pending.push({ operation: "set", path: reference.path, data, options });
+        },
+        update(reference, data) {
+          pending.push({ operation: "update", path: reference.path, data });
+        }
+      };
+      const result = await callback(transaction);
+      for (const write of pending) {
+        stored.set(write.path, write.operation === "update"
+          ? { ...(stored.get(write.path) || {}), ...write.data }
+          : write.data);
+      }
+      writes.push(...pending);
+      return result;
+    },
     batch() {
       const pending = [];
       return {
@@ -217,4 +256,21 @@ test("submitWorkflowAnswers accepts an authenticated payload without userId", as
   assertAuthenticatedUserScope(db.writes);
   const submission = db.writes.find((write) => write.path.startsWith("workflowSubmissions/"));
   assert.equal(submission.data.userId, AUTH_UID);
+});
+
+test("submitWorkflowAnswers rejects malformed submission tokens before Firestore access", async () => {
+  const invalidTokens = ["", "   ", " padded-token ", 42, "é".repeat(129)];
+  for (const submissionToken of invalidTokens) {
+    const db = useFreshDb();
+    await assert.rejects(
+      submitWorkflowAnswers.run(authenticatedRequest({
+        workflowId: "book_movers",
+        answers: { priority: ["low_cost"] },
+        submissionToken
+      })),
+      (error) => error.code === "invalid-argument"
+    );
+    assert.equal(firestoreCalls, 0);
+    assert.deepEqual(db.writes, []);
+  }
 });

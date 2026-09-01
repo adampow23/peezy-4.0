@@ -6,14 +6,22 @@ import FirebaseFunctions
 /// the nudge Yes path (Phase 3) and the conversation spawn terminal (Phase 4).
 struct SpawnService {
 
-    struct Source {
+    struct Source: Equatable {
         let kind: String   // "conversation" | "nudge" | "onComplete"
         let id: String
     }
 
-    struct Spawn {
+    struct Subject: Equatable {
+        let kind: String
+        let id: String
+    }
+
+    struct Spawn: Equatable {
         let taskId: String
         var titleParams: [String: String]? = nil
+        var subject: Subject? = nil
+        var institutionId: String? = nil
+        var institution: String? = nil
     }
 
     struct SpawnedTask {
@@ -34,23 +42,13 @@ struct SpawnService {
         answers: [String: Any]? = nil,
         expectedUserId: String? = nil
     ) async throws -> Response {
-        var payload: [String: Any] = [
-            "token": token,
-            "source": ["kind": source.kind, "id": source.id],
-            "spawns": spawns.map { spawn -> [String: Any] in
-                var entry: [String: Any] = ["taskId": spawn.taskId]
-                if let titleParams = spawn.titleParams {
-                    entry["titleParams"] = titleParams
-                }
-                return entry
-            }
-        ]
-        if let answers {
-            payload["answers"] = answers
-        }
-        if let expectedUserId {
-            payload["expectedUserId"] = expectedUserId
-        }
+        let payload = Self.makePayload(
+            requestToken: token,
+            source: source,
+            expectedUserId: expectedUserId,
+            spawns: spawns,
+            answers: answers
+        )
 
         let result = try await Functions.functions().httpsCallable("spawnTasks").call(payload)
 
@@ -67,6 +65,34 @@ struct SpawnService {
                 dueDateISO: entry["dueDateISO"] as? String ?? ""
             )
         })
+    }
+
+    nonisolated static func makePayload(
+        requestToken: String,
+        source: Source,
+        expectedUserId: String?,
+        spawns: [Spawn],
+        answers: [String: Any]?
+    ) -> [String: Any] {
+        var payload: [String: Any] = [
+            "token": requestToken,
+            "source": ["kind": source.kind, "id": source.id],
+            "spawns": spawns.map { spawn -> [String: Any] in
+                var entry: [String: Any] = ["taskId": spawn.taskId]
+                if let titleParams = spawn.titleParams { entry["titleParams"] = titleParams }
+                if let subject = spawn.subject,
+                   let institutionId = spawn.institutionId,
+                   let institution = spawn.institution {
+                    entry["subject"] = ["kind": subject.kind, "id": subject.id]
+                    entry["institutionId"] = institutionId
+                    entry["institution"] = institution
+                }
+                return entry
+            }
+        ]
+        if let answers { payload["answers"] = answers }
+        if let expectedUserId { payload["expectedUserId"] = expectedUserId }
+        return payload
     }
 }
 

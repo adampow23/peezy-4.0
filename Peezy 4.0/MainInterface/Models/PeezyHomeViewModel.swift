@@ -38,6 +38,12 @@ protocol NudgeSpawnClient {
 
 extension SpawnService: NudgeSpawnClient {}
 
+struct PeezyHomeTaskProjection: Equatable {
+    var actionableLegacy: [PeezyCard]
+    var userInProgressLegacy: [PeezyCard]
+    var readOnlyContractStatus: [PeezyCard]
+}
+
 protocol NudgeAnswerClock {
     func sleep(for duration: Duration) async throws
 }
@@ -129,6 +135,7 @@ final class PeezyHomeViewModel {
     // MARK: - Daily Dose State
 
     var allActiveTasks: [PeezyCard] = []
+    var readOnlyContractStatus: [PeezyCard] = []
     var inProgressTaskCount: Int = 0
     var userInProgressTaskCount: Int = 0
     var gettingAhead: Bool = false
@@ -325,6 +332,55 @@ final class PeezyHomeViewModel {
 
     // MARK: - Load Tasks
 
+    /// Pure task-surface split used before any Daily Dose or queue accounting.
+    /// Contract presence always wins over legacy status/snooze interpretation.
+    nonisolated static func projectHomeTasks(
+        _ tasks: [PeezyCard],
+        now: Date
+    ) -> PeezyHomeTaskProjection {
+        var actionable: [PeezyCard] = []
+        var userInProgress: [PeezyCard] = []
+        var contracted: [PeezyCard] = []
+
+        for original in tasks {
+            var card = original
+            if card.dispositionContract != nil {
+                contracted.append(card)
+                continue
+            }
+            if card.status == .completed || card.status == .skipped { continue }
+            if let snoozedUntil = card.snoozedUntil, snoozedUntil > now { continue }
+            if card.status == .inProgress || card.status == .pending || card.status == .matchingInProgress {
+                continue
+            }
+            if card.status == .userInProgress {
+                if let returnDate = card.userInProgressReturnDate, returnDate <= now {
+                    card.status = .upcoming
+                    card.userInProgressDate = nil
+                    card.userInProgressReturnDate = nil
+                    actionable.append(card)
+                } else {
+                    userInProgress.append(card)
+                }
+            } else if card.shouldShow {
+                actionable.append(card)
+            }
+        }
+
+        contracted.sort {
+            if $0.dueDate != $1.dueDate {
+                return ($0.dueDate ?? .distantFuture) < ($1.dueDate ?? .distantFuture)
+            }
+            if $0.title != $1.title { return $0.title < $1.title }
+            return $0.id < $1.id
+        }
+        return PeezyHomeTaskProjection(
+            actionableLegacy: actionable,
+            userInProgressLegacy: userInProgress,
+            readOnlyContractStatus: contracted
+        )
+    }
+
     func loadTasks() async {
         guard let userId = Auth.auth().currentUser?.uid else {
             await MainActor.run { self.state = .dailyGreeting }
@@ -359,38 +415,18 @@ final class PeezyHomeViewModel {
                 .whereField("status", in: ["Upcoming", "pending", "matching_in_progress", "Snoozed", "InProgress", "UserInProgress"])
                 .getDocuments()
 
-            var cards: [PeezyCard] = []
-            var userInProgressBuffer: [PeezyCard] = []
+            var decoded: [PeezyCard] = []
             let now = Date()
 
             for document in snapshot.documents {
                 // Single decode path: PeezyCardFirestoreMapper (LE-025/031 successor).
                 // Do not re-inline field decoding here.
-                guard var card = PeezyCardFirestoreMapper.card(from: document) else { continue }
-                if card.status == .completed || card.status == .skipped { continue }
-
-                if let snoozedUntil = card.snoozedUntil, snoozedUntil > now { continue }
-
-                if card.status == .inProgress || card.status == .pending || card.status == .matchingInProgress {
-                    // Legacy human-handoff statuses are terminal. They stay
-                    // out of the actionable Home queue and render as complete
-                    // in the Tasks tab.
-                    continue
-                } else if card.status == .userInProgress {
-                    if let returnDate = card.userInProgressReturnDate, returnDate <= now {
-                        card.status = .upcoming
-                        card.userInProgressDate = nil
-                        card.userInProgressReturnDate = nil
-                        cards.append(card)
-                    } else {
-                        userInProgressBuffer.append(card)
-                    }
-                } else if card.shouldShow {
-                    cards.append(card)
-                }
+                guard let card = PeezyCardFirestoreMapper.card(from: document) else { continue }
+                decoded.append(card)
             }
 
-            let sorted = doseEngine.urgencySorted(cards)
+            let projection = Self.projectHomeTasks(decoded, now: now)
+            let sorted = doseEngine.urgencySorted(projection.actionableLegacy)
 
             // Dose freeze (Spec 04 Phase E): first computation of the day
             // locks {date, taskIds} on the user doc; every later load today
@@ -413,8 +449,9 @@ final class PeezyHomeViewModel {
 
             await MainActor.run {
                 self.allActiveTasks = sorted
+                self.readOnlyContractStatus = projection.readOnlyContractStatus
                 self.inProgressTaskCount = 0
-                self.userInProgressTaskCount = userInProgressBuffer.count
+                self.userInProgressTaskCount = projection.userInProgressLegacy.count
                 self.frozenDoseTaskIds = frozenIds
                 // Queue = frozen ids still active, in frozen order.
                 self.taskQueue = frozenIds.compactMap { id in sorted.first { $0.id == id } }
@@ -437,7 +474,8 @@ final class PeezyHomeViewModel {
             return
         }
 
-        let task = taskQueue.removeFirst()
+        guard let task = taskQueue.first, task.dispositionContract == nil else { return }
+        taskQueue.removeFirst()
         currentTask = task
 
         // Nudges render inline on Home — no flow cover (Spec 09 Phase 3).
@@ -697,6 +735,7 @@ final class PeezyHomeViewModel {
     // MARK: - Focus Task (from Task List)
 
     func focusTask(_ task: PeezyCard) {
+        guard task.dispositionContract == nil else { return }
         taskQueue.removeAll { $0.id == task.id }
         currentTask = task
         isFocusedTask = true

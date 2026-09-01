@@ -85,27 +85,32 @@ struct TaskRowHeader: View {
 
     @ViewBuilder
     private var badgeRow: some View {
-        switch section {
-        case .userInProgress:
-            if task.workflowId == "book_movers",
-               task.stage == .compare || task.stage == .verify {
-                badge(text: "Waiting on your quotes", color: PeezyTheme.Colors.infoBlue)
-                    .accessibilityIdentifier("tasks.row.waitingOnMoverQuotes")
-            } else {
-                badge(text: "You're on it", color: PeezyTheme.Colors.infoBlue)
+        if task.dispositionContract != nil {
+            badge(text: task.visibleStatusCopy ?? "Status needs attention", color: PeezyTheme.Colors.infoBlue)
+                .accessibilityIdentifier("tasks.row.dispositionStatus")
+        } else {
+            switch section {
+            case .userInProgress:
+                if task.workflowId == "book_movers",
+                   task.stage == .compare || task.stage == .verify {
+                    badge(text: "Waiting on your quotes", color: PeezyTheme.Colors.infoBlue)
+                        .accessibilityIdentifier("tasks.row.waitingOnMoverQuotes")
+                } else {
+                    badge(text: "You're on it", color: PeezyTheme.Colors.infoBlue)
+                }
+            case .peezyOnIt:
+                EmptyView()
+            case .todo where isSnoozed:
+                if let returnDate = task.snoozedUntil {
+                    badge(
+                        text: "Scheduled for \(returnDate.formatted(date: .abbreviated, time: .omitted))",
+                        color: PeezyTheme.Colors.warningOrange
+                    )
+                    .accessibilityIdentifier("tasks.row.scheduledBadge")
+                }
+            default:
+                EmptyView()
             }
-        case .peezyOnIt:
-            EmptyView()
-        case .todo where isSnoozed:
-            if let returnDate = task.snoozedUntil {
-                badge(
-                    text: "Scheduled for \(returnDate.formatted(date: .abbreviated, time: .omitted))",
-                    color: PeezyTheme.Colors.warningOrange
-                )
-                .accessibilityIdentifier("tasks.row.scheduledBadge")
-            }
-        default:
-            EmptyView()
         }
     }
 

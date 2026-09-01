@@ -29,6 +29,120 @@ enum TaskStatus: String, Codable {
 // MARK: - PeezyCard Model
 /// Enhanced card model that connects to Firebase backend and task system
 struct PeezyCard: Identifiable, Equatable, Codable {
+    /// Firestore-safe recursive value used by disposition trigger payloads.
+    /// Keeping this typed prevents UI code from depending on untyped SDK data.
+    indirect enum FirestoreValue: Codable, Equatable {
+        case null
+        case bool(Bool)
+        case int(Int64)
+        case double(Double)
+        case string(String)
+        case date(Date)
+        case array([FirestoreValue])
+        case map([String: FirestoreValue])
+    }
+
+    struct DispositionContract: Codable, Equatable {
+        enum Disposition: String, Codable {
+            case completed = "COMPLETED"
+            case notApplicable = "NOT_APPLICABLE"
+            case userActionTracked = "USER_ACTION_TRACKED"
+            case waitingOnExternal = "WAITING_ON_EXTERNAL"
+            case deferred = "DEFERRED"
+            case supportActive = "SUPPORT_ACTIVE"
+        }
+
+        enum TerminalKind: String, Codable {
+            case notApplicable = "not_applicable"
+            case retired
+            case superseded
+        }
+
+        struct Trigger: Codable, Equatable {
+            enum Kind: String, Codable { case date, event }
+
+            var kind: Kind
+            var at: Date?
+            var eventName: String?
+            var canonicalKey: String?
+            var afterSourceVersion: Int?
+            var payload: [String: FirestoreValue]?
+            var fired: Bool
+
+            enum CodingKeys: String, CodingKey {
+                case kind, at, payload, fired
+                case eventName = "event_name"
+                case canonicalKey = "canonical_key"
+                case afterSourceVersion = "after_source_version"
+            }
+
+            init(
+                kind: Kind,
+                at: Date? = nil,
+                eventName: String? = nil,
+                canonicalKey: String? = nil,
+                afterSourceVersion: Int? = nil,
+                payload: [String: FirestoreValue]? = nil,
+                fired: Bool = false
+            ) {
+                self.kind = kind
+                self.at = at
+                self.eventName = eventName
+                self.canonicalKey = canonicalKey
+                self.afterSourceVersion = afterSourceVersion
+                self.payload = payload
+                self.fired = fired
+            }
+        }
+
+        var disposition: Disposition?
+        var terminalKind: TerminalKind?
+        var owner: String?
+        var nextAction: String?
+        var nextTrigger: Trigger?
+        var resumeDestination: String?
+        var visibleStatusCopy: String?
+        var profileVersion: Int?
+        var externalSubmission: Bool
+        var supersededBy: String?
+
+        enum CodingKeys: String, CodingKey {
+            case disposition, owner
+            case terminalKind = "terminal_kind"
+            case nextAction = "next_action"
+            case nextTrigger = "next_trigger"
+            case resumeDestination = "resume_destination"
+            case visibleStatusCopy = "visible_status_copy"
+            case profileVersion = "profile_version"
+            case externalSubmission = "external_submission"
+            case supersededBy = "superseded_by"
+        }
+
+        init(
+            disposition: Disposition? = nil,
+            terminalKind: TerminalKind? = nil,
+            owner: String? = nil,
+            nextAction: String? = nil,
+            nextTrigger: Trigger? = nil,
+            resumeDestination: String? = nil,
+            visibleStatusCopy: String? = nil,
+            profileVersion: Int? = nil,
+            externalSubmission: Bool = false,
+            supersededBy: String? = nil
+        ) {
+            self.disposition = disposition
+            self.terminalKind = terminalKind
+            self.owner = owner
+            self.nextAction = nextAction
+            self.nextTrigger = nextTrigger
+            self.resumeDestination = resumeDestination
+            self.visibleStatusCopy = visibleStatusCopy
+            self.profileVersion = profileVersion
+            self.externalSubmission = externalSubmission
+            self.supersededBy = supersededBy
+        }
+    }
+
     let id: String
     let type: CardType
     let title: String
@@ -111,6 +225,11 @@ struct PeezyCard: Identifiable, Equatable, Codable {
     // Task-surface flags from the catalog (Spec 09).
     var notesEnabled: Bool = false
     var quoteTracker: String = "none"
+
+    /// Presence makes lifecycle state server-owned. UI projection deliberately
+    /// keys off presence, including malformed maps, so malformed state fails
+    /// safe instead of falling back to writable legacy controls.
+    var dispositionContract: DispositionContract?
 
     // MARK: - Spawn Metadata Types (Spec 09)
 
@@ -222,6 +341,7 @@ struct PeezyCard: Identifiable, Equatable, Codable {
 
     /// Whether this card can be snoozed (must have taskId and be a task type)
     var canSnooze: Bool {
+        guard dispositionContract == nil else { return false }
         guard taskId != nil else { return false }
         guard status != .completed else { return false }
         switch type {
@@ -268,6 +388,7 @@ struct PeezyCard: Identifiable, Equatable, Codable {
 
     /// Whether this card should be shown in the stack
     var shouldShow: Bool {
+        if dispositionContract != nil { return false }
         // If snoozed, only show if snooze date has passed
         if isSnoozed {
             return false
@@ -319,7 +440,8 @@ struct PeezyCard: Identifiable, Equatable, Codable {
         spawnedFrom: SpawnedFrom? = nil,
         onCompleteSpawns: [CompletionSpawn] = [],
         notesEnabled: Bool = false,
-        quoteTracker: String = "none"
+        quoteTracker: String = "none",
+        dispositionContract: DispositionContract? = nil
     ) {
         self.id = id
         self.type = type
@@ -359,6 +481,79 @@ struct PeezyCard: Identifiable, Equatable, Codable {
         self.onCompleteSpawns = onCompleteSpawns
         self.notesEnabled = notesEnabled
         self.quoteTracker = quoteTracker
+        self.dispositionContract = dispositionContract
+    }
+
+    var visibleStatusCopy: String? {
+        let trimmed = dispositionContract?.visibleStatusCopy?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let trimmed, !trimmed.isEmpty else { return nil }
+        return trimmed
+    }
+
+    /// Full UI-side coherence check. The server remains authoritative, but the
+    /// client must never guess completion or expose legacy controls for bad data.
+    var dispositionContractIsCoherent: Bool {
+        guard let contract = dispositionContract else { return true }
+        guard !(contract.visibleStatusCopy ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
+        switch status {
+        case .completed:
+            return contract.disposition == .completed && contract.terminalKind == nil
+                && Self.hasNoNonterminalState(contract)
+                && !contract.externalSubmission && contract.supersededBy == nil
+        case .dismissed:
+            guard Self.hasNoNonterminalState(contract), !contract.externalSubmission else { return false }
+            if contract.terminalKind == .notApplicable {
+                return contract.disposition == .notApplicable && contract.supersededBy == nil
+            }
+            if contract.terminalKind == .retired {
+                return contract.disposition == nil && contract.supersededBy == nil
+            }
+            return contract.disposition == nil && contract.terminalKind == .superseded
+        case .upcoming:
+            return contract.disposition == nil && contract.terminalKind == nil
+                && Self.hasNoNonterminalState(contract)
+                && !contract.externalSubmission && contract.supersededBy == nil
+        case .inProgress:
+            return Self.validNonterminal(contract, disposition: .userActionTracked)
+        case .matchingInProgress:
+            return Self.validNonterminal(contract, disposition: .waitingOnExternal)
+        case .snoozed:
+            return Self.validNonterminal(contract, disposition: .deferred)
+        case .pending:
+            return Self.validNonterminal(contract, disposition: .supportActive)
+        case .userInProgress, .skipped, .converted:
+            return false
+        }
+    }
+
+    private static func validNonterminal(
+        _ contract: DispositionContract,
+        disposition: DispositionContract.Disposition
+    ) -> Bool {
+        guard contract.disposition == disposition,
+              contract.terminalKind == nil,
+              !(contract.owner ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              !(contract.nextAction ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              !(contract.resumeDestination ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              !(contract.visibleStatusCopy ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              contract.supersededBy == nil,
+              let trigger = contract.nextTrigger else { return false }
+        switch trigger.kind {
+        case .date:
+            return trigger.at != nil && trigger.eventName == nil && trigger.canonicalKey == nil
+        case .event:
+            return trigger.at == nil
+                && !(trigger.eventName ?? "").isEmpty
+                && !(trigger.canonicalKey ?? "").isEmpty
+                && trigger.afterSourceVersion != nil
+        }
+    }
+
+    private static func hasNoNonterminalState(_ contract: DispositionContract) -> Bool {
+        contract.owner == nil && contract.nextAction == nil
+            && contract.nextTrigger == nil && contract.resumeDestination == nil
     }
     
     // MARK: - Factory Methods

@@ -40,6 +40,10 @@ const BANK_ROW = {
 // touches, records batch writes only on commit.
 function makeFakeDb({ catalog = {}, tokenResult = null, identityMoveDate = "2026-09-07" } = {}) {
   const writes = [];
+  const documents = new Map();
+  for (const [id, value] of Object.entries(catalog)) documents.set(`taskCatalog/${id}`, value);
+  if (identityMoveDate) documents.set(`users/${UID}/identity/identity`, { moveDate: identityMoveDate });
+  if (tokenResult) documents.set(`users/${UID}/spawnTokens/MONEY_ACCOUNTS-spawn`, { result: tokenResult });
   let autoId = 0;
   const snap = (data) => ({
     exists: data !== null,
@@ -57,14 +61,7 @@ function makeFakeDb({ catalog = {}, tokenResult = null, identityMoveDate = "2026
           path: docPath,
           collection: (sub) => makeCollection(`${docPath}/${sub}`),
           async get() {
-            if (docPath === `users/${UID}/identity/identity`) {
-              return snap(identityMoveDate ? { moveDate: identityMoveDate } : null);
-            }
-            if (path === "taskCatalog") return snap(catalog[docId] ?? null);
-            if (path === `users/${UID}/spawnTokens`) {
-              return snap(tokenResult ? { result: tokenResult } : null);
-            }
-            return snap(null);
+            return snap(documents.get(docPath) ?? null);
           }
         };
       },
@@ -74,7 +71,31 @@ function makeFakeDb({ catalog = {}, tokenResult = null, identityMoveDate = "2026
 
   return {
     writes,
+    documents,
     collection: (name) => makeCollection(name),
+    async runTransaction(callback) {
+      const ops = [];
+      const transaction = {
+        get: async (ref) => snap(documents.get(ref.path) ?? null),
+        create: (ref, data) => ops.push({ type: "create", path: ref.path, data }),
+        set: (ref, data, opts) => ops.push({ type: "set", path: ref.path, data, opts })
+      };
+      const result = await callback(transaction);
+      for (const op of ops) {
+        if (op.type === "create" && documents.has(op.path)) {
+          const error = new Error("already exists");
+          error.code = 6;
+          throw error;
+        }
+      }
+      for (const op of ops) {
+        documents.set(op.path, op.opts?.merge
+          ? { ...(documents.get(op.path) || {}), ...op.data }
+          : op.data);
+        writes.push(op);
+      }
+      return result;
+    },
     batch() {
       const ops = [];
       return {

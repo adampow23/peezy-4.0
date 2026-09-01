@@ -660,41 +660,14 @@ struct PeezySettingsView: View {
     // MARK: - Retake Assessment
     
     private func retakeAssessment() {
-        guard let uid = Auth.auth().currentUser?.uid else { return }
-        
         isProcessing = true
         processingMessage = "Resetting your data..."
-        
-        let db = Firestore.firestore()
-        
+
         Task {
             do {
-                // 1. Delete all tasks
-                let tasksSnapshot = try await db.collection("users").document(uid)
-                    .collection("tasks").getDocuments()
-                for doc in tasksSnapshot.documents {
-                    try await doc.reference.delete()
-                }
-                
-                // 2. Delete assessment docs
-                let assessmentSnapshot = try await db.collection("users").document(uid)
-                    .collection("user_assessments").getDocuments()
-                for doc in assessmentSnapshot.documents {
-                    try await doc.reference.delete()
-                }
-                
-                // 3. Delete userKnowledge doc
-                try? await db.collection("userKnowledge").document(uid).delete()
-                
-                // 4. Clear the old plan's frozen dose and local counters before
-                // task regeneration can establish the fresh daily dose.
-                try await DailyDoseEngine().resetForRetake(userId: uid)
-
-                // 5. Post notification — AppRootView will call checkAssessmentStatus(),
-                //    find no assessment docs, and route to .needsAssessment
+                try await RetakeAssessmentCoordinator.production().retake()
                 await MainActor.run {
                     isProcessing = false
-                    NotificationCenter.default.post(name: .retakeAssessment, object: nil)
                 }
             } catch {
                 await MainActor.run {

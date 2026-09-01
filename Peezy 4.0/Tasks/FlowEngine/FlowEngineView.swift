@@ -62,6 +62,7 @@ struct FlowEngineView: View {
     /// Answers keyed by step id. Persisted as flowAnswers. Back-navigation
     /// keeps recorded answers (the old screens never removed keys).
     @State private var answers: [String: [String]] = [:]
+    @State private var answerIdentities: [String: FlowAnswerIdentity] = [:]
     /// Rows stamped on the task doc by generation (flowRows) and the
     /// definition's steps specialized to them (Spec 04 Phase B).
     @State private var rows: [FlowRow] = []
@@ -72,7 +73,9 @@ struct FlowEngineView: View {
     @State private var activeProviderAction: ActiveProviderAction?
     @State private var providerResolveTask: Task<Void, Never>?
     @State private var submissionError: String?
+    @State private var terminalCleanupError: String?
     @State private var submissionAttempt = 0
+    @State private var terminalSubmissionState = FlowTerminalSubmissionState()
     /// Set on spawnTasks success; flips the spawn card into its confirmation
     /// rendering (returned titles + scheduled dates, Done → conclude).
     @State private var spawnedTasks: [SpawnService.SpawnedTask]?
@@ -131,6 +134,17 @@ struct FlowEngineView: View {
                 .interactiveDismissDisabled()
             }
         }
+        .alert(
+            "Couldn't finish this task",
+            isPresented: Binding(
+                get: { terminalCleanupError != nil },
+                set: { if !$0 { terminalCleanupError = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) { terminalCleanupError = nil }
+        } message: {
+            Text(terminalCleanupError ?? "Check your connection, then try again.")
+        }
     }
 
     // MARK: - Current Step
@@ -144,7 +158,9 @@ struct FlowEngineView: View {
         return resolvedStep(withId: id)
     }
 
-    private var canGoBack: Bool { path.count > 1 }
+    private var canGoBack: Bool {
+        path.count > 1 && !isSubmitting && !exitCoordinator.isTerminalizing
+    }
 
     /// Steps left along the current route (current step included) — drives
     /// the decorative depth cards exactly like the old screens' skip-aware
@@ -252,10 +268,12 @@ struct FlowEngineView: View {
                     question: step.question ?? "",
                     placeholder: step.placeholder ?? "Search...",
                     searchHint: step.searchHint ?? "",
-                    selectedBusiness: answers[step.id]?.first,
+                    selectedBusiness: answerIdentities[step.id],
                     showBack: canGoBack,
-                    onConfirm: { name in
-                        beginProviderResolution(name: name, step: step)
+                    onConfirm: { identity in
+                        answerIdentities[step.id] = identity
+                        record(step.id, [identity.label])
+                        beginProviderResolution(name: identity.label, step: step)
                     },
                     onBack: { goBack() }
                 )
@@ -532,16 +550,40 @@ struct FlowEngineView: View {
 
     private func persistProgress() {
         exitCoordinator.persist(
-            FlowProgressSnapshot(path: path, answers: answers)
+            FlowProgressSnapshot(path: path, answers: answers, answerIdentities: answerIdentities)
         )
     }
 
     /// Clears persisted flow state, then fires the terminal callback —
     /// status-card exits (later / in progress / done).
     private func concludeFlow(_ callback: @escaping () -> Void) {
+        guard !isSubmitting else { return }
+        isSubmitting = true
+        submissionError = nil
+        terminalCleanupError = nil
+        exitCoordinator.beginTerminalization()
         let id = taskId
-        Task { await actionService.clearFlowState(taskId: id) }
-        callback()
+        Task { @MainActor in
+            do {
+                try await FlowTerminalCleanup.run(
+                    clear: {
+                        try await exitCoordinator.terminalize {
+                            try await actionService.clearFlowState(taskId: id)
+                        }
+                    },
+                    onSuccess: {
+                        isSubmitting = false
+                        callback()
+                    }
+                )
+            } catch {
+                isSubmitting = false
+                let message = "Your progress is still saved. Check your connection, then try finishing again."
+                submissionError = message
+                terminalCleanupError = message
+                submissionAttempt += 1
+            }
+        }
     }
 
     private func finishPostFlow(_ completion: PostFlowCompletion) {
@@ -680,7 +722,12 @@ struct FlowEngineView: View {
     }
 
     private func resolvedSpawns(for step: FlowStep) -> [SpawnService.Spawn] {
-        Self.resolveSpawns(step.spawns ?? [], answers: answers, steps: resolvedSteps)
+        Self.resolveSpawns(
+            step.spawns ?? [],
+            answers: answers,
+            answerIdentities: answerIdentities,
+            steps: resolvedSteps
+        )
     }
 
     /// Pure spawn-list resolution shared with unit tests. `when` guards reuse
@@ -690,6 +737,7 @@ struct FlowEngineView: View {
     nonisolated static func resolveSpawns(
         _ spawns: [FlowSpawnDef],
         answers: [String: [String]],
+        answerIdentities: [String: FlowAnswerIdentity] = [:],
         steps: [FlowStep]
     ) -> [SpawnService.Spawn] {
         spawns.flatMap { def -> [SpawnService.Spawn] in
@@ -700,12 +748,22 @@ struct FlowEngineView: View {
             guard let sourceId = def.perSelectionFrom else {
                 return [SpawnService.Spawn(taskId: def.taskId)]
             }
-            let options = steps.first { $0.id == sourceId }?.options ?? []
-            return (answers[sourceId] ?? []).map { selection in
-                SpawnService.Spawn(
-                    taskId: def.taskId,
-                    titleParams: ["institution": options.first { $0.id == selection }?.label ?? selection]
-                )
+            let sources = steps.filter { $0.id == sourceId || $0.id.hasSuffix(".\(sourceId)") }
+            return sources.flatMap { source -> [SpawnService.Spawn] in
+                let options = source.options ?? []
+                return (answers[source.id] ?? []).map { selection in
+                    let identity = answerIdentities[source.id]
+                    let institutionId = identity?.id ?? selection
+                    let label = identity?.label ?? options.first { $0.id == selection }?.label ?? selection
+                    let subjectId = source.rowSubjectId ?? selection
+                    return SpawnService.Spawn(
+                        taskId: def.taskId,
+                        titleParams: ["institution": label],
+                        subject: .init(kind: "service", id: subjectId),
+                        institutionId: institutionId,
+                        institution: label
+                    )
+                }
             }
         }
     }
@@ -795,6 +853,16 @@ struct FlowEngineView: View {
 
         let savedPath = savedProgress.path
         let savedAnswers = savedProgress.answers
+        var savedIdentities = savedProgress.answerIdentities
+
+        // Additive one-time migration for pre-identity business-search answers.
+        var migratedIdentity = false
+        for step in resolvedSteps where step.kind == .businessSearch {
+            if savedIdentities[step.id] == nil, let label = savedAnswers[step.id]?.first, !label.isEmpty {
+                savedIdentities[step.id] = BusinessSearchIdentity.makeManual(label: label, existing: nil)
+                migratedIdentity = true
+            }
+        }
 
         // A reseed can rename steps; a trail referencing unknown ids restarts.
         let pathIsValid = !savedPath.isEmpty && savedPath.allSatisfy { resolvedStep(withId: $0) != nil }
@@ -802,6 +870,8 @@ struct FlowEngineView: View {
         if pathIsValid {
             path = savedPath
             answers = savedAnswers
+            answerIdentities = savedIdentities
+            if migratedIdentity { persistProgress() }
         } else {
             path = [resolveKnownAnswerSkips(from: entry) ?? entry]
         }
@@ -813,37 +883,49 @@ struct FlowEngineView: View {
         guard !isSubmitting else { return }
         isSubmitting = true
         submissionError = nil
+        let preSubmitBarrier = exitCoordinator.beginPreSubmitBarrier()
 
         var workflowAnswers = WorkflowAnswers(workflowId: definition.workflowId)
         workflowAnswers.answers = answers
 
         let id = taskId
-        Task {
+        Task { @MainActor in
             do {
-                let service = WorkflowService()
-                let response = try await service.submitAnswers(
-                    workflowId: definition.workflowId,
-                    answers: workflowAnswers,
-                    userId: userId
+                let persistedFlowAttemptId = try await preSubmitBarrier.value
+                try await terminalSubmissionState.run(
+                    submit: {
+                        let response = try await WorkflowService().submitAnswers(
+                            workflowId: definition.workflowId,
+                            answers: workflowAnswers,
+                            userId: userId,
+                            submissionToken: WorkflowSubmissionToken.make(
+                                userId: userId,
+                                taskId: taskId,
+                                workflowId: definition.workflowId,
+                                flowAttemptId: persistedFlowAttemptId
+                            )
+                        )
+                        guard response.success else { throw FlowTerminalSubmissionError.rejected }
+                    },
+                    clear: {
+                        exitCoordinator.beginTerminalization()
+                        try await exitCoordinator.terminalize {
+                            try await actionService.clearFlowState(taskId: id)
+                        }
+                    },
+                    onSuccess: { beginPostFlow(.complete) }
                 )
-                guard response.success else {
-                    await MainActor.run {
-                        isSubmitting = false
-                        submissionError = "Couldn't save your answers. Check your connection, then try again."
-                        submissionAttempt += 1
-                    }
-                    return
-                }
-                await actionService.clearFlowState(taskId: id)
-                await MainActor.run {
-                    beginPostFlow(.complete)
-                }
             } catch {
-                await MainActor.run {
-                    isSubmitting = false
+                isSubmitting = false
+                exitCoordinator.releaseSubmissionLockAfterFailure()
+                if terminalSubmissionState.submissionSucceeded {
+                    let message = "Your answers were saved, but the completed flow couldn't be cleared. Check your connection, then try again."
+                    submissionError = message
+                    terminalCleanupError = message
+                } else {
                     submissionError = "Couldn't save your answers. Check your connection, then try again."
-                    submissionAttempt += 1
                 }
+                submissionAttempt += 1
             }
         }
     }

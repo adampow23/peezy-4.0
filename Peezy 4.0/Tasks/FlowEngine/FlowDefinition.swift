@@ -56,6 +56,8 @@ enum FlowStepKind: String, Codable, Equatable {
 struct FlowStep: Codable, Equatable {
     var id: String
     let kind: FlowStepKind
+    /// Durable row subject carried only by resolved forEachRow instances.
+    var rowSubjectId: String?
 
     // Navigation. `next` is the default successor (also drives the depth-card
     // count walk); `branches` route by the answer just given, first match wins.
@@ -123,11 +125,13 @@ struct FlowRowConfig: Codable, Equatable {
 struct FlowRow: Equatable {
     let id: String
     let category: String?
+    let subjectId: String
 
     init?(firestoreData: [String: Any]) {
         guard let id = firestoreData["id"] as? String else { return nil }
         self.id = id
         self.category = firestoreData["category"] as? String
+        self.subjectId = (firestoreData["subjectId"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? id
     }
 }
 
@@ -186,6 +190,7 @@ extension FlowDefinition {
                     guard let config = step.rowConfigs?[row.category ?? row.id] else { return nil }
                     var instance = step
                     instance.id = "\(row.id).\(step.id)"
+                    instance.rowSubjectId = row.subjectId
                     instance.question = config.question
                     instance.placeholder = config.placeholder
                     instance.searchHint = config.searchHint

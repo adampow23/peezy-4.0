@@ -105,6 +105,34 @@ struct TaskGroupingTests {
         #expect(groups.snoozed.count == 2)
     }
 
+    @Test func contractedRowsUseReadOnlyOrDoneProjectionWithoutChangingLegacy() {
+        let trigger = PeezyCard.DispositionContract.Trigger(
+            kind: .event,
+            eventName: "institution_updated",
+            canonicalKey: "institution:1",
+            afterSourceVersion: 0
+        )
+        let waiting = card(
+            id: "WAITING", title: "Waiting", status: .matchingInProgress,
+            dispositionContract: .init(
+                disposition: .waitingOnExternal,
+                owner: "institution",
+                nextAction: "Wait",
+                nextTrigger: trigger,
+                resumeDestination: "flow://waiting",
+                visibleStatusCopy: "Waiting on institution"
+            )
+        )
+        let done = card(
+            id: "DONE", title: "Done", status: .completed,
+            dispositionContract: .init(disposition: .completed, visibleStatusCopy: "Completed")
+        )
+        let legacyWaiting = card(id: "LEGACY", title: "Legacy", status: .matchingInProgress)
+        let groups = TaskGrouping.partition([waiting, done, legacyWaiting])
+        #expect(groups.peezyOnIt.map(\.id) == ["WAITING"])
+        #expect(Set(groups.completed.map(\.id)) == Set(["DONE", "LEGACY"]))
+    }
+
     private func card(
         id: String,
         title: String,
@@ -112,7 +140,8 @@ struct TaskGroupingTests {
         dueDate: Date? = nil,
         snoozedUntil: Date? = nil,
         surfaceAfterDaysPastMove: Int? = nil,
-        userInProgressReturnDate: Date? = nil
+        userInProgressReturnDate: Date? = nil,
+        dispositionContract: PeezyCard.DispositionContract? = nil
     ) -> PeezyCard {
         PeezyCard(
             id: id,
@@ -124,7 +153,8 @@ struct TaskGroupingTests {
             dueDate: dueDate,
             snoozedUntil: snoozedUntil,
             surfaceAfterDaysPastMove: surfaceAfterDaysPastMove,
-            userInProgressReturnDate: userInProgressReturnDate
+            userInProgressReturnDate: userInProgressReturnDate,
+            dispositionContract: dispositionContract
         )
     }
 }

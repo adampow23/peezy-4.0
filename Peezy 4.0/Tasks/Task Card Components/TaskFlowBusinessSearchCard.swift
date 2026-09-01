@@ -8,6 +8,143 @@
 import SwiftUI
 import MapKit
 
+enum BusinessSearchIdentity {
+    nonisolated static func makeManual(
+        label: String,
+        existing: FlowAnswerIdentity?,
+        uuid: () -> String = { UUID().uuidString }
+    ) -> FlowAnswerIdentity {
+        FlowAnswerIdentity(
+            id: existing?.id ?? uuid(),
+            label: label,
+            source: existing?.source ?? .manual
+        )
+    }
+
+    @MainActor
+    static func resolveMapKitID(for completion: MKLocalSearchCompletion) async -> String? {
+        let request = MKLocalSearch.Request(completion: completion)
+        guard let item = try? await MKLocalSearch(request: request).start().mapItems.first else { return nil }
+        if #available(iOS 18.0, *) { return item.identifier?.rawValue }
+        return nil
+    }
+}
+
+@MainActor
+@Observable
+final class BusinessSearchSelectionController {
+    private(set) var searchText: String
+    private(set) var hasSelection: Bool
+    private(set) var selectedIdentity: FlowAnswerIdentity?
+    private(set) var isResolving = false
+
+    private let uuid: () -> String
+    private var resolutionGeneration = 0
+    private var resolutionTask: Task<Void, Never>?
+
+    init(
+        selected: FlowAnswerIdentity? = nil,
+        uuid: @escaping () -> String = { UUID().uuidString }
+    ) {
+        self.selectedIdentity = selected
+        self.searchText = selected?.label ?? ""
+        self.hasSelection = selected != nil
+        self.uuid = uuid
+    }
+
+    var canConfirm: Bool {
+        !isResolving && !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    var allowsFieldInteraction: Bool { !isResolving }
+
+    func userEditedText(_ text: String) {
+        cancelPendingResolution()
+        searchText = text
+        hasSelection = false
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            selectedIdentity = nil
+            return
+        }
+        // A manual identity represents the typed provider and survives a true
+        // label edit. Editing a MapKit selection changes its canonical entity,
+        // so it must become a new manual identity on confirmation.
+        if let selectedIdentity,
+           selectedIdentity.source == .mapkit,
+           trimmed != selectedIdentity.label {
+            self.selectedIdentity = nil
+        }
+    }
+
+    func clear() {
+        cancelPendingResolution()
+        searchText = ""
+        hasSelection = false
+        selectedIdentity = nil
+    }
+
+    func beginAutocompleteSelection(
+        label: String,
+        resolveID: @escaping @MainActor () async -> String?,
+        onResolved: @escaping @MainActor () -> Void = {}
+    ) {
+        resolutionTask?.cancel()
+        resolutionGeneration += 1
+        let generation = resolutionGeneration
+        selectedIdentity = nil
+        searchText = label
+        hasSelection = false
+        isResolving = true
+
+        resolutionTask = Task { @MainActor [weak self] in
+            let resolvedID = await resolveID()
+            guard let self,
+                  generation == self.resolutionGeneration,
+                  !Task.isCancelled else { return }
+            self.selectedIdentity = FlowAnswerIdentity(
+                id: resolvedID ?? self.uuid(),
+                label: label,
+                source: .mapkit
+            )
+            self.hasSelection = true
+            self.isResolving = false
+            self.resolutionTask = nil
+            onResolved()
+        }
+    }
+
+    func confirm() -> FlowAnswerIdentity? {
+        guard canConfirm else { return nil }
+        let label = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let selectedIdentity,
+           selectedIdentity.source == .mapkit,
+           selectedIdentity.label == label {
+            return selectedIdentity
+        }
+        let reusableManual = selectedIdentity?.source == .manual ? selectedIdentity : nil
+        let identity = BusinessSearchIdentity.makeManual(
+            label: label,
+            existing: reusableManual,
+            uuid: uuid
+        )
+        selectedIdentity = identity
+        hasSelection = true
+        return identity
+    }
+
+    func cancelPendingResolution() {
+        resolutionGeneration += 1
+        resolutionTask?.cancel()
+        resolutionTask = nil
+        isResolving = false
+    }
+
+    func waitUntilResolutionFinishes() async {
+        while isResolving { await Task.yield() }
+    }
+}
+
 // MARK: - Business Search Completer
 // Modeled after AddressSearchManager.
 // Uses .pointOfInterest for business results instead of .address.
@@ -88,21 +225,82 @@ struct TaskFlowBusinessSearchCard: View {
     let question: String
     var placeholder: String = "Search..."
     var searchHint: String = ""
-    var selectedBusiness: String? = nil
+    var selectedBusiness: FlowAnswerIdentity? = nil
     var confirmLabel: String = "Continue"
     var showBack: Bool = false
-    let onConfirm: (String) -> Void
+    let onConfirm: (FlowAnswerIdentity) -> Void
     var onBack: (() -> Void)? = nil
+    var resolveMapKitID: @MainActor (MKLocalSearchCompletion) async -> String? = BusinessSearchIdentity.resolveMapKitID
+    var uuid: () -> String = { UUID().uuidString }
+
+    init(
+        taskTitle: String,
+        question: String,
+        placeholder: String = "Search...",
+        searchHint: String = "",
+        selectedBusiness: FlowAnswerIdentity? = nil,
+        confirmLabel: String = "Continue",
+        showBack: Bool = false,
+        onConfirm: @escaping (FlowAnswerIdentity) -> Void,
+        onBack: (() -> Void)? = nil,
+        resolveMapKitID: @escaping @MainActor (MKLocalSearchCompletion) async -> String? = BusinessSearchIdentity.resolveMapKitID,
+        uuid: @escaping () -> String = { UUID().uuidString }
+    ) {
+        self.taskTitle = taskTitle
+        self.question = question
+        self.placeholder = placeholder
+        self.searchHint = searchHint
+        self.selectedBusiness = selectedBusiness
+        self.confirmLabel = confirmLabel
+        self.showBack = showBack
+        self.onConfirm = onConfirm
+        self.onBack = onBack
+        self.resolveMapKitID = resolveMapKitID
+        self.uuid = uuid
+        _selectionController = State(
+            initialValue: BusinessSearchSelectionController(
+                selected: selectedBusiness,
+                uuid: uuid
+            )
+        )
+    }
+
+    /// Source-compatible bridge for bespoke flows that still consume labels.
+    init(
+        taskTitle: String,
+        question: String,
+        placeholder: String = "Search...",
+        searchHint: String = "",
+        selectedBusiness: String? = nil,
+        confirmLabel: String = "Continue",
+        showBack: Bool = false,
+        onConfirm: @escaping (String) -> Void,
+        onBack: (() -> Void)? = nil
+    ) {
+        self.init(
+            taskTitle: taskTitle,
+            question: question,
+            placeholder: placeholder,
+            searchHint: searchHint,
+            selectedBusiness: selectedBusiness.map {
+                FlowAnswerIdentity(id: UUID().uuidString, label: $0, source: .manual)
+            },
+            confirmLabel: confirmLabel,
+            showBack: showBack,
+            onConfirm: { onConfirm($0.label) },
+            onBack: onBack
+        )
+    }
 
     // MARK: - Internal State
 
     @State private var completer = BusinessSearchCompleter()
-    @State private var searchText = ""
-    @State private var hasSelection = false
+    @State private var selectionController: BusinessSearchSelectionController
     @FocusState private var isFieldFocused: Bool
 
     private var showResults: Bool {
-        isFieldFocused && !completer.results.isEmpty && !hasSelection
+        isFieldFocused && !completer.results.isEmpty
+            && !selectionController.hasSelection && !selectionController.isResolving
     }
 
     // MARK: - Body
@@ -144,9 +342,10 @@ struct TaskFlowBusinessSearchCard: View {
 
                 PeezyAssessmentButton(
                     confirmLabel,
-                    disabled: searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    disabled: !selectionController.canConfirm
                 ) {
-                    onConfirm(searchText.trimmingCharacters(in: .whitespacesAndNewlines))
+                    guard let identity = selectionController.confirm() else { return }
+                    onConfirm(identity)
                 }
                 .padding(.horizontal, 24)
             }
@@ -161,14 +360,15 @@ struct TaskFlowBusinessSearchCard: View {
         .animation(.easeOut(duration: 0.25), value: isFieldFocused)
         .onAppear {
             completer.searchHint = searchHint
-            if let selected = selectedBusiness, !selected.isEmpty {
-                searchText = selected
-                hasSelection = true
-            }
             // UX Interaction Fix: Auto-focus after card transition completes
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                isFieldFocused = true
+                if selectionController.allowsFieldInteraction {
+                    isFieldFocused = true
+                }
             }
+        }
+        .onDisappear {
+            selectionController.cancelPendingResolution()
         }
     }
 
@@ -180,7 +380,16 @@ struct TaskFlowBusinessSearchCard: View {
                 .font(.system(size: 16, weight: .medium))
                 .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.3))
 
-            TextField(placeholder, text: $searchText)
+            TextField(
+                placeholder,
+                text: Binding(
+                    get: { selectionController.searchText },
+                    set: { newValue in
+                        selectionController.userEditedText(newValue)
+                        completer.update(newValue)
+                    }
+                )
+            )
                 .font(.system(size: 16, weight: .medium))
                 .foregroundStyle(PeezyTheme.Colors.deepInk)
                 .focused($isFieldFocused)
@@ -188,16 +397,17 @@ struct TaskFlowBusinessSearchCard: View {
                 .textInputAutocapitalization(.words)
                 .submitLabel(.done)
                 .onSubmit { isFieldFocused = false }
-                .onChange(of: searchText) { _, newValue in
-                    hasSelection = false
-                    completer.update(newValue)
-                }
+                .disabled(!selectionController.allowsFieldInteraction)
 
-            if !searchText.isEmpty {
+            if selectionController.isResolving {
+                ProgressView()
+                    .controlSize(.small)
+                    .frame(width: 44, height: 44)
+                    .accessibilityLabel("Resolving business")
+            } else if !selectionController.searchText.isEmpty {
                 Button(action: {
                     PeezyHaptics.light()
-                    searchText = ""
-                    hasSelection = false
+                    selectionController.clear()
                     completer.clear()
                 }) {
                     Image(systemName: "xmark.circle.fill")
@@ -208,10 +418,11 @@ struct TaskFlowBusinessSearchCard: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .disabled(!selectionController.allowsFieldInteraction)
             }
         }
         .padding(.leading, 16)
-        .padding(.trailing, searchText.isEmpty ? 16 : 0)
+        .padding(.trailing, selectionController.searchText.isEmpty ? 16 : 0)
         .frame(height: 52)
         .background(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
@@ -238,10 +449,14 @@ struct TaskFlowBusinessSearchCard: View {
                 ForEach(Array(completer.results.enumerated()), id: \.offset) { index, result in
                     Button(action: {
                         PeezyHaptics.light()
-                        searchText = result.title
-                        hasSelection = true
-                        isFieldFocused = false
-                        completer.clear()
+                        selectionController.beginAutocompleteSelection(
+                            label: result.title,
+                            resolveID: { await resolveMapKitID(result) },
+                            onResolved: {
+                                isFieldFocused = false
+                                completer.clear()
+                            }
+                        )
                     }) {
                         HStack(spacing: 12) {
                             Image(systemName: "building.2.fill")
@@ -271,6 +486,7 @@ struct TaskFlowBusinessSearchCard: View {
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .disabled(!selectionController.allowsFieldInteraction)
                     .accessibilityLabel("\(result.title), \(result.subtitle)")
 
                     // Divider between results — inset to align with text
@@ -305,7 +521,7 @@ struct TaskFlowBusinessSearchCard: View {
         placeholder: "Search for a dental office...",
         searchHint: "dentist",
         showBack: true,
-        onConfirm: { name in print("✅ Selected: \(name)") },
+        onConfirm: { identity in print("✅ Selected: \(identity.label)") },
         onBack: { print("⏪ Back") }
     )
     .peezyCardChrome()
@@ -318,7 +534,7 @@ struct TaskFlowBusinessSearchCard: View {
         placeholder: "Search for a gym...",
         searchHint: "gym",
         showBack: true,
-        onConfirm: { name in print("✅ Selected: \(name)") },
+        onConfirm: { identity in print("✅ Selected: \(identity.label)") },
         onBack: { print("⏪ Back") }
     )
     .peezyCardChrome()
@@ -330,9 +546,9 @@ struct TaskFlowBusinessSearchCard: View {
         question: "Which pharmacy do you use?",
         placeholder: "Search for a pharmacy...",
         searchHint: "pharmacy",
-        selectedBusiness: "CVS Pharmacy",
+        selectedBusiness: FlowAnswerIdentity(id: "preview", label: "CVS Pharmacy", source: .manual),
         showBack: true,
-        onConfirm: { name in print("✅ Selected: \(name)") },
+        onConfirm: { identity in print("✅ Selected: \(identity.label)") },
         onBack: { print("⏪ Back") }
     )
     .peezyCardChrome()

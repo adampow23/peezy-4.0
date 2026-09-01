@@ -192,6 +192,8 @@ struct PeezyV1App: App {
             EstimateIntegrityPhaseFCheckInFixture(booked: false)
         } else if ProcessInfo.processInfo.arguments.contains("--estimate-integrity-phase-b") {
             EstimateIntegrityPhaseBCoverageFixture()
+        } else if ProcessInfo.processInfo.arguments.contains("--movers-preparation-pager") {
+            MoversPreparationPagerFixture()
         } else {
             AppRootView()
         }
@@ -239,6 +241,90 @@ private struct PhaseBProviderRequirementsFixture: View {
                 moveDate: moveDate
             )
         )
+    }
+}
+
+/// Renders the BOOK_MOVERS preparation card sequence (education + equip)
+/// with the catalog call sheet, no auth or Firestore — for visual review of
+/// the card pacing without walking the assessment.
+private struct MoversPreparationPagerFixture: View {
+    @State private var index = 0
+
+    private var pages: [MoversPreparationPage] {
+        MoversFlowViewModel.buildPreparationPages(
+            callSheet: TaskCallSheet(data: [
+                "say": [
+                    "Volunteer your access info before they ask: stairs, elevator, long walks, how far the truck parks from the door. Hourly crews bill the walk.",
+                    "Name every specialty item: piano, safe, treadmill, anything oversized.",
+                    "Tell them you want the packing quote included."
+                ],
+                "ask": [
+                    "Is pricing port-to-port hourly, or a fixed travel fee?",
+                    "How do you charge for supplies — percentage, per item, or can I supply my own?",
+                    "What does full-value protection cost for my move?",
+                    "What are the fees for specialty items?"
+                ],
+                "get": [
+                    "The quote in writing, with crew size, hourly rate, and travel fee broken out.",
+                    "Their COI turnaround time if your building needs one."
+                ]
+            ])
+        )
+    }
+
+    var body: some View {
+        let pages = pages
+        ZStack(alignment: .topLeading) {
+            InteractiveBackground()
+                .ignoresSafeArea()
+
+            TaskFlowStack(
+                cardsRemaining: pages.count - index,
+                currentIndex: index
+            ) {
+                pageContent(pages[index])
+            }
+        }
+        .accessibilityIdentifier("movers.preparation.fixture")
+    }
+
+    @ViewBuilder
+    private func pageContent(_ page: MoversPreparationPage) -> some View {
+        switch page.kind {
+        case .education:
+            MoversEducationView(
+                headerTitle: "Get moving quotes",
+                title: page.title,
+                message: page.body ?? "",
+                callout: nil,
+                systemImage: page.systemImage,
+                accessibilityPrefix: page.accessibilityPrefix,
+                showBack: index > 0,
+                onBack: goBack,
+                onContinue: advance
+            )
+        case .intro, .callSheetSection:
+            MoversEquipView(
+                headerTitle: "Get moving quotes",
+                page: page,
+                inventoryRooms: [],
+                hasSubmittedInventory: true,
+                showBack: index > 0,
+                isCompleting: false,
+                actionError: nil,
+                onBack: goBack,
+                onPrimary: advance
+            )
+        }
+    }
+
+    private func advance() {
+        // Final card loops back so the fixture can be walked repeatedly.
+        index = index < pages.count - 1 ? index + 1 : 0
+    }
+
+    private func goBack() {
+        index = max(index - 1, 0)
     }
 }
 

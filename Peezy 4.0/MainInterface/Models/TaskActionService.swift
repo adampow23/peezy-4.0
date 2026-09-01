@@ -116,17 +116,22 @@ struct TaskActionService {
         userId: String,
         taskId: String,
         path: [String],
-        answers: [String: [String]]
+        answers: [String: [String]],
+        answerIdentities: [String: FlowAnswerIdentity] = [:],
+        flowAttemptId: String? = nil
     ) async throws {
         guard !userId.isEmpty, !taskId.isEmpty else {
             throw FlowProgressPersistenceError.missingIdentity
         }
         let db = Firestore.firestore()
+        let snapshot = FlowProgressSnapshot(
+            path: path,
+            answers: answers,
+            answerIdentities: answerIdentities,
+            flowAttemptId: flowAttemptId
+        )
         try await db.collection("users").document(userId).collection("tasks")
-            .document(taskId).updateData([
-                "flowPath": path,
-                "flowAnswers": answers
-            ])
+            .document(taskId).updateData(Self.flowProgressData(for: snapshot))
     }
 
     func loadFlowProgress(userId: String, taskId: String) async throws -> FlowProgressSnapshot {
@@ -137,29 +142,58 @@ struct TaskActionService {
             .collection("users").document(userId)
             .collection("tasks").document(taskId)
             .getDocument()
-        let data = document.data() ?? [:]
+        return Self.flowProgressSnapshot(from: document.data() ?? [:])
+    }
+
+    nonisolated static func flowProgressData(for snapshot: FlowProgressSnapshot) -> [String: Any] {
+        var data: [String: Any] = [
+            "flowPath": snapshot.path,
+            "flowAnswers": snapshot.answers,
+            "flowAnswerIdentities": snapshot.answerIdentities.mapValues { identity in
+                ["id": identity.id, "label": identity.label, "source": identity.source.rawValue]
+            }
+        ]
+        if let flowAttemptId = snapshot.flowAttemptId, !flowAttemptId.isEmpty {
+            data["flowAttemptId"] = flowAttemptId
+        }
+        return data
+    }
+
+    nonisolated static func flowProgressSnapshot(from data: [String: Any]) -> FlowProgressSnapshot {
+        let identities = (data["flowAnswerIdentities"] as? [String: Any])?.compactMapValues { value -> FlowAnswerIdentity? in
+            guard let map = value as? [String: Any],
+                  let id = map["id"] as? String,
+                  let label = map["label"] as? String,
+                  let sourceRaw = map["source"] as? String,
+                  let source = FlowAnswerIdentity.Source(rawValue: sourceRaw) else { return nil }
+            return FlowAnswerIdentity(id: id, label: label, source: source)
+        } ?? [:]
         return FlowProgressSnapshot(
             path: data["flowPath"] as? [String] ?? [],
             answers: (data["flowAnswers"] as? [String: Any])?
-                .compactMapValues { $0 as? [String] } ?? [:]
+                .compactMapValues { $0 as? [String] } ?? [:],
+            answerIdentities: identities,
+            flowAttemptId: data["flowAttemptId"] as? String
         )
     }
 
     /// Removes persisted flow state so the next open starts fresh — fired on
     /// summary submission and status-card terminals (matches the pre-engine
     /// "reopen starts over" semantics once a flow has concluded).
-    func clearFlowState(taskId: String) async {
-        guard let userId = Auth.auth().currentUser?.uid, !taskId.isEmpty else { return }
-        let db = Firestore.firestore()
-        do {
-            try await db.collection("users").document(userId).collection("tasks")
-                .document(taskId).updateData([
-                    "flowPath": FieldValue.delete(),
-                    "flowAnswers": FieldValue.delete()
-                ])
-        } catch {
-            print("⚠️ Failed to clear flow state: \(error.localizedDescription)")
+    nonisolated static let flowStateFields: Set<String> = [
+        "flowPath", "flowAnswers", "flowAnswerIdentities", "flowAttemptId"
+    ]
+
+    func clearFlowState(taskId: String) async throws {
+        guard let userId = Auth.auth().currentUser?.uid, !taskId.isEmpty else {
+            throw FlowProgressPersistenceError.missingIdentity
         }
+        let db = Firestore.firestore()
+        let deletion = Self.flowStateFields.reduce(into: [AnyHashable: Any]()) {
+            $0[$1] = FieldValue.delete()
+        }
+        try await db.collection("users").document(userId).collection("tasks")
+            .document(taskId).updateData(deletion)
     }
 
     func claimNudgeTerminal(
@@ -595,7 +629,7 @@ struct TaskActionService {
             .collection("users").document(userId)
             .collection("tasks").document(taskId)
             .updateData([
-                "suppliesKit": suppliesKitData(normalizedKit),
+                "suppliesKit": Self.suppliesKitData(normalizedKit),
                 "desc": normalizedKit.itemizedSummary,
                 "kitCustomizedAt": FieldValue.serverTimestamp()
             ])
@@ -800,7 +834,7 @@ struct TaskActionService {
                 ? existingByKey[session.sessionKey]
                 : nil
             batch.setData(
-                packingTaskData(
+                Self.packingTaskData(
                     session,
                     previousData: previousData,
                     matchingSessionData: matchingSessionData
@@ -815,7 +849,7 @@ struct TaskActionService {
             configuration: packingConfiguration
         )
         batch.setData(
-            readinessTaskData(
+            Self.readinessTaskData(
                 scheduledDate: readinessDate,
                 previousData: previousReadiness
             ),
@@ -840,7 +874,7 @@ struct TaskActionService {
                 resolvedKit = suppliesKit
             }
             batch.setData(
-                suppliesKitTaskData(resolvedKit, previousData: previousData),
+                Self.suppliesKitTaskData(resolvedKit, previousData: previousData),
                 forDocument: taskCollection.document(SuppliesKit.taskId),
                 merge: true
             )
@@ -926,7 +960,7 @@ struct TaskActionService {
         var data: [String: Any] = [
             "moveDate": Timestamp(date: plan.moveDate),
             "generatedAt": Timestamp(date: plan.generatedAt),
-            "sessions": plan.sessions.map(packingSessionData)
+            "sessions": plan.sessions.map(Self.packingSessionData)
         ]
         if let reflowedAt = plan.reflowedAt {
             data["reflowedAt"] = Timestamp(date: reflowedAt)
@@ -934,7 +968,7 @@ struct TaskActionService {
         return data
     }
 
-    private func packingSessionData(_ session: PackingSession) -> [String: Any] {
+    nonisolated static func packingSessionData(_ session: PackingSession) -> [String: Any] {
         var data: [String: Any] = [
             "taskId": session.taskId,
             "sessionKey": session.sessionKey,
@@ -953,7 +987,7 @@ struct TaskActionService {
         return data
     }
 
-    private func packingTaskData(
+    nonisolated static func packingTaskData(
         _ session: PackingSession,
         previousData: [String: Any]?,
         matchingSessionData: [String: Any]?
@@ -977,13 +1011,19 @@ struct TaskActionService {
             "selfServiceOnly": true,
             "generatedBy": "packingPlan",
             "createdAt": previousData?["createdAt"] ?? FieldValue.serverTimestamp(),
-            "packingSession": packingSessionData(session)
+            "packingSession": Self.packingSessionData(session)
         ]
 
         if let previousSession = matchingSessionData?["packingSession"] as? [String: Any],
            previousSession["sessionKey"] as? String == session.sessionKey,
            let flowAnswers = matchingSessionData?["flowAnswers"] as? [String: Any] {
             data["flowAnswers"] = flowAnswers
+            if let identities = matchingSessionData?["flowAnswerIdentities"] as? [String: Any] {
+                data["flowAnswerIdentities"] = identities
+            }
+            if let flowAttemptId = matchingSessionData?["flowAttemptId"] as? String {
+                data["flowAttemptId"] = flowAttemptId
+            }
         }
 
         if let completedAt = session.completedAt {
@@ -996,10 +1036,10 @@ struct TaskActionService {
                 if let value = previousData[key] { data[key] = value }
             }
         }
-        return data
+        return Self.preservingDispositionContract(previousData: previousData, in: data)
     }
 
-    private func readinessTaskData(
+    nonisolated static func readinessTaskData(
         scheduledDate: Date,
         previousData: [String: Any]?
     ) -> [String: Any] {
@@ -1040,7 +1080,7 @@ struct TaskActionService {
                 if let value = previousData?[key] { data[key] = value }
             }
         }
-        return data
+        return Self.preservingDispositionContract(previousData: previousData, in: data)
     }
 
     private func hasCompletedReserveAccessAnswers(
@@ -1071,7 +1111,7 @@ struct TaskActionService {
         return pairs.contains { responseExists[$0.taskId] == true }
     }
 
-    private func suppliesKitTaskData(
+    nonisolated static func suppliesKitTaskData(
         _ kit: SuppliesKit,
         previousData: [String: Any]?
     ) -> [String: Any] {
@@ -1093,17 +1133,27 @@ struct TaskActionService {
             "selfServiceOnly": false,
             "generatedBy": "packingPlan",
             "createdAt": previousData?["createdAt"] ?? FieldValue.serverTimestamp(),
-            "suppliesKit": suppliesKitData(kit)
+            "suppliesKit": Self.suppliesKitData(kit)
         ]
         if let deliveryBy = kit.deliveryBy {
             data["dueDate"] = Timestamp(date: deliveryBy)
         } else {
             data["dueDate"] = FieldValue.serverTimestamp()
         }
-        return data
+        return Self.preservingDispositionContract(previousData: previousData, in: data)
     }
 
-    private func suppliesKitData(_ kit: SuppliesKit) -> [String: Any] {
+    nonisolated static func preservingDispositionContract(
+        previousData: [String: Any]?,
+        in replacement: [String: Any]
+    ) -> [String: Any] {
+        guard let contract = previousData?["dispositionContract"] else { return replacement }
+        var result = replacement
+        result["dispositionContract"] = contract
+        return result
+    }
+
+    nonisolated static func suppliesKitData(_ kit: SuppliesKit) -> [String: Any] {
         var data: [String: Any] = [
             "small": kit.small,
             "medium": kit.medium,

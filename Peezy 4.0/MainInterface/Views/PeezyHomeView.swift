@@ -99,6 +99,11 @@ struct PeezyHomeView: View {
 
             VStack(spacing: 0) {
                 PeezyWordmark()
+                if let status = viewModel.readOnlyContractStatus.first {
+                    passiveContractStatus(status)
+                        .padding(.horizontal, 24)
+                        .padding(.top, 8)
+                }
                 Spacer()
             }
 
@@ -445,6 +450,22 @@ struct PeezyHomeView: View {
             .padding(.vertical, 5)
             .background(PeezyTheme.Colors.deepInk.opacity(0.08))
             .clipShape(Capsule())
+    }
+
+    private func passiveContractStatus(_ task: PeezyCard) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(task.title)
+                .font(PeezyTheme.Typography.captionMedium)
+                .foregroundStyle(deepInk.opacity(0.75))
+            Text(task.visibleStatusCopy ?? "Status needs attention")
+                .font(PeezyTheme.Typography.caption)
+                .foregroundStyle(deepInk.opacity(0.55))
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(deepInk.opacity(0.05), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("home.dispositionStatus")
     }
 }
 

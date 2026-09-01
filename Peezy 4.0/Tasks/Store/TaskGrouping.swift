@@ -5,7 +5,7 @@ enum TaskGrouping {
         var todo: [PeezyCard]
         var snoozed: [PeezyCard]
         var userInProgress: [PeezyCard]    // "You're on it"
-        var peezyOnIt: [PeezyCard]         // Retained for view compatibility; always empty.
+        var peezyOnIt: [PeezyCard]         // Server-owned lifecycle rows are read-only here.
         var completed: [PeezyCard]
 
         /// The To-Do tab's single continuous list: todo + snoozed merged,
@@ -24,12 +24,23 @@ enum TaskGrouping {
         var todo: [PeezyCard] = []
         var snoozed: [PeezyCard] = []
         var userInProgress: [PeezyCard] = []
+        var peezyOnIt: [PeezyCard] = []
         var completed: [PeezyCard] = []
 
         for task in tasks {
             // Nudges are Home-only (Spec 09) — never a Tasks-tab row.
             guard task.tier != "nudge" else { continue }
             guard task.status != .skipped else { continue }
+
+            if task.dispositionContract != nil {
+                if task.dispositionContractIsCoherent,
+                   task.status == .completed || task.status == .dismissed {
+                    completed.append(task)
+                } else {
+                    peezyOnIt.append(task)
+                }
+                continue
+            }
 
             if isSnoozedEffective(task, now: now) {
                 snoozed.append(task)
@@ -60,6 +71,10 @@ enum TaskGrouping {
         let todoSorted = sortPackingSessionsChronologically(in: ascending(todo, by: \.dueDate))
         let snoozedSorted = ascending(snoozed, by: \.snoozedUntil)
         let uipSorted = ascending(userInProgress, by: \.userInProgressReturnDate)
+        let peezySorted = peezyOnIt.sorted {
+            if $0.title != $1.title { return $0.title < $1.title }
+            return $0.id < $1.id
+        }
 
         let completedSorted = completed.sorted { a, b in
             let aDate = a.completedAt ?? .distantPast
@@ -72,7 +87,7 @@ enum TaskGrouping {
             todo: todoSorted,
             snoozed: snoozedSorted,
             userInProgress: uipSorted,
-            peezyOnIt: [],
+            peezyOnIt: peezySorted,
             completed: completedSorted
         )
     }

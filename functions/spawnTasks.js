@@ -8,6 +8,7 @@ if (!admin.apps.length) {
 
 const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000;
 const SOURCE_KINDS = ["conversation", "nudge", "onComplete"];
+const SUBJECT_KINDS = new Set(["person", "pet", "vehicle", "property", "service", "child"]);
 const MAX_REQUEST_BYTES = 48 * 1024;
 
 class SpawnValidationError extends Error {}
@@ -70,6 +71,20 @@ function requestFingerprint(request) {
 
 function deterministicTaskId(token, ordinal) {
   return `t1_${sha256Hex(`${token}|${ordinal}`).slice(0, 40)}`;
+}
+
+function isSubjectAwareSpawn(spawn) {
+  return Boolean(spawn?.subject && spawn?.institutionId && spawn?.institution);
+}
+
+function canonicalTaskIdV2(userId, spawn) {
+  const tuple = {
+    householdUid: userId,
+    subject: { kind: spawn.subject.kind, id: spawn.subject.id },
+    institutionId: spawn.institutionId,
+    taskId: spawn.taskId
+  };
+  return `t2_${sha256Hex(canonicalJSON(tuple)).slice(0, 40)}`;
 }
 
 function isValidDocumentId(value) {
@@ -143,15 +158,53 @@ function validateRequest(data) {
       throw new SpawnValidationError("Every taskId must be a valid Firestore document ID of at most 256 bytes");
     }
     const cleaned = { taskId };
-    const institution = spawn.titleParams?.institution;
-    if (typeof institution === "string" && Buffer.byteLength(institution, "utf8") > 512) {
+    const titleInstitution = spawn.titleParams?.institution;
+    if (typeof titleInstitution === "string" && Buffer.byteLength(titleInstitution, "utf8") > 512) {
       throw new SpawnValidationError("titleParams.institution must not exceed 512 bytes");
     }
-    if (typeof institution === "string" && institution.length > 0) {
-      cleaned.titleParams = { institution };
+    if (typeof titleInstitution === "string" && titleInstitution.length > 0) {
+      cleaned.titleParams = { institution: titleInstitution };
+    }
+
+    const identityFields = ["subject", "institutionId", "institution"];
+    const identityPresence = identityFields.map((field) =>
+      Object.prototype.hasOwnProperty.call(spawn, field)
+    );
+    if (identityPresence.some(Boolean) && !identityPresence.every(Boolean)) {
+      throw new SpawnValidationError("subject, institutionId, and institution must appear together");
+    }
+    if (identityPresence.every(Boolean)) {
+      if (!spawn.subject || typeof spawn.subject !== "object" || Array.isArray(spawn.subject) ||
+          !SUBJECT_KINDS.has(spawn.subject.kind) || typeof spawn.subject.id !== "string") {
+        throw new SpawnValidationError("subject requires an approved kind and string id");
+      }
+      const subjectId = spawn.subject.id.trim();
+      const institutionId = typeof spawn.institutionId === "string" ? spawn.institutionId.trim() : "";
+      const institution = typeof spawn.institution === "string" ? spawn.institution.trim() : "";
+      if (!subjectId || Buffer.byteLength(subjectId, "utf8") > 256) {
+        throw new SpawnValidationError("subject.id must be nonempty and at most 256 bytes");
+      }
+      if (!institutionId || Buffer.byteLength(institutionId, "utf8") > 256) {
+        throw new SpawnValidationError("institutionId must be nonempty and at most 256 bytes");
+      }
+      if (!institution || Buffer.byteLength(institution, "utf8") > 512) {
+        throw new SpawnValidationError("institution must be nonempty and at most 512 bytes");
+      }
+      if (cleaned.titleParams && cleaned.titleParams.institution.trim() !== institution) {
+        throw new SpawnValidationError("titleParams.institution must match institution");
+      }
+      cleaned.subject = { kind: spawn.subject.kind, id: subjectId };
+      cleaned.institutionId = institutionId;
+      cleaned.institution = institution;
+      if (cleaned.titleParams) cleaned.titleParams = { institution };
     }
     return cleaned;
   });
+
+  const identityModes = new Set(cleanedSpawns.map(isSubjectAwareSpawn));
+  if (identityModes.size > 1) {
+    throw new SpawnValidationError("A request may not mix legacy and subject-aware spawns");
+  }
 
   let cleanedAnswers = null;
   if (answers !== undefined && answers !== null) {
@@ -239,7 +292,7 @@ function spawnTitle(row, titleParams) {
 // Mirrors the generation doc shape (TaskGenerationService.swift:93-112) with
 // status "Upcoming" — NOT "pending" (terminal legacy human-handoff state).
 // JS Dates are stored as Firestore Timestamps by the Admin SDK.
-function buildTaskDoc({ row, docId, userId, title, dueDate, source, now }) {
+function buildTaskDoc({ row, docId, userId, title, dueDate, source, now, spawn = null }) {
   const urgencyRaw = Number(row.urgencyPercentage);
   const doc = {
     id: docId,
@@ -266,6 +319,12 @@ function buildTaskDoc({ row, docId, userId, title, dueDate, source, now }) {
   if (row.quoteTracker !== undefined) doc.quoteTracker = row.quoteTracker;
   if (row.onCompleteSpawns !== undefined) doc.onCompleteSpawns = row.onCompleteSpawns;
   if (row.workflowId) doc.workflowId = row.workflowId;
+  if (spawn && isSubjectAwareSpawn(spawn)) {
+    doc.subject = spawn.subject;
+    doc.institutionId = spawn.institutionId;
+    doc.institution = spawn.institution;
+    doc.canonicalKeyVersion = 2;
+  }
   return doc;
 }
 
@@ -320,48 +379,115 @@ async function executeSpawn(db, userId, request, now = new Date()) {
 
   const moveDate = await readMoveDate(db, userId);
 
-  const batch = db.batch();
   const tasksCollection = db.collection("users").doc(userId).collection("tasks");
+  const subjectAware = isSubjectAwareSpawn(request.spawns[0]);
+  const seenTaskIds = new Set();
   const created = [];
   for (const [ordinal, { spawn, row }] of resolvedSpawns.entries()) {
-    const docRef = tasksCollection.doc(deterministicTaskId(request.token, ordinal));
+    const docId = subjectAware
+      ? canonicalTaskIdV2(userId, spawn)
+      : deterministicTaskId(request.token, ordinal);
+    if (seenTaskIds.has(docId)) {
+      throw new HttpsError("invalid-argument", "Duplicate canonical task identity in one request");
+    }
+    seenTaskIds.add(docId);
+    const docRef = tasksCollection.doc(docId);
     const dueDate = resolveDueDate(row, moveDate, now);
-    const title = spawnTitle(row, spawn.titleParams);
-    batch.create(docRef, buildTaskDoc({
-      row,
-      docId: docRef.id,
-      userId,
-      title,
-      dueDate,
-      source: request.source,
-      now
-    }));
+    const title = spawnTitle(row, spawn.titleParams ||
+      (subjectAware ? { institution: spawn.institution } : undefined));
     created.push({ id: docRef.id, taskId: row.taskId, title, dueDateISO: dueDate.toISOString() });
   }
 
-  if (request.answers && Object.keys(request.answers).length > 0) {
-    batch.set(
-      db.collection("users").doc(userId).collection("moveAnswers").doc("answers"),
-      request.answers,
-      { merge: true }
-    );
-  }
+  const userRef = db.collection("users").doc(userId);
+  const transactionResult = await db.runTransaction(async (transaction) => {
+    const rootSnapshot = await transaction.get(userRef);
+    const resetState = rootSnapshot.get("taskReset")?.state;
+    if (resetState === "deleting" || resetState === "awaiting_local_reset") {
+      throw new HttpsError("failed-precondition", "Task reset is active");
+    }
+    const tokenSnapshot = await transaction.get(tokenRef);
+    if (tokenSnapshot.exists) return replayToken(tokenSnapshot, fingerprint);
 
-  const result = { created };
-  batch.create(tokenRef, {
-    result,
-    fingerprint,
-    at: admin.firestore.FieldValue.serverTimestamp()
-  });
-  try {
-    await batch.commit();
+    const taskRows = resolvedSpawns.map(({ spawn, row }, ordinal) => {
+      const id = subjectAware
+        ? canonicalTaskIdV2(userId, spawn)
+        : deterministicTaskId(request.token, ordinal);
+      return { spawn, row, ref: tasksCollection.doc(id), result: created[ordinal] };
+    });
+    const taskSnapshots = [];
+    for (const item of taskRows) taskSnapshots.push(await transaction.get(item.ref));
+    const committedCreated = [];
+
+    for (const [index, item] of taskRows.entries()) {
+      const existing = taskSnapshots[index];
+      if (!subjectAware) {
+        if (existing.exists) {
+          const collision = new Error(`Document already exists: ${item.ref.path}`);
+          collision.code = 6;
+          throw collision;
+        }
+        transaction.create(item.ref, buildTaskDoc({
+          row: item.row, docId: item.ref.id, userId, title: item.result.title,
+          dueDate: new Date(item.result.dueDateISO), source: request.source, now,
+          spawn: item.spawn
+        }));
+        committedCreated.push(item.result);
+        continue;
+      }
+
+      if (existing.exists) {
+        const data = existing.data() || {};
+        const sameProvenance = data.id === item.ref.id && data.userId === userId &&
+          data.taskId === item.spawn.taskId && data.canonicalKeyVersion === 2 &&
+          canonicalJSON(data.subject) === canonicalJSON(item.spawn.subject) &&
+          data.institutionId === item.spawn.institutionId &&
+          canonicalJSON(data.spawnedFrom) === canonicalJSON(request.source);
+        if (!sameProvenance) {
+          throw new HttpsError("failed-precondition", `Canonical task ${item.ref.id} has invalid provenance`);
+        }
+        const enrichment = {};
+        if (data.institution !== item.spawn.institution) enrichment.institution = item.spawn.institution;
+        if (data.title !== item.result.title) enrichment.title = item.result.title;
+        if (Object.keys(enrichment).length) transaction.set(item.ref, enrichment, { merge: true });
+        const persistedDueDate = dateFromValue(data.dueDate);
+        if (!persistedDueDate) {
+          throw new HttpsError("failed-precondition", `Canonical task ${item.ref.id} has invalid due date`);
+        }
+        committedCreated.push({
+          id: item.ref.id,
+          taskId: data.taskId,
+          title: enrichment.title ?? data.title,
+          dueDateISO: persistedDueDate.toISOString()
+        });
+      } else {
+        transaction.create(item.ref, buildTaskDoc({
+          row: item.row, docId: item.ref.id, userId, title: item.result.title,
+          dueDate: new Date(item.result.dueDateISO), source: request.source, now,
+          spawn: item.spawn
+        }));
+        committedCreated.push(item.result);
+      }
+    }
+
+    if (request.answers && Object.keys(request.answers).length > 0) {
+      transaction.set(userRef.collection("moveAnswers").doc("answers"), request.answers, { merge: true });
+    }
+    const result = { created: committedCreated };
+    transaction.create(tokenRef, {
+      result,
+      fingerprint,
+      at: admin.firestore.FieldValue.serverTimestamp()
+    });
     return result;
-  } catch (error) {
-    if (!isAlreadyExists(error)) throw error;
-    const winnerToken = await tokenRef.get();
-    if (!winnerToken.exists) throw error;
-    return replayToken(winnerToken, fingerprint);
+  });
+  return transactionResult;
+}
+
+async function executeSubjectAwareSpawn(db, userId, request, now = new Date()) {
+  if (!request.spawns.length || !request.spawns.every(isSubjectAwareSpawn)) {
+    throw new HttpsError("invalid-argument", "Subject-aware execution requires t2 identity");
   }
+  return executeSpawn(db, userId, request, now);
 }
 
 async function handleSpawnRequest(
@@ -392,6 +518,13 @@ async function handleSpawnRequest(
     );
   }
 
+  if (cleaned.spawns.every(isSubjectAwareSpawn)) {
+    const identities = cleaned.spawns.map((spawn) => canonicalTaskIdV2(userId, spawn));
+    if (new Set(identities).size !== identities.length) {
+      throw new HttpsError("invalid-argument", "Duplicate canonical task identity in one request");
+    }
+  }
+
   return executeSpawn(dbFactory(), userId, cleaned, now);
 }
 
@@ -412,5 +545,9 @@ module.exports = {
   canonicalJSON,
   requestFingerprint,
   deterministicTaskId,
+  isValidDocumentId,
+  canonicalTaskIdV2,
+  isSubjectAwareSpawn,
+  executeSubjectAwareSpawn,
   handleSpawnRequest
 };

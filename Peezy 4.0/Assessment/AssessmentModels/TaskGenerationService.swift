@@ -20,9 +20,142 @@
 import Foundation
 import FirebaseFirestore
 
+@MainActor
+protocol TaskGenerationTransactionRunning {
+    func createMissingTasks(
+        userId: String,
+        candidates: [[String: Any]]
+    ) async throws -> Int
+}
+
+nonisolated protocol TaskGenerationTransactionAccess: AnyObject, Sendable {
+    func userData() throws -> [String: Any]?
+    func taskExists(id: String, candidate: [String: Any]) throws -> Bool
+    func createTask(id: String, data: [String: Any]) throws
+}
+
+typealias TaskGenerationTransactionBody =
+    @Sendable (any TaskGenerationTransactionAccess) throws -> Int
+
+// Firebase owns the transaction callback queue. This adapter never escapes a
+// callback invocation, and its Firestore handles are only accessed by that
+// callback, so the unchecked conformance records that queue confinement.
+nonisolated private final class FirestoreTaskGenerationTransactionAccess:
+    TaskGenerationTransactionAccess,
+    @unchecked Sendable
+{
+    private let transaction: Transaction
+    private let userRef: DocumentReference
+
+    init(transaction: Transaction, userRef: DocumentReference) {
+        self.transaction = transaction
+        self.userRef = userRef
+    }
+
+    func userData() throws -> [String: Any]? {
+        try transaction.getDocument(userRef).data()
+    }
+
+    func taskExists(id: String, candidate: [String: Any]) throws -> Bool {
+        try transaction.getDocument(userRef.collection("tasks").document(id)).exists
+    }
+
+    func createTask(id: String, data: [String: Any]) throws {
+        transaction.setData(data, forDocument: userRef.collection("tasks").document(id))
+    }
+}
+
+// Candidate maps contain immutable Firestore values prepared before entering
+// the retryable callback. The wrapper prevents the Sendable closure from
+// capturing actor-isolated local state while preserving identical retry data.
+nonisolated private struct TaskGenerationTransactionCandidate: @unchecked Sendable {
+    let id: String
+    let data: [String: Any]
+}
+
+@MainActor
+struct FirestoreTaskGenerationTransactionRunner: TaskGenerationTransactionRunning {
+    typealias Execute = (@escaping TaskGenerationTransactionBody) async throws -> Int
+
+    private let database: Firestore?
+    private let injectedExecute: Execute?
+
+    init(database: Firestore = Firestore.firestore()) {
+        self.database = database
+        self.injectedExecute = nil
+    }
+
+    init(execute: @escaping Execute) {
+        self.database = nil
+        self.injectedExecute = execute
+    }
+
+    func createMissingTasks(
+        userId: String,
+        candidates: [[String: Any]]
+    ) async throws -> Int {
+        let identified = try candidates.map { candidate -> TaskGenerationTransactionCandidate in
+            guard let id = candidate["id"] as? String, !id.isEmpty else {
+                throw TaskGenerationWriteError.missingCandidateID
+            }
+            return TaskGenerationTransactionCandidate(id: id, data: candidate)
+        }
+
+        let body: TaskGenerationTransactionBody = { access in
+            if let marker = try access.userData()?["taskReset"] as? [String: Any],
+               let state = marker["state"] as? String,
+               state == "deleting" || state == "awaiting_local_reset" {
+                throw TaskGenerationWriteError.resetActive
+            }
+
+            // Capture the add-only decision for every candidate before the
+            // first write. The SDK may replay this whole body after contention;
+            // identified data (including generated row UUIDs) is unchanged.
+            var missing: [TaskGenerationTransactionCandidate] = []
+            for candidate in identified {
+                if try !access.taskExists(id: candidate.id, candidate: candidate.data) {
+                    missing.append(candidate)
+                }
+            }
+            for candidate in missing {
+                try access.createTask(id: candidate.id, data: candidate.data)
+            }
+            return missing.count
+        }
+
+        if let injectedExecute {
+            return try await injectedExecute(body)
+        }
+        guard let database else { throw TaskGenerationWriteError.missingResult }
+        let userRef = database.collection("users").document(userId)
+        let result = try await database.runTransaction { transaction, errorPointer in
+            do {
+                let access = FirestoreTaskGenerationTransactionAccess(
+                    transaction: transaction,
+                    userRef: userRef
+                )
+                return NSNumber(value: try body(access))
+            } catch {
+                errorPointer?.pointee = error as NSError
+                return nil
+            }
+        }
+        guard let number = result as? NSNumber else { throw TaskGenerationWriteError.missingResult }
+        return number.intValue
+    }
+}
+
 class TaskGenerationService {
 
     private let db = Firestore.firestore()
+    private let transactionRunner: any TaskGenerationTransactionRunning
+
+    @MainActor
+    init(
+        transactionRunner: (any TaskGenerationTransactionRunning)? = nil
+    ) {
+        self.transactionRunner = transactionRunner ?? FirestoreTaskGenerationTransactionRunner()
+    }
 
     /// Generates tasks for a user based on their assessment
     /// - Parameters:
@@ -154,21 +287,17 @@ class TaskGenerationService {
         print("📋 TASK GEN: \(tasksToCreate.count) tasks matched conditions")
         #endif
 
-        // 3. Batch write tasks to user's collection
-        let batch = db.batch()
-        let userTasksRef = db.collection("users").document(userId).collection("tasks")
-
-        for taskData in tasksToCreate {
-            let docId = taskData["id"] as? String ?? UUID().uuidString
-            let taskRef = userTasksRef.document(docId)
-            batch.setData(taskData, forDocument: taskRef)
-        }
-
-        // 4. Commit batch
+        // 3. Add-only, reset-aware transaction. Reads precede writes and a
+        // retry re-observes every lifecycle document before deciding to create.
+        let totalTasks: Int
         do {
-            try await batch.commit()
+            totalTasks = try await Self.createMissingTasks(
+                userId: userId,
+                candidates: tasksToCreate,
+                runner: transactionRunner
+            )
             #if DEBUG
-            print("✅ TASK GEN: Wrote \(tasksToCreate.count) tasks to Firestore")
+            print("✅ TASK GEN: Created \(totalTasks) missing tasks in Firestore")
             #endif
         } catch {
             #if DEBUG
@@ -177,7 +306,6 @@ class TaskGenerationService {
             throw error
         }
 
-        let totalTasks = tasksToCreate.count
         #if DEBUG
         print("✨ TASK GEN: Complete — \(totalTasks) tasks generated")
         #endif
@@ -197,19 +325,13 @@ class TaskGenerationService {
         assessment: [String: Any],
         moveDate: Date
     ) async throws -> Int {
-        let existingSnapshot = try await db.collection("users").document(userId)
-            .collection("tasks").getDocuments()
-        let existingIds = Set(existingSnapshot.documents.map { $0.documentID })
-
         let catalogSnapshot = try await db.collection("taskCatalog").getDocuments()
         let hasSuppliesKitSubmission = try await hasWorkflowResponse(
             userId: userId,
             workflowId: "supplies_kit"
         )
 
-        let batch = db.batch()
-        let userTasksRef = db.collection("users").document(userId).collection("tasks")
-        var created = 0
+        var candidates: [[String: Any]] = []
 
         // Same per-run index as the initial loop (Spec 09 nudge date math).
         let catalogIndex = Dictionary(
@@ -217,7 +339,6 @@ class TaskGenerationService {
         )
 
         for document in catalogSnapshot.documents {
-            guard !existingIds.contains(document.documentID) else { continue }
             if document.documentID == "BOX_RETURN", !hasSuppliesKitSubmission {
                 continue
             }
@@ -264,14 +385,23 @@ class TaskGenerationService {
                 }
             }
 
-            batch.setData(userTask, forDocument: userTasksRef.document(document.documentID))
-            created += 1
+            candidates.append(userTask)
         }
+        return try await Self.createMissingTasks(
+            userId: userId,
+            candidates: candidates,
+            runner: transactionRunner
+        )
+    }
 
-        if created > 0 {
-            try await batch.commit()
-        }
-        return created
+    static func createMissingTasks(
+        userId: String,
+        candidates: [[String: Any]],
+        runner: any TaskGenerationTransactionRunning
+    ) async throws -> Int {
+        guard candidates.count <= 499 else { throw TaskGenerationWriteError.transactionLimit }
+        guard !candidates.isEmpty else { return 0 }
+        return try await runner.createMissingTasks(userId: userId, candidates: candidates)
     }
 
     private func hasWorkflowResponse(userId: String, workflowId: String) async throws -> Bool {
@@ -306,7 +436,11 @@ class TaskGenerationService {
                 let count = max((counts[category] as? NSNumber)?.intValue ?? 1, 1)
                 let slug = Self.rowSlug(category)
                 for ordinal in 1...count {
-                    rows.append(["id": "\(slug)_\(ordinal)", "category": category])
+                    rows.append([
+                        "id": "\(slug)_\(ordinal)",
+                        "category": category,
+                        "subjectId": UUID().uuidString
+                    ])
                 }
             }
             return rows
@@ -315,16 +449,18 @@ class TaskGenerationService {
             guard let rowId = config["rowId"] as? String,
                   let source = config["source"] as? String,
                   (assessment[source] as? String)?.lowercased() == "yes" else { return [] }
-            return [["id": rowId]]
+            return [["id": rowId, "subjectId": UUID().uuidString]]
 
         case "accessRows":
-            var rows: [[String: Any]] = (config["always"] as? [String] ?? []).map { ["id": $0] }
+            var rows: [[String: Any]] = (config["always"] as? [String] ?? []).map {
+                ["id": $0, "subjectId": UUID().uuidString]
+            }
             for conditional in config["conditional"] as? [[String: Any]] ?? [] {
                 guard let rowId = conditional["rowId"] as? String,
                       let key = conditional["key"] as? String,
                       let expected = conditional["equals"] as? String else { continue }
                 if (assessment[key] as? String) == expected {
-                    rows.append(["id": rowId])
+                    rows.append(["id": rowId, "subjectId": UUID().uuidString])
                 }
             }
             return rows
@@ -439,5 +575,21 @@ class TaskGenerationService {
         }
 
         return dueDate
+    }
+}
+
+enum TaskGenerationWriteError: LocalizedError {
+    case transactionLimit
+    case resetActive
+    case missingResult
+    case missingCandidateID
+
+    var errorDescription: String? {
+        switch self {
+        case .transactionLimit: "Too many task candidates for one safe transaction."
+        case .resetActive: "Task generation is paused while assessment reset is active."
+        case .missingResult: "Task generation transaction returned no result."
+        case .missingCandidateID: "Task generation candidate is missing its stable task ID."
+        }
     }
 }
