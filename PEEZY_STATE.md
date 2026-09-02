@@ -116,5 +116,6 @@ Evidence rule: sections 1–3 use only active reachable code/data at the committ
 - Cross-cutting changes: spec → codex-consensus adversarial review → execute converged plan → report.
 - No live seeds/deploys from inside a task; human runs them.
 - Session close-out: regenerate (not append) this file's sections 1–3 if anything changed; note the date.
+- Frozen artifact register: PHASE2_REPLACEMENT_MANIFEST_v6.md · sha256 d7c83fccc577264702e3b26905ab9e82d5fa36a33c9b1a87f6b59d32e5a0351a · status: v8 12ea8ee1b1fcd43dc88a993ebc4b6706a4b3d8f2ed93ebd09a59d2399262a251 under diff-scoped review (2026-09-02). Any change = v7 + new hash.
 
 Addendum (added per adversarial review 2026-08-23; **binding by default** — the owner may amend or strike it): no live-service or billing operations from inside a task — production-connected UI/integration tests, callable invocations, remote Firestore/Storage writes, StoreKit purchase/restore — except against an explicitly enumerated non-production target or with exact human authorization naming the target and action. Regenerating sections 1–3 requires a full evidence-and-acceptance pass against a fresh snapshot, never a partial-knowledge overwrite; refresh ARCHIVE_MANIFEST.md if the root document set changed.
