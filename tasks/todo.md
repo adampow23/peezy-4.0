@@ -355,3 +355,28 @@ Environment/evidence decisions:
   deployed function log `SMS notify not configured`.
 - Open launch item: configure `ADAM_NOTIFY_NUMBER`, then verify one live booking or quote-request
   SMS before launch.
+
+---
+
+# V9 manifest execution (session 2026-09-02) — V9_INSTRUCTION.md via /codex-consensus:codex-review
+
+Governing: V9_INSTRUCTION.md (Rules 1–8), PEEZY_STATE.md §4, ~/Downloads/peezy-reports/V8_DIFF_REVIEW.md (data). Reviewer: Codex gpt-5.6-sol, read-only, one persistent thread. Repo edits: PHASE2_REPLACEMENT_MANIFEST_v9.md only (plus this file). No implementation file touched.
+
+- [x] Step 0: codex-cli 0.147.0, ChatGPT login, gpt-5.6-sol OK; v8 sha256 12ea8ee1 verified; v9 copied from v8
+- [x] Item 1 (V8-01/V7-02): `capability_invalid` detachReason; nonstaged member closure (restored v7 §11:1311); terminal mapping in §8.9.1; notProven entry restored in §8.9.5 (v7 §8:991); crash-at-every-phase fixture in §8.9.6
+- [x] Item 2 (V8-02): §6.6:770 order clause + "after the gate clears" sentence → pointers
+- [x] Item 3 (V8-03/V7-12): absence_retention gets `destinationOrdinals` (exactly one); partition sentence rewritten; fixture extended
+- [x] Item 4 (V8-04..07): §8:1001, §8:1005, §11:1510, §11:1522 → pointers; rules relocated into §8.9.3/§8.9.1
+- [x] Item 4 sweep: §8:973, §11:1418, §11.1:1589, §11.5 rows 1773/1775/1777/1784, §12.2:1847, §14.4 → pointers/removed
+- [x] Rule 5: regenerate §8.9.7 from final v9 text with grep keys; mechanical absence check
+- [x] Item 5: confirm V7-03, V7-11, V7-12, v8-Item 1, v8-Item 6 closed; cite §:line
+- [x] Rule 7: recount totals; rerun §13 gate items 1–6 (scripts); §14 → v9 execution report
+- [x] Rule 8: none expected (restorations are deleted-v7 text, not new design) — record explicitly
+- [x] Outputs 1–7 in v9 §14 + ~/Downloads/peezy-reports/V9_DIFF_REVIEW.md Appendix B (final sha256 a064bc6803f2ac416e1e1d35cb7462a24d0f94d6d95697dd056ee896b1344fc9); report to ~/Downloads/peezy-reports/V9_DIFF_REVIEW.md + log
+- [x] Codex round 1 (thread 01a0636e…): ITERATE, 5 P1 + 1 P2 (V9-01..06); all fixed (order deferral to §8.9.4, §11:1541/§11.5:1803 pointers, §14 meta-only rewrite, marker/ledger nits); round-2 input sha256 a064bc6803f2ac416e1e1d35cb7462a24d0f94d6d95697dd056ee896b1344fc9
+- [x] Codex round 2 (same thread, read-only): APPROVE — 16/16 CLOSED, 0 P1/P2, V9-01..06 all ADDRESSED; 2 of 3 rounds, 2 of 6 chain budget
+
+## Review (v9 close-out)
+- Delivered: PHASE2_REPLACEMENT_MANIFEST_v9.md (uncommitted) sha256 a064bc68…44fc9; report ~/Downloads/peezy-reports/V9_DIFF_REVIEW.md; log …/V9_DIFF_REVIEW-log.md; tooling …/v9-tools/.
+- Lessons: (1) the v9 execution report must be meta-only — Sol treats any lifecycle restatement in §14 as a Rule 4 hit; (2) never sharpen an order between §8.9.1 and §8.9.4 in prose — defer to the subsection that owns it; (3) a residual clause ("retains durable state") next to a pointer still counts as outside authority under "replace wins".
+- Owner next steps: commit v9 with hash; update PEEZY_STATE §4 register to v9; §13 item 7 whole-manifest passes before applying to the spec.
