@@ -87,8 +87,12 @@ struct InventoryFlowView: View {
                     case .scanning(let roomName):
                         InventoryCameraView(
                             roomName: roomName,
-                            onComplete: { frames in
-                                sessionManager.handleFramesExtracted(frames, roomName: roomName)
+                            onComplete: { frames, transcript in
+                                sessionManager.handleFramesExtracted(
+                                    frames,
+                                    roomName: roomName,
+                                    narration: transcript
+                                )
                             },
                             onCancel: {
                                 sessionManager.state = .roomList

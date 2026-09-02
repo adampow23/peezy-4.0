@@ -49,6 +49,10 @@ struct InventoryScanCoachingView: View {
                             "Open closets and show what's inside",
                             systemImage: "door.left.hand.open"
                         )
+                        tip(
+                            "Talk while you scan — what's staying, what's full, what's not yours.",
+                            systemImage: "mic.fill"
+                        )
                     }
 
                     Label {

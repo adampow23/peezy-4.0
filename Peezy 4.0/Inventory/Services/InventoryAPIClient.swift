@@ -6,6 +6,21 @@ nonisolated struct InventoryProcessingRequest: Equatable, Sendable {
     let sessionId: String
     let roomName: String
     let frameCount: Int
+    let narration: String?
+
+    init(
+        userId: String,
+        sessionId: String,
+        roomName: String,
+        frameCount: Int,
+        narration: String? = nil
+    ) {
+        self.userId = userId
+        self.sessionId = sessionId
+        self.roomName = roomName
+        self.frameCount = frameCount
+        self.narration = narration
+    }
 }
 
 @MainActor
@@ -19,12 +34,16 @@ final class InventoryAPIClient: InventoryProcessingCalling {
 
     /// Trigger inventory processing for an uploaded session
     func processInventory(_ request: InventoryProcessingRequest) async throws {
-        let data: [String: Any] = [
+        var data: [String: Any] = [
             "userId": request.userId,
             "sessionId": request.sessionId,
             "roomName": request.roomName,
             "frameCount": request.frameCount
         ]
+        if let narration = request.narration,
+           !narration.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            data["narration"] = narration
+        }
 
         do {
             let result = try await functions.httpsCallable("processInventory").call(data)
