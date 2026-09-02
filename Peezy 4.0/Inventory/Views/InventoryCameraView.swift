@@ -15,11 +15,16 @@ import UIKit
 
 struct InventoryCameraView: View {
     let roomName: String
-    let onComplete: ([ExtractedFrame]) -> Void
+    let onComplete: ([ExtractedFrame], String?) -> Void
     let onCancel: () -> Void
 
     @State private var viewModel = RoomCaptureViewModel()
+    @State private var narration = NarrationService()
     @State private var showScanCoaching: Bool
+    @State private var showNarrationOffer = false
+    @State private var pendingNarrationTranscript: String?
+    @State private var isStoppingRecording = false
+    @AppStorage private var narrationOfferSeen: Bool
 
     private let coachingPreferenceKey: String
 
@@ -38,7 +43,7 @@ struct InventoryCameraView: View {
 
     init(
         roomName: String,
-        onComplete: @escaping ([ExtractedFrame]) -> Void,
+        onComplete: @escaping ([ExtractedFrame], String?) -> Void,
         onCancel: @escaping () -> Void
     ) {
         self.roomName = roomName
@@ -50,6 +55,10 @@ struct InventoryCameraView: View {
         coachingPreferenceKey = preferenceKey
         _showScanCoaching = State(
             initialValue: !UserDefaults.standard.bool(forKey: preferenceKey)
+        )
+        _narrationOfferSeen = AppStorage(
+            wrappedValue: false,
+            "inventory.narrationOffer.seen.\(accountID)"
         )
     }
 
@@ -85,9 +94,10 @@ struct InventoryCameraView: View {
             }
         }
         .onChange(of: viewModel.extractedFrames.count) { _, count in
-            if count > 0 && !viewModel.isProcessingFrames {
-                onComplete(viewModel.extractedFrames)
-            }
+            guard count > 0, !viewModel.isProcessingFrames else { return }
+            let transcript = pendingNarrationTranscript
+            pendingNarrationTranscript = nil
+            onComplete(viewModel.extractedFrames, transcript)
         }
         .onChange(of: viewModel.isRecording) { _, recording in
             if recording {
@@ -97,7 +107,7 @@ struct InventoryCameraView: View {
             }
         }
         .onDisappear {
-            viewModel.cleanup()
+            cleanupAndDiscardNarration()
         }
     }
 
@@ -117,10 +127,21 @@ struct InventoryCameraView: View {
                 Spacer()
             }
 
-            // Layer 4: Bottom controls
-            VStack {
+            // Layer 4: Narration offer + bottom controls
+            VStack(spacing: 12) {
                 Spacer()
+
+                if showNarrationOffer {
+                    NarrationOfferCard(
+                        onAccept: acceptNarrationOffer,
+                        onDecline: declineNarrationOffer
+                    )
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+
                 bottomControls
+                    .allowsHitTesting(!showNarrationOffer)
+                    .accessibilityHidden(showNarrationOffer)
             }
 
             // Processing overlay (extracting frames after stop)
@@ -132,6 +153,9 @@ struct InventoryCameraView: View {
             if let error = viewModel.error, !viewModel.isProcessingFrames {
                 errorOverlay(error)
             }
+        }
+        .onAppear {
+            presentNarrationOfferIfEligible()
         }
     }
 
@@ -272,7 +296,7 @@ struct InventoryCameraView: View {
         HStack(spacing: 12) {
             // Close button
             Button {
-                viewModel.cleanup()
+                cleanupAndDiscardNarration()
                 onCancel()
             } label: {
                 Image(systemName: "xmark")
@@ -281,7 +305,11 @@ struct InventoryCameraView: View {
                     .frame(width: 36, height: 36)
                     .background(.regularMaterial)
                     .clipShape(Circle())
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Close scanner")
 
             Spacer()
 
@@ -317,6 +345,13 @@ struct InventoryCameraView: View {
                         .foregroundStyle(.white)
                         .monospacedDigit()
                 }
+
+                if narration.isListening {
+                    Image(systemName: "mic.fill")
+                        .font(.caption)
+                        .foregroundStyle(.white)
+                        .accessibilityLabel("Peezy is listening")
+                }
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
@@ -338,8 +373,16 @@ struct InventoryCameraView: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .disabled(viewModel.isRecording || viewModel.isProcessingFrames)
-            .opacity(viewModel.isRecording || viewModel.isProcessingFrames ? 0.4 : 1.0)
+            .disabled(
+                viewModel.isRecording
+                    || viewModel.isProcessingFrames
+                    || showNarrationOffer
+            )
+            .opacity(
+                viewModel.isRecording
+                    || viewModel.isProcessingFrames
+                    || showNarrationOffer ? 0.4 : 1.0
+            )
             .accessibilityLabel("Scanning tips")
             .accessibilityIdentifier("inventory.camera.coaching")
         }
@@ -369,11 +412,7 @@ struct InventoryCameraView: View {
                 }
 
                 Button {
-                    if viewModel.isRecording {
-                        Task { await viewModel.stopRecording() }
-                    } else {
-                        viewModel.startRecording()
-                    }
+                    handleRecordButtonTapped()
                 } label: {
                     ZStack {
                         Circle()
@@ -393,7 +432,10 @@ struct InventoryCameraView: View {
                         }
                     }
                 }
-                .disabled(viewModel.isProcessingFrames)
+                .disabled(viewModel.isProcessingFrames || isStoppingRecording)
+                .accessibilityLabel(
+                    viewModel.isRecording ? "Stop recording" : "Start recording"
+                )
                 .simultaneousGesture(
                     DragGesture(minimumDistance: 0)
                         .onChanged { _ in
@@ -487,7 +529,7 @@ struct InventoryCameraView: View {
                     .padding(.horizontal, 32)
 
                 Button("Dismiss") {
-                    viewModel.cleanup()
+                    cleanupAndDiscardNarration()
                     onCancel()
                 }
                 .font(.system(size: 16, weight: .semibold))
@@ -516,6 +558,62 @@ struct InventoryCameraView: View {
         withAnimation(.easeOut(duration: 0.2)) {
             showScanCoaching = false
         }
+    }
+
+    private func presentNarrationOfferIfEligible() {
+        guard !narrationOfferSeen,
+              !showNarrationOffer,
+              !NarrationService.isAuthorized,
+              !viewModel.isRecording,
+              !viewModel.isProcessingFrames,
+              viewModel.error == nil
+        else { return }
+        guard case .available = NarrationService.availability() else { return }
+
+        withAnimation(.easeOut(duration: 0.25)) {
+            showNarrationOffer = true
+        }
+    }
+
+    private func acceptNarrationOffer() {
+        narrationOfferSeen = true
+        withAnimation(.easeOut(duration: 0.2)) {
+            showNarrationOffer = false
+        }
+        Task {
+            _ = await NarrationService.requestPermissions()
+        }
+    }
+
+    private func declineNarrationOffer() {
+        narrationOfferSeen = true
+        withAnimation(.easeOut(duration: 0.2)) {
+            showNarrationOffer = false
+        }
+    }
+
+    private func handleRecordButtonTapped() {
+        if viewModel.isRecording {
+            guard !isStoppingRecording else { return }
+            isStoppingRecording = true
+            Task {
+                await viewModel.stopRecording()
+                isStoppingRecording = false
+            }
+            pendingNarrationTranscript = narration.stopAndSnapshot()
+        } else {
+            viewModel.startRecording()
+            guard viewModel.isRecording else { return }
+            pendingNarrationTranscript = nil
+            narration.start()
+        }
+    }
+
+    private func cleanupAndDiscardNarration() {
+        viewModel.cleanup()
+        _ = narration.stopAndSnapshot()
+        pendingNarrationTranscript = nil
+        isStoppingRecording = false
     }
 
     // MARK: - Animations

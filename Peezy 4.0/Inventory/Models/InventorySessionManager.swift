@@ -127,6 +127,7 @@ final class InventorySessionManager {
     /// view-tree changes. Cancelled on reset or when user navigates away.
     private var processingTask: Task<Void, Never>?
     private var retainedProcessingRequest: InventoryProcessingRequest?
+    private var pendingNarration: String?
 
     // MARK: - Computed
 
@@ -300,7 +301,11 @@ final class InventorySessionManager {
     /// Hand off frames extracted from a scan. Fire-and-forget from the caller's
     /// perspective. The manager owns the processing Task internally so it
     /// survives the camera view being deallocated.
-    func handleFramesExtracted(_ frames: [ExtractedFrame], roomName: String) {
+    func handleFramesExtracted(
+        _ frames: [ExtractedFrame],
+        roomName: String,
+        narration: String? = nil
+    ) {
         guard let userId else {
             error = "You must be signed in to scan inventory"
             state = .roomList
@@ -311,6 +316,7 @@ final class InventorySessionManager {
         // before starting a new one. (Defensive — shouldn't happen in normal
         // flow but cheap to handle.)
         teardownActiveProcessing()
+        pendingNarration = narration
 
         isProcessing = true
         state = .processing(roomName: roomName, progress: "Uploading frames...")
@@ -350,17 +356,22 @@ final class InventorySessionManager {
             // Phase 2 — kick off Cloud Function. The complete callable payload
             // is retained if entitlement is denied so a purchase can retry it
             // without uploading or scanning again.
+            let narrationForRequest = pendingNarration
+            pendingNarration = nil
             let request = InventoryProcessingRequest(
                 userId: userId,
                 sessionId: session.id,
                 roomName: roomName,
-                frameCount: session.frameCount
+                frameCount: session.frameCount,
+                narration: narrationForRequest
             )
             await processUploadedSession(request)
 
         } catch {
             // Callable failures are handled in processUploadedSession. This
             // catch is for the frame upload/session-creation phase.
+            guard !Task.isCancelled else { return }
+            pendingNarration = nil
             self.isProcessing = false
             self.error = error.localizedDescription
             self.state = .roomList
@@ -383,12 +394,14 @@ final class InventorySessionManager {
                 roomName: request.roomName
             )
         } catch InventoryError.movePassRequired {
+            guard !Task.isCancelled else { return }
             isProcessing = false
             error = nil
             retainedProcessingRequest = request
             movePassRequired = true
             state = .roomList
         } catch {
+            guard !Task.isCancelled else { return }
             isProcessing = false
             self.error = error.localizedDescription
             retainedProcessingRequest = nil
@@ -501,6 +514,7 @@ final class InventorySessionManager {
 
         observedSessionId = nil
         retainedProcessingRequest = nil
+        pendingNarration = nil
         movePassRequired = false
     }
 
@@ -672,6 +686,7 @@ final class InventorySessionManager {
         error = nil
         isProcessing = false
         retainedProcessingRequest = nil
+        pendingNarration = nil
         movePassRequired = false
         state = .intro
     }
