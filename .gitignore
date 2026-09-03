@@ -74,3 +74,9 @@ node_modules/
 *.xcuserstate
 **/serviceAccountKey.json
 build/
+
+# Firebase emulator run logs (scripts/test-emulator.sh)
+firestore-debug.log
+firebase-debug.log
+ui-debug.log
+firebase-export-*/

@@ -48,3 +48,4 @@ Peezy 4.0Tests/FirebaseEmulatorTestSupport.swift
 scripts/test-emulator.sh
 PEEZY_STATE.md
 tasks/*
+.gitignore

@@ -35,8 +35,31 @@
       "**/node_modules/**"
     ],
     "redirects": [
-      { "source": "/privacy**", "destination": "https://peezymove.com/privacy", "type": 301 },
-      { "source": "/terms**",   "destination": "https://peezymove.com/terms",   "type": 301 }
+      {
+        "source": "/privacy**",
+        "destination": "https://peezymove.com/privacy",
+        "type": 301
+      },
+      {
+        "source": "/terms**",
+        "destination": "https://peezymove.com/terms",
+        "type": 301
+      }
     ]
+  },
+  "emulators": {
+    "firestore": {
+      "port": 8080
+    },
+    "auth": {
+      "port": 9099
+    },
+    "storage": {
+      "port": 9199
+    },
+    "ui": {
+      "enabled": false
+    },
+    "singleProjectMode": true
   }
 }
