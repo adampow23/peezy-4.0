@@ -18,3 +18,33 @@ Peezy 4.0/MainInterface/Views/NudgeCardView.swift
 Peezy 4.0Tests/PeezyNudgeAnswerTests.swift
 docs/plans/PHASE2_CONTRACT.md
 briefs/*
+# S1 owned files (briefs/S1_BRIEF.md, 2026-09-02)
+Peezy 4.0/Tasks/Durable/DurableStoreReadiness.swift
+Peezy 4.0/MainInterface/Models/RetakeAssessmentCoordinator.swift
+Peezy 4.0/Menu/PeezySettingsView.swift
+Peezy 4.0/Assessment/AssessmentModels/AssessmentDataManager.swift
+Peezy 4.0/MainInterface/Models/UserKnowledgeService.swift
+Peezy 4.0/MainInterface/Models/DailyDoseEngine.swift
+Peezy 4.0/MainInterface/Models/TaskPlanService.swift
+Peezy 4.0/Assessment/AssessmentViews/Onboarding/GeneratingView.swift
+Peezy 4.0/Inventory/Services/InventoryStorageService.swift
+Peezy 4.0/MainInterface/Models/BoxReturnService.swift
+Peezy 4.0/MainInterface/Models/CheckInService.swift
+Peezy 4.0/MainInterface/Models/ISPPlanService.swift
+Peezy 4.0/MainInterface/Models/IdentityService.swift
+Peezy 4.0/MainInterface/Models/PeezyStackViewModel.swift
+Peezy 4.0/MainInterface/Models/SubscriptionManager.swift
+Peezy 4.0/MainInterface/Models/Vendor.swift
+Peezy 4.0/MainInterface/Views/Paywall/PaywallGateView.swift
+Peezy 4.0/Tasks/FlowEngine/FlowDefinition.swift
+Peezy 4.0/Tasks/FlowEngine/InAppTaskFlows.swift
+Peezy 4.0/Tasks/FlowEngine/MoveAnswersStore.swift
+Peezy 4.0/Tasks/Task Cards/ScanInventoryFlow.swift
+Peezy 4.0/Inventory/Models/InventorySessionManager.swift
+functions/rules-tests/firestoreRules.test.js
+Peezy 4.0Tests/DurableStoreRecoveryTests.swift
+Peezy 4.0Tests/TaskPlanDispositionTests.swift
+Peezy 4.0Tests/FirebaseEmulatorTestSupport.swift
+scripts/test-emulator.sh
+PEEZY_STATE.md
+tasks/*
