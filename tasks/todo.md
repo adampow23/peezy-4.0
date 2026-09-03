@@ -380,3 +380,20 @@ Governing: V9_INSTRUCTION.md (Rules 1–8), PEEZY_STATE.md §4, ~/Downloads/peez
 - Delivered: PHASE2_REPLACEMENT_MANIFEST_v9.md (uncommitted) sha256 a064bc68…44fc9; report ~/Downloads/peezy-reports/V9_DIFF_REVIEW.md; log …/V9_DIFF_REVIEW-log.md; tooling …/v9-tools/.
 - Lessons: (1) the v9 execution report must be meta-only — Sol treats any lifecycle restatement in §14 as a Rule 4 hit; (2) never sharpen an order between §8.9.1 and §8.9.4 in prose — defer to the subsection that owns it; (3) a residual clause ("retains durable state") next to a pointer still counts as outside authority under "replace wins".
 - Owner next steps: commit v9 with hash; update PEEZY_STATE §4 register to v9; §13 item 7 whole-manifest passes before applying to the spec.
+
+---
+
+# Phase 2 handoff recovery + S1 brief (session 2026-09-02, local Mac)
+
+Context: the Claude Code on the web session cloned GitHub (04c38c9) and could not see the 15 unpushed local commits or ~/Downloads. The block it handed Adam expected ~/Downloads/S1_BRIEF.md, which never existed on this Mac, so briefs/ stayed empty and phase2/inputs was never pushed. Commits c9e14b9 and 6ac2ea4 named files that were never staged.
+
+- [x] Commit stranded artifacts (0673d0c): docs/plans/PHASE2_CONTRACT.md, PHASE2_WORKFLOW_v2.md, PHASE2_REPLACEMENT_MANIFEST_v9.md (sha256 a064bc68), V9_INSTRUCTION.md, V9_DIFF_REVIEW.md (copied from ~/Downloads/peezy-reports, V7/V8 pattern), tasks/todo.md, tasks/lessons.md
+- [x] C7 pins re-verified against the working tree: PeezySettingsView whole-file 419055c9; RetakeAssessmentCoordinator closure slice lines 89–99 with next line `operationStore: store,`; InventorySessionManager exactly six `Firestore.firestore()`
+- [x] Read-only S1 audit (subagent): no StartupBarrier/DurableStore/FirestoreRuntimeOwner/epoch code exists; 77 `Firestore.firestore()` sites in 36 files (S1 list = 15 sites in 14 files + 6 in InventorySessionManager; PaywallGateView has none, it is Functions-only); TaskPlanService is a struct with an injectable `Callable` closure and no account-deletion type; no Swift emulator config, functions tests run from explicit `node --test` file lists; rules tests need FIRESTORE_EMULATOR_HOST
+- [x] briefs/S1_BRIEF.md drafted from manifest v9 + contract per the PHASE2_WORKFLOW_v2 template, every path/test/hash cited; PHASE_MANIFEST gains `briefs/*`
+- [ ] Owner decisions before S1 starts: (1) contract C7:287 says Settings file-minus-deleteAccount is identical after patch, manifest §12.2:1866 normalizes one runtime-provider line, and line 833 holds a `Firestore.firestore()` outside the slice; (2) S1's falsifiers live in DurableStoreRecoveryTests.swift (manifest: S4 creates) and TaskPlanDispositionTests.swift (spec v5: S2 creates), so either S1 creates them with its families or S1's done criterion is compile + static gates; (3) push main (16 ahead of origin)?
+- [ ] S1 execution after go-ahead: DurableStoreReadiness.swift seams → TaskPlanService `ResetOperationRegistry` + `AccountDeletionRemoteProviding` transport → RetakeAssessmentCoordinator / AssessmentDataManager / UserKnowledgeService / DailyDoseEngine epoch stamps → Firestore-runtime substitution (15 + 6 sites) → firestore.rules first pass + rules tests → red/green falsifiers → xcodebuild → static gates (rg, six-substitution diff, C7 hashes) → commit
+
+## Review
+- Delivered: commit 0673d0c (7 files, 3,390 lines); briefs/S1_BRIEF.md; PHASE_MANIFEST `briefs/*`; lessons entry on stranded commits and cloud handoff.
+- Not done: S1 implementation, blocked on the three owner decisions above.
