@@ -12,6 +12,72 @@ service cloud.firestore {
         || !(user.data.taskReset.state in ['deleting', 'awaiting_local_reset']);
     }
 
+    // S1 first pass (briefs/S1_BRIEF.md; manifest §5:540-546): epoch stamps.
+    // Effective root epoch is absent → 0, present safe integer → that value.
+    // taskGenerationEpoch on the root is server-owned. Cleanup/deletion
+    // predicates under the awaiting_local_reset marker belong to S3.
+    function rootData(userId) {
+      return get(/databases/$(database)/documents/users/$(userId)).data;
+    }
+
+    function isSafeEpoch(value) {
+      return value is int && value >= 0 && value <= 9007199254740991;
+    }
+
+    function effectiveEpoch(data) {
+      return ('taskGenerationEpoch' in data) ? data.taskGenerationEpoch : 0;
+    }
+
+    function rootEpoch(userId) {
+      return effectiveEpoch(rootData(userId));
+    }
+
+    function taskResetAbsent(userId) {
+      return !('taskReset' in rootData(userId));
+    }
+
+    function stampedCreate(userId, data) {
+      return taskResetAbsent(userId)
+        && 'task_generation_epoch' in data
+        && isSafeEpoch(data.task_generation_epoch)
+        && data.task_generation_epoch == rootEpoch(userId);
+    }
+
+    // Stamped rows keep their stamp, which must equal the root epoch; an
+    // unstamped row may be updated only while the root epoch is exactly 0 and
+    // must stay unstamped (shipped epoch-zero compatibility).
+    function stampedUpdate(userId, before, after) {
+      return taskResetAbsent(userId)
+        && (('task_generation_epoch' in before)
+          ? ('task_generation_epoch' in after
+              && after.task_generation_epoch == before.task_generation_epoch
+              && before.task_generation_epoch == rootEpoch(userId))
+          : (!('task_generation_epoch' in after) && rootEpoch(userId) == 0));
+    }
+
+    // userKnowledge additionally permits the one-time epoch-zero upgrade of an
+    // unstamped document; at any later epoch an unstamped document rejects.
+    function knowledgeUpdate(userId, before, after) {
+      return taskResetAbsent(userId)
+        && 'task_generation_epoch' in after
+        && isSafeEpoch(after.task_generation_epoch)
+        && after.task_generation_epoch == rootEpoch(userId)
+        && (('task_generation_epoch' in before)
+          ? after.task_generation_epoch == before.task_generation_epoch
+          : rootEpoch(userId) == 0);
+    }
+
+    function stampedDailyDose(dose, epoch) {
+      return dose is map
+        && dose.keys().hasOnly(['schema_version', 'task_generation_epoch', 'date', 'taskIds'])
+        && dose.keys().hasAll(['schema_version', 'task_generation_epoch', 'date', 'taskIds'])
+        && dose.schema_version == 1
+        && isSafeEpoch(dose.task_generation_epoch)
+        && dose.task_generation_epoch == epoch
+        && dose.date is string
+        && dose.taskIds is list;
+    }
+
     function isReservedTaskId(taskId) {
       return taskId.matches('^(t1_|t2_|a2_).*');
     }
@@ -86,10 +152,15 @@ service cloud.firestore {
     match /users/{userId} {
       allow read: if isOwner(userId);
       allow create: if isOwner(userId)
-        && !request.resource.data.keys().hasAny(['subscription', 'taskReset']);
+        && !request.resource.data.keys().hasAny(['subscription', 'taskReset', 'taskGenerationEpoch'])
+        && (!('dailyDose' in request.resource.data)
+          || stampedDailyDose(request.resource.data.dailyDose, 0));
       allow update: if isOwner(userId)
         && !request.resource.data.diff(resource.data).affectedKeys()
-          .hasAny(['subscription', 'taskReset']);
+          .hasAny(['subscription', 'taskReset', 'taskGenerationEpoch'])
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['dailyDose'])
+          || !('dailyDose' in request.resource.data)
+          || stampedDailyDose(request.resource.data.dailyDose, effectiveEpoch(resource.data)));
       allow delete: if false;
     }
 
@@ -147,8 +218,13 @@ service cloud.firestore {
     match /users/{userId}/readiness/{document=**} {
       allow read, write: if isOwner(userId);
     }
-    match /users/{userId}/user_assessments/{document=**} {
-      allow read, write: if isOwner(userId);
+    match /users/{userId}/user_assessments/{assessmentId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId)
+        && stampedCreate(userId, request.resource.data);
+      allow update: if isOwner(userId)
+        && stampedUpdate(userId, resource.data, request.resource.data);
+      allow delete: if isOwner(userId);
     }
 
     // Server-owned lifecycle and scheduler inputs are owner-readable only.
@@ -211,7 +287,12 @@ service cloud.firestore {
     // Per-user knowledge doc (assessment data keyed by uid) — written by
     // AssessmentDataManager.saveAssessment and edited from Settings
     match /userKnowledge/{userId} {
-      allow read, write: if isOwner(userId);
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId)
+        && stampedCreate(userId, request.resource.data);
+      allow update: if isOwner(userId)
+        && knowledgeUpdate(userId, resource.data, request.resource.data);
+      allow delete: if isOwner(userId);
     }
 
     // Remembered conversation answers (users/{uid}/moveAnswers/answers) —

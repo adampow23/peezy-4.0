@@ -290,12 +290,14 @@ test("inventoried client-write collections retain owner CRUD", async () => {
   ];
   for (const collection of collections) {
     const ref = doc(dbFor(OWNER), `users/${OWNER}/${collection}/row-1`);
-    await assertSucceeds(setDoc(ref, { value: 1 }));
+    // S1: user_assessments creates carry the effective root epoch stamp (0 here).
+    const create = collection === "user_assessments" ? { value: 1, task_generation_epoch: 0 } : { value: 1 };
+    await assertSucceeds(setDoc(ref, create));
     await assertSucceeds(updateDoc(ref, { value: 2 }));
     await assertSucceeds(deleteDoc(ref));
   }
   const knowledge = doc(dbFor(OWNER), `userKnowledge/${OWNER}`);
-  await assertSucceeds(setDoc(knowledge, { moveDate: "2026-10-01" }));
+  await assertSucceeds(setDoc(knowledge, { moveDate: "2026-10-01", task_generation_epoch: 0 }));
   await assertSucceeds(updateDoc(knowledge, { moveDate: "2026-10-02" }));
   await assertFails(getDoc(doc(dbFor(OTHER), `userKnowledge/${OWNER}`)));
   await assertFails(getDoc(doc(anonymousDb(), `userKnowledge/${OWNER}`)));
@@ -355,4 +357,70 @@ test("other users and unauthenticated clients are denied across user paths", asy
     }
   }
   assert.ok(true);
+});
+
+// ---------------------------------------------------------------------------
+// S1 first pass (briefs/S1_BRIEF.md; manifest §5:540-546, 549-551): epoch stamps
+// on user_assessments, userKnowledge, and root dailyDose (create/update only).
+// Cleanup and deletion semantics belong to S3, which also integrates the
+// account-deletion/system/query boundaries and performs the final full-file review.
+// ---------------------------------------------------------------------------
+
+test("assessment creates must carry the effective root epoch stamp", async () => {
+  const owner = dbFor(OWNER);
+  await assertSucceeds(setDoc(doc(owner, `users/${OWNER}/user_assessments/a1`), { task_generation_epoch: 0, name: "x" }));
+  await assertFails(setDoc(doc(owner, `users/${OWNER}/user_assessments/a2`), { name: "x" }));
+  await assertFails(setDoc(doc(owner, `users/${OWNER}/user_assessments/a3`), { task_generation_epoch: 1, name: "x" }));
+  await assertFails(setDoc(doc(owner, `users/${OWNER}/user_assessments/a4`), { task_generation_epoch: "0", name: "x" }));
+  await seed({ [`users/${OWNER}`]: { name: "Owner", taskGenerationEpoch: 2 } });
+  await assertSucceeds(setDoc(doc(owner, `users/${OWNER}/user_assessments/a5`), { task_generation_epoch: 2, name: "x" }));
+  await assertFails(setDoc(doc(owner, `users/${OWNER}/user_assessments/a6`), { task_generation_epoch: 1, name: "x" }));
+  await seed({ [`users/${OWNER}`]: { name: "Owner", taskGenerationEpoch: 2, taskReset: { state: "deleting" } } });
+  await assertFails(setDoc(doc(owner, `users/${OWNER}/user_assessments/a7`), { task_generation_epoch: 2, name: "x" }));
+});
+
+test("assessment updates never change or remove the stamp and unstamped rows update only at root epoch 0", async () => {
+  const owner = dbFor(OWNER);
+  await seed({
+    [`users/${OWNER}/user_assessments/stamped`]: { task_generation_epoch: 0, name: "s" },
+    [`users/${OWNER}/user_assessments/unstamped`]: { name: "u" }
+  });
+  await assertSucceeds(updateDoc(doc(owner, `users/${OWNER}/user_assessments/stamped`), { name: "s2" }));
+  await assertFails(updateDoc(doc(owner, `users/${OWNER}/user_assessments/stamped`), { task_generation_epoch: 1 }));
+  await assertFails(updateDoc(doc(owner, `users/${OWNER}/user_assessments/stamped`), { task_generation_epoch: deleteField() }));
+  await assertSucceeds(updateDoc(doc(owner, `users/${OWNER}/user_assessments/unstamped`), { name: "u2" }));
+  await assertFails(updateDoc(doc(owner, `users/${OWNER}/user_assessments/unstamped`), { task_generation_epoch: 0 }));
+  await seed({ [`users/${OWNER}`]: { name: "Owner", taskGenerationEpoch: 1 } });
+  await assertFails(updateDoc(doc(owner, `users/${OWNER}/user_assessments/unstamped`), { name: "u3" }));
+  await assertFails(updateDoc(doc(owner, `users/${OWNER}/user_assessments/stamped`), { name: "s3" }));
+});
+
+test("userKnowledge stamps mirror assessments and permit only the epoch-zero upgrade", async () => {
+  const owner = dbFor(OWNER);
+  const ref = doc(owner, `userKnowledge/${OWNER}`);
+  await assertFails(setDoc(ref, { entries: {} }));
+  await assertSucceeds(setDoc(ref, { entries: {}, task_generation_epoch: 0 }));
+  await assertSucceeds(setDoc(ref, { entries: { a: 1 }, task_generation_epoch: 0 }, { merge: true }));
+  await assertFails(setDoc(ref, { entries: { a: 1 }, task_generation_epoch: 1 }, { merge: true }));
+  await assertFails(updateDoc(ref, { task_generation_epoch: deleteField() }));
+  await seed({ [`userKnowledge/${OWNER}`]: { entries: { legacy: 1 } } });
+  await assertSucceeds(setDoc(ref, { entries: { b: 2 }, task_generation_epoch: 0 }, { merge: true }));
+  await seed({ [`userKnowledge/${OWNER}`]: { entries: { legacy: 1 } }, [`users/${OWNER}`]: { name: "Owner", taskGenerationEpoch: 2 } });
+  await assertFails(setDoc(ref, { entries: { b: 2 } }, { merge: true }));
+  await assertFails(setDoc(ref, { entries: { b: 2 }, task_generation_epoch: 2 }, { merge: true }));
+  await assertFails(setDoc(ref, { entries: { b: 2 }, task_generation_epoch: 0 }, { merge: true }));
+});
+
+test("root dailyDose writes carry the exact stamped map and the epoch field is server-owned", async () => {
+  const owner = dbFor(OWNER);
+  const root = doc(owner, `users/${OWNER}`);
+  await assertSucceeds(updateDoc(root, { dailyDose: { schema_version: 1, task_generation_epoch: 0, date: "2026-09-03", taskIds: ["t1"] } }));
+  await assertFails(updateDoc(root, { dailyDose: { date: "2026-09-03", taskIds: [] } }));
+  await assertFails(updateDoc(root, { dailyDose: { schema_version: 1, task_generation_epoch: 1, date: "2026-09-03", taskIds: [] } }));
+  await assertFails(updateDoc(root, { dailyDose: { schema_version: 1, task_generation_epoch: 0, date: "2026-09-03", taskIds: [], extra: true } }));
+  await assertFails(updateDoc(root, { taskGenerationEpoch: 5 }));
+  await assertSucceeds(updateDoc(root, { name: "still writable" }));
+  await seed({ [`users/${OWNER}`]: { name: "Owner", taskGenerationEpoch: 3 } });
+  await assertSucceeds(updateDoc(root, { dailyDose: { schema_version: 1, task_generation_epoch: 3, date: "2026-09-03", taskIds: [] } }));
+  await assertFails(updateDoc(root, { dailyDose: { schema_version: 1, task_generation_epoch: 2, date: "2026-09-03", taskIds: [] } }));
 });
