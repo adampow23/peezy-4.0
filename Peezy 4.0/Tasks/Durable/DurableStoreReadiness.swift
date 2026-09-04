@@ -417,6 +417,15 @@ protocol ResetEpochConflictRecovering: Sendable {
     ) async -> RecoveryResult
 }
 
+// MARK: - Account-deletion transport seam (C2.3, §8.9.2)
+
+/// The typed DTO/transport conformance lives in `TaskPlanService.swift`
+/// (`TaskPlanService.AccountDeletionTransport`); S2 owns the callable's server
+/// implementation, which mirrors those exact maps.
+protocol AccountDeletionRemoteProviding: Sendable {
+    func perform(_ request: AccountDeletionRequestV1) async throws -> AccountDeletionRemoteResultV1
+}
+
 // MARK: - Local purge seams (§8.9.3, C3 journal scope)
 
 /// Journal scope: `{kind:"all"}` or `{kind:"uid",uid}`.

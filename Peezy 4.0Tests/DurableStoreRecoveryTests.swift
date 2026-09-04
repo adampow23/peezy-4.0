@@ -458,6 +458,107 @@ struct DurableStoreRecoveryTests {
         #expect(await engine.loadFrozenDose(userId: uid) == nil)
     }
 
+    // MARK: - Account-deletion DTO/transport (I5; C2.3, manifest v9:1435, v7:1307)
+
+    @Test func accountDeletionRequestsSerializeTheClosedUnion() async throws {
+        let recorder = DeletionCallableRecorder(result: .success(["schemaVersion": 1, "kind": "account_deletion_discovery", "state": "absent", "operationId": "adel1_op"]))
+        let transport = TaskPlanService.AccountDeletionTransport(callable: recorder.call)
+        let requests: [(AccountDeletionRequestV1, String)] = [
+            (.discover(uid: "A", operationId: "adel1_op", proofNonce: "nonce"), "discover"),
+            (.begin(uid: "A", operationId: "adel1_op", proofNonce: "nonce"), "begin"),
+            (.resume(uid: "A", operationId: "adel1_op", proofNonce: "nonce"), "resume"),
+            (.finalize(uid: "A", operationId: "adel1_op", proofNonce: "nonce"), "finalize")
+        ]
+        for (request, action) in requests { _ = try await transport.perform(request) }
+        #expect(recorder.calls.map(\.name) == Array(repeating: "deleteAccount", count: 4))
+        for (index, (_, action)) in requests.enumerated() {
+            let expected: [String: Any] = ["schemaVersion": 1, "action": action, "uid": "A", "operationId": "adel1_op", "proofNonce": "nonce"]
+            #expect(recorder.calls[index].payload as NSDictionary == expected as NSDictionary)
+        }
+    }
+
+    @Test func accountDeletionDecodesTheFourWiresExactly() throws {
+        typealias T = TaskPlanService.AccountDeletionTransport
+        #expect(try T.decode(["schemaVersion": 1, "kind": "account_deletion_discovery", "state": "absent", "operationId": "adel1_op"]) == .absent(operationId: "adel1_op"))
+        let dataFinal = try T.decode([
+            "schemaVersion": 1, "kind": "account_deletion_data_final", "operationId": "adel1_op", "authorityKind": "member",
+            "startedAt": "2026-09-01T00:00:00.000Z", "dataDeletedAt": "2026-09-08T00:00:00.000Z", "replayed": false
+        ])
+        #expect(dataFinal == .dataFinal(AccountDeletionDataFinalWireV1(
+            operationId: "adel1_op", authorityKind: .member,
+            startedAt: "2026-09-01T00:00:00.000Z", dataDeletedAt: "2026-09-08T00:00:00.000Z", replayed: false
+        )))
+        let guarding = try T.decode([
+            "schemaVersion": 1, "kind": "account_deletion_auth_guarding", "operationId": "adel1_op", "authorityKind": "authenticatedOverflow",
+            "startedAt": "2026-09-01T00:00:00.000Z", "dataDeletedAt": "2026-09-08T00:00:00.000Z",
+            "authAbsenceObservedAt": "2026-09-08T00:00:01.000Z", "authGuardAfter": "2026-10-08T00:00:01.000Z", "replayed": true
+        ])
+        #expect(guarding == .authGuarding(AccountDeletionAuthGuardingWireV1(
+            operationId: "adel1_op", authorityKind: .authenticatedOverflow,
+            startedAt: "2026-09-01T00:00:00.000Z", dataDeletedAt: "2026-09-08T00:00:00.000Z",
+            authAbsenceObservedAt: "2026-09-08T00:00:01.000Z", authGuardAfter: "2026-10-08T00:00:01.000Z", replayed: true
+        )))
+        let deleted = try T.decode([
+            "schemaVersion": 1, "kind": "account_deletion_account_deleted", "operationId": "adel1_op", "authorityKind": "member",
+            "startedAt": "2026-09-01T00:00:00.000Z", "dataDeletedAt": "2026-09-08T00:00:00.000Z",
+            "authAbsenceObservedAt": "2026-09-08T00:00:01.000Z", "authGuardAfter": "2026-10-08T00:00:01.000Z",
+            "authGuardCompletedAt": "2026-10-08T00:05:00.000Z", "accountDeletedAt": "2026-10-08T00:05:00.000Z", "replayed": false
+        ])
+        guard case let .accountDeleted(wire) = deleted else { Issue.record("expected accountDeleted"); return }
+        #expect(wire.accountDeletedAt == "2026-10-08T00:05:00.000Z" && wire.authGuardCompletedAt == "2026-10-08T00:05:00.000Z")
+    }
+
+    @Test func accountDeletionRejectsSurplusMissingAndUnknownMembers() {
+        typealias T = TaskPlanService.AccountDeletionTransport
+        let base: [String: Any] = [
+            "schemaVersion": 1, "kind": "account_deletion_data_final", "operationId": "adel1_op", "authorityKind": "member",
+            "startedAt": "2026-09-01T00:00:00.000Z", "dataDeletedAt": "2026-09-08T00:00:00.000Z", "replayed": false
+        ]
+        var variants: [[String: Any]] = []
+        var surplus = base; surplus["extra"] = 1; variants.append(surplus)
+        var missing = base; missing.removeValue(forKey: "replayed"); variants.append(missing)
+        var unknownKind = base; unknownKind["kind"] = "account_deletion_unknown"; variants.append(unknownKind)
+        var badAuthority = base; badAuthority["authorityKind"] = "owner"; variants.append(badAuthority)
+        var numericReplayed = base; numericReplayed["replayed"] = 1; variants.append(numericReplayed)
+        var badTime = base; badTime["startedAt"] = "2026-09-01"; variants.append(badTime)
+        var wrongVersion = base; wrongVersion["schemaVersion"] = 2; variants.append(wrongVersion)
+        variants.append(["schemaVersion": 1, "kind": "account_deletion_discovery", "state": "present", "operationId": "adel1_op"])
+        variants.append(["schemaVersion": 1, "kind": "account_deletion_discovery", "state": "absent", "operationId": "adel1_op", "extra": true])
+        for variant in variants {
+            #expect(throws: AccountDeletionRemoteError.protocolAmbiguity) { try T.decode(variant) }
+        }
+    }
+
+    @Test func accountDeletionMapsThrownCodesAndTransportFailures() async {
+        func error(_ details: [String: Any]?) -> NSError {
+            NSError(domain: "com.firebase.functions", code: 9, userInfo: details.map { ["details": $0] } ?? [:])
+        }
+        let cases: [(NSError, AccountDeletionRemoteError)] = [
+            (error(["schemaVersion": 1, "reason": "REQUEST_INVALID", "field": "proofNonce"]), .requestInvalid(field: "proofNonce")),
+            (error(["schemaVersion": 1, "reason": "AUTH_REQUIRED"]), .authRequired),
+            (error(["schemaVersion": 1, "reason": "DELETION_CAPABILITY_INVALID"]), .capabilityInvalid),
+            (error(["schemaVersion": 1, "reason": "DELETION_RETRY_REQUIRED"]), .retryRequired),
+            (error(["schemaVersion": 1, "reason": "SOMETHING_ELSE"]), .protocolAmbiguity),
+            (error(["reason": "AUTH_REQUIRED"]), .protocolAmbiguity),
+            (error(["schemaVersion": 1, "reason": "REQUEST_INVALID"]), .protocolAmbiguity),
+            (NSError(domain: NSURLErrorDomain, code: NSURLErrorNotConnectedToInternet), .transport),
+            (NSError(domain: "com.firebase.functions", code: 14, userInfo: [:]), .transport)
+        ]
+        for (thrown, expected) in cases {
+            let recorder = DeletionCallableRecorder(result: .failure(thrown))
+            let transport = TaskPlanService.AccountDeletionTransport(callable: recorder.call)
+            await #expect(throws: expected) {
+                try await transport.perform(.discover(uid: "A", operationId: "adel1_op", proofNonce: "nonce"))
+            }
+        }
+    }
+
+    @Test func accountDeletionTransportConformsToTheSeam() async throws {
+        let recorder = DeletionCallableRecorder(result: .success(["schemaVersion": 1, "kind": "account_deletion_discovery", "state": "absent", "operationId": "adel1_op"]))
+        let provider: any AccountDeletionRemoteProviding = TaskPlanService.AccountDeletionTransport(callable: recorder.call)
+        #expect(try await provider.perform(.resume(uid: "A", operationId: "adel1_op", proofNonce: "nonce")) == .absent(operationId: "adel1_op"))
+    }
+
     // MARK: - Emulator (I1): the support type binds the default app to the emulator
 
     @Test(.enabled(if: FirebaseEmulator.isConfigured))
@@ -491,4 +592,18 @@ func isolatedDefaults() throws -> UserDefaults {
     guard let defaults = UserDefaults(suiteName: name) else { throw CocoaError(.fileNoSuchFile) }
     defaults.removePersistentDomain(forName: name)
     return defaults
+}
+
+/// Records callable invocations and returns one fixed result.
+final class DeletionCallableRecorder: @unchecked Sendable {
+    struct Call { let name: String; let payload: [String: Any] }
+    private let lock = NSLock()
+    private var recorded: [Call] = []
+    let result: Result<[String: Any], Error>
+    init(result: Result<[String: Any], Error>) { self.result = result }
+    var calls: [Call] { lock.withLock { recorded } }
+    func call(_ name: String, _ payload: [String: Any]) async throws -> [String: Any] {
+        lock.withLock { recorded.append(Call(name: name, payload: payload)) }
+        return try result.get()
+    }
 }
