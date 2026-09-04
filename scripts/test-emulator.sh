@@ -16,7 +16,7 @@ export PATH="/opt/homebrew/opt/openjdk@21/bin:/opt/homebrew/opt/node@24/bin:$PAT
 PROJECT="demo-peezy-phase1"
 SIM="${PEEZY_SIM_UDID:-DC0CC10C-6DB0-496A-8B0E-51E60D958A27}"   # iPhone 17 Pro (spec v5 §9.2)
 MODE="${1:-all}"; shift || true
-DEFAULT_SUITES=("Peezy 4.0Tests/DurableStoreRecoveryTests" "Peezy 4.0Tests/TaskPlanDispositionTests")
+DEFAULT_SUITES=("Peezy 4.0Tests/DurableStoreRecoveryTests")   # TaskPlanDispositionTests joins when I6 creates it
 SUITES=("${@:-${DEFAULT_SUITES[@]}}")
 
 ONLY=""
