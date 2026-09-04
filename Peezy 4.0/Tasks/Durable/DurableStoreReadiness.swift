@@ -661,3 +661,60 @@ enum FirestoreRuntime {
     /// Mechanical substitution target for synchronous acquisition sites.
     static func firestore() -> Firestore { provider.published().firestore }
 }
+
+// MARK: - Task-generation epoch stamps (§5:540-546)
+
+enum TaskGenerationEpochError: Error, Equatable {
+    case resetActive
+    case malformedRootEpoch
+    case malformedStamp
+    case stampMismatch(stored: Int, root: Int)
+    case unstampedAtLaterEpoch(root: Int)
+}
+
+/// Effective root epoch: absent → 0, present safe integer → that value,
+/// malformed → no write. Every fresh stamped value equals it.
+enum TaskGenerationEpochStamp {
+    static let fieldName = "task_generation_epoch"
+    static let rootFieldName = "taskGenerationEpoch"
+    static let maxSafeInteger = 9_007_199_254_740_991
+
+    /// Exact nonnegative safe integer; booleans, fractions, and out-of-range values are nil.
+    static func safeInteger(_ value: Any?) -> Int? {
+        guard let number = value as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID() else { return nil }
+        let double = number.doubleValue
+        guard double.isFinite, double.rounded(.towardZero) == double,
+              double >= 0, double <= Double(maxSafeInteger) else { return nil }
+        return Int(double)
+    }
+
+    static func effectiveRootEpoch(_ root: [String: Any]?, requireResetAbsent: Bool) throws -> Int {
+        let data = root ?? [:]
+        if requireResetAbsent, data["taskReset"] != nil { throw TaskGenerationEpochError.resetActive }
+        guard let raw = data[rootFieldName] else { return 0 }
+        guard let epoch = safeInteger(raw) else { throw TaskGenerationEpochError.malformedRootEpoch }
+        return epoch
+    }
+}
+
+private final class TransactionResultBox<Value>: @unchecked Sendable {
+    var value: Value?
+}
+
+extension Firestore {
+    /// Runs `body` inside a Firestore transaction and rethrows its typed error.
+    func runTypedTransaction<T: Sendable>(_ body: @escaping @Sendable (Transaction) throws -> T) async throws -> T {
+        let box = TransactionResultBox<T>()
+        _ = try await runTransaction { transaction, errorPointer -> Any? in
+            do {
+                box.value = try body(transaction)
+                return nil
+            } catch {
+                errorPointer?.pointee = error as NSError
+                return nil
+            }
+        }
+        guard let value = box.value else { throw TaskGenerationEpochError.malformedRootEpoch }
+        return value
+    }
+}

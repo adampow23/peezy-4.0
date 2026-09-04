@@ -343,6 +343,121 @@ struct DurableStoreRecoveryTests {
         try FirebaseEmulator.signOut()
     }
 
+    // MARK: - Epoch stamps (I4, stamps only; manifest §5:540-546). Cleanup belongs to S3.
+
+    @Test func dailyDoseLocalStoreWritesAStampedV2EnvelopeAndCASesRevision() async throws {
+        let defaults = try isolatedDefaults()
+        let store = DailyDoseLocalStore(defaults: defaults)
+        #expect(await store.load(uid: "A") == .absent)
+        let created = await store.ensure(uid: "A", taskGenerationEpoch: 2)
+        #expect(created == DailyDoseLocalStateV1(taskGenerationEpoch: 2, revision: 0, completedCount: 0, lastDate: nil, firstLaunchDate: nil))
+        let raw = try #require(defaults.data(forKey: "peezy.A.dailyDose.v2"))
+        #expect(String(decoding: raw, as: UTF8.self) == #"{"completedCount":0,"firstLaunchDate":null,"lastDate":null,"revision":0,"schemaVersion":1,"taskGenerationEpoch":2}"#)
+        let mutated = await store.mutate(uid: "A", expectedTaskGenerationEpoch: 2, expectedRevision: 0) { $0.completedCount = 3; $0.lastDate = "2026-09-03" }
+        guard case let .committed(after) = mutated else { Issue.record("expected committed, got \(mutated)"); return }
+        #expect(after.revision == 1 && after.completedCount == 3 && after.lastDate == "2026-09-03")
+        let stale = await store.mutate(uid: "A", expectedTaskGenerationEpoch: 2, expectedRevision: 0) { $0.completedCount = 9 }
+        guard case .drift = stale else { Issue.record("stale revision must drift, got \(stale)"); return }
+        let wrongEpoch = await store.mutate(uid: "A", expectedTaskGenerationEpoch: 1, expectedRevision: 1) { $0.completedCount = 9 }
+        guard case .drift = wrongEpoch else { Issue.record("wrong epoch must drift, got \(wrongEpoch)"); return }
+        #expect(await store.load(uid: "A") == .present(after))
+        #expect(await store.ensure(uid: "A", taskGenerationEpoch: 5) == after)
+    }
+
+    @Test func dailyDoseLocalStorePreservesMalformedBytesAndBlocksMutation() async throws {
+        let defaults = try isolatedDefaults()
+        let store = DailyDoseLocalStore(defaults: defaults)
+        let malformed = Data(#"{"schemaVersion":1,"taskGenerationEpoch":-1}"#.utf8)
+        defaults.set(malformed, forKey: "peezy.A.dailyDose.v2")
+        #expect(await store.load(uid: "A") == .malformed)
+        guard case .malformed = await store.mutate(uid: "A", expectedTaskGenerationEpoch: 1, expectedRevision: 0, { $0.completedCount = 1 }) else {
+            Issue.record("malformed envelope must block mutation"); return
+        }
+        #expect(defaults.data(forKey: "peezy.A.dailyDose.v2") == malformed)
+        let oversized = Data(("{\"schemaVersion\":1,\"taskGenerationEpoch\":0,\"revision\":0,\"completedCount\":0,\"lastDate\":\"" + String(repeating: "x", count: 1_100) + "\",\"firstLaunchDate\":null}").utf8)
+        defaults.set(oversized, forKey: "peezy.B.dailyDose.v2")
+        #expect(await store.load(uid: "B") == .malformed)
+    }
+
+    @Test(.enabled(if: FirebaseEmulator.isConfigured))
+    func stampedAssessmentCreateReadsRootAndStampsTheEffectiveEpoch() async throws {
+        let db = try FirebaseEmulator.firestore()
+        try await FirebaseEmulator.clearFirestore()
+        let uid = try await FirebaseEmulator.signInFreshUser()
+        defer { try? FirebaseEmulator.signOut() }
+        try await FirebaseEmulator.adminSet("users/\(uid)", ["name": "A"])
+        let first = try await AssessmentDataManager.createStampedAssessment(["moveDate": "2026-10-01"], userId: uid, db: db)
+        #expect(try await db.collection("users").document(uid).collection("user_assessments").document(first).getDocument().data()?["task_generation_epoch"] as? Int == 0)
+        try await FirebaseEmulator.adminSet("users/\(uid)", ["name": "A", "taskGenerationEpoch": 3])
+        let second = try await AssessmentDataManager.createStampedAssessment(["moveDate": "2026-10-02"], userId: uid, db: db)
+        #expect(try await db.collection("users").document(uid).collection("user_assessments").document(second).getDocument().data()?["task_generation_epoch"] as? Int == 3)
+        try await FirebaseEmulator.adminSet("users/\(uid)", ["name": "A", "taskGenerationEpoch": 3, "taskReset": ["state": "deleting"]])
+        await #expect(throws: (any Error).self) {
+            try await AssessmentDataManager.createStampedAssessment(["moveDate": "2026-10-03"], userId: uid, db: db)
+        }
+        try await FirebaseEmulator.adminSet("users/\(uid)", ["name": "A", "taskGenerationEpoch": "three"])
+        await #expect(throws: (any Error).self) {
+            try await AssessmentDataManager.createStampedAssessment(["moveDate": "2026-10-04"], userId: uid, db: db)
+        }
+        let count = try await db.collection("users").document(uid).collection("user_assessments").getDocuments().documents.count
+        #expect(count == 2)
+    }
+
+    @Test(.enabled(if: FirebaseEmulator.isConfigured))
+    func userKnowledgeMergePreservesMatchingStampUpgradesUnstampedAtZeroAndRejectsDrift() async throws {
+        let db = try FirebaseEmulator.firestore()
+        try await FirebaseEmulator.clearFirestore()
+        let uid = try await FirebaseEmulator.signInFreshUser()
+        defer { try? FirebaseEmulator.signOut() }
+        let ref = db.collection("userKnowledge").document(uid)
+        try await FirebaseEmulator.adminSet("users/\(uid)", ["name": "A"])
+        try await UserKnowledgeService.merge(["a": 1], source: .assessment, userId: uid)
+        #expect(try await ref.getDocument().data()?["task_generation_epoch"] as? Int == 0)
+        try await UserKnowledgeService.merge(["b": 2], source: .settings, userId: uid)
+        let merged = try await ref.getDocument().data()
+        #expect(merged?["task_generation_epoch"] as? Int == 0)
+        #expect(Set((merged?["entries"] as? [String: Any])?.keys.map { $0 } ?? []) == ["a", "b"])
+        try await FirebaseEmulator.adminSet("userKnowledge/\(uid)", ["entries": ["legacy": ["value": 1]]])
+        try await UserKnowledgeService.merge(["c": 3], source: .settings, userId: uid)
+        let upgraded = try await ref.getDocument().data()
+        #expect(upgraded?["task_generation_epoch"] as? Int == 0)
+        #expect(Set((upgraded?["entries"] as? [String: Any])?.keys.map { $0 } ?? []) == ["legacy", "c"])
+        try await FirebaseEmulator.adminSet("users/\(uid)", ["name": "A", "taskGenerationEpoch": 2])
+        await #expect(throws: (any Error).self) { try await UserKnowledgeService.merge(["d": 4], source: .settings, userId: uid) }
+        try await FirebaseEmulator.adminSet("userKnowledge/\(uid)", ["entries": ["legacy": ["value": 1]]])
+        await #expect(throws: (any Error).self) { try await UserKnowledgeService.merge(["d": 4], source: .settings, userId: uid) }
+        #expect(try await ref.getDocument().data()?["task_generation_epoch"] == nil)
+        try await FirebaseEmulator.adminSet("users/\(uid)", ["name": "A", "taskGenerationEpoch": 2, "taskReset": ["state": "deleting"]])
+        try await FirebaseEmulator.adminSet("userKnowledge/\(uid)", ["entries": ["legacy": ["value": 1]], "task_generation_epoch": 2])
+        await #expect(throws: (any Error).self) { try await UserKnowledgeService.merge(["e": 5], source: .settings, userId: uid) }
+    }
+
+    @Test(.enabled(if: FirebaseEmulator.isConfigured))
+    func dailyDoseFreezeWritesTheExactStampedMapAndLegacyReadsOnlyAtEpochZero() async throws {
+        let db = try FirebaseEmulator.firestore()
+        try await FirebaseEmulator.clearFirestore()
+        let uid = try await FirebaseEmulator.signInFreshUser()
+        defer { try? FirebaseEmulator.signOut() }
+        try await FirebaseEmulator.adminSet("users/\(uid)", ["name": "A", "dailyDose": ["date": "2026-09-03", "taskIds": ["t1"]]])
+        let engine = DailyDoseEngine()
+        #expect(await engine.loadFrozenDose(userId: uid) == DailyDoseEngine.FrozenDose(date: "2026-09-03", taskIds: ["t1"]))
+        await engine.freeze(DailyDoseEngine.FrozenDose(date: "2026-09-04", taskIds: ["t2"]), userId: uid)
+        let stored = try await db.collection("users").document(uid).getDocument().data()?["dailyDose"] as? [String: Any]
+        #expect(stored?["schema_version"] as? Int == 1)
+        #expect(stored?["task_generation_epoch"] as? Int == 0)
+        #expect(stored?["date"] as? String == "2026-09-04")
+        #expect(stored?["taskIds"] as? [String] == ["t2"])
+        #expect(stored?.count == 4)
+        #expect(await engine.loadFrozenDose(userId: uid) == DailyDoseEngine.FrozenDose(date: "2026-09-04", taskIds: ["t2"]))
+        try await FirebaseEmulator.adminSet("users/\(uid)", ["name": "A", "taskGenerationEpoch": 1, "dailyDose": ["date": "2026-09-03", "taskIds": ["t1"]]])
+        #expect(await engine.loadFrozenDose(userId: uid) == nil)
+        await engine.freeze(DailyDoseEngine.FrozenDose(date: "2026-09-05", taskIds: []), userId: uid)
+        let restamped = try await db.collection("users").document(uid).getDocument().data()?["dailyDose"] as? [String: Any]
+        #expect(restamped?["task_generation_epoch"] as? Int == 1)
+        try await FirebaseEmulator.adminSet("users/\(uid)", ["name": "A", "taskGenerationEpoch": 1, "dailyDose": ["schema_version": 1, "task_generation_epoch": 0, "date": "2026-09-03", "taskIds": ["t1"]]])
+        #expect(await engine.loadFrozenDose(userId: uid) == nil)
+    }
+
     // MARK: - Emulator (I1): the support type binds the default app to the emulator
 
     @Test(.enabled(if: FirebaseEmulator.isConfigured))
@@ -368,4 +483,12 @@ final class UIDProbe: CurrentFirebaseUIDProviding, @unchecked Sendable {
         set { lock.withLock { value = newValue } }
     }
     func currentFirebaseUID() -> String? { uid }
+}
+
+/// A throwaway UserDefaults suite for local-store tests.
+func isolatedDefaults() throws -> UserDefaults {
+    let name = "s1-tests-\(UUID().uuidString)"
+    guard let defaults = UserDefaults(suiteName: name) else { throw CocoaError(.fileNoSuchFile) }
+    defaults.removePersistentDomain(forName: name)
+    return defaults
 }

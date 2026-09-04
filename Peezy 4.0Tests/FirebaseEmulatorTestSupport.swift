@@ -88,4 +88,47 @@ enum FirebaseEmulator {
             throw Unavailable()
         }
     }
+
+    // MARK: - Admin writes (rules bypass) for seeding fixtures
+
+    /// Replaces a document through the emulator's REST surface with the
+    /// `Bearer owner` token the emulator accepts, bypassing security rules.
+    /// Supported values: String, Int, Bool, Double, Date, [Any], [String: Any], NSNull.
+    static func adminSet(_ path: String, _ fields: [String: Any]) async throws {
+        let hosts = try configureOnce.get()
+        var request = URLRequest(url: URL(string: "http://\(hosts.firestore)/v1/projects/\(projectID)/databases/(default)/documents/\(path)")!)
+        request.httpMethod = "PATCH"
+        request.setValue("Bearer owner", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["fields": fields.mapValues(restValue)])
+        let (body, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            throw AdminWriteFailed(body: String(decoding: body, as: UTF8.self))
+        }
+    }
+
+    struct AdminWriteFailed: Error, CustomStringConvertible {
+        let body: String
+        var description: String { "emulator admin write failed: \(body)" }
+    }
+
+    private static let rfc3339: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+
+    private static func restValue(_ value: Any) -> [String: Any] {
+        switch value {
+        case let string as String: return ["stringValue": string]
+        case let bool as Bool: return ["booleanValue": bool]
+        case let int as Int: return ["integerValue": String(int)]
+        case let double as Double: return ["doubleValue": double]
+        case let date as Date: return ["timestampValue": rfc3339.string(from: date)]
+        case let array as [Any]: return ["arrayValue": ["values": array.map(restValue)]]
+        case let map as [String: Any]: return ["mapValue": ["fields": map.mapValues(restValue)]]
+        case is NSNull: return ["nullValue": NSNull()]
+        default: fatalError("unsupported fixture value: \(value)")
+        }
+    }
 }

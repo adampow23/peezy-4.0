@@ -275,11 +275,9 @@ class AssessmentDataManager: ObservableObject {
         let assessmentData = getAllAssessmentData()
         let db = FirestoreRuntime.firestore()
         
-        // Write to user_assessments subcollection (auto-generated doc ID)
-        try await db.collection("users")
-            .document(userId)
-            .collection("user_assessments")
-            .addDocument(data: assessmentData)
+        // Write to user_assessments subcollection (auto-generated doc ID),
+        // stamped with the effective root epoch in one root-reading transaction.
+        _ = try await Self.createStampedAssessment(assessmentData, userId: userId, db: db)
 
         // Identity doc (v1 identity object) — additive; user_assessments keeps
         // writing for backend compatibility this phase.
@@ -299,6 +297,22 @@ class AssessmentDataManager: ObservableObject {
         )
     }
     
+    /// Reads the user root and creates the auto-ID assessment in one transaction,
+    /// stamping `task_generation_epoch` with the effective root epoch. Refuses
+    /// while `taskReset` is present or the root epoch is malformed (§5:540-543).
+    static func createStampedAssessment(_ data: [String: Any], userId: String, db: Firestore) async throws -> String {
+        let userRef = db.collection("users").document(userId)
+        let assessmentRef = userRef.collection("user_assessments").document()
+        try await db.runTypedTransaction { transaction in
+            let root = try transaction.getDocument(userRef)
+            let epoch = try TaskGenerationEpochStamp.effectiveRootEpoch(root.data(), requireResetAbsent: true)
+            var stamped = data
+            stamped[TaskGenerationEpochStamp.fieldName] = epoch
+            transaction.setData(stamped, forDocument: assessmentRef)
+        }
+        return assessmentRef.documentID
+    }
+
     // MARK: - Reset
     
     func reset() {
