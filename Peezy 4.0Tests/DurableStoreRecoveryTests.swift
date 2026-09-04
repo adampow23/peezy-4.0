@@ -272,6 +272,77 @@ struct DurableStoreRecoveryTests {
         #expect(StorageIOErrorCode.allCases.count == 8)
     }
 
+    // MARK: - Firestore runtime seam (I3): consumers acquire Firestore only through the seam
+
+    @Test func firestoreRuntimeSeamIsExact() async throws {
+        struct Stub: FirestoreRuntimeProviding {
+            func acquire() async throws -> FirestoreRuntimeLease {
+                FirestoreRuntimeLease(firestore: Firestore.firestore(), generation: FirestoreRuntimeGeneration(rawValue: 7))
+            }
+            func published() -> FirestoreRuntimeLease {
+                FirestoreRuntimeLease(firestore: Firestore.firestore(), generation: FirestoreRuntimeGeneration(rawValue: 7))
+            }
+            func isCurrent(_ generation: FirestoreRuntimeGeneration) -> Bool { generation.rawValue == 7 }
+        }
+        let stub: any FirestoreRuntimeProviding = Stub()
+        #expect(stub.isCurrent(FirestoreRuntimeGeneration(rawValue: 7)))
+        #expect(stub.isCurrent(FirestoreRuntimeGeneration(rawValue: 8)) == false)
+        // `published()` needs a configured FirebaseApp; the emulator-gated lease test covers it.
+    }
+
+    /// Static gate from manifest §12.2:1866: zero production `Firestore.firestore()`
+    /// in S1-owned files outside the runtime provider itself.
+    @Test func s1OwnedFilesAcquireFirestoreOnlyThroughTheRuntimeSeam() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        // RetakeAssessmentCoordinator.swift joins this list in I6, when its pinned
+        // closure slice is replaced whole per §6.6 (the two acquisitions live inside it).
+        let owned = [
+            "Peezy 4.0/Menu/PeezySettingsView.swift",
+            "Peezy 4.0/Assessment/AssessmentModels/AssessmentDataManager.swift",
+            "Peezy 4.0/MainInterface/Models/UserKnowledgeService.swift",
+            "Peezy 4.0/MainInterface/Models/DailyDoseEngine.swift",
+            "Peezy 4.0/MainInterface/Models/TaskPlanService.swift",
+            "Peezy 4.0/Assessment/AssessmentViews/Onboarding/GeneratingView.swift",
+            "Peezy 4.0/Inventory/Services/InventoryStorageService.swift",
+            "Peezy 4.0/MainInterface/Models/BoxReturnService.swift",
+            "Peezy 4.0/MainInterface/Models/CheckInService.swift",
+            "Peezy 4.0/MainInterface/Models/ISPPlanService.swift",
+            "Peezy 4.0/MainInterface/Models/IdentityService.swift",
+            "Peezy 4.0/MainInterface/Models/PeezyStackViewModel.swift",
+            "Peezy 4.0/MainInterface/Models/SubscriptionManager.swift",
+            "Peezy 4.0/MainInterface/Models/Vendor.swift",
+            "Peezy 4.0/MainInterface/Views/Paywall/PaywallGateView.swift",
+            "Peezy 4.0/Tasks/FlowEngine/FlowDefinition.swift",
+            "Peezy 4.0/Tasks/FlowEngine/InAppTaskFlows.swift",
+            "Peezy 4.0/Tasks/FlowEngine/MoveAnswersStore.swift",
+            "Peezy 4.0/Tasks/Task Cards/ScanInventoryFlow.swift",
+            "Peezy 4.0/Inventory/Models/InventorySessionManager.swift",
+        ]
+        var hits: [String] = []
+        for relative in owned {
+            let source = try String(contentsOf: root.appendingPathComponent(relative), encoding: .utf8)
+            for (index, line) in source.components(separatedBy: "\n").enumerated()
+            where line.contains("Firestore.firestore()") {
+                hits.append("\(relative):\(index + 1)")
+            }
+        }
+        #expect(hits.isEmpty, "direct acquisitions remain: \(hits)")
+    }
+
+    @Test(.enabled(if: FirebaseEmulator.isConfigured))
+    func productionRuntimeLeaseTargetsTheEmulator() async throws {
+        _ = try FirebaseEmulator.firestore()
+        try await FirebaseEmulator.clearFirestore()
+        let uid = try await FirebaseEmulator.signInFreshUser()
+        let lease = try await FirestoreRuntime.provider.acquire()
+        #expect(FirestoreRuntime.provider.isCurrent(lease.generation))
+        #expect(FirestoreRuntime.provider.published().generation == lease.generation)
+        let ref = lease.firestore.collection("users").document(uid)
+        try await ref.setData(["name": "lease"])
+        #expect(try await ref.getDocument().data()?["name"] as? String == "lease")
+        try FirebaseEmulator.signOut()
+    }
+
     // MARK: - Emulator (I1): the support type binds the default app to the emulator
 
     @Test(.enabled(if: FirebaseEmulator.isConfigured))

@@ -269,7 +269,7 @@ final class FlowDefinitionStore {
         guard !workflowId.isEmpty else { return nil }
 
         do {
-            let snapshot = try await Firestore.firestore()
+            let snapshot = try await FirestoreRuntime.provider.acquire().firestore
                 .collection("flowDefinitions")
                 .document(workflowId)
                 .getDocument()

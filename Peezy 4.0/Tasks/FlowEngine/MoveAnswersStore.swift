@@ -23,7 +23,7 @@ final class MoveAnswersStore {
     func load(userId: String) async {
         guard !userId.isEmpty, loadedUserId != userId else { return }
         do {
-            let snapshot = try await Firestore.firestore()
+            let snapshot = try await FirestoreRuntime.provider.acquire().firestore
                 .collection("users").document(userId)
                 .collection("moveAnswers").document("answers")
                 .getDocument()

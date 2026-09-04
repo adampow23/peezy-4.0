@@ -19,7 +19,7 @@ struct DailyDoseEngine {
 
     /// Reads today's frozen dose from the user doc; nil when absent or malformed.
     func loadFrozenDose(userId: String) async -> FrozenDose? {
-        let db = Firestore.firestore()
+        let db = FirestoreRuntime.firestore()
         guard let doc = try? await db.collection("users").document(userId).getDocument(),
               let raw = doc.data()?["dailyDose"] as? [String: Any],
               let date = raw["date"] as? String,
@@ -30,7 +30,7 @@ struct DailyDoseEngine {
     /// Persists the day's dose. setData(merge:) — the user doc also carries
     /// profile fields owned elsewhere.
     func freeze(_ dose: FrozenDose, userId: String) async {
-        let db = Firestore.firestore()
+        let db = FirestoreRuntime.firestore()
         do {
             try await db.collection("users").document(userId).setData([
                 "dailyDose": ["date": dose.date, "taskIds": dose.taskIds]
@@ -45,7 +45,7 @@ struct DailyDoseEngine {
     func resetForRetake(userId: String) async throws {
         guard !userId.isEmpty else { return }
 
-        try await Firestore.firestore()
+        try await FirestoreRuntime.provider.acquire().firestore
             .collection("users")
             .document(userId)
             .updateData(["dailyDose": FieldValue.delete()])

@@ -18,7 +18,7 @@ final class IdentityService {
 
     static let shared = IdentityService()
 
-    private var db: Firestore { Firestore.firestore() }
+    private var db: Firestore { FirestoreRuntime.firestore() }
 
     private func docRef(_ userId: String) -> DocumentReference {
         // §4 names the doc "users/{uid}/identity"; Firestore documents need an

@@ -25,7 +25,7 @@ final class InventoryStorageService {
         var session = InventoryScanSession.newSession(userId: userId, roomName: roomName)
         session.id = sessionId
 
-        let db = Firestore.firestore()
+        let db = FirestoreRuntime.firestore()
         let sessionRef = db.collection("users").document(userId)
             .collection("inventorySessions").document(sessionId)
 
@@ -138,11 +138,14 @@ final class InventoryStorageService {
         sessionId: String,
         onChange: @escaping (InventoryScanSession) -> Void
     ) -> ListenerRegistration {
-        let db = Firestore.firestore()
-        let sessionRef = db.collection("users").document(userId)
+        // Capture the runtime generation; a callback from an invalidated
+        // generation is discarded (manifest §12.2:1866).
+        let lease = FirestoreRuntime.provider.published()
+        let sessionRef = lease.firestore.collection("users").document(userId)
             .collection("inventorySessions").document(sessionId)
 
         return sessionRef.addSnapshotListener { snapshot, error in
+            guard FirestoreRuntime.provider.isCurrent(lease.generation) else { return }
             guard let snapshot = snapshot, snapshot.exists,
                   let data = snapshot.data() else {
                 return

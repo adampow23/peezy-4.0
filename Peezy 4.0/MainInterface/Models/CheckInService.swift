@@ -49,7 +49,7 @@ struct CheckInService {
     private let functions: Functions
 
     init(
-        db: Firestore = Firestore.firestore(),
+        db: Firestore = FirestoreRuntime.firestore(),
         functions: Functions = Functions.functions()
     ) {
         self.db = db

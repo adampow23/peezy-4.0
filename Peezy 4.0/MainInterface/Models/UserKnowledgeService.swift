@@ -19,7 +19,7 @@ enum UserKnowledgeService {
             ] as [String: Any]
         }
 
-        try await Firestore.firestore()
+        try await FirestoreRuntime.provider.acquire().firestore
             .collection("userKnowledge")
             .document(userId)
             .setData(["entries": entries], merge: true)

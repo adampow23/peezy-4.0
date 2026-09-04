@@ -320,7 +320,7 @@ class SubscriptionManager: ObservableObject {
         // callback capture — then reject the response if the account changes.
         if resolvedStatus == nil, let currentUID = Auth.auth().currentUser?.uid {
             do {
-                let snapshot = try await Firestore.firestore()
+                let snapshot = try await FirestoreRuntime.provider.acquire().firestore
                     .collection("users")
                     .document(currentUID)
                     .getDocument()

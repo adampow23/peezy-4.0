@@ -199,7 +199,7 @@ struct GeneratingView: View {
             return
         }
 
-        let db = Firestore.firestore()
+        let db = FirestoreRuntime.firestore()
 
         Task {
             var lastCount = -1

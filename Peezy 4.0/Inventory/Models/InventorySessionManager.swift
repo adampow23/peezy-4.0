@@ -28,7 +28,7 @@ protocol CoverageConfirmationPersisting {
 @MainActor
 struct FirestoreCoverageConfirmationStore: CoverageConfirmationPersisting {
     func insertConfirmedRoomID(_ roomID: String, userID: String) async throws -> Set<String> {
-        let metadataRef = Firestore.firestore().collection("users").document(userID)
+        let metadataRef = FirestoreRuntime.firestore().collection("users").document(userID)
             .collection("inventory").document("_metadata")
         try await metadataRef.setData([
             InventoryCoverage.confirmedMetadataKey: FieldValue.arrayUnion([roomID]),
@@ -186,7 +186,7 @@ final class InventorySessionManager {
     func loadExistingInventory() async {
         guard let userId else { return }
 
-        let db = Firestore.firestore()
+        let db = FirestoreRuntime.firestore()
         var loadedStatus: SubmissionStatus = .draft
 
         do {
@@ -557,7 +557,7 @@ final class InventorySessionManager {
             throw InventoryError.notAuthenticated
         }
 
-        let db = Firestore.firestore()
+        let db = FirestoreRuntime.firestore()
         let batch = db.batch()
 
         addRoomWrites(to: batch, db: db, userId: userId)
@@ -588,7 +588,7 @@ final class InventorySessionManager {
             throw InventoryError.invalidRequest("Inventory room is missing an identifier")
         }
 
-        let db = Firestore.firestore()
+        let db = FirestoreRuntime.firestore()
         let batch = db.batch()
         addRoomWrites(to: batch, db: db, userId: userId)
 
@@ -622,7 +622,7 @@ final class InventorySessionManager {
             throw InventoryError.notAuthenticated
         }
 
-        let db = Firestore.firestore()
+        let db = FirestoreRuntime.firestore()
         let metaRef = db.collection("users").document(userId)
             .collection("inventory").document("_metadata")
 
@@ -703,7 +703,7 @@ final class InventorySessionManager {
             )
         }
 
-        let db = Firestore.firestore()
+        let db = FirestoreRuntime.firestore()
         let inventoryRef = db.collection("users").document(userId).collection("inventory")
 
         let snapshot = try await inventoryRef.getDocuments()

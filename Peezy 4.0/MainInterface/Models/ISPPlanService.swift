@@ -104,7 +104,7 @@ enum ISPPlanError: LocalizedError {
 
 struct ISPPlanService {
     func fetchPlans() async throws -> [ISPPlan] {
-        let snapshot = try await Firestore.firestore()
+        let snapshot = try await FirestoreRuntime.provider.acquire().firestore
             .collection("ispPlans")
             .getDocuments()
         let plans = try snapshot.documents.map(ISPPlan.init(document:))

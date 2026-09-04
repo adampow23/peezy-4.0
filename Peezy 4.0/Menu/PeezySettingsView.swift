@@ -830,7 +830,7 @@ struct PeezySettingsView: View {
 
     private func saveMoveDetailField(_ key: String, value: Any) {
         guard let uid = Auth.auth().currentUser?.uid else { return }
-        let db = Firestore.firestore()
+        let db = FirestoreRuntime.firestore()
 
         Task {
             do {

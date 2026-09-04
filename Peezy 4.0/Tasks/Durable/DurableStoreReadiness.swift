@@ -1,3 +1,4 @@
+import FirebaseFirestore
 import Foundation
 
 // S1 (briefs/S1_BRIEF.md): store/state vocabulary, seams, and the startup
@@ -610,4 +611,53 @@ actor StartupBarrier: AccountDeletionGateControlling {
     private func advanceGeneration() {
         generation = GateGeneration(rawValue: generation.rawValue &+ 1)
     }
+}
+
+// MARK: - Firestore runtime seam (§11:1529, §12.2:1866)
+
+/// Published generation of the process-wide Firestore instance. A lease whose
+/// generation is no longer current must have its results discarded.
+struct FirestoreRuntimeGeneration: Hashable, Sendable {
+    let rawValue: UInt64
+}
+
+/// The published Firestore instance together with its generation.
+struct FirestoreRuntimeLease: @unchecked Sendable {
+    let firestore: Firestore
+    let generation: FirestoreRuntimeGeneration
+}
+
+/// The single chokepoint through which every consumer obtains Firestore.
+/// S4's `FirestoreRuntimeOwner` is the production conformer that owns the
+/// instance, invalidation, recreation, and publication.
+protocol FirestoreRuntimeProviding: Sendable {
+    /// Admitted acquisition: waits for publication and throws only when
+    /// acquisition is refused.
+    func acquire() async throws -> FirestoreRuntimeLease
+    /// Synchronous snapshot of the last published lease for consumers that
+    /// cannot await (default parameters, listener registration).
+    func published() -> FirestoreRuntimeLease
+    func isCurrent(_ generation: FirestoreRuntimeGeneration) -> Bool
+}
+
+/// Transitional S1 conformer: one fixed generation over the default instance.
+/// S4 replaces it with `FirestoreRuntimeOwner`; every consumer already routes
+/// through `FirestoreRuntime`, so that swap touches no consumer.
+struct TransitionalFirestoreRuntime: FirestoreRuntimeProviding {
+    private static let generation = FirestoreRuntimeGeneration(rawValue: 1)
+
+    func acquire() async throws -> FirestoreRuntimeLease { published() }
+
+    func published() -> FirestoreRuntimeLease {
+        FirestoreRuntimeLease(firestore: Firestore.firestore(), generation: Self.generation)
+    }
+
+    func isCurrent(_ generation: FirestoreRuntimeGeneration) -> Bool { generation == Self.generation }
+}
+
+enum FirestoreRuntime {
+    static let provider: any FirestoreRuntimeProviding = TransitionalFirestoreRuntime()
+
+    /// Mechanical substitution target for synchronous acquisition sites.
+    static func firestore() -> Firestore { provider.published().firestore }
 }

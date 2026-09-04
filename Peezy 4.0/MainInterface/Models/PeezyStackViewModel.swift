@@ -83,7 +83,7 @@ final class PeezyStackViewModel {
         }
 
         do {
-            let db = Firestore.firestore()
+            let db = FirestoreRuntime.firestore()
 
             // Query active tasks - same filter as TimelineService
             let snapshot = try await db.collection("users")

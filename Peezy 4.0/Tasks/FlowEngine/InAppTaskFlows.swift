@@ -33,7 +33,7 @@ enum InAppTaskWrites {
     /// Returns the merged assessment data for downstream generation.
     @discardableResult
     static func updateAssessmentKeys(_ keys: [String: Any], userId: String) async throws -> [String: Any] {
-        let db = Firestore.firestore()
+        let db = FirestoreRuntime.firestore()
         let snapshot = try await db.collection("users").document(userId)
             .collection("user_assessments")
             .limit(to: 1)

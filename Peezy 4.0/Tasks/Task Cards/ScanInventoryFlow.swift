@@ -99,7 +99,7 @@ struct ScanInventoryFlow: View {
     private func checkInventoryStatus() async -> InventoryStatus {
         guard !userId.isEmpty else { return .empty }
 
-        let db = Firestore.firestore()
+        let db = FirestoreRuntime.firestore()
         do {
             let doc = try await db.collection("users").document(userId)
                 .collection("inventory").document("_metadata")

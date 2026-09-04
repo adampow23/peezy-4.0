@@ -159,7 +159,7 @@ struct VendorAccountability: Codable, Equatable {
 struct VendorStore {
     private let db: Firestore
 
-    init(db: Firestore = Firestore.firestore()) {
+    init(db: Firestore = FirestoreRuntime.firestore()) {
         self.db = db
     }
 

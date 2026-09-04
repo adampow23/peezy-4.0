@@ -273,7 +273,7 @@ class AssessmentDataManager: ObservableObject {
         }
         
         let assessmentData = getAllAssessmentData()
-        let db = Firestore.firestore()
+        let db = FirestoreRuntime.firestore()
         
         // Write to user_assessments subcollection (auto-generated doc ID)
         try await db.collection("users")

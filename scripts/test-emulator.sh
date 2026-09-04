@@ -1,5 +1,7 @@
 #!/bin/bash
 # S1 (briefs/S1_BRIEF.md): run Peezy's emulator-backed suites.
+# Signing: the project's automatic signing (team + entitlements) is required; an
+# ad-hoc or unsigned host loses get-task-allow/keychain and cannot be attached.
 # Emulator only. This script never targets a production Firebase project:
 # --project is the demo project id the emulators accept without credentials.
 #
@@ -25,7 +27,7 @@ SWIFT_CMD="env -u PEEZY_RUN_FIRESTORE_INTEGRATION \
   TEST_RUNNER_FIREBASE_AUTH_EMULATOR_HOST=\"\$FIREBASE_AUTH_EMULATOR_HOST\" \
   TEST_RUNNER_FIREBASE_STORAGE_EMULATOR_HOST=\"\${FIREBASE_STORAGE_EMULATOR_HOST:-}\" \
   xcodebuild test -project 'Peezy 4.0.xcodeproj' -scheme 'Peezy 4.0' -configuration Debug \
-  -destination 'platform=iOS Simulator,id=$SIM' $ONLY \
+  -destination 'platform=iOS Simulator,id=$SIM' -parallel-testing-enabled NO $ONLY \
   -skip-testing:'Peezy 4.0UITests' 2>&1 | tee /tmp/peezy-emulator-xcodebuild.log | grep -E 'Test Suite|Test Case|✔|✘|error:|\\*\\* TEST|Executed' || true; \
   test \"\${PIPESTATUS[0]}\" -eq 0"
 
