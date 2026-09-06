@@ -1370,3 +1370,82 @@ test("inspectCommittedOperation: request precedence, every family row, replay pr
   await expectTaskPlanError(() => p2Call(wrongOwner, wRequest), "failed-precondition", { schemaVersion: 1, reason: "OPERATION_REUSED", submissionToken: token });
   assert.equal((await p2Call(sharedFirestore({ docs: { "users/u2": {} } }), wRequest)).outcome, "absent");
 });
+
+// ---------------------------------------------------------------------------
+// S3 — frozen reset/inspection/reconciliation wires shared with the Swift decoder mirrors
+// (Peezy 4.0Tests/DurableStoreRecoveryTests.swift reads functions/tests/fixtures/resetWiresV1.json).
+// Every wire below is produced by the real handler on the shared fake Firestore; the committed
+// fixture is asserted byte-equal (FREEZE_RESET_WIRES=1 rewrites it).
+// ---------------------------------------------------------------------------
+
+test("frozen reset wires: the committed fixture equals what the handler produces for progress, final, inspection, reconciliation, the marker, and the error table", async () => {
+  const fs = require("node:fs");
+  const fixturePath = path.join(__dirname, "fixtures", "resetWiresV1.json");
+  const uid = RULE_OWNER;
+  const aliasP = "rsa1_11111111-1111-4111-8111-111111111111";
+  const iso = (value) => (value instanceof Timestamp ? value.toDate().toISOString() : value);
+  const plain = (value) => JSON.parse(JSON.stringify(value, (key, v) => (v && typeof v === "object" && typeof v.toDate === "function" ? v.toDate().toISOString() : v)));
+
+  const db = sharedFirestore({ docs: {
+    [`users/${uid}`]: { name: "R", taskGenerationEpoch: 1 },
+    [`users/${uid}/tasks/a`]: { status: "Upcoming" }, [`users/${uid}/tasks/b`]: { status: "Done" },
+    [`users/${uid}/notificationIntents/n`]: { kind: "TASK_RESUME" },
+    [`users/${uid}/taskPlanOperations/pcs1_snap`]: { kind: "CONFIRMATION_SNAPSHOT" }
+  } });
+  const call = (data) => p2Call(db, data, { uid });
+  const progress = await call({ action: "resetAllTasks", operationId: aliasP, reason: "retake_assessment", expectedTaskGenerationEpoch: 1 });
+  const canonical = resetCanonicalId(uid, 2);
+  const marker = plain((await db.doc(`users/${uid}`).get()).data().taskReset);
+  const inspection = (data) => call({ action: "inspectCommittedOperation", family: "RESET", identityDigest: fence.sha256Hex(fence.TaskCanonicalV1({ kind: "reset", uid, expectedTaskGenerationEpoch: 1 })), ...data });
+  const pending = await inspection({ authority: { operationId: canonical }, requestAuthority: { requestFingerprint: resetRequestFingerprint(1) } });
+  const absent = await call({ action: "inspectCommittedOperation", family: "RESET", authority: { operationId: resetCanonicalId(uid, 3) }, requestAuthority: { requestFingerprint: resetRequestFingerprint(2) }, identityDigest: fence.sha256Hex(fence.TaskCanonicalV1({ kind: "reset", uid, expectedTaskGenerationEpoch: 2 })) });
+  const final = await call({ action: "finalizeTaskReset", operationId: aliasP, reason: "retake_assessment", expectedTaskGenerationEpoch: 1 });
+  const replayedFinal = await call({ action: "finalizeTaskReset", operationId: aliasP, reason: "retake_assessment", expectedTaskGenerationEpoch: 1 });
+  const committed = await inspection({ authority: { operationId: canonical }, requestAuthority: { requestFingerprint: resetRequestFingerprint(1) } });
+
+  const reconcile = async (docs, legacyOperationId, migrationAlias) => {
+    const rdb = sharedFirestore({ docs });
+    return p2Call(rdb, { action: "reconcileLegacyTaskReset", legacyOperationId, migrationAlias }, { uid });
+  };
+  const aliasM = "rsa1_22222222-2222-4222-8222-222222222222";
+  const notDispatched = await reconcile({ [`users/${uid}`]: { taskGenerationEpoch: 1 } }, LEGACY_ID, aliasM);
+  const finalizedCompat = await reconcile({ [`users/${uid}`]: { taskGenerationEpoch: 1 }, [`users/${uid}/taskPlanOperations/${LEGACY_ID}`]: legacyOp("finalized", 3) }, LEGACY_ID, aliasM);
+  const upgraded = await reconcile({ [`users/${uid}`]: { taskGenerationEpoch: 1, taskReset: legacyMarker(LEGACY_ID, "deleting", 3) }, [`users/${uid}/taskPlanOperations/${LEGACY_ID}`]: legacyOp("deleting", 3), [`users/${uid}/tasks/left`]: { status: "Upcoming" } }, LEGACY_ID, aliasM);
+  const activeDb = sharedFirestore({ docs: { [`users/${uid}`]: { taskGenerationEpoch: 1 }, [`users/${uid}/tasks/a`]: { status: "Upcoming" } } });
+  await p2Call(activeDb, { action: "resetAllTasks", operationId: aliasP, reason: "retake_assessment", expectedTaskGenerationEpoch: 1 }, { uid });
+  const phase2Active = await p2Call(activeDb, { action: "reconcileLegacyTaskReset", legacyOperationId: LEGACY_ID, migrationAlias: aliasM }, { uid });
+
+  const produced = {
+    schemaVersion: 1,
+    note: "Produced by functions/taskPlan.js handleTaskPlanRequest on the shared fake Firestore for uid phase2-rule-owner at expected epoch 1. Marker instants are ISO strings of the millisecond Timestamps.",
+    uid, expectedTaskGenerationEpoch: 1, canonicalOperationId: canonical, requestFingerprint: resetRequestFingerprint(1),
+    identityDigest: fence.sha256Hex(fence.TaskCanonicalV1({ kind: "reset", uid, expectedTaskGenerationEpoch: 1 })),
+    progressAwaiting: progress,
+    progressDeleting: { ...progress, state: "deleting", deletedCount: 1, deletedCounts: { tasks: 1, notificationIntents: 0, taskDeadlineEvidence: 0, confirmationSnapshots: 0 } },
+    final, replayedFinal, marker,
+    inspection: { pending, absent, committed },
+    reconciliation: { notDispatched, finalizedCompat, upgraded, phase2Active },
+    parity: { uid: RULE_OWNER, legacyOperationId: LEGACY_ID, migrationId: migrationIdFor(RULE_OWNER, LEGACY_ID), requestFingerprint: migrationFingerprintFor(RULE_OWNER, LEGACY_ID) },
+    errors: [
+      { code: "unauthenticated", details: { schemaVersion: 1, reason: "AUTH_REQUIRED" } },
+      { code: "invalid-argument", details: { schemaVersion: 1, reason: "REQUEST_INVALID", field: "migrationAlias" } },
+      { code: "failed-precondition", details: { schemaVersion: 1, reason: "OPERATION_REUSED", operationId: canonical } },
+      { code: "failed-precondition", details: { schemaVersion: 1, reason: "LEGACY_RESET_CORRUPT", context: "reconcile", legacyOperationId: LEGACY_ID, recordClass: "deleting", markerClass: "absent" } },
+      { code: "failed-precondition", details: { schemaVersion: 1, reason: "LEGACY_RESET_CORRUPT", context: "inspect", recordClass: "phase2", markerClass: "malformed" } },
+      { code: "failed-precondition", details: { schemaVersion: 1, reason: "LEGACY_RESET_MIGRATION_REQUIRED", legacyOperationId: LEGACY_ID } },
+      { code: "failed-precondition", details: { schemaVersion: 1, reason: "LEGACY_RESET_ALIAS_OCCUPIED", legacyOperationId: LEGACY_ID, migrationAlias: aliasM } },
+      { code: "failed-precondition", details: { schemaVersion: 1, reason: "CLIENT_UPGRADE_REQUIRED", requiredProtocol: "phase2" } },
+      { code: "failed-precondition", details: { schemaVersion: 1, reason: "STALE_STATE" } },
+      { code: "failed-precondition", details: { schemaVersion: 1, reason: "RESET_ACTIVE", operationId: canonical, expectedTaskGenerationEpoch: 1 } }
+    ]
+  };
+  assert.equal(progress.state, "awaiting_local_reset");
+  assert.equal(final.replayed, false);
+  assert.equal(replayedFinal.replayed, true);
+  assert.equal(pending.outcome, "pending"); assert.equal(absent.outcome, "absent"); assert.equal(committed.outcome, "committed");
+  assert.deepEqual(committed.receipt, { ...final, replayed: true });
+  assert.deepEqual([notDispatched.outcome, finalizedCompat.outcome, upgraded.outcome, phase2Active.outcome], ["not_dispatched", "finalized_compat", "upgraded", "phase2_active"]);
+  const bytes = JSON.stringify(produced, null, 2) + "\n";
+  if (process.env.FREEZE_RESET_WIRES === "1" || !fs.existsSync(fixturePath)) fs.writeFileSync(fixturePath, bytes);
+  assert.equal(fs.readFileSync(fixturePath, "utf8"), bytes, "committed fixture equals the live wires (FREEZE_RESET_WIRES=1 to rewrite)");
+});

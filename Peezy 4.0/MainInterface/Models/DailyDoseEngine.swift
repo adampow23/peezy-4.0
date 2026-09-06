@@ -283,6 +283,8 @@ actor DailyDoseLocalStore {
     static let shared = DailyDoseLocalStore(defaults: .standard)
 
     private let defaults: UserDefaults
+    /// Same-file access for the S3 cleanup/bridge extension below.
+    fileprivate var defaultsStore: UserDefaults { defaults }
 
     init(defaults: UserDefaults) {
         self.defaults = defaults
@@ -337,5 +339,91 @@ actor DailyDoseLocalStore {
         guard let data = state.canonicalData() else { return false }
         defaults.set(data, forKey: Self.key(uid: uid))
         return true
+    }
+
+    fileprivate func writeState(_ state: DailyDoseLocalStateV1, uid: String) -> Bool { write(state, uid: uid) }
+}
+
+// MARK: - S3: epoch-r cleanup and the exact 0→1 bridge (§5:547; C6.6)
+
+extension DailyDoseLocalStore {
+    enum CleanupResult: Equatable, Sendable {
+        case cleaned(DailyDoseLocalStateV1)
+        case malformed
+    }
+
+    enum BridgeResult: Equatable, Sendable {
+        /// v2 was absent and legacy v0 keys existed: v2 written at epoch 0 from them, then the keys removed.
+        case bridged(DailyDoseLocalStateV1)
+        /// v2 already present; any leftover legacy keys were removed (crash after the v2 write).
+        case present
+        /// Neither v2 nor any legacy key existed.
+        case none
+        /// v2 bytes are malformed; they and every legacy key are preserved.
+        case malformed
+    }
+
+    /// The three shipped v0 keys under `peezy.{uid}.dailyDose.`.
+    static func legacyKeys(uid: String) -> [String] {
+        ["completedCount", "lastDate", "firstLaunchDate"].map { "peezy.\(uid).dailyDose.\($0)" }
+    }
+
+    /// Cleanup at the result epoch: the state becomes the empty floor at
+    /// `taskGenerationEpoch` with revision 0, so any writer holding the previous
+    /// epoch drifts on its next CAS. Malformed bytes are preserved, never replaced.
+    func cleanup(uid: String, taskGenerationEpoch: Int) -> CleanupResult {
+        if case .malformed = load(uid: uid) { return .malformed }
+        let floor = DailyDoseLocalStateV1(taskGenerationEpoch: taskGenerationEpoch, revision: 0, completedCount: 0, lastDate: nil, firstLaunchDate: nil)
+        return writeState(floor, uid: uid) ? .cleaned(floor) : .malformed
+    }
+
+    /// Exact 0→1 bridge order: read the legacy values, write v2 at epoch 0,
+    /// then remove the legacy keys. A crash between the two steps leaves both;
+    /// the next call finds v2 present and removes the keys.
+    func bridgeLegacy(uid: String) -> BridgeResult {
+        let keys = Self.legacyKeys(uid: uid)
+        switch load(uid: uid) {
+        case .malformed:
+            return .malformed
+        case .present:
+            keys.forEach { defaultsStore.removeObject(forKey: $0) }
+            return .present
+        case .absent:
+            guard keys.contains(where: { defaultsStore.object(forKey: $0) != nil }) else { return .none }
+            let completed = min(max(defaultsStore.integer(forKey: keys[0]), 0), DailyDoseLocalStateV1.maxCompletedCount)
+            let state = DailyDoseLocalStateV1(
+                taskGenerationEpoch: 0, revision: 0, completedCount: completed,
+                lastDate: Self.legacyDate(defaultsStore.string(forKey: keys[1])),
+                firstLaunchDate: Self.legacyDate(defaultsStore.string(forKey: keys[2]))
+            )
+            guard writeState(state, uid: uid) else { return .malformed }
+            keys.forEach { defaultsStore.removeObject(forKey: $0) }
+            return .bridged(state)
+        }
+    }
+
+    /// Only an exact `YYYY-MM-DD` legacy value carries over.
+    private static func legacyDate(_ value: String?) -> String? {
+        guard let value, value.range(of: #"^\d{4}-\d{2}-\d{2}$"#, options: .regularExpression) != nil else { return nil }
+        return value
+    }
+}
+
+extension DailyDoseEngine {
+    /// Authority-taking dose reset (S3): one root transaction requires the exact
+    /// awaiting marker for `authority` and removes the frozen dose; then the local
+    /// store is cleaned at the result epoch and the legacy v0 keys are removed.
+    func resetForRetake(authority: ResetLocalCleanupAuthorityV1, localStore: DailyDoseLocalStore = .shared, defaults: UserDefaults = .standard) async throws {
+        let firestore = try await FirestoreRuntime.provider.acquire().firestore
+        let ref = firestore.collection("users").document(authority.accountUid)
+        try await firestore.runTypedTransaction { transaction in
+            let root = try transaction.getDocument(ref)
+            guard ResetMarkerV1.matchesAwaiting(root.data(), authority: authority) else { throw ResetCleanupError.markerMismatch }
+            if root.data()?["dailyDose"] != nil {
+                transaction.updateData(["dailyDose": FieldValue.delete()], forDocument: ref)
+            }
+        }
+        _ = await localStore.cleanup(uid: authority.accountUid, taskGenerationEpoch: authority.taskGenerationEpoch)
+        DailyDoseLocalStore.legacyKeys(uid: authority.accountUid).forEach { defaults.removeObject(forKey: $0) }
     }
 }

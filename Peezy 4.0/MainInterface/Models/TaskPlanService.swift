@@ -941,3 +941,619 @@ struct FirestoreResetEpochAuthority: ResetEpochAuthorityProviding {
         return ResetEpochAuthority(uid: uid, taskGenerationEpoch: epoch)
     }
 }
+
+// MARK: - Phase 2 reset wires consumed by the reset client (PHASE2_CONTRACT.md C2.8; S3)
+
+/// Thrown union of `changeTaskPlan`'s reset, inspection, and reconciliation errors
+/// (C2.8 §6.2:653–664, §4.2:1025, Reconciled 11). A detail-less `unavailable` and
+/// every transport failure are `transport`: durable bytes are retained and the same
+/// message is retried. Anything outside the table is `protocolAmbiguity`.
+enum ResetRemoteError: Error, Equatable {
+    case authRequired
+    case requestInvalid(field: String)
+    case operationReused(operationId: String)
+    case legacyResetCorrupt(context: String, legacyOperationId: String?, recordClass: String, markerClass: String)
+    case legacyResetMigrationRequired(legacyOperationId: String)
+    case legacyResetAliasOccupied(legacyOperationId: String, migrationAlias: String)
+    case clientUpgradeRequired(requiredProtocol: String)
+    case staleState
+    case resetActive(operationId: String, expectedTaskGenerationEpoch: Int)
+    case transport
+    case protocolAmbiguity
+}
+
+/// Exact `{tasks,notificationIntents,taskDeadlineEvidence,confirmationSnapshots}`.
+struct ResetDeletedCountsV1: Equatable, Sendable {
+    let tasks: Int
+    let notificationIntents: Int
+    let taskDeadlineEvidence: Int
+    let confirmationSnapshots: Int
+
+    var sum: Int { tasks + notificationIntents + taskDeadlineEvidence + confirmationSnapshots }
+
+    static func decode(_ raw: Any?) -> ResetDeletedCountsV1? {
+        guard let map = raw as? [String: Any], Set(map.keys) == ["tasks", "notificationIntents", "taskDeadlineEvidence", "confirmationSnapshots"],
+              let tasks = TaskGenerationEpochStamp.safeInteger(map["tasks"]),
+              let intents = TaskGenerationEpochStamp.safeInteger(map["notificationIntents"]),
+              let evidence = TaskGenerationEpochStamp.safeInteger(map["taskDeadlineEvidence"]),
+              let snapshots = TaskGenerationEpochStamp.safeInteger(map["confirmationSnapshots"]) else { return nil }
+        return ResetDeletedCountsV1(tasks: tasks, notificationIntents: intents, taskDeadlineEvidence: evidence, confirmationSnapshots: snapshots)
+    }
+
+    func map() -> [String: Any] {
+        ["tasks": tasks, "notificationIntents": notificationIntents, "taskDeadlineEvidence": taskDeadlineEvidence, "confirmationSnapshots": confirmationSnapshots]
+    }
+}
+
+enum ResetReceiptKind: String, Sendable, Equatable {
+    case progress = "reset_progress"
+    case final = "reset_final"
+}
+
+enum ResetReceiptState: String, Sendable, Equatable {
+    case deleting
+    case awaitingLocalReset = "awaiting_local_reset"
+    case finalized
+}
+
+/// The exact reset response union (spec v5 §4.2:1005 via C2.8):
+/// `{schemaVersion:1,kind:"reset_progress"|"reset_final",operationId,replayed,accountUid,
+///   expectedTaskGenerationEpoch,taskGenerationEpoch,activeMoveEventId,deletedCount,deletedCounts,state}`.
+struct ResetReceiptV1: Equatable, Sendable {
+    static let keys: Set<String> = ["schemaVersion", "kind", "operationId", "replayed", "accountUid", "expectedTaskGenerationEpoch", "taskGenerationEpoch", "activeMoveEventId", "deletedCount", "deletedCounts", "state"]
+    static let canonicalIdPattern = #"^rso1_[0-9a-f]{40}$"#
+    static let moveEventIdPattern = #"^me1_[0-9a-f]{40}$"#
+
+    let kind: ResetReceiptKind
+    let operationId: String
+    let replayed: Bool
+    let accountUid: String
+    let expectedTaskGenerationEpoch: Int
+    let taskGenerationEpoch: Int
+    let activeMoveEventId: String
+    let deletedCount: Int
+    let deletedCounts: ResetDeletedCountsV1
+    let state: ResetReceiptState
+
+    /// Exact-member decode; kind/state coherence, `r == e + 1`, and the count sum are required.
+    static func decode(_ data: [String: Any]) throws -> ResetReceiptV1 {
+        guard Set(data.keys) == keys, TaskGenerationEpochStamp.safeInteger(data["schemaVersion"]) == 1,
+              let kindRaw = data["kind"] as? String, let kind = ResetReceiptKind(rawValue: kindRaw),
+              let operationId = data["operationId"] as? String, operationId.range(of: canonicalIdPattern, options: .regularExpression) != nil,
+              let replayed = ResetWireDecoding.bool(data["replayed"]),
+              let accountUid = data["accountUid"] as? String, !accountUid.isEmpty,
+              let expected = TaskGenerationEpochStamp.safeInteger(data["expectedTaskGenerationEpoch"]),
+              let result = TaskGenerationEpochStamp.safeInteger(data["taskGenerationEpoch"]), result == expected + 1,
+              let moveEventId = data["activeMoveEventId"] as? String, moveEventId.range(of: moveEventIdPattern, options: .regularExpression) != nil,
+              let deletedCount = TaskGenerationEpochStamp.safeInteger(data["deletedCount"]),
+              let counts = ResetDeletedCountsV1.decode(data["deletedCounts"]), counts.sum == deletedCount,
+              let stateRaw = data["state"] as? String, let state = ResetReceiptState(rawValue: stateRaw) else { throw ResetRemoteError.protocolAmbiguity }
+        switch (kind, state) {
+        case (.progress, .deleting), (.progress, .awaitingLocalReset), (.final, .finalized): break
+        default: throw ResetRemoteError.protocolAmbiguity
+        }
+        return ResetReceiptV1(kind: kind, operationId: operationId, replayed: replayed, accountUid: accountUid, expectedTaskGenerationEpoch: expected, taskGenerationEpoch: result, activeMoveEventId: moveEventId, deletedCount: deletedCount, deletedCounts: counts, state: state)
+    }
+
+    func map() -> [String: Any] {
+        ["schemaVersion": 1, "kind": kind.rawValue, "operationId": operationId, "replayed": replayed, "accountUid": accountUid,
+         "expectedTaskGenerationEpoch": expectedTaskGenerationEpoch, "taskGenerationEpoch": taskGenerationEpoch, "activeMoveEventId": activeMoveEventId,
+         "deletedCount": deletedCount, "deletedCounts": deletedCounts.map(), "state": state.rawValue]
+    }
+
+    /// Canonical bytes for the registry row (`progressReceipt`/`finalReceipt`, cap 8,192).
+    func canonicalData() -> Data? { TaskCanonicalV1.data(map()) }
+
+    static func decode(data: Data) -> ResetReceiptV1? {
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        return try? decode(object)
+    }
+}
+
+enum ResetWireDecoding {
+    /// Booleans only: an NSNumber that is a CFBoolean.
+    static func bool(_ value: Any?) -> Bool? {
+        guard let number = value as? NSNumber, CFGetTypeID(number) == CFBooleanGetTypeID() else { return nil }
+        return number.boolValue
+    }
+}
+
+enum ResetInspectionOutcome: String, Sendable, Equatable {
+    case absent, pending, committed
+}
+
+/// `inspectCommittedOperation` for the RESET family (C2.8 §7:843): exact
+/// `{schemaVersion:1,kind:"committed_operation_inspection",accountUid,family:"RESET",
+///   authority:{operationId},requestAuthority:{requestFingerprint},identityDigest,outcome,receipt?}`.
+/// `receipt` exists only for `committed` and is the reconstructed `reset_final` with `replayed:true`.
+struct ResetInspectionV1: Equatable, Sendable {
+    let accountUid: String
+    let operationId: String
+    let requestFingerprint: String
+    let identityDigest: String
+    let outcome: ResetInspectionOutcome
+    let receipt: ResetReceiptV1?
+
+    static func decode(_ data: [String: Any]) throws -> ResetInspectionV1 {
+        var expected: Set<String> = ["schemaVersion", "kind", "accountUid", "family", "authority", "requestAuthority", "identityDigest", "outcome"]
+        guard let outcomeRaw = data["outcome"] as? String, let outcome = ResetInspectionOutcome(rawValue: outcomeRaw) else { throw ResetRemoteError.protocolAmbiguity }
+        if outcome == .committed { expected.insert("receipt") }
+        guard Set(data.keys) == expected, TaskGenerationEpochStamp.safeInteger(data["schemaVersion"]) == 1,
+              data["kind"] as? String == "committed_operation_inspection", data["family"] as? String == "RESET",
+              let accountUid = data["accountUid"] as? String, !accountUid.isEmpty,
+              let authority = data["authority"] as? [String: Any], Set(authority.keys) == ["operationId"],
+              let operationId = authority["operationId"] as? String, operationId.range(of: ResetReceiptV1.canonicalIdPattern, options: .regularExpression) != nil,
+              let requestAuthority = data["requestAuthority"] as? [String: Any], Set(requestAuthority.keys) == ["requestFingerprint"],
+              let fingerprint = requestAuthority["requestFingerprint"] as? String, fingerprint.range(of: #"^reset1_[0-9a-f]{64}$"#, options: .regularExpression) != nil,
+              let identityDigest = data["identityDigest"] as? String, identityDigest.range(of: #"^[0-9a-f]{64}$"#, options: .regularExpression) != nil else { throw ResetRemoteError.protocolAmbiguity }
+        var receipt: ResetReceiptV1?
+        if outcome == .committed {
+            guard let raw = data["receipt"] as? [String: Any] else { throw ResetRemoteError.protocolAmbiguity }
+            let decoded = try ResetReceiptV1.decode(raw)
+            guard decoded.kind == .final, decoded.replayed, decoded.operationId == operationId, decoded.accountUid == accountUid else { throw ResetRemoteError.protocolAmbiguity }
+            receipt = decoded
+        }
+        return ResetInspectionV1(accountUid: accountUid, operationId: operationId, requestFingerprint: fingerprint, identityDigest: identityDigest, outcome: outcome, receipt: receipt)
+    }
+}
+
+/// `{schemaVersion:1,kind:"legacy_reset_final",operationId,replayed:false,accountUid,deletedCount,state:"finalized"}`.
+struct LegacyResetFinalReceiptV1: Equatable, Sendable {
+    let operationId: String
+    let accountUid: String
+    let deletedCount: Int
+
+    static func decode(_ raw: Any?) throws -> LegacyResetFinalReceiptV1 {
+        guard let data = raw as? [String: Any], Set(data.keys) == ["schemaVersion", "kind", "operationId", "replayed", "accountUid", "deletedCount", "state"],
+              TaskGenerationEpochStamp.safeInteger(data["schemaVersion"]) == 1, data["kind"] as? String == "legacy_reset_final",
+              let operationId = data["operationId"] as? String, !operationId.isEmpty,
+              ResetWireDecoding.bool(data["replayed"]) == false,
+              let accountUid = data["accountUid"] as? String, !accountUid.isEmpty,
+              let deletedCount = TaskGenerationEpochStamp.safeInteger(data["deletedCount"]),
+              data["state"] as? String == "finalized" else { throw ResetRemoteError.protocolAmbiguity }
+        return LegacyResetFinalReceiptV1(operationId: operationId, accountUid: accountUid, deletedCount: deletedCount)
+    }
+}
+
+/// `reconcileLegacyTaskReset` success union (C2.8 §6.2:626–651). The inner
+/// receipt replay flags are frozen: `upgraded` carries `replayed:false`,
+/// `phase2_active` carries `replayed:true`; only the outer flag changes on replay.
+enum LegacyResetReconciliationV1: Equatable, Sendable {
+    struct Base: Equatable, Sendable {
+        let migrationId: String
+        let legacyOperationId: String
+        let migrationAlias: String
+        let accountUid: String
+        let replayed: Bool
+    }
+
+    case notDispatched(Base)
+    case upgraded(Base, sourceState: String, progress: ResetReceiptV1)
+    case phase2Active(Base, progress: ResetReceiptV1)
+    case finalizedCompat(Base, legacyFinal: LegacyResetFinalReceiptV1)
+
+    var base: Base {
+        switch self {
+        case let .notDispatched(base), let .upgraded(base, _, _), let .phase2Active(base, _), let .finalizedCompat(base, _): return base
+        }
+    }
+
+    static let migrationIdPattern = #"^rlm1_[0-9a-f]{40}$"#
+
+    /// §6.2:608–618 derivations over UID and legacy operation ID only.
+    static func migrationId(uid: String, legacyOperationId: String) -> String {
+        "rlm1_" + String(TaskCanonicalV1.sha256Hex(["account_uid": uid, "legacy_operation_id": legacyOperationId]).prefix(40))
+    }
+
+    static func requestFingerprint(uid: String, legacyOperationId: String) -> String {
+        "rlmreq1_" + TaskCanonicalV1.sha256Hex(["account_uid": uid, "legacy_operation_id": legacyOperationId])
+    }
+
+    static func decode(_ data: [String: Any]) throws -> LegacyResetReconciliationV1 {
+        let common: Set<String> = ["schemaVersion", "kind", "outcome", "migrationId", "legacyOperationId", "migrationAlias", "accountUid", "replayed"]
+        guard TaskGenerationEpochStamp.safeInteger(data["schemaVersion"]) == 1, data["kind"] as? String == "legacy_reset_reconciliation",
+              let outcome = data["outcome"] as? String,
+              let migrationId = data["migrationId"] as? String, migrationId.range(of: migrationIdPattern, options: .regularExpression) != nil,
+              let legacyOperationId = data["legacyOperationId"] as? String, !legacyOperationId.isEmpty,
+              let migrationAlias = data["migrationAlias"] as? String, ResetOperationRegistry.isAlias(migrationAlias),
+              let accountUid = data["accountUid"] as? String, !accountUid.isEmpty,
+              let replayed = ResetWireDecoding.bool(data["replayed"]) else { throw ResetRemoteError.protocolAmbiguity }
+        let base = Base(migrationId: migrationId, legacyOperationId: legacyOperationId, migrationAlias: migrationAlias, accountUid: accountUid, replayed: replayed)
+        let keys = Set(data.keys)
+        switch outcome {
+        case "not_dispatched":
+            guard keys == common else { throw ResetRemoteError.protocolAmbiguity }
+            return .notDispatched(base)
+        case "upgraded":
+            guard keys == common.union(["sourceState", "progressReceipt"]),
+                  let sourceState = data["sourceState"] as? String, sourceState == "deleting" || sourceState == "tasks_deleted",
+                  let raw = data["progressReceipt"] as? [String: Any] else { throw ResetRemoteError.protocolAmbiguity }
+            let progress = try ResetReceiptV1.decode(raw)
+            guard progress.kind == .progress, progress.replayed == false, progress.accountUid == accountUid else { throw ResetRemoteError.protocolAmbiguity }
+            return .upgraded(base, sourceState: sourceState, progress: progress)
+        case "phase2_active":
+            guard keys == common.union(["progressReceipt"]), let raw = data["progressReceipt"] as? [String: Any] else { throw ResetRemoteError.protocolAmbiguity }
+            let progress = try ResetReceiptV1.decode(raw)
+            guard progress.kind == .progress, progress.replayed == true, progress.accountUid == accountUid else { throw ResetRemoteError.protocolAmbiguity }
+            return .phase2Active(base, progress: progress)
+        case "finalized_compat":
+            guard keys == common.union(["sourceState", "legacyFinalReceipt"]), data["sourceState"] as? String == "finalized" else { throw ResetRemoteError.protocolAmbiguity }
+            let final = try LegacyResetFinalReceiptV1.decode(data["legacyFinalReceipt"])
+            guard final.operationId == legacyOperationId, final.accountUid == accountUid else { throw ResetRemoteError.protocolAmbiguity }
+            return .finalizedCompat(base, legacyFinal: final)
+        default:
+            throw ResetRemoteError.protocolAmbiguity
+        }
+    }
+}
+
+enum ResetRemoteAction: String, Sendable, Equatable {
+    case resetAllTasks, finalizeTaskReset
+}
+
+/// The reset client's remote seam: the two reset messages, the RESET inspection,
+/// and the legacy reconciliation. Every implementation computes the frozen
+/// fingerprint and identity digest itself; callers pass identity only.
+protocol ResetRemoteProviding: Sendable {
+    func reset(_ action: ResetRemoteAction, alias: String, expectedTaskGenerationEpoch: Int) async throws -> ResetReceiptV1
+    func inspectReset(uid: String, canonicalOperationId: String, expectedTaskGenerationEpoch: Int) async throws -> ResetInspectionV1
+    func reconcileLegacyReset(legacyOperationId: String, migrationAlias: String) async throws -> LegacyResetReconciliationV1
+}
+
+extension TaskPlanService {
+    /// Typed transport over `changeTaskPlan` for the Phase 2 reset protocol (C2.8).
+    struct ResetTransport: ResetRemoteProviding, @unchecked Sendable {
+        static let callableName = "changeTaskPlan"
+        static let reason = "retake_assessment"
+
+        private let callable: Callable
+
+        init(callable: @escaping Callable = TaskPlanService.productionCallable) {
+            self.callable = callable
+        }
+
+        /// `"reset1_" + SHA-256(TaskCanonicalV1({kind:"reset",reason:"retake_assessment",expected_task_generation_epoch:e}))` (§4.4:1071).
+        static func requestFingerprint(expectedTaskGenerationEpoch: Int) -> String {
+            "reset1_" + TaskCanonicalV1.sha256Hex(["kind": "reset", "reason": reason, "expected_task_generation_epoch": expectedTaskGenerationEpoch])
+        }
+
+        /// The RESET row's private identity map: `{kind:"reset",uid,expectedTaskGenerationEpoch}` (§7:841).
+        static func identityDigest(uid: String, expectedTaskGenerationEpoch: Int) -> String {
+            TaskCanonicalV1.sha256Hex(["kind": "reset", "uid": uid, "expectedTaskGenerationEpoch": expectedTaskGenerationEpoch])
+        }
+
+        func reset(_ action: ResetRemoteAction, alias: String, expectedTaskGenerationEpoch: Int) async throws -> ResetReceiptV1 {
+            let payload: [String: Any] = ["action": action.rawValue, "operationId": alias, "reason": Self.reason, "expectedTaskGenerationEpoch": expectedTaskGenerationEpoch]
+            return try ResetReceiptV1.decode(try await invoke(payload))
+        }
+
+        func inspectReset(uid: String, canonicalOperationId: String, expectedTaskGenerationEpoch: Int) async throws -> ResetInspectionV1 {
+            let payload: [String: Any] = [
+                "action": "inspectCommittedOperation", "family": "RESET",
+                "authority": ["operationId": canonicalOperationId],
+                "requestAuthority": ["requestFingerprint": Self.requestFingerprint(expectedTaskGenerationEpoch: expectedTaskGenerationEpoch)],
+                "identityDigest": Self.identityDigest(uid: uid, expectedTaskGenerationEpoch: expectedTaskGenerationEpoch)
+            ]
+            let inspection = try ResetInspectionV1.decode(try await invoke(payload))
+            guard inspection.accountUid == uid, inspection.operationId == canonicalOperationId,
+                  inspection.requestFingerprint == Self.requestFingerprint(expectedTaskGenerationEpoch: expectedTaskGenerationEpoch),
+                  inspection.identityDigest == Self.identityDigest(uid: uid, expectedTaskGenerationEpoch: expectedTaskGenerationEpoch) else { throw ResetRemoteError.protocolAmbiguity }
+            return inspection
+        }
+
+        func reconcileLegacyReset(legacyOperationId: String, migrationAlias: String) async throws -> LegacyResetReconciliationV1 {
+            let payload: [String: Any] = ["action": "reconcileLegacyTaskReset", "legacyOperationId": legacyOperationId, "migrationAlias": migrationAlias]
+            return try LegacyResetReconciliationV1.decode(try await invoke(payload))
+        }
+
+        private func invoke(_ payload: [String: Any]) async throws -> [String: Any] {
+            do {
+                return try await callable(Self.callableName, payload)
+            } catch let error as ResetRemoteError {
+                throw error
+            } catch {
+                throw Self.mapError(error)
+            }
+        }
+
+        /// The C2.8 error table. Absent `details` (transport failures and the
+        /// four detail-less `unavailable` responses) is `transport`.
+        static func mapError(_ error: Swift.Error) -> ResetRemoteError {
+            let nsError = error as NSError
+            guard let details = nsError.userInfo["details"] as? [String: Any] else { return .transport }
+            guard TaskGenerationEpochStamp.safeInteger(details["schemaVersion"]) == 1, let reason = details["reason"] as? String else { return .protocolAmbiguity }
+            let keys = Set(details.keys)
+            switch reason {
+            case "AUTH_REQUIRED" where keys.count == 2: return .authRequired
+            case "REQUEST_INVALID" where keys == ["schemaVersion", "reason", "field"]:
+                guard let field = details["field"] as? String, !field.isEmpty else { return .protocolAmbiguity }
+                return .requestInvalid(field: field)
+            case "OPERATION_REUSED" where keys == ["schemaVersion", "reason", "operationId"]:
+                guard let id = details["operationId"] as? String, !id.isEmpty else { return .protocolAmbiguity }
+                return .operationReused(operationId: id)
+            case "LEGACY_RESET_CORRUPT":
+                guard let context = details["context"] as? String, let recordClass = details["recordClass"] as? String, let markerClass = details["markerClass"] as? String else { return .protocolAmbiguity }
+                if context == "reconcile", keys == ["schemaVersion", "reason", "context", "legacyOperationId", "recordClass", "markerClass"], let legacy = details["legacyOperationId"] as? String, !legacy.isEmpty {
+                    return .legacyResetCorrupt(context: context, legacyOperationId: legacy, recordClass: recordClass, markerClass: markerClass)
+                }
+                if context == "inspect", keys == ["schemaVersion", "reason", "context", "recordClass", "markerClass"] {
+                    return .legacyResetCorrupt(context: context, legacyOperationId: nil, recordClass: recordClass, markerClass: markerClass)
+                }
+                return .protocolAmbiguity
+            case "LEGACY_RESET_MIGRATION_REQUIRED" where keys == ["schemaVersion", "reason", "legacyOperationId"]:
+                guard let legacy = details["legacyOperationId"] as? String, !legacy.isEmpty else { return .protocolAmbiguity }
+                return .legacyResetMigrationRequired(legacyOperationId: legacy)
+            case "LEGACY_RESET_ALIAS_OCCUPIED" where keys == ["schemaVersion", "reason", "legacyOperationId", "migrationAlias"]:
+                guard let legacy = details["legacyOperationId"] as? String, !legacy.isEmpty, let alias = details["migrationAlias"] as? String, !alias.isEmpty else { return .protocolAmbiguity }
+                return .legacyResetAliasOccupied(legacyOperationId: legacy, migrationAlias: alias)
+            case "CLIENT_UPGRADE_REQUIRED" where keys == ["schemaVersion", "reason", "requiredProtocol"]:
+                guard let required = details["requiredProtocol"] as? String, !required.isEmpty else { return .protocolAmbiguity }
+                return .clientUpgradeRequired(requiredProtocol: required)
+            case "STALE_STATE" where keys.count == 2: return .staleState
+            case "RESET_ACTIVE" where keys == ["schemaVersion", "reason", "operationId", "expectedTaskGenerationEpoch"]:
+                guard let id = details["operationId"] as? String, !id.isEmpty, let epoch = TaskGenerationEpochStamp.safeInteger(details["expectedTaskGenerationEpoch"]) else { return .protocolAmbiguity }
+                return .resetActive(operationId: id, expectedTaskGenerationEpoch: epoch)
+            default: return .protocolAmbiguity
+            }
+        }
+    }
+}
+
+// MARK: - Local cleanup authority and the exact awaiting marker (Reconciled 9; §5:543)
+
+/// The authority every local cleanup callback takes. It exists only when a RESET
+/// inspection is `pending` for the same canonical operation whose stored progress
+/// receipt is `awaiting_local_reset`; nothing else constructs it.
+struct ResetLocalCleanupAuthorityV1: Equatable, Sendable {
+    let accountUid: String
+    let operationId: String
+    let expectedTaskGenerationEpoch: Int
+    let taskGenerationEpoch: Int
+    let activeMoveEventId: String
+
+    init?(inspection: ResetInspectionV1, progress: ResetReceiptV1) {
+        guard inspection.outcome == .pending, progress.kind == .progress, progress.state == .awaitingLocalReset,
+              inspection.accountUid == progress.accountUid, inspection.operationId == progress.operationId,
+              inspection.requestFingerprint == TaskPlanService.ResetTransport.requestFingerprint(expectedTaskGenerationEpoch: progress.expectedTaskGenerationEpoch),
+              inspection.identityDigest == TaskPlanService.ResetTransport.identityDigest(uid: progress.accountUid, expectedTaskGenerationEpoch: progress.expectedTaskGenerationEpoch) else { return nil }
+        accountUid = progress.accountUid
+        operationId = progress.operationId
+        expectedTaskGenerationEpoch = progress.expectedTaskGenerationEpoch
+        taskGenerationEpoch = progress.taskGenerationEpoch
+        activeMoveEventId = progress.activeMoveEventId
+    }
+}
+
+enum ResetCleanupError: Error, Equatable {
+    /// The user root does not carry the exact awaiting marker for the authority; nothing was written.
+    case markerMismatch
+}
+
+/// The `taskReset` marker of `users/{uid}` in its terminal `awaiting_local_reset`
+/// projection (Reconciled 9): exact members, `targetIndex` 4, no cursor or lease,
+/// `createdAt <= awaitingLocalResetAt <= updatedAt`, and every identity member equal
+/// to the authority. The root's own `taskGenerationEpoch` must already be `r`.
+enum ResetMarkerV1 {
+    static let awaitingKeys: Set<String> = ["schemaVersion", "kind", "operationId", "requestFingerprint", "state", "expectedTaskGenerationEpoch", "taskGenerationEpoch", "activeMoveEventId", "targetIndex", "deletedCounts", "deletedCount", "createdAt", "updatedAt", "awaitingLocalResetAt"]
+
+    static func matchesAwaiting(_ root: [String: Any]?, authority: ResetLocalCleanupAuthorityV1) -> Bool {
+        guard let root, let marker = root["taskReset"] as? [String: Any], Set(marker.keys) == awaitingKeys,
+              TaskGenerationEpochStamp.safeInteger(root[TaskGenerationEpochStamp.rootFieldName]) == authority.taskGenerationEpoch,
+              TaskGenerationEpochStamp.safeInteger(marker["schemaVersion"]) == 1, marker["kind"] as? String == "reset",
+              marker["operationId"] as? String == authority.operationId,
+              marker["requestFingerprint"] as? String == TaskPlanService.ResetTransport.requestFingerprint(expectedTaskGenerationEpoch: authority.expectedTaskGenerationEpoch),
+              marker["state"] as? String == ResetReceiptState.awaitingLocalReset.rawValue,
+              TaskGenerationEpochStamp.safeInteger(marker["expectedTaskGenerationEpoch"]) == authority.expectedTaskGenerationEpoch,
+              TaskGenerationEpochStamp.safeInteger(marker["taskGenerationEpoch"]) == authority.taskGenerationEpoch,
+              marker["activeMoveEventId"] as? String == authority.activeMoveEventId,
+              TaskGenerationEpochStamp.safeInteger(marker["targetIndex"]) == 4,
+              let counts = ResetDeletedCountsV1.decode(marker["deletedCounts"]),
+              let deletedCount = TaskGenerationEpochStamp.safeInteger(marker["deletedCount"]), counts.sum == deletedCount,
+              let createdAt = marker["createdAt"] as? Timestamp, let updatedAt = marker["updatedAt"] as? Timestamp,
+              let awaitingAt = marker["awaitingLocalResetAt"] as? Timestamp else { return false }
+        return createdAt.compare(awaitingAt) != .orderedDescending && awaitingAt.compare(updatedAt) != .orderedDescending
+    }
+}
+
+/// Per-document exact-marker transactions through the Firestore-runtime seam:
+/// each delete reads the owner root, requires the exact awaiting marker for the
+/// authority, and deletes one document; a mismatch writes nothing.
+enum ResetLocalCleanupV1 {
+    static func deleteAssessments(authority: ResetLocalCleanupAuthorityV1) async throws {
+        let firestore = try await FirestoreRuntime.provider.acquire().firestore
+        let rootRef = firestore.collection("users").document(authority.accountUid)
+        let documents = try await rootRef.collection("user_assessments").getDocuments().documents
+        for document in documents {
+            let ref = document.reference
+            try await firestore.runTypedTransaction { transaction in
+                let root = try transaction.getDocument(rootRef)
+                guard ResetMarkerV1.matchesAwaiting(root.data(), authority: authority) else { throw ResetCleanupError.markerMismatch }
+                transaction.deleteDocument(ref)
+            }
+        }
+    }
+
+    static func deleteUserKnowledge(authority: ResetLocalCleanupAuthorityV1) async throws {
+        let firestore = try await FirestoreRuntime.provider.acquire().firestore
+        let rootRef = firestore.collection("users").document(authority.accountUid)
+        let ref = firestore.collection("userKnowledge").document(authority.accountUid)
+        try await firestore.runTypedTransaction { transaction in
+            let root = try transaction.getDocument(rootRef)
+            guard ResetMarkerV1.matchesAwaiting(root.data(), authority: authority) else { throw ResetCleanupError.markerMismatch }
+            transaction.deleteDocument(ref)
+        }
+    }
+}
+
+// MARK: - Drive reducer (§5 phase table; C2.8 receipts; trace resetDispatch,inspect,…,finalize)
+
+/// The three cleanup callbacks; each takes the authority and nothing else.
+struct ResetCleanupCallbacks: Sendable {
+    let deleteAssessments: @Sendable (ResetLocalCleanupAuthorityV1) async throws -> Void
+    let deleteUserKnowledge: @Sendable (ResetLocalCleanupAuthorityV1) async throws -> Void
+    let resetDose: @Sendable (ResetLocalCleanupAuthorityV1) async throws -> Void
+}
+
+struct ResetDriveOutcome: Equatable, Sendable {
+    let finalReceipt: ResetReceiptV1
+    /// `true` when the final receipt was replayed (a committed inspection or a
+    /// replayed finalize): the caller posts no ephemeral notification.
+    let replayed: Bool
+}
+
+enum ResetDriveError: Error, Equatable {
+    case rowMissing(handleId: String)
+    /// The canonical record is absent while a progress receipt is held; the row stays for `retry_reset`.
+    case inspectionAbsent(operationId: String)
+    /// A wire disagreed with the row's stored identity; the row is untouched.
+    case receiptMismatch(detail: String)
+    case stepBudgetExceeded
+}
+
+extension ResetOperationRegistry {
+    private static let driveStepBudget = 16
+
+    /// Drives one row to its final receipt and retires it. Each remote dispatch
+    /// is recorded durably before its await; after every await the envelope is
+    /// reread. Before each cleanup callback and before finalize the canonical
+    /// record is inspected: `pending` yields the callback's authority,
+    /// `committed` short-circuits to the replayed final receipt with no further
+    /// callback, `absent` stops with the row intact.
+    func drive(handle: ResetOperationHandle, remote: any ResetRemoteProviding, cleanup: ResetCleanupCallbacks) async throws -> ResetDriveOutcome {
+        let tuple = try await signedAuth()
+        guard tuple.uid == handle.uid else { throw RegistryError.operationStale(uid: handle.uid, handleId: handle.handleId) }
+        for _ in 0..<Self.driveStepBudget {
+            var row = try currentRow(handle)
+            switch row.phase {
+            case .prepared, .resetDispatched, .resetReceiptDeleting:
+                if row.phase != .resetReceiptDeleting {
+                    row.phase = .resetDispatched
+                    try store(row)
+                }
+                let receipt = try await remote.reset(.resetAllTasks, alias: row.suggestedOperationId, expectedTaskGenerationEpoch: row.expectedTaskGenerationEpoch)
+                try Self.requireIdentity(receipt, row: row)
+                row = try currentRow(handle)
+                row.canonicalOperationId = receipt.operationId
+                switch receipt.kind {
+                case .progress:
+                    row.progressReceipt = receipt.canonicalData()
+                    row.phase = receipt.state == .deleting ? .resetReceiptDeleting : .resetReceiptAwaitingLocalReset
+                case .final:
+                    row.finalReceipt = receipt.canonicalData()
+                    row.phase = .finalReceipt
+                }
+                try store(row)
+            case .resetReceiptAwaitingLocalReset:
+                guard let canonical = row.canonicalOperationId, let bytes = row.progressReceipt, let progress = ResetReceiptV1.decode(data: bytes),
+                      progress.state == .awaitingLocalReset else { throw ResetDriveError.receiptMismatch(detail: "progress") }
+                let steps: [(String, @Sendable (ResetLocalCleanupAuthorityV1) async throws -> Void)] = [
+                    ("deleteAssessments", cleanup.deleteAssessments), ("deleteUserKnowledge", cleanup.deleteUserKnowledge), ("resetDose", cleanup.resetDose)
+                ]
+                var shortCircuited = false
+                for (_, callback) in steps {
+                    let inspection = try await remote.inspectReset(uid: row.uid, canonicalOperationId: canonical, expectedTaskGenerationEpoch: row.expectedTaskGenerationEpoch)
+                    if try adoptCommitted(inspection, handle: handle) { shortCircuited = true; break }
+                    guard let authority = ResetLocalCleanupAuthorityV1(inspection: inspection, progress: progress) else { throw ResetDriveError.receiptMismatch(detail: "authority") }
+                    try await callback(authority)
+                }
+                if shortCircuited { continue }
+                let inspection = try await remote.inspectReset(uid: row.uid, canonicalOperationId: canonical, expectedTaskGenerationEpoch: row.expectedTaskGenerationEpoch)
+                if try adoptCommitted(inspection, handle: handle) { continue }
+                guard ResetLocalCleanupAuthorityV1(inspection: inspection, progress: progress) != nil else { throw ResetDriveError.receiptMismatch(detail: "authority") }
+                row = try currentRow(handle)
+                row.phase = .finalizeDispatched
+                try store(row)
+            case .finalizeDispatched:
+                let receipt = try await remote.reset(.finalizeTaskReset, alias: row.suggestedOperationId, expectedTaskGenerationEpoch: row.expectedTaskGenerationEpoch)
+                try Self.requireIdentity(receipt, row: row)
+                guard receipt.kind == .final else { throw ResetDriveError.receiptMismatch(detail: "finalize") }
+                row = try currentRow(handle)
+                row.finalReceipt = receipt.canonicalData()
+                row.phase = .finalReceipt
+                try store(row)
+            case .finalReceipt:
+                row.phase = .applying
+                try store(row)
+            case .applying:
+                guard let bytes = row.finalReceipt, let final = ResetReceiptV1.decode(data: bytes), final.kind == .final else { throw ResetDriveError.receiptMismatch(detail: "final") }
+                try remove(handle)
+                return ResetDriveOutcome(finalReceipt: final, replayed: final.replayed)
+            }
+        }
+        throw ResetDriveError.stepBudgetExceeded
+    }
+
+    // Row access: every helper rereads the envelope so post-await state is never stale.
+
+    private func currentRow(_ handle: ResetOperationHandle) throws -> ResetOperationRegistryRecordV2 {
+        guard let envelope = try read(), let row = envelope.records.first(where: { $0.uid == handle.uid && $0.handleId == handle.handleId }) else {
+            throw ResetDriveError.rowMissing(handleId: handle.handleId)
+        }
+        return row
+    }
+
+    private func store(_ row: ResetOperationRegistryRecordV2) throws {
+        guard var envelope = try read(), let index = envelope.records.firstIndex(where: { $0.uid == row.uid && $0.handleId == row.handleId }) else {
+            throw ResetDriveError.rowMissing(handleId: row.handleId)
+        }
+        var next = row
+        next.updatedAt = try writeTime(advancing: [row.updatedAt])
+        envelope.records[index] = next
+        try write(&envelope)
+    }
+
+    private func remove(_ handle: ResetOperationHandle) throws {
+        guard var envelope = try read(), let index = envelope.records.firstIndex(where: { $0.uid == handle.uid && $0.handleId == handle.handleId }) else {
+            throw ResetDriveError.rowMissing(handleId: handle.handleId)
+        }
+        envelope.records.remove(at: index)
+        try write(&envelope)
+    }
+
+    /// A `committed` inspection adopts its replayed final receipt; `absent` stops.
+    private func adoptCommitted(_ inspection: ResetInspectionV1, handle: ResetOperationHandle) throws -> Bool {
+        switch inspection.outcome {
+        case .pending: return false
+        case .absent: throw ResetDriveError.inspectionAbsent(operationId: inspection.operationId)
+        case .committed:
+            guard let receipt = inspection.receipt else { throw ResetDriveError.receiptMismatch(detail: "committed") }
+            var row = try currentRow(handle)
+            try Self.requireIdentity(receipt, row: row)
+            row.canonicalOperationId = receipt.operationId
+            row.finalReceipt = receipt.canonicalData()
+            row.phase = .finalReceipt
+            try store(row)
+            return true
+        }
+    }
+
+    private static func requireIdentity(_ receipt: ResetReceiptV1, row: ResetOperationRegistryRecordV2) throws {
+        guard receipt.accountUid == row.uid, receipt.expectedTaskGenerationEpoch == row.expectedTaskGenerationEpoch,
+              row.canonicalOperationId == nil || row.canonicalOperationId == receipt.operationId else { throw ResetDriveError.receiptMismatch(detail: "identity") }
+    }
+}
+
+// MARK: - Epoch-conflict recovery (§5; BlockedSnapshot.resetEpochConflict → recover_epoch)
+
+extension ResetOperationRegistry: ResetEpochConflictRecovering {
+    /// Accepts only the current conflict digest, the actionable (lowest) epoch,
+    /// and that row's exact phase and recovery action; the actionable row is
+    /// retained and the other current-UID rows are removed so the store is ready.
+    func recoverEpoch(recoveryStateDigest: String, expectedTaskGenerationEpoch: Int, expectedPhase: ResetRowPhase, action: ResetRecoveryAction) async -> RecoveryResult {
+        guard case let .blocked(snapshot) = await classification() else { return .ready }
+        guard case let .resetEpochConflict(digest, actionable, occupants) = snapshot else { return .blocked(snapshot) }
+        guard digest == recoveryStateDigest else { return .blocked(snapshot) }
+        guard expectedTaskGenerationEpoch == actionable,
+              let target = occupants.first(where: { $0.expectedTaskGenerationEpoch == actionable }),
+              target.phase == expectedPhase, target.recoveryAction == action else { return .unavailable(store: .reset) }
+        guard case let .signedIn(tuple) = await auth.currentSignedAuth() else { return .unavailable(store: .reset) }
+        do {
+            guard var envelope = try read() else { return .ready }
+            envelope.records.removeAll { $0.uid == tuple.uid && $0.expectedTaskGenerationEpoch != actionable }
+            try write(&envelope)
+            return .ready
+        } catch {
+            return .busy(store: .reset)
+        }
+    }
+}

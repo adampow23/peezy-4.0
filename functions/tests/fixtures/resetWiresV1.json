@@ -1,0 +1,346 @@
+{
+  "schemaVersion": 1,
+  "note": "Produced by functions/taskPlan.js handleTaskPlanRequest on the shared fake Firestore for uid phase2-rule-owner at expected epoch 1. Marker instants are ISO strings of the millisecond Timestamps.",
+  "uid": "phase2-rule-owner",
+  "expectedTaskGenerationEpoch": 1,
+  "canonicalOperationId": "rso1_5a574402654a97994c33d48c9ebe05e1d68cf458",
+  "requestFingerprint": "reset1_a41f56cdea866ba47958d46a6afd5c6d1355873d90ed6289c5f19bdc0cb01140",
+  "identityDigest": "d78db3fc27c22a028612c8f16533ff8088685ab8183cf683fd1d5f0da3eee86f",
+  "progressAwaiting": {
+    "schemaVersion": 1,
+    "kind": "reset_progress",
+    "operationId": "rso1_5a574402654a97994c33d48c9ebe05e1d68cf458",
+    "replayed": false,
+    "accountUid": "phase2-rule-owner",
+    "expectedTaskGenerationEpoch": 1,
+    "taskGenerationEpoch": 2,
+    "activeMoveEventId": "me1_184bc51e8d978e01be40aefbc3b1f367ca206e27",
+    "deletedCount": 4,
+    "deletedCounts": {
+      "tasks": 2,
+      "notificationIntents": 1,
+      "taskDeadlineEvidence": 0,
+      "confirmationSnapshots": 1
+    },
+    "state": "awaiting_local_reset"
+  },
+  "progressDeleting": {
+    "schemaVersion": 1,
+    "kind": "reset_progress",
+    "operationId": "rso1_5a574402654a97994c33d48c9ebe05e1d68cf458",
+    "replayed": false,
+    "accountUid": "phase2-rule-owner",
+    "expectedTaskGenerationEpoch": 1,
+    "taskGenerationEpoch": 2,
+    "activeMoveEventId": "me1_184bc51e8d978e01be40aefbc3b1f367ca206e27",
+    "deletedCount": 1,
+    "deletedCounts": {
+      "tasks": 1,
+      "notificationIntents": 0,
+      "taskDeadlineEvidence": 0,
+      "confirmationSnapshots": 0
+    },
+    "state": "deleting"
+  },
+  "final": {
+    "schemaVersion": 1,
+    "kind": "reset_final",
+    "operationId": "rso1_5a574402654a97994c33d48c9ebe05e1d68cf458",
+    "replayed": false,
+    "accountUid": "phase2-rule-owner",
+    "expectedTaskGenerationEpoch": 1,
+    "taskGenerationEpoch": 2,
+    "activeMoveEventId": "me1_184bc51e8d978e01be40aefbc3b1f367ca206e27",
+    "deletedCount": 4,
+    "deletedCounts": {
+      "tasks": 2,
+      "notificationIntents": 1,
+      "taskDeadlineEvidence": 0,
+      "confirmationSnapshots": 1
+    },
+    "state": "finalized"
+  },
+  "replayedFinal": {
+    "schemaVersion": 1,
+    "kind": "reset_final",
+    "operationId": "rso1_5a574402654a97994c33d48c9ebe05e1d68cf458",
+    "replayed": true,
+    "accountUid": "phase2-rule-owner",
+    "expectedTaskGenerationEpoch": 1,
+    "taskGenerationEpoch": 2,
+    "activeMoveEventId": "me1_184bc51e8d978e01be40aefbc3b1f367ca206e27",
+    "deletedCount": 4,
+    "deletedCounts": {
+      "tasks": 2,
+      "notificationIntents": 1,
+      "taskDeadlineEvidence": 0,
+      "confirmationSnapshots": 1
+    },
+    "state": "finalized"
+  },
+  "marker": {
+    "schemaVersion": 1,
+    "kind": "reset",
+    "operationId": "rso1_5a574402654a97994c33d48c9ebe05e1d68cf458",
+    "requestFingerprint": "reset1_a41f56cdea866ba47958d46a6afd5c6d1355873d90ed6289c5f19bdc0cb01140",
+    "state": "awaiting_local_reset",
+    "expectedTaskGenerationEpoch": 1,
+    "taskGenerationEpoch": 2,
+    "activeMoveEventId": "me1_184bc51e8d978e01be40aefbc3b1f367ca206e27",
+    "targetIndex": 4,
+    "deletedCounts": {
+      "tasks": 2,
+      "notificationIntents": 1,
+      "taskDeadlineEvidence": 0,
+      "confirmationSnapshots": 1
+    },
+    "deletedCount": 4,
+    "createdAt": "2026-09-06T12:00:00.000Z",
+    "updatedAt": "2026-09-06T12:00:00.000Z",
+    "awaitingLocalResetAt": "2026-09-06T12:00:00.000Z"
+  },
+  "inspection": {
+    "pending": {
+      "schemaVersion": 1,
+      "kind": "committed_operation_inspection",
+      "accountUid": "phase2-rule-owner",
+      "family": "RESET",
+      "authority": {
+        "operationId": "rso1_5a574402654a97994c33d48c9ebe05e1d68cf458"
+      },
+      "requestAuthority": {
+        "requestFingerprint": "reset1_a41f56cdea866ba47958d46a6afd5c6d1355873d90ed6289c5f19bdc0cb01140"
+      },
+      "identityDigest": "d78db3fc27c22a028612c8f16533ff8088685ab8183cf683fd1d5f0da3eee86f",
+      "outcome": "pending"
+    },
+    "absent": {
+      "schemaVersion": 1,
+      "kind": "committed_operation_inspection",
+      "accountUid": "phase2-rule-owner",
+      "family": "RESET",
+      "authority": {
+        "operationId": "rso1_4a5340623449381242208c0a0460d693c428c1ba"
+      },
+      "requestAuthority": {
+        "requestFingerprint": "reset1_48113c0d402e4e6752ae4ffcb63574bedcd0ed4e1e5ec4d86f7196e39ce46334"
+      },
+      "identityDigest": "61f026c512be4acf3f4a7bd62e3c67ce42a6452b83776df9cc8c67778de4372c",
+      "outcome": "absent"
+    },
+    "committed": {
+      "schemaVersion": 1,
+      "kind": "committed_operation_inspection",
+      "accountUid": "phase2-rule-owner",
+      "family": "RESET",
+      "authority": {
+        "operationId": "rso1_5a574402654a97994c33d48c9ebe05e1d68cf458"
+      },
+      "requestAuthority": {
+        "requestFingerprint": "reset1_a41f56cdea866ba47958d46a6afd5c6d1355873d90ed6289c5f19bdc0cb01140"
+      },
+      "identityDigest": "d78db3fc27c22a028612c8f16533ff8088685ab8183cf683fd1d5f0da3eee86f",
+      "outcome": "committed",
+      "receipt": {
+        "schemaVersion": 1,
+        "kind": "reset_final",
+        "operationId": "rso1_5a574402654a97994c33d48c9ebe05e1d68cf458",
+        "replayed": true,
+        "accountUid": "phase2-rule-owner",
+        "expectedTaskGenerationEpoch": 1,
+        "taskGenerationEpoch": 2,
+        "activeMoveEventId": "me1_184bc51e8d978e01be40aefbc3b1f367ca206e27",
+        "deletedCount": 4,
+        "deletedCounts": {
+          "tasks": 2,
+          "notificationIntents": 1,
+          "taskDeadlineEvidence": 0,
+          "confirmationSnapshots": 1
+        },
+        "state": "finalized"
+      }
+    }
+  },
+  "reconciliation": {
+    "notDispatched": {
+      "schemaVersion": 1,
+      "kind": "legacy_reset_reconciliation",
+      "outcome": "not_dispatched",
+      "migrationId": "rlm1_0a4d53a438873090f69e4255426310b0feb4cfd6",
+      "legacyOperationId": "20000000-0000-4000-8000-000000000001",
+      "migrationAlias": "rsa1_22222222-2222-4222-8222-222222222222",
+      "accountUid": "phase2-rule-owner",
+      "replayed": false
+    },
+    "finalizedCompat": {
+      "schemaVersion": 1,
+      "kind": "legacy_reset_reconciliation",
+      "outcome": "finalized_compat",
+      "migrationId": "rlm1_0a4d53a438873090f69e4255426310b0feb4cfd6",
+      "legacyOperationId": "20000000-0000-4000-8000-000000000001",
+      "migrationAlias": "rsa1_22222222-2222-4222-8222-222222222222",
+      "accountUid": "phase2-rule-owner",
+      "sourceState": "finalized",
+      "replayed": false,
+      "legacyFinalReceipt": {
+        "schemaVersion": 1,
+        "kind": "legacy_reset_final",
+        "operationId": "20000000-0000-4000-8000-000000000001",
+        "replayed": false,
+        "accountUid": "phase2-rule-owner",
+        "deletedCount": 3,
+        "state": "finalized"
+      }
+    },
+    "upgraded": {
+      "schemaVersion": 1,
+      "kind": "legacy_reset_reconciliation",
+      "outcome": "upgraded",
+      "migrationId": "rlm1_0a4d53a438873090f69e4255426310b0feb4cfd6",
+      "legacyOperationId": "20000000-0000-4000-8000-000000000001",
+      "migrationAlias": "rsa1_22222222-2222-4222-8222-222222222222",
+      "accountUid": "phase2-rule-owner",
+      "sourceState": "deleting",
+      "replayed": false,
+      "progressReceipt": {
+        "schemaVersion": 1,
+        "kind": "reset_progress",
+        "operationId": "rso1_5a574402654a97994c33d48c9ebe05e1d68cf458",
+        "replayed": false,
+        "accountUid": "phase2-rule-owner",
+        "expectedTaskGenerationEpoch": 1,
+        "taskGenerationEpoch": 2,
+        "activeMoveEventId": "me1_184bc51e8d978e01be40aefbc3b1f367ca206e27",
+        "deletedCount": 3,
+        "deletedCounts": {
+          "tasks": 3,
+          "notificationIntents": 0,
+          "taskDeadlineEvidence": 0,
+          "confirmationSnapshots": 0
+        },
+        "state": "deleting"
+      }
+    },
+    "phase2Active": {
+      "schemaVersion": 1,
+      "kind": "legacy_reset_reconciliation",
+      "outcome": "phase2_active",
+      "migrationId": "rlm1_0a4d53a438873090f69e4255426310b0feb4cfd6",
+      "legacyOperationId": "20000000-0000-4000-8000-000000000001",
+      "migrationAlias": "rsa1_22222222-2222-4222-8222-222222222222",
+      "accountUid": "phase2-rule-owner",
+      "replayed": false,
+      "progressReceipt": {
+        "schemaVersion": 1,
+        "kind": "reset_progress",
+        "operationId": "rso1_5a574402654a97994c33d48c9ebe05e1d68cf458",
+        "replayed": true,
+        "accountUid": "phase2-rule-owner",
+        "expectedTaskGenerationEpoch": 1,
+        "taskGenerationEpoch": 2,
+        "activeMoveEventId": "me1_184bc51e8d978e01be40aefbc3b1f367ca206e27",
+        "deletedCount": 1,
+        "deletedCounts": {
+          "tasks": 1,
+          "notificationIntents": 0,
+          "taskDeadlineEvidence": 0,
+          "confirmationSnapshots": 0
+        },
+        "state": "awaiting_local_reset"
+      }
+    }
+  },
+  "parity": {
+    "uid": "phase2-rule-owner",
+    "legacyOperationId": "20000000-0000-4000-8000-000000000001",
+    "migrationId": "rlm1_0a4d53a438873090f69e4255426310b0feb4cfd6",
+    "requestFingerprint": "rlmreq1_0a4d53a438873090f69e4255426310b0feb4cfd63eabd6ce68c851ce827ad8e1"
+  },
+  "errors": [
+    {
+      "code": "unauthenticated",
+      "details": {
+        "schemaVersion": 1,
+        "reason": "AUTH_REQUIRED"
+      }
+    },
+    {
+      "code": "invalid-argument",
+      "details": {
+        "schemaVersion": 1,
+        "reason": "REQUEST_INVALID",
+        "field": "migrationAlias"
+      }
+    },
+    {
+      "code": "failed-precondition",
+      "details": {
+        "schemaVersion": 1,
+        "reason": "OPERATION_REUSED",
+        "operationId": "rso1_5a574402654a97994c33d48c9ebe05e1d68cf458"
+      }
+    },
+    {
+      "code": "failed-precondition",
+      "details": {
+        "schemaVersion": 1,
+        "reason": "LEGACY_RESET_CORRUPT",
+        "context": "reconcile",
+        "legacyOperationId": "20000000-0000-4000-8000-000000000001",
+        "recordClass": "deleting",
+        "markerClass": "absent"
+      }
+    },
+    {
+      "code": "failed-precondition",
+      "details": {
+        "schemaVersion": 1,
+        "reason": "LEGACY_RESET_CORRUPT",
+        "context": "inspect",
+        "recordClass": "phase2",
+        "markerClass": "malformed"
+      }
+    },
+    {
+      "code": "failed-precondition",
+      "details": {
+        "schemaVersion": 1,
+        "reason": "LEGACY_RESET_MIGRATION_REQUIRED",
+        "legacyOperationId": "20000000-0000-4000-8000-000000000001"
+      }
+    },
+    {
+      "code": "failed-precondition",
+      "details": {
+        "schemaVersion": 1,
+        "reason": "LEGACY_RESET_ALIAS_OCCUPIED",
+        "legacyOperationId": "20000000-0000-4000-8000-000000000001",
+        "migrationAlias": "rsa1_22222222-2222-4222-8222-222222222222"
+      }
+    },
+    {
+      "code": "failed-precondition",
+      "details": {
+        "schemaVersion": 1,
+        "reason": "CLIENT_UPGRADE_REQUIRED",
+        "requiredProtocol": "phase2"
+      }
+    },
+    {
+      "code": "failed-precondition",
+      "details": {
+        "schemaVersion": 1,
+        "reason": "STALE_STATE"
+      }
+    },
+    {
+      "code": "failed-precondition",
+      "details": {
+        "schemaVersion": 1,
+        "reason": "RESET_ACTIVE",
+        "operationId": "rso1_5a574402654a97994c33d48c9ebe05e1d68cf458",
+        "expectedTaskGenerationEpoch": 1
+      }
+    }
+  ]
+}

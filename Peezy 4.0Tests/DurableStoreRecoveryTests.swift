@@ -841,6 +841,381 @@ struct DurableStoreRecoveryTests {
         #expect(read.data()?["name"] as? String == "S1")
         try FirebaseEmulator.signOut()
     }
+
+    // MARK: - S3 reset client (briefs/S3_BRIEF.md; C2.8 wires, Reconciled 9 marker, §5 drive)
+    // Decoder mirrors read the same fixture the Node suite freezes through the real handler:
+    // functions/tests/fixtures/resetWiresV1.json.
+
+    @Test func resetReceiptsDecodeExactlyAgainstTheFrozenWires() throws {
+        let wires = try frozenResetWires()
+        let awaiting = try ResetReceiptV1.decode(wires.map("progressAwaiting"))
+        #expect(awaiting.kind == .progress && awaiting.state == .awaitingLocalReset && awaiting.replayed == false)
+        #expect(awaiting.operationId == wires.string("canonicalOperationId"))
+        #expect(awaiting.taskGenerationEpoch == awaiting.expectedTaskGenerationEpoch + 1)
+        #expect(awaiting.deletedCounts.sum == awaiting.deletedCount)
+        let deleting = try ResetReceiptV1.decode(wires.map("progressDeleting"))
+        #expect(deleting.state == .deleting)
+        let final = try ResetReceiptV1.decode(wires.map("final"))
+        #expect(final.kind == .final && final.state == .finalized && final.replayed == false)
+        let replayed = try ResetReceiptV1.decode(wires.map("replayedFinal"))
+        #expect(replayed.replayed == true && replayed.operationId == final.operationId)
+        // Round trip through the row bytes.
+        let bytes = try #require(awaiting.canonicalData())
+        #expect(ResetReceiptV1.decode(data: bytes) == awaiting)
+        // Rejections: surplus, missing, coherence, relation, sum, booleans.
+        var surplus = wires.map("final"); surplus["extra"] = 1
+        #expect(throws: ResetRemoteError.protocolAmbiguity) { _ = try ResetReceiptV1.decode(surplus) }
+        var missing = wires.map("final"); missing.removeValue(forKey: "activeMoveEventId")
+        #expect(throws: ResetRemoteError.protocolAmbiguity) { _ = try ResetReceiptV1.decode(missing) }
+        var incoherent = wires.map("final"); incoherent["state"] = "deleting"
+        #expect(throws: ResetRemoteError.protocolAmbiguity) { _ = try ResetReceiptV1.decode(incoherent) }
+        var relation = wires.map("final"); relation["taskGenerationEpoch"] = 3
+        #expect(throws: ResetRemoteError.protocolAmbiguity) { _ = try ResetReceiptV1.decode(relation) }
+        var sum = wires.map("final"); sum["deletedCount"] = 5
+        #expect(throws: ResetRemoteError.protocolAmbiguity) { _ = try ResetReceiptV1.decode(sum) }
+        var notBool = wires.map("final"); notBool["replayed"] = 1
+        #expect(throws: ResetRemoteError.protocolAmbiguity) { _ = try ResetReceiptV1.decode(notBool) }
+        var badId = wires.map("final"); badId["operationId"] = "rsa1_11111111-1111-4111-8111-111111111111"
+        #expect(throws: ResetRemoteError.protocolAmbiguity) { _ = try ResetReceiptV1.decode(badId) }
+    }
+
+    @Test func resetInspectionDecodesAbsentPendingCommittedAndRejectsMisplacedReceipts() throws {
+        let wires = try frozenResetWires()
+        let inspection = wires.map("inspection")
+        let pending = try ResetInspectionV1.decode(try #require(inspection["pending"] as? [String: Any]))
+        #expect(pending.outcome == .pending && pending.receipt == nil && pending.operationId == wires.string("canonicalOperationId"))
+        #expect(pending.requestFingerprint == TaskPlanService.ResetTransport.requestFingerprint(expectedTaskGenerationEpoch: 1))
+        #expect(pending.identityDigest == TaskPlanService.ResetTransport.identityDigest(uid: wires.string("uid"), expectedTaskGenerationEpoch: 1))
+        let absent = try ResetInspectionV1.decode(try #require(inspection["absent"] as? [String: Any]))
+        #expect(absent.outcome == .absent && absent.receipt == nil)
+        let committed = try ResetInspectionV1.decode(try #require(inspection["committed"] as? [String: Any]))
+        #expect(committed.outcome == .committed && committed.receipt?.replayed == true && committed.receipt?.kind == .final)
+        var pendingWithReceipt = try #require(inspection["pending"] as? [String: Any]); pendingWithReceipt["receipt"] = wires.map("final")
+        #expect(throws: ResetRemoteError.protocolAmbiguity) { _ = try ResetInspectionV1.decode(pendingWithReceipt) }
+        var committedNoReceipt = try #require(inspection["committed"] as? [String: Any]); committedNoReceipt.removeValue(forKey: "receipt")
+        #expect(throws: ResetRemoteError.protocolAmbiguity) { _ = try ResetInspectionV1.decode(committedNoReceipt) }
+        var committedFresh = try #require(inspection["committed"] as? [String: Any]); committedFresh["receipt"] = wires.map("final") // replayed:false
+        #expect(throws: ResetRemoteError.protocolAmbiguity) { _ = try ResetInspectionV1.decode(committedFresh) }
+        var wrongFamily = try #require(inspection["pending"] as? [String: Any]); wrongFamily["family"] = "WORKFLOW"
+        #expect(throws: ResetRemoteError.protocolAmbiguity) { _ = try ResetInspectionV1.decode(wrongFamily) }
+    }
+
+    @Test func legacyReconciliationDecodesTheFourOutcomesWithFrozenInnerReplayFlagsAndParityDerivations() throws {
+        let wires = try frozenResetWires()
+        let reconciliation = wires.map("reconciliation")
+        let parity = wires.map("parity")
+        let uid = try #require(parity["uid"] as? String)
+        let legacyId = try #require(parity["legacyOperationId"] as? String)
+        #expect(LegacyResetReconciliationV1.migrationId(uid: uid, legacyOperationId: legacyId) == "rlm1_0a4d53a438873090f69e4255426310b0feb4cfd6")
+        #expect(LegacyResetReconciliationV1.requestFingerprint(uid: uid, legacyOperationId: legacyId) == "rlmreq1_0a4d53a438873090f69e4255426310b0feb4cfd63eabd6ce68c851ce827ad8e1")
+        guard case let .notDispatched(base) = try LegacyResetReconciliationV1.decode(try #require(reconciliation["notDispatched"] as? [String: Any])) else { Issue.record("not_dispatched"); return }
+        #expect(base.migrationId == "rlm1_0a4d53a438873090f69e4255426310b0feb4cfd6" && base.replayed == false)
+        guard case let .upgraded(_, sourceState, progress) = try LegacyResetReconciliationV1.decode(try #require(reconciliation["upgraded"] as? [String: Any])) else { Issue.record("upgraded"); return }
+        #expect(sourceState == "deleting" && progress.replayed == false && progress.state == .deleting)
+        guard case let .phase2Active(_, active) = try LegacyResetReconciliationV1.decode(try #require(reconciliation["phase2Active"] as? [String: Any])) else { Issue.record("phase2_active"); return }
+        #expect(active.replayed == true)
+        guard case let .finalizedCompat(_, legacyFinal) = try LegacyResetReconciliationV1.decode(try #require(reconciliation["finalizedCompat"] as? [String: Any])) else { Issue.record("finalized_compat"); return }
+        #expect(legacyFinal.deletedCount == 3 && legacyFinal.operationId == legacyId)
+        // Opposite inner replay flags are protocol errors (§6.2:651).
+        var upgradedReplayed = try #require(reconciliation["upgraded"] as? [String: Any])
+        var innerUp = try #require(upgradedReplayed["progressReceipt"] as? [String: Any]); innerUp["replayed"] = true; upgradedReplayed["progressReceipt"] = innerUp
+        #expect(throws: ResetRemoteError.protocolAmbiguity) { _ = try LegacyResetReconciliationV1.decode(upgradedReplayed) }
+        var activeFresh = try #require(reconciliation["phase2Active"] as? [String: Any])
+        var innerActive = try #require(activeFresh["progressReceipt"] as? [String: Any]); innerActive["replayed"] = false; activeFresh["progressReceipt"] = innerActive
+        #expect(throws: ResetRemoteError.protocolAmbiguity) { _ = try LegacyResetReconciliationV1.decode(activeFresh) }
+        var surplus = try #require(reconciliation["notDispatched"] as? [String: Any]); surplus["sourceState"] = "finalized"
+        #expect(throws: ResetRemoteError.protocolAmbiguity) { _ = try LegacyResetReconciliationV1.decode(surplus) }
+    }
+
+    @Test func resetTransportSendsExactRequestsAndMapsTheErrorTable() async throws {
+        let wires = try frozenResetWires()
+        let recorder = DeletionCallableRecorder(result: .success(wires.map("progressAwaiting")))
+        let transport = TaskPlanService.ResetTransport(callable: recorder.call)
+        _ = try await transport.reset(.resetAllTasks, alias: "rsa1_11111111-1111-4111-8111-111111111111", expectedTaskGenerationEpoch: 1)
+        let first = try #require(recorder.calls.first)
+        #expect(first.name == "changeTaskPlan")
+        #expect(first.payload.keys.sorted() == ["action", "expectedTaskGenerationEpoch", "operationId", "reason"])
+        #expect(first.payload["action"] as? String == "resetAllTasks" && first.payload["reason"] as? String == "retake_assessment" && first.payload["expectedTaskGenerationEpoch"] as? Int == 1)
+
+        let inspecting = DeletionCallableRecorder(result: .success(try #require(wires.map("inspection")["pending"] as? [String: Any])))
+        let inspection = try await TaskPlanService.ResetTransport(callable: inspecting.call).inspectReset(uid: wires.string("uid"), canonicalOperationId: wires.string("canonicalOperationId"), expectedTaskGenerationEpoch: 1)
+        #expect(inspection.outcome == .pending)
+        let request = try #require(inspecting.calls.first?.payload)
+        #expect(request["action"] as? String == "inspectCommittedOperation" && request["family"] as? String == "RESET")
+        #expect((request["authority"] as? [String: String]) == ["operationId": wires.string("canonicalOperationId")])
+        #expect((request["requestAuthority"] as? [String: String]) == ["requestFingerprint": wires.string("requestFingerprint")])
+        #expect(request["identityDigest"] as? String == wires.string("identityDigest"))
+        // A wire for another identity is ambiguity even when well-formed.
+        let foreign = DeletionCallableRecorder(result: .success(try #require(wires.map("inspection")["absent"] as? [String: Any])))
+        await #expect(throws: ResetRemoteError.protocolAmbiguity) {
+            _ = try await TaskPlanService.ResetTransport(callable: foreign.call).inspectReset(uid: wires.string("uid"), canonicalOperationId: wires.string("canonicalOperationId"), expectedTaskGenerationEpoch: 1)
+        }
+
+        func error(_ details: [String: Any]?) -> NSError {
+            NSError(domain: "com.firebase.functions", code: 9, userInfo: details.map { ["details": $0] } ?? [:])
+        }
+        let canonical = wires.string("canonicalOperationId")
+        let cases: [(NSError, ResetRemoteError)] = [
+            (error(["schemaVersion": 1, "reason": "AUTH_REQUIRED"]), .authRequired),
+            (error(["schemaVersion": 1, "reason": "REQUEST_INVALID", "field": "migrationAlias"]), .requestInvalid(field: "migrationAlias")),
+            (error(["schemaVersion": 1, "reason": "OPERATION_REUSED", "operationId": canonical]), .operationReused(operationId: canonical)),
+            (error(["schemaVersion": 1, "reason": "LEGACY_RESET_CORRUPT", "context": "reconcile", "legacyOperationId": "L", "recordClass": "deleting", "markerClass": "absent"]), .legacyResetCorrupt(context: "reconcile", legacyOperationId: "L", recordClass: "deleting", markerClass: "absent")),
+            (error(["schemaVersion": 1, "reason": "LEGACY_RESET_CORRUPT", "context": "inspect", "recordClass": "phase2", "markerClass": "malformed"]), .legacyResetCorrupt(context: "inspect", legacyOperationId: nil, recordClass: "phase2", markerClass: "malformed")),
+            (error(["schemaVersion": 1, "reason": "LEGACY_RESET_MIGRATION_REQUIRED", "legacyOperationId": "L"]), .legacyResetMigrationRequired(legacyOperationId: "L")),
+            (error(["schemaVersion": 1, "reason": "LEGACY_RESET_ALIAS_OCCUPIED", "legacyOperationId": "L", "migrationAlias": "rsa1_x"]), .legacyResetAliasOccupied(legacyOperationId: "L", migrationAlias: "rsa1_x")),
+            (error(["schemaVersion": 1, "reason": "CLIENT_UPGRADE_REQUIRED", "requiredProtocol": "phase2"]), .clientUpgradeRequired(requiredProtocol: "phase2")),
+            (error(["schemaVersion": 1, "reason": "STALE_STATE"]), .staleState),
+            (error(["schemaVersion": 1, "reason": "RESET_ACTIVE", "operationId": canonical, "expectedTaskGenerationEpoch": 1]), .resetActive(operationId: canonical, expectedTaskGenerationEpoch: 1)),
+            (error(["schemaVersion": 1, "reason": "RESET_ACTIVE", "operationId": canonical]), .protocolAmbiguity),
+            (error(["schemaVersion": 1, "reason": "SOMETHING_ELSE"]), .protocolAmbiguity),
+            (error(["reason": "STALE_STATE"]), .protocolAmbiguity),
+            (NSError(domain: "com.firebase.functions", code: 14, userInfo: [:]), .transport), // detail-less unavailable
+            (NSError(domain: NSURLErrorDomain, code: NSURLErrorNotConnectedToInternet), .transport)
+        ]
+        for (thrown, expected) in cases {
+            let failing = DeletionCallableRecorder(result: .failure(thrown))
+            await #expect(throws: expected) {
+                _ = try await TaskPlanService.ResetTransport(callable: failing.call).reset(.finalizeTaskReset, alias: "rsa1_11111111-1111-4111-8111-111111111111", expectedTaskGenerationEpoch: 1)
+            }
+        }
+    }
+
+    @Test func cleanupAuthorityIsConstructedOnlyFromAPendingInspectionAndAnAwaitingReceipt() throws {
+        let wires = try frozenResetWires()
+        let inspection = wires.map("inspection")
+        let pending = try ResetInspectionV1.decode(try #require(inspection["pending"] as? [String: Any]))
+        let awaiting = try ResetReceiptV1.decode(wires.map("progressAwaiting"))
+        let authority = try #require(ResetLocalCleanupAuthorityV1(inspection: pending, progress: awaiting))
+        #expect(authority.accountUid == wires.string("uid") && authority.operationId == awaiting.operationId && authority.taskGenerationEpoch == 2 && authority.expectedTaskGenerationEpoch == 1)
+        let deleting = try ResetReceiptV1.decode(wires.map("progressDeleting"))
+        #expect(ResetLocalCleanupAuthorityV1(inspection: pending, progress: deleting) == nil)
+        let committed = try ResetInspectionV1.decode(try #require(inspection["committed"] as? [String: Any]))
+        #expect(ResetLocalCleanupAuthorityV1(inspection: committed, progress: awaiting) == nil)
+        let absent = try ResetInspectionV1.decode(try #require(inspection["absent"] as? [String: Any]))
+        #expect(ResetLocalCleanupAuthorityV1(inspection: absent, progress: awaiting) == nil)
+        let final = try ResetReceiptV1.decode(wires.map("final"))
+        #expect(ResetLocalCleanupAuthorityV1(inspection: pending, progress: final) == nil)
+    }
+
+    @Test func resetMarkerMatchesOnlyTheExactAwaitingProjection() throws {
+        let wires = try frozenResetWires()
+        let pendingWire = try #require(wires.map("inspection")["pending"] as? [String: Any])
+        let pending = try ResetInspectionV1.decode(pendingWire)
+        let progress = try ResetReceiptV1.decode(wires.map("progressAwaiting"))
+        let authority = try #require(ResetLocalCleanupAuthorityV1(inspection: pending, progress: progress))
+        let marker = markerFixture(wires)
+        let root: [String: Any] = ["taskGenerationEpoch": 2, "taskReset": marker]
+        #expect(ResetMarkerV1.matchesAwaiting(root, authority: authority))
+        #expect(ResetMarkerV1.matchesAwaiting(nil, authority: authority) == false)
+        #expect(ResetMarkerV1.matchesAwaiting(["taskGenerationEpoch": 2], authority: authority) == false)
+        #expect(ResetMarkerV1.matchesAwaiting(["taskGenerationEpoch": 1, "taskReset": marker], authority: authority) == false)
+        var deleting = marker; deleting["state"] = "deleting"; deleting["targetIndex"] = 2
+        #expect(ResetMarkerV1.matchesAwaiting(["taskGenerationEpoch": 2, "taskReset": deleting], authority: authority) == false)
+        var leased = marker; leased["lease"] = ["ownerToken": "11111111-1111-4111-8111-111111111111", "expiresAt": Timestamp(date: Date())]
+        #expect(ResetMarkerV1.matchesAwaiting(["taskGenerationEpoch": 2, "taskReset": leased], authority: authority) == false)
+        var cursor = marker; cursor["pageAfterPath"] = "users/x/tasks/a"
+        #expect(ResetMarkerV1.matchesAwaiting(["taskGenerationEpoch": 2, "taskReset": cursor], authority: authority) == false)
+        var otherOperation = marker; otherOperation["operationId"] = "rso1_" + String(repeating: "0", count: 40)
+        #expect(ResetMarkerV1.matchesAwaiting(["taskGenerationEpoch": 2, "taskReset": otherOperation], authority: authority) == false)
+        var misordered = marker; misordered["awaitingLocalResetAt"] = Timestamp(date: Date(timeIntervalSince1970: 1_700_000_000))
+        #expect(ResetMarkerV1.matchesAwaiting(["taskGenerationEpoch": 2, "taskReset": misordered], authority: authority) == false)
+        var stringTimes = marker; stringTimes["createdAt"] = "2026-09-06T12:00:00.000Z"
+        #expect(ResetMarkerV1.matchesAwaiting(["taskGenerationEpoch": 2, "taskReset": stringTimes], authority: authority) == false)
+    }
+
+    @Test func driveRecordsTheExactTraceAndRetiresTheRow() async throws {
+        let wires = try frozenResetWires()
+        let (registry, handle) = try await preparedRegistry()
+        let remote = ScriptedResetRemote(wires: wires)
+        let trace = DriveTrace()
+        await remote.attach(trace, registry: registry, handle: handle)
+        let outcome = try await registry.drive(handle: handle, remote: remote, cleanup: trace.callbacks())
+        #expect(await trace.order == ["resetDispatch", "inspect", "deleteAssessments", "inspect", "deleteUserKnowledge", "inspect", "resetDose", "inspect", "finalize"])
+        #expect(outcome.replayed == false && outcome.finalReceipt.kind == .final)
+        #expect(await registry.snapshot().records.isEmpty)
+        let authorities = await trace.authorities
+        #expect(authorities.count == 3 && Set(authorities.map(\.operationId)).count == 1 && authorities[0].taskGenerationEpoch == 2)
+        #expect(await remote.dispatchPhases == [ResetRowPhase.resetDispatched, .finalizeDispatched], "each remote dispatch is durable before its await")
+    }
+
+    @Test func driveShortCircuitsOnACommittedInspectionWithZeroNotification() async throws {
+        let wires = try frozenResetWires()
+        let (registry, handle) = try await preparedRegistry()
+        let remote = ScriptedResetRemote(wires: wires)
+        await remote.setCommittedAtInspection(2) // device B finalized at epoch r while A was paused before its second callback
+        let trace = DriveTrace()
+        await remote.attach(trace, registry: registry, handle: handle)
+        let outcome = try await registry.drive(handle: handle, remote: remote, cleanup: trace.callbacks())
+        #expect(await trace.order == ["resetDispatch", "inspect", "deleteAssessments", "inspect"])
+        #expect(outcome.replayed == true && outcome.finalReceipt.replayed == true)
+        #expect(await registry.snapshot().records.isEmpty)
+        #expect(await remote.finalizeCalls == 0)
+    }
+
+    @Test func driveResumesAfterACallbackFailureAndAdoptsACommittedRecordOnResume() async throws {
+        let wires = try frozenResetWires()
+        let (registry, handle) = try await preparedRegistry()
+        let remote = ScriptedResetRemote(wires: wires)
+        let trace = DriveTrace()
+        await remote.attach(trace, registry: registry, handle: handle)
+        await trace.setFailing("deleteUserKnowledge")
+        await #expect(throws: DriveTraceError.failed) { _ = try await registry.drive(handle: handle, remote: remote, cleanup: trace.callbacks()) }
+        let row = try #require(await registry.snapshot().records.first)
+        #expect(row.phase == .resetReceiptAwaitingLocalReset && row.recoveryAction == .runLocalCleanup && row.canonicalOperationId == wires.string("canonicalOperationId"))
+        await trace.setFailing(nil)
+        await trace.clear()
+        let resumed = try await registry.drive(handle: handle, remote: remote, cleanup: trace.callbacks())
+        #expect(await trace.order == ["inspect", "deleteAssessments", "inspect", "deleteUserKnowledge", "inspect", "resetDose", "inspect", "finalize"])
+        #expect(resumed.replayed == false)
+        // Resume after the other device finalized: the first inspection is committed, no callback runs.
+        let (registry2, handle2) = try await preparedRegistry()
+        let remote2 = ScriptedResetRemote(wires: wires)
+        let trace2 = DriveTrace()
+        await remote2.attach(trace2, registry: registry2, handle: handle2)
+        await trace2.setFailing("deleteAssessments")
+        await #expect(throws: DriveTraceError.failed) { _ = try await registry2.drive(handle: handle2, remote: remote2, cleanup: trace2.callbacks()) }
+        await remote2.setCommittedAtInspection(2) // the failed first drive already consumed inspection 1
+        await trace2.setFailing(nil)
+        await trace2.clear()
+        let adopted = try await registry2.drive(handle: handle2, remote: remote2, cleanup: trace2.callbacks())
+        #expect(await trace2.order == ["inspect"] && adopted.replayed == true)
+        #expect(await registry2.snapshot().records.isEmpty)
+    }
+
+    @Test func driveResumesServerDeletionWhileTheReceiptIsDeletingAndStopsOnAnAbsentRecord() async throws {
+        let wires = try frozenResetWires()
+        let (registry, handle) = try await preparedRegistry()
+        let remote = ScriptedResetRemote(wires: wires)
+        await remote.setDeletingFirst()
+        let trace = DriveTrace()
+        await remote.attach(trace, registry: registry, handle: handle)
+        let outcome = try await registry.drive(handle: handle, remote: remote, cleanup: trace.callbacks())
+        #expect(await trace.order.prefix(3) == ["resetDispatch", "resetDispatch", "inspect"])
+        #expect(outcome.replayed == false)
+        let (registry2, handle2) = try await preparedRegistry()
+        let remote2 = ScriptedResetRemote(wires: wires)
+        await remote2.setAbsentAtInspection(1)
+        let trace2 = DriveTrace()
+        await remote2.attach(trace2, registry: registry2, handle: handle2)
+        await #expect(throws: ResetDriveError.inspectionAbsent(operationId: wires.string("canonicalOperationId"))) {
+            _ = try await registry2.drive(handle: handle2, remote: remote2, cleanup: trace2.callbacks())
+        }
+        let row = try #require(await registry2.snapshot().records.first)
+        #expect(row.phase == .resetReceiptAwaitingLocalReset)
+    }
+
+    @Test func recoverEpochAcceptsOnlyTheActionableEpochWithItsExactPhaseAndAction() async throws {
+        let directory = try temporaryDirectory()
+        // Rows in createdAt order (the envelope's sorted invariant): B, then A at epoch 3, then A at epoch 1.
+        try writeEnvelopeRows(directory, rows: [(uid: "B", epoch: 0, createdAt: "2026-09-06T09:00:00.000Z"), (uid: "A", epoch: 3, createdAt: "2026-09-06T10:00:00.000Z"), (uid: "A", epoch: 1, createdAt: "2026-09-06T11:00:00.000Z")])
+        let registry = ResetOperationRegistry(directory: directory, clock: ResetClockStub(), auth: SignedAuthStub(.signedIn(tupleA)), epochAuthority: EpochStub(epoch: 0))
+        guard case let .blocked(.resetEpochConflict(digest, actionable, _)) = await registry.classification() else { Issue.record("expected conflict"); return }
+        #expect(actionable == 1)
+        #expect(await registry.recoverEpoch(recoveryStateDigest: "stale", expectedTaskGenerationEpoch: 1, expectedPhase: .prepared, action: .retryReset) == .blocked(.resetEpochConflict(recoveryStateDigest: digest, actionableExpectedTaskGenerationEpoch: 1, occupants: [ResetEpochOccupant(expectedTaskGenerationEpoch: 3, phase: .prepared, recoveryAction: .retryReset), ResetEpochOccupant(expectedTaskGenerationEpoch: 1, phase: .prepared, recoveryAction: .retryReset)])))
+        #expect(await registry.recoverEpoch(recoveryStateDigest: digest, expectedTaskGenerationEpoch: 3, expectedPhase: .prepared, action: .retryReset) == .unavailable(store: .reset))
+        #expect(await registry.recoverEpoch(recoveryStateDigest: digest, expectedTaskGenerationEpoch: 1, expectedPhase: .finalReceipt, action: .retryReset) == .unavailable(store: .reset))
+        #expect(await registry.recoverEpoch(recoveryStateDigest: digest, expectedTaskGenerationEpoch: 1, expectedPhase: .prepared, action: .applyFinal) == .unavailable(store: .reset))
+        #expect(await registry.recoverEpoch(recoveryStateDigest: digest, expectedTaskGenerationEpoch: 1, expectedPhase: .prepared, action: .retryReset) == .ready)
+        let remaining = await registry.snapshot().records
+        #expect(remaining.map { "\($0.uid)|\($0.expectedTaskGenerationEpoch)" }.sorted() == ["A|1", "B|0"])
+        #expect(await registry.classification() == .ready)
+        #expect(await registry.recoverEpoch(recoveryStateDigest: digest, expectedTaskGenerationEpoch: 1, expectedPhase: .prepared, action: .retryReset) == .ready)
+    }
+
+    @Test func dailyDoseCleanupWritesTheEmptyFloorAtTheResultEpochAndStaleWritersDrift() async throws {
+        let defaults = try isolatedDefaults()
+        let store = DailyDoseLocalStore(defaults: defaults)
+        _ = await store.ensure(uid: "A", taskGenerationEpoch: 1)
+        guard case .committed = await store.mutate(uid: "A", expectedTaskGenerationEpoch: 1, expectedRevision: 0, { $0.completedCount = 4; $0.lastDate = "2026-09-05" }) else { Issue.record("seed"); return }
+        let cleaned = await store.cleanup(uid: "A", taskGenerationEpoch: 2)
+        let floor = DailyDoseLocalStateV1(taskGenerationEpoch: 2, revision: 0, completedCount: 0, lastDate: nil, firstLaunchDate: nil)
+        #expect(cleaned == .cleaned(floor))
+        #expect(await store.load(uid: "A") == .present(floor))
+        guard case .drift = await store.mutate(uid: "A", expectedTaskGenerationEpoch: 1, expectedRevision: 1, { $0.completedCount = 9 }) else { Issue.record("stale writer must drift"); return }
+        #expect(await store.load(uid: "A") == .present(floor))
+        let malformed = Data(#"{"schemaVersion":1,"taskGenerationEpoch":-1}"#.utf8)
+        defaults.set(malformed, forKey: "peezy.M.dailyDose.v2")
+        #expect(await store.cleanup(uid: "M", taskGenerationEpoch: 2) == .malformed)
+        #expect(defaults.data(forKey: "peezy.M.dailyDose.v2") == malformed)
+    }
+
+    @Test func dailyDoseLegacyBridgeWritesV2BeforeRemovingLegacyKeysAndIsCrashSafe() async throws {
+        let defaults = try isolatedDefaults()
+        let store = DailyDoseLocalStore(defaults: defaults)
+        #expect(await store.bridgeLegacy(uid: "A") == .none)
+        defaults.set(3, forKey: "peezy.A.dailyDose.completedCount")
+        defaults.set("2026-09-05", forKey: "peezy.A.dailyDose.lastDate")
+        defaults.set("not a date", forKey: "peezy.A.dailyDose.firstLaunchDate")
+        let bridged = DailyDoseLocalStateV1(taskGenerationEpoch: 0, revision: 0, completedCount: 3, lastDate: "2026-09-05", firstLaunchDate: nil)
+        #expect(await store.bridgeLegacy(uid: "A") == .bridged(bridged))
+        #expect(await store.load(uid: "A") == .present(bridged))
+        #expect(DailyDoseLocalStore.legacyKeys(uid: "A").allSatisfy { defaults.object(forKey: $0) == nil })
+        // Crash between the v2 write and the key removal: v2 present with leftover keys; the next call removes them.
+        defaults.set(7, forKey: "peezy.A.dailyDose.completedCount")
+        #expect(await store.bridgeLegacy(uid: "A") == .present)
+        #expect(defaults.object(forKey: "peezy.A.dailyDose.completedCount") == nil)
+        #expect(await store.load(uid: "A") == .present(bridged))
+        // Malformed v2 preserves everything.
+        defaults.set(Data(#"{"schemaVersion":1}"#.utf8), forKey: "peezy.B.dailyDose.v2")
+        defaults.set(2, forKey: "peezy.B.dailyDose.completedCount")
+        #expect(await store.bridgeLegacy(uid: "B") == .malformed)
+        #expect(defaults.integer(forKey: "peezy.B.dailyDose.completedCount") == 2)
+    }
+
+    @Test(.enabled(if: FirebaseEmulator.isConfigured))
+    func assessmentKnowledgeAndDoseCleanupsRequireTheExactAwaitingMarker() async throws {
+        let wires = try frozenResetWires()
+        let firestore = try FirebaseEmulator.firestore()
+        try await FirebaseEmulator.clearFirestore()
+        let uid = try await FirebaseEmulator.signInFreshUser()
+        defer { try? FirebaseEmulator.signOut() }
+        // Rebase the frozen wires onto this UID: identity digests and canonical IDs are UID-bound.
+        let e = 1
+        let canonical = "rso1_" + String(TaskCanonicalV1.sha256Hex(["account_uid": uid, "task_generation_epoch": e + 1]).prefix(40))
+        let moveEvent = "me1_" + String(TaskCanonicalV1.sha256Hex(["uid": uid, "new_task_generation_epoch": e + 1, "reset_operation_id": canonical]).prefix(40))
+        var progress = wires.map("progressAwaiting"); progress["accountUid"] = uid; progress["operationId"] = canonical; progress["activeMoveEventId"] = moveEvent
+        var pending = try #require(wires.map("inspection")["pending"] as? [String: Any]); pending["accountUid"] = uid; pending["authority"] = ["operationId": canonical]
+        pending["identityDigest"] = TaskPlanService.ResetTransport.identityDigest(uid: uid, expectedTaskGenerationEpoch: e)
+        let pendingDecoded = try ResetInspectionV1.decode(pending)
+        let progressDecoded = try ResetReceiptV1.decode(progress)
+        let authority = try #require(ResetLocalCleanupAuthorityV1(inspection: pendingDecoded, progress: progressDecoded))
+        var marker = markerFixture(wires); marker["operationId"] = canonical; marker["activeMoveEventId"] = moveEvent
+        let now = Date()
+        for key in ["createdAt", "updatedAt", "awaitingLocalResetAt"] { marker[key] = now }
+        // JSON numbers arrive as NSNumber, which the REST seeder would encode as booleans; seed Swift Ints.
+        try await FirebaseEmulator.adminSet("users/\(uid)", ["name": "R", "taskGenerationEpoch": 2, "taskReset": restIntegers(marker), "dailyDose": ["schema_version": 1, "task_generation_epoch": 2, "date": "2026-09-06", "taskIds": ["t"]]])
+        try await FirebaseEmulator.adminSet("users/\(uid)/user_assessments/a1", ["task_generation_epoch": 2, "name": "one"])
+        try await FirebaseEmulator.adminSet("users/\(uid)/user_assessments/a2", ["task_generation_epoch": 2, "name": "two"])
+        try await FirebaseEmulator.adminSet("userKnowledge/\(uid)", ["task_generation_epoch": 2, "entries": [:]])
+
+        // A wrong authority (another operation) writes nothing.
+        var foreign = progress; foreign["operationId"] = "rso1_" + String(repeating: "0", count: 40)
+        var foreignPending = pending; foreignPending["authority"] = ["operationId": "rso1_" + String(repeating: "0", count: 40)]
+        let foreignPendingDecoded = try ResetInspectionV1.decode(foreignPending)
+        let foreignDecoded = try ResetReceiptV1.decode(foreign)
+        let wrong = try #require(ResetLocalCleanupAuthorityV1(inspection: foreignPendingDecoded, progress: foreignDecoded))
+        await #expect(throws: ResetCleanupError.markerMismatch) { try await ResetLocalCleanupV1.deleteAssessments(authority: wrong) }
+        await #expect(throws: ResetCleanupError.markerMismatch) { try await ResetLocalCleanupV1.deleteUserKnowledge(authority: wrong) }
+        await #expect(throws: ResetCleanupError.markerMismatch) { try await DailyDoseEngine().resetForRetake(authority: wrong, localStore: DailyDoseLocalStore(defaults: try isolatedDefaults()), defaults: try isolatedDefaults()) }
+        #expect(try await firestore.collection("users").document(uid).collection("user_assessments").getDocuments().documents.count == 2)
+        #expect(try await firestore.collection("userKnowledge").document(uid).getDocument().exists)
+
+        // The exact authority deletes each document in its own marker-checked transaction.
+        try await ResetLocalCleanupV1.deleteAssessments(authority: authority)
+        try await ResetLocalCleanupV1.deleteUserKnowledge(authority: authority)
+        let defaults = try isolatedDefaults()
+        defaults.set(5, forKey: "peezy.\(uid).dailyDose.completedCount")
+        let localStore = DailyDoseLocalStore(defaults: defaults)
+        _ = await localStore.ensure(uid: uid, taskGenerationEpoch: 1)
+        try await DailyDoseEngine().resetForRetake(authority: authority, localStore: localStore, defaults: defaults)
+        #expect(try await firestore.collection("users").document(uid).collection("user_assessments").getDocuments().documents.isEmpty)
+        #expect(try await firestore.collection("userKnowledge").document(uid).getDocument().exists == false)
+        let root = try await firestore.collection("users").document(uid).getDocument().data()
+        #expect(root?["dailyDose"] == nil && root?["taskReset"] != nil)
+        #expect(await localStore.load(uid: uid) == .present(DailyDoseLocalStateV1(taskGenerationEpoch: 2, revision: 0, completedCount: 0, lastDate: nil, firstLaunchDate: nil)))
+        #expect(defaults.object(forKey: "peezy.\(uid).dailyDose.completedCount") == nil)
+    }
+
 }
 
 /// Synchronous UID snapshot double for `CurrentFirebaseUIDProviding`.
@@ -986,4 +1361,143 @@ func writeEnvelopeRows(_ directory: URL, rows: [(uid: String, epoch: Int, create
         payload: ["records": records, "legacyMigrations": []]
     ))
     try bytes.write(to: directory.appendingPathComponent(ResetOperationRegistry.fileName))
+}
+
+
+// MARK: - S3 helpers: frozen wires, scripted remote, drive trace
+
+struct FrozenResetWires {
+    let root: [String: Any]
+    func map(_ key: String) -> [String: Any] { root[key] as? [String: Any] ?? [:] }
+    func string(_ key: String) -> String { root[key] as? String ?? "" }
+}
+
+/// functions/tests/fixtures/resetWiresV1.json, frozen by the Node suite through the real handler.
+func frozenResetWires() throws -> FrozenResetWires {
+    var url = URL(fileURLWithPath: #filePath)
+    for _ in 0..<2 { url.deleteLastPathComponent() }
+    url.appendPathComponent("functions/tests/fixtures/resetWiresV1.json")
+    let data = try Data(contentsOf: url)
+    guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw DriveTraceError.failed }
+    return FrozenResetWires(root: object)
+}
+
+/// The fixture marker with its ISO instants turned back into Firestore Timestamps.
+func markerFixture(_ wires: FrozenResetWires) -> [String: Any] {
+    var marker = wires.map("marker")
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    for key in ["createdAt", "updatedAt", "awaitingLocalResetAt"] {
+        if let iso = marker[key] as? String, let date = formatter.date(from: iso) { marker[key] = Timestamp(date: date) }
+    }
+    return marker
+}
+
+/// A registry holding one prepared row for uid A at epoch 1 (the fixture's expected epoch).
+func preparedRegistry() async throws -> (ResetOperationRegistry, ResetOperationHandle) {
+    let directory = try temporaryDirectory()
+    let registry = ResetOperationRegistry(directory: directory, clock: ResetClockStub(), auth: SignedAuthStub(.signedIn(tupleA)), epochAuthority: EpochStub(epoch: 1))
+    guard case let .binding(reservation) = try await registry.reserve(gestureId: "rsg1_11111111-1111-4111-8111-111111111111") else { throw DriveTraceError.failed }
+    let handle = try await registry.bind(reservation: reservation)
+    return (registry, handle)
+}
+
+enum DriveTraceError: Error { case failed }
+
+/// Scripts the server from the frozen wires for uid A: resetAllTasks → progress
+/// (awaiting, or deleting first), inspections → pending unless scripted committed/absent
+/// at an ordinal, finalize → final. Records the row phase the registry held at each dispatch.
+actor ScriptedResetRemote: ResetRemoteProviding {
+    private let wires: FrozenResetWires
+    private var deletingFirst = false
+    private var committedAt: Int?
+    private var absentAt: Int?
+    private var inspections = 0
+    private(set) var finalizeCalls = 0
+    private(set) var dispatchPhases: [ResetRowPhase] = []
+    var registry: ResetOperationRegistry?
+    var handle: ResetOperationHandle?
+    var recorder: DriveTrace?
+
+    init(wires: FrozenResetWires) { self.wires = wires }
+    func setDeletingFirst() { deletingFirst = true }
+    func setCommittedAtInspection(_ ordinal: Int) { committedAt = ordinal }
+    func setAbsentAtInspection(_ ordinal: Int) { absentAt = ordinal }
+    func attach(_ recorder: DriveTrace, registry: ResetOperationRegistry, handle: ResetOperationHandle) { self.recorder = recorder; self.registry = registry; self.handle = handle }
+
+    private func rebased(_ map: [String: Any], replayed: Bool? = nil) -> [String: Any] {
+        var out = map
+        out["accountUid"] = "A"
+        if let replayed { out["replayed"] = replayed }
+        return out
+    }
+
+    func reset(_ action: ResetRemoteAction, alias: String, expectedTaskGenerationEpoch: Int) async throws -> ResetReceiptV1 {
+        if let registry, let handle, let row = await registry.snapshot().records.first(where: { $0.handleId == handle.handleId }) { dispatchPhases.append(row.phase) }
+        switch action {
+        case .resetAllTasks:
+            await recorder?.record("resetDispatch")
+            if deletingFirst { deletingFirst = false; return try ResetReceiptV1.decode(rebased(wires.map("progressDeleting"))) }
+            return try ResetReceiptV1.decode(rebased(wires.map("progressAwaiting")))
+        case .finalizeTaskReset:
+            await recorder?.record("finalize")
+            finalizeCalls += 1
+            return try ResetReceiptV1.decode(rebased(wires.map("final")))
+        }
+    }
+
+    func inspectReset(uid: String, canonicalOperationId: String, expectedTaskGenerationEpoch: Int) async throws -> ResetInspectionV1 {
+        inspections += 1
+        await recorder?.record("inspect")
+        let inspection = wires.map("inspection")
+        var pending = inspection["pending"] as? [String: Any] ?? [:]
+        pending["accountUid"] = uid
+        pending["identityDigest"] = TaskPlanService.ResetTransport.identityDigest(uid: uid, expectedTaskGenerationEpoch: expectedTaskGenerationEpoch)
+        if inspections == absentAt { pending["outcome"] = "absent" }
+        if inspections == committedAt {
+            pending["outcome"] = "committed"
+            pending["receipt"] = rebased(wires.map("final"), replayed: true)
+        }
+        return try ResetInspectionV1.decode(pending)
+    }
+
+    func reconcileLegacyReset(legacyOperationId: String, migrationAlias: String) async throws -> LegacyResetReconciliationV1 {
+        throw DriveTraceError.failed
+    }
+}
+
+/// Records the drive's call order and the authorities the callbacks received.
+actor DriveTrace {
+    private(set) var order: [String] = []
+    private(set) var authorities: [ResetLocalCleanupAuthorityV1] = []
+    private var failing: String?
+
+    init() {}
+
+    func record(_ step: String) { order.append(step) }
+    func setFailing(_ step: String?) { failing = step }
+    func clear() { order = []; authorities = [] }
+
+    private func run(_ step: String, _ authority: ResetLocalCleanupAuthorityV1) throws {
+        order.append(step)
+        authorities.append(authority)
+        if failing == step { throw DriveTraceError.failed }
+    }
+
+    func callbacks() -> ResetCleanupCallbacks {
+        ResetCleanupCallbacks(
+            deleteAssessments: { [self] authority in try await self.run("deleteAssessments", authority) },
+            deleteUserKnowledge: { [self] authority in try await self.run("deleteUserKnowledge", authority) },
+            resetDose: { [self] authority in try await self.run("resetDose", authority) }
+        )
+    }
+}
+
+/// Recursively turns non-boolean NSNumbers into Swift Ints so the REST seeder writes integerValue.
+func restIntegers(_ map: [String: Any]) -> [String: Any] {
+    map.mapValues { value in
+        if let number = value as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID() { return number.intValue }
+        if let nested = value as? [String: Any] { return restIntegers(nested) }
+        return value
+    }
 }
