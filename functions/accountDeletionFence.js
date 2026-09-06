@@ -346,7 +346,7 @@ function requireTimes(marker, keys) {
  * Validates one root `accountDeletion` map and returns `{phase, marker}` where phase is
  * DELETING_SWEEPING | DELETING_GUARDING | DATA_DELETED | AUTH_GUARDING | ACCOUNT_DELETED.
  */
-function validateAccountDeletionMarker(marker) {
+function validateAccountDeletionMarker(marker, { authResidualRetentionSeconds } = {}) {
   if (!isPlainMap(marker)) throw malformedMarker("marker must be a map");
   if (marker.schemaVersion !== 1) throw malformedMarker("schemaVersion");
   const state = marker.state;
@@ -384,6 +384,10 @@ function validateAccountDeletionMarker(marker) {
   if (m.authGuardAfter !== undefined && millis(m.authGuardAfter) < millis(m.authAbsenceObservedAt)) throw malformedMarker("authGuardAfter order");
   if (m.authGuardCompletedAt !== undefined && millis(m.authGuardCompletedAt) <= millis(m.authGuardAfter)) throw malformedMarker("authGuardCompletedAt order");
   if (m.accountDeletedAt !== undefined && millis(m.accountDeletedAt) < millis(m.authGuardCompletedAt)) throw malformedMarker("accountDeletedAt order");
+  if (m.authGuardAfter !== undefined && Number.isSafeInteger(authResidualRetentionSeconds) &&
+      !sameInstant(m.authGuardAfter, plusSeconds(m.authAbsenceObservedAt, authResidualRetentionSeconds))) {
+    throw malformedMarker("authGuardAfter relation");
+  }
   return { phase, marker };
 }
 
@@ -1141,6 +1145,7 @@ async function runAuthPendingReducer(deps, { uid, marker, work, authority, sched
   }
   const rootRef = deps.db.doc(`users/${uid}`);
   const workRef = authWorkRef(deps, uid);
+  if (deps.hooks && typeof deps.hooks.beforeAuthTransition === "function") deps.hooks.beforeAuthTransition(uid);
   const transitioned = await deps.db.runTransaction(async (transaction) => {
     if (typeof guard === "function") await guard(transaction);
     const rootSnapshot = await transaction.get(rootRef);
@@ -1179,7 +1184,32 @@ async function runFinalize(deps, ctx, marker) {
   if (pending.moved) return buildRootWire(pending.moved, { operationId: ctx.operationId, authorityKind: ctx.authorityKind, replayed: true });
   const outcome = await runAuthPendingReducer(deps, { uid: ctx.uid, marker: pending.marker, work: pending.work, authority });
   if (outcome.transitioned) return buildRootWire(outcome.marker, { operationId: ctx.operationId, authorityKind: ctx.authorityKind, replayed: false });
+  if (outcome.moved) {
+    // another device advanced the root during the Auth call: the validated root already carries the wire (C2.3, no retry)
+    const snapshot = await ctx.rootRef.get();
+    const current = validateAccountDeletionMarker(snapshot.exists ? snapshot.data()?.accountDeletion : undefined);
+    if (current.phase === "AUTH_GUARDING" || current.phase === "ACCOUNT_DELETED") {
+      return buildRootWire(current.marker, { operationId: ctx.operationId, authorityKind: ctx.authorityKind, replayed: true });
+    }
+  }
   throw deletionError("DELETION_RETRY_REQUIRED");
+}
+
+/**
+ * Callable boundary (C3 logging closure): HttpsErrors pass through; anything else becomes a fixed
+ * `internal` code with no details, and only that fixed code is logged.
+ */
+function withFixedErrorBoundary(code, handler, log) {
+  const emitFixed = typeof log === "function" ? log : (name, counts) => require("firebase-functions/logger").info(name, counts || {});
+  return async function boundedHandler(request) {
+    try {
+      return await handler(request);
+    } catch (error) {
+      if (error instanceof HttpsError) throw error;
+      emitFixed(code, {});
+      throw new HttpsError("internal", code);
+    }
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -1201,7 +1231,9 @@ async function classifyRequest(deps, ctx, data, authenticated) {
     }
     let validated;
     try {
-      validated = validateAccountDeletionMarker(rawMarker);
+      const evidence = deps.evidence();
+      const retention = evidence && evidence.ok === true ? evidence.authority.authResidualRetentionSeconds : undefined;
+      validated = validateAccountDeletionMarker(rawMarker, { authResidualRetentionSeconds: retention });
     } catch (error) {
       if (error instanceof InvariantError) {
         emit(deps, error.code);
@@ -1221,6 +1253,10 @@ async function classifyRequest(deps, ctx, data, authenticated) {
       return { kind: "present", marker: validated.marker, phase: validated.phase, authorityKind: "authenticatedOverflow" };
     }
     const classified = classifyCapability(validated.marker, data);
+    // C2.3: DELETING-guarding changes no byte; the nonmember stays request-scoped and receives the queued member.
+    if (validated.phase === "DELETING_GUARDING") {
+      return { kind: "present", marker: validated.marker, phase: validated.phase, authorityKind: classified.authorityKind };
+    }
     if (classified.changed) {
       requireEvidence(deps);
       transaction.update(ctx.rootRef, { accountDeletion: classified.marker });
@@ -2294,5 +2330,5 @@ module.exports = {
   validateReconcilerState, parseScheduleBoundary, runStorageReconciler, runAuthReconciler, runResidualChecks,
   createMigrationMarker, enterHistoricalGuarding,
   // misc
-  withDeadline, readTimeOf, requireEvidence, emit, productionDependencies, loadedEvidence
+  withDeadline, readTimeOf, requireEvidence, emit, productionDependencies, loadedEvidence, withFixedErrorBoundary
 };

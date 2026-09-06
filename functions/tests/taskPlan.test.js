@@ -888,8 +888,11 @@ test("PHASE2_RESET_PROTOCOL_MODE: absent makes every reset handler platform-unav
   const node = process.execPath;
   const modulePath = path.join(__dirname, "..", "taskPlan.js");
   assert.throws(() => execFileSync(node, ["-e", `process.env.PHASE2_RESET_PROTOCOL_MODE='weird'; require(${JSON.stringify(modulePath)})`], { stdio: "pipe" }), /PHASE2_RESET_PROTOCOL_MODE/);
-  execFileSync(node, ["-e", `process.env.PHASE2_RESET_PROTOCOL_MODE='compat'; require(${JSON.stringify(modulePath)})`], { stdio: "pipe" });
-  execFileSync(node, ["-e", `delete process.env.PHASE2_RESET_PROTOCOL_MODE; require(${JSON.stringify(modulePath)})`], { stdio: "pipe" });
+  // a deployed function (FUNCTION_TARGET / K_SERVICE set) fails module initialization when the value is missing
+  assert.throws(() => execFileSync(node, ["-e", `delete process.env.PHASE2_RESET_PROTOCOL_MODE; process.env.FUNCTION_TARGET='changeTaskPlan'; require(${JSON.stringify(modulePath)})`], { stdio: "pipe" }), /PHASE2_RESET_PROTOCOL_MODE/);
+  execFileSync(node, ["-e", `process.env.PHASE2_RESET_PROTOCOL_MODE='compat'; process.env.FUNCTION_TARGET='changeTaskPlan'; require(${JSON.stringify(modulePath)})`], { stdio: "pipe" });
+  // outside a deployment (local tooling, tests) absence loads the module and makes every reset handler platform-unavailable
+  execFileSync(node, ["-e", `delete process.env.PHASE2_RESET_PROTOCOL_MODE; delete process.env.FUNCTION_TARGET; delete process.env.K_SERVICE; require(${JSON.stringify(modulePath)})`], { stdio: "pipe" });
 
   const legacyRequest = { action: "resetAllTasks", operationId: "legacy-op", reason: "retake_assessment" };
   const fresh = () => sharedFirestore({ docs: { "users/u2": { taskGenerationEpoch: 0 }, "users/u2/tasks/t": { status: "Upcoming" } } });
@@ -1002,7 +1005,17 @@ test("Phase 2 reset refusals: STALE_STATE for a root epoch other than e, RESET_A
   const legacy = phase2Seed({ "users/u2": { taskGenerationEpoch: 3, taskReset: { operationId: "legacy-op", state: "deleting", deletedCount: 0, workerLease: null, startedAt: Timestamp.fromDate(P2_NOW) } } });
   await expectTaskPlanError(() => p2Call(legacy, { action: "resetAllTasks", operationId: alias(), reason: "retake_assessment", expectedTaskGenerationEpoch: 3 }), "failed-precondition", { schemaVersion: 1, reason: "LEGACY_RESET_MIGRATION_REQUIRED", legacyOperationId: "legacy-op" });
   assert.equal(legacy.__writes.length, 0);
+  // a legacy-looking but non-exact marker fails closed instead of redirecting
+  const looseLegacy = phase2Seed({ "users/u2": { taskGenerationEpoch: 3, taskReset: { operationId: "legacy-op", state: "deleting", deletedCount: 0, workerLease: { workerId: "not-a-uuid" }, startedAt: Timestamp.fromDate(P2_NOW) } } });
+  await expectTaskPlanError(() => p2Call(looseLegacy, { action: "resetAllTasks", operationId: alias(), reason: "retake_assessment", expectedTaskGenerationEpoch: 3 }), "failed-precondition", { schemaVersion: 1, reason: "OPERATION_REUSED", operationId: resetCanonicalId(P2_UID, 4) });
 
+  // a record whose members are well-formed but whose identity formulas disagree with its own epoch fails closed
+  const fresh = phase2Seed();
+  await p2Call(fresh, { action: "resetAllTasks", operationId: alias(), reason: "retake_assessment", expectedTaskGenerationEpoch: 3 });
+  const stored = fresh.__docs.get(`users/u2/taskPlanOperations/${resetCanonicalId(P2_UID, 4)}`);
+  stored.request_fingerprint = resetRequestFingerprint(2);
+  fresh.__docs.get("users/u2").taskReset = projectResetMarker(stored);
+  await expectTaskPlanError(() => p2Call(fresh, { action: "resetAllTasks", operationId: alias(), reason: "retake_assessment", expectedTaskGenerationEpoch: 3 }), "failed-precondition", { schemaVersion: 1, reason: "OPERATION_REUSED", operationId: resetCanonicalId(P2_UID, 4) });
   const malformed = phase2Seed({ [`users/u2/taskPlanOperations/${resetCanonicalId(P2_UID, 4)}`]: { kind: "RESET_OPERATION", state: "deleting" } });
   await expectTaskPlanError(() => p2Call(malformed, { action: "resetAllTasks", operationId: alias(), reason: "retake_assessment", expectedTaskGenerationEpoch: 3 }), "failed-precondition", { schemaVersion: 1, reason: "OPERATION_REUSED", operationId: resetCanonicalId(P2_UID, 4) });
   assert.equal(malformed.__writes.length, 0);
@@ -1162,7 +1175,7 @@ test("reconcileLegacyTaskReset: request precedence, derivations, and every class
   // validation precedence and reserved legacyOperationId
   const bad = [
     [{ ...req(), extra: 1 }, "request"],
-    [{ action: "reconcileLegacyTaskReset", migrationAlias: aliasA }, "legacyOperationId"],
+    [{ action: "reconcileLegacyTaskReset", migrationAlias: aliasA }, "request"],
     [req("a/b"), "legacyOperationId"],
     [req(`rlm1_${"c".repeat(40)}`), "legacyOperationId"],
     [req("legacy-op", "not-an-alias"), "migrationAlias"],
@@ -1239,6 +1252,13 @@ test("reconcileLegacyTaskReset: request precedence, derivations, and every class
   assert.equal(paResponse.progressReceipt.replayed, true);
   assert.equal(paResponse.progressReceipt.operationId, resetCanonicalId(P2_UID, 4));
   assert.deepEqual(pa.__docs.get(`users/u2/taskPlanOperations/${resetCanonicalId(P2_UID, 4)}`).aliases, [aliasC], "C is untouched");
+  // a requested alias that is itself current Phase-2 authority, and the canonical id itself, use the same phase2_active branch (§6.1:600)
+  assert.equal((await p2Call(pa, req(aliasC, alias()))).outcome, "phase2_active");
+  assert.equal((await p2Call(pa, req(resetCanonicalId(P2_UID, 4), alias()))).outcome, "phase2_active");
+  // a legacy-active requested record beside C is corruption with its own record class
+  const besideC = phase2Seed({ "users/u2/taskPlanOperations/legacy-op": legacyOp("deleting", 1) });
+  await p2Call(besideC, { action: "resetAllTasks", operationId: alias(), reason: "retake_assessment", expectedTaskGenerationEpoch: 3 });
+  await expectTaskPlanError(() => p2Call(besideC, req("legacy-op", alias())), "failed-precondition", { schemaVersion: 1, reason: "LEGACY_RESET_CORRUPT", context: "reconcile", legacyOperationId: "legacy-op", recordClass: "deleting", markerClass: "phase2" });
 
   // LEGACY_RESET_MIGRATION_REQUIRED: the active legacy marker belongs to B
   const bDb = sharedFirestore({ docs: { "users/u2": { taskGenerationEpoch: 2, taskReset: legacyMarker("op-B", "deleting", 1) }, "users/u2/taskPlanOperations/op-B": legacyOp("deleting", 1) } });

@@ -617,15 +617,16 @@ test("begin prunes expired leases in its creating transaction and refuses a live
   assert.ok(deps.logs.some(([code]) => code === "OUTBOUND_LEASE_INVARIANT"));
 });
 
-test("enrollment: a second capability appends and resorts with every other marker byte preserved; a collision is invalid; the 65th is authenticatedOverflow with zero marker write; resume never enrolls", async () => {
+test("enrollment: a second capability appends and resorts with every other marker byte preserved; a collision is invalid; the 65th is authenticatedOverflow with zero marker write; resume never enrolls; DELETING-guarding changes no byte", async () => {
   const clock = new FakeClock();
   const ids = Array.from({ length: 66 }, () => freshOperationId()).sort();
   const nonces = ids.map(() => freshProofNonce());
-  const seeded = guardingMarker([capability(UID, ids[1], nonces[1])]);
+  const seeded = dataDeletedMarker([capability(UID, ids[1], nonces[1])]);
   const db = fakeFirestore({ docs: { "users/uid-A": { accountDeletion: seeded } }, clock });
   const deps = makeDeps({ db, clock });
 
-  await expectDeletionError(() => call(deps, "begin", { operationId: ids[0], proofNonce: nonces[0] }), "unavailable", RETRY);
+  const wire = await call(deps, "begin", { operationId: ids[0], proofNonce: nonces[0] });
+  assert.equal(wire.kind, "account_deletion_data_final");
   const appended = markerOf(db);
   assert.deepEqual(appended.capabilities.map((c) => c.operationId), [ids[0], ids[1]]);
   assert.deepEqual({ ...appended, capabilities: null }, { ...seeded, capabilities: null });
@@ -635,10 +636,17 @@ test("enrollment: a second capability appends and resorts with every other marke
   await expectDeletionError(() => call(deps, "resume", { operationId: ids[2], proofNonce: nonces[2], authUid: null }), "permission-denied", CAP_INVALID);
   assert.deepEqual(markerOf(db).capabilities.map((c) => c.operationId), [ids[0], ids[1]]);
 
-  const full = guardingMarker(ids.slice(0, 64).map((id, i) => capability(UID, id, nonces[i])));
+  // DELETING-guarding: a nonmember discover/begin throws the queued member and writes nothing (C2.3)
+  const guarding = guardingMarker([capability(UID, ids[1], nonces[1])]);
+  const guardingDb = fakeFirestore({ docs: { "users/uid-A": { accountDeletion: guarding } }, clock });
+  await expectDeletionError(() => call(makeDeps({ db: guardingDb, clock }), "begin", { operationId: ids[0], proofNonce: nonces[0] }), "unavailable", RETRY);
+  assert.deepEqual(markerOf(guardingDb), guarding);
+  assert.equal(guardingDb.__writes.length, 0);
+
+  const full = dataDeletedMarker(ids.slice(0, 64).map((id, i) => capability(UID, id, nonces[i])));
   const fullDb = fakeFirestore({ docs: { "users/uid-A": { accountDeletion: full } }, clock });
   const fullDeps = makeDeps({ db: fullDb, clock });
-  await expectDeletionError(() => call(fullDeps, "begin", { operationId: ids[64], proofNonce: nonces[64] }), "unavailable", RETRY);
+  assert.equal((await call(fullDeps, "begin", { operationId: ids[64], proofNonce: nonces[64] })).authorityKind, "authenticatedOverflow");
   assert.deepEqual(markerOf(fullDb), full);
   assert.equal(fullDb.__writes.length, 0);
   await expectDeletionError(() => call(fullDeps, "resume", { operationId: ids[64], proofNonce: nonces[64], authUid: null }), "permission-denied", CAP_INVALID);
@@ -813,7 +821,7 @@ test("Storage 0/1/100/101 retained-copy and guard boundary", async () => {
   assert.deepEqual(raceBucket.live, []);
 });
 
-test("DELETING-guarding: every action throws the queued member and changes no byte beyond enrollment", async () => {
+test("DELETING-guarding: every action throws the queued member and changes no byte", async () => {
   const clock = new FakeClock();
   const credentials = { operationId: freshOperationId(), proofNonce: freshProofNonce() };
   const marker = guardingMarker([capability(UID, credentials.operationId, credentials.proofNonce)]);
@@ -934,6 +942,43 @@ test("finalize Auth reducer: a present user is deleted once; transport, timeout,
   const inactiveAuth = fakeAuth();
   await expectDeletionError(() => call(makeDeps({ db: inactiveDb, clock, auth: inactiveAuth, evidence: { ok: false, code: "PROVIDER_EVIDENCE_NOT_ACTIVATED" } }), "finalize", credentials), "unavailable", RETRY);
   assert.equal(inactiveAuth.calls.length + inactiveDb.__writes.length, 0);
+});
+
+test("finalize race: when another device transitions the root during the Auth call, finalize returns the guarding wire with replayed:true instead of retrying", async () => {
+  const clock = new FakeClock("2026-09-08T00:20:00.000Z");
+  const credentials = { operationId: freshOperationId(), proofNonce: freshProofNonce() };
+  const caps = [capability(UID, credentials.operationId, credentials.proofNonce)];
+  const db = fakeFirestore({ docs: { "users/uid-A": { accountDeletion: dataDeletedMarker(caps) } }, clock });
+  const racedMarker = authGuardingMarker(caps);
+  const deps = makeDeps({ db, clock, hooks: { beforeAuthTransition: () => { db.__docs.get("users/uid-A").accountDeletion = racedMarker; } } });
+  const wire = await call(deps, "finalize", credentials);
+  assert.equal(wire.kind, "account_deletion_auth_guarding");
+  assert.equal(wire.replayed, true);
+  assert.equal(wire.authGuardAfter, "2026-09-09T00:11:00.000Z");
+});
+
+test("marker validation enforces authGuardAfter == authAbsenceObservedAt + retention when the authority is known, and the callable applies it to guarding and deleted wires", async () => {
+  const clock = new FakeClock();
+  const credentials = { operationId: freshOperationId(), proofNonce: freshProofNonce() };
+  const caps = [capability(UID, credentials.operationId, credentials.proofNonce)];
+  const marker = authGuardingMarker(caps); // deadline = observed + 86400 s
+  fence.validateAccountDeletionMarker(marker, { authResidualRetentionSeconds: 86400 });
+  assert.throws(() => fence.validateAccountDeletionMarker(marker, { authResidualRetentionSeconds: 3600 }), (e) => e.code === "ACCOUNT_DELETION_MARKER_MALFORMED");
+  const db = fakeFirestore({ docs: { "users/uid-A": { accountDeletion: marker } }, clock });
+  const drift = makeDeps({ db, clock, evidence: testEvidence({ authResidualRetentionSeconds: 3600 }) });
+  await expectDeletionError(() => call(drift, "discover", credentials), "permission-denied", CAP_INVALID);
+  assert.equal(db.__writes.length, 0);
+});
+
+test("callable error boundary maps a non-HttpsError to a fixed internal code and never logs the error object", async () => {
+  const logs = [];
+  const boundary = fence.withFixedErrorBoundary("SUPPORT_ADMIN_INTERNAL_FAILURE", async (request) => {
+    if (request.data === "https") throw fence.deletionError("AUTH_REQUIRED");
+    throw new Error("users/uid-A/secret path leaked");
+  }, (code, counts) => logs.push([code, counts]));
+  await assert.rejects(boundary({ data: "https" }), (e) => e.code === "unauthenticated" && e.details.reason === "AUTH_REQUIRED");
+  await assert.rejects(boundary({ data: "other" }), (e) => e.code === "internal" && e.message === "SUPPORT_ADMIN_INTERNAL_FAILURE" && e.details === undefined);
+  assert.deepEqual(logs, [["SUPPORT_ADMIN_INTERNAL_FAILURE", {}]]);
 });
 
 test("finalize authority: a member may be unauthenticated; a nonmember needs the authenticated matching UID with a full registry (authenticatedOverflow) and never writes the marker", async () => {

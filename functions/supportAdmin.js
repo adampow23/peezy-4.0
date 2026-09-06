@@ -6,7 +6,7 @@ const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const logger = require('firebase-functions/logger');
 const admin = require('firebase-admin');
 const { Timestamp } = require('firebase-admin/firestore');
-const { withOutboundLease, assertDeletionAbsent } = require('./accountDeletionFence');
+const { withOutboundLease, assertDeletionAbsent, withFixedErrorBoundary } = require('./accountDeletionFence');
 
 // C6.8 — the sole FCM surface. Payload is content-free; the reply text never leaves Firestore.
 const FCM_DESTINATION_CAPACITY = 501;
@@ -164,7 +164,7 @@ async function sendSupportReplyPush(uid, deps = {}) {
   for (const ref of invalidTokenRefs) await ref.delete();
 }
 
-const adminListThreads = onCall(CALLABLE_OPTIONS, async (request) => {
+const adminListThreads = onCall(CALLABLE_OPTIONS, withFixedErrorBoundary('SUPPORT_ADMIN_INTERNAL_FAILURE', async (request) => {
   requireSupportAdmin(request);
 
   const rawStatusFilter = request.data?.statusFilter;
@@ -185,9 +185,9 @@ const adminListThreads = onCall(CALLABLE_OPTIONS, async (request) => {
     });
 
   return { threads };
-});
+}, fixedLog));
 
-const adminGetThread = onCall(CALLABLE_OPTIONS, async (request) => {
+const adminGetThread = onCall(CALLABLE_OPTIONS, withFixedErrorBoundary('SUPPORT_ADMIN_INTERNAL_FAILURE', async (request) => {
   requireSupportAdmin(request);
 
   const uid = requireUid(request.data);
@@ -257,9 +257,9 @@ const adminGetThread = onCall(CALLABLE_OPTIONS, async (request) => {
     status: thread?.status || 'open',
     taskContext: thread?.taskContext || null
   };
-});
+}, fixedLog));
 
-const adminReplySupport = onCall(CALLABLE_OPTIONS, async (request) => {
+const adminReplySupport = onCall(CALLABLE_OPTIONS, withFixedErrorBoundary('SUPPORT_ADMIN_INTERNAL_FAILURE', async (request) => {
   requireSupportAdmin(request);
 
   const uid = requireUid(request.data);
@@ -296,9 +296,9 @@ const adminReplySupport = onCall(CALLABLE_OPTIONS, async (request) => {
   });
   await sendSupportReplyPush(uid, { db }).catch(() => fixedLog('FCM_SEND_FAILED', {}));
   return { success: true, messageId: messageRef.id };
-});
+}, fixedLog));
 
-const adminMarkSeen = onCall(CALLABLE_OPTIONS, async (request) => {
+const adminMarkSeen = onCall(CALLABLE_OPTIONS, withFixedErrorBoundary('SUPPORT_ADMIN_INTERNAL_FAILURE', async (request) => {
   requireSupportAdmin(request);
 
   const uid = requireUid(request.data);
@@ -318,9 +318,9 @@ const adminMarkSeen = onCall(CALLABLE_OPTIONS, async (request) => {
     );
   });
   return { success: true };
-});
+}, fixedLog));
 
-const adminSetThreadStatus = onCall(CALLABLE_OPTIONS, async (request) => {
+const adminSetThreadStatus = onCall(CALLABLE_OPTIONS, withFixedErrorBoundary('SUPPORT_ADMIN_INTERNAL_FAILURE', async (request) => {
   requireSupportAdmin(request);
 
   const uid = requireUid(request.data);
@@ -335,7 +335,7 @@ const adminSetThreadStatus = onCall(CALLABLE_OPTIONS, async (request) => {
     transaction.update(db.collection('supportThreads').doc(uid), { status });
   });
   return { success: true };
-});
+}, fixedLog));
 
 module.exports = {
   adminListThreads,

@@ -156,13 +156,11 @@ function validatePhase2ResetRequest(input) {
 }
 
 function validateReconciliationRequest(input) {
-  if (!exactKeySet(input, ["action", "legacyOperationId", "migrationAlias"])) {
-    if (input.legacyOperationId === undefined && exactKeySet(input, ["action", "migrationAlias"])) failRequestInvalid("legacyOperationId");
-    failRequestInvalid("request");
-  }
+  if (!exactKeySet(input, ["action", "legacyOperationId", "migrationAlias"])) failRequestInvalid("request");
   const legacyOperationId = input.legacyOperationId;
+  // §6.2:622: reconciliation rejects only the rlm1_ namespace; a retained rsa1_ alias or rso1_ canonical id is a legal request.
   if (typeof legacyOperationId !== "string" || !isValidDocumentId(legacyOperationId) || legacyOperationId.trim() !== legacyOperationId ||
-      RESERVED_ID_RE.test(legacyOperationId)) failRequestInvalid("legacyOperationId");
+      legacyOperationId.startsWith("rlm1_")) failRequestInvalid("legacyOperationId");
   if (typeof input.migrationAlias !== "string" || !MIGRATION_ALIAS_RE.test(input.migrationAlias)) failRequestInvalid("migrationAlias");
   return { action: input.action, legacyOperationId, migrationAlias: input.migrationAlias };
 }
@@ -854,19 +852,28 @@ const RESET_PROTOCOL_MODES = Object.freeze(["compat", "phase2_required"]);
 
 function readResetProtocolMode() {
   const value = process.env.PHASE2_RESET_PROTOCOL_MODE;
-  if (value === undefined) return undefined;
+  const deployed = Boolean(process.env.FUNCTION_TARGET || process.env.K_SERVICE);
+  if (value === undefined) {
+    if (deployed) throw new Error(`PHASE2_RESET_PROTOCOL_MODE is missing; a deployed revision must carry one of ${RESET_PROTOCOL_MODES.join("|")}`);
+    return undefined;
+  }
   if (!RESET_PROTOCOL_MODES.includes(value)) {
     throw new Error(`PHASE2_RESET_PROTOCOL_MODE must be one of ${RESET_PROTOCOL_MODES.join("|")}; got ${JSON.stringify(value)}`);
   }
   return value;
 }
 
-// Fails module initialization on an unknown value (v9 §6.4:697); absence refuses every reset handler.
+// v9 §6.4:697: a deployed revision with a missing or unknown value fails module initialization, so no reset
+// handler starts. Outside a deployment (local tooling, tests) absence loads the module and every reset
+// handler answers platform-unavailable until a mode is configured.
 const ENV_RESET_PROTOCOL_MODE = readResetProtocolMode();
 
 const RESET_ALIAS_RE = /^rsa1_[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const RESERVED_ID_RE = /^(rsa1_|rso1_|rlm1_)/;
 const RESET_ALIAS_CAP = 16;
+const ACTIVE_RECORD_BYTES_CAP = 32768;
+const TOMBSTONE_BYTES_CAP = 16384;
+const FINAL_RECEIPT_BYTES_CAP = 8192;
 const RESET_TARGETS = Object.freeze([
   { key: "tasks", collection: "tasks" },
   { key: "notification_intents", collection: "notificationIntents" },
@@ -952,6 +959,9 @@ function validateResetRecord(record, { uid, canonicalId, fingerprint }) {
   if (keys.some((key) => !allowed.has(key)) || required.some((key) => !(key in record))) throw reject();
   if (record.schema_version !== 1 || record.kind !== "RESET_OPERATION" || record.account_uid !== uid ||
       record.operation_id !== canonicalId || record.reason !== RESET_REASON || record.request_fingerprint !== fingerprint) throw reject();
+  // UID/epoch/formula mismatch fails closed (spec v5 §695): the record's own epochs must reproduce its identity
+  if (resetCanonicalId(record.account_uid, record.task_generation_epoch) !== record.operation_id ||
+      resetRequestFingerprint(record.expected_task_generation_epoch) !== record.request_fingerprint) throw reject();
   if (!finalized && record.state !== "deleting" && record.state !== "awaiting_local_reset") throw reject();
   if (!Array.isArray(record.aliases) || record.aliases.length < 1 || record.aliases.length > RESET_ALIAS_CAP ||
       record.aliases.some((item) => !RESET_ALIAS_RE.test(item)) || new Set(record.aliases).size !== record.aliases.length) throw reject();
@@ -964,8 +974,10 @@ function validateResetRecord(record, { uid, canonicalId, fingerprint }) {
   if (finalized) {
     if (!fence.isMillisecondTimestamp(record.finalized_at) || fence.millis(record.finalized_at) < fence.millis(record.created_at)) throw reject();
     if (typeof record.final_receipt_digest !== "string" || !/^[0-9a-f]{64}$/.test(record.final_receipt_digest)) throw reject();
+    if (fence.canonicalByteLength(record) > TOMBSTONE_BYTES_CAP) throw reject();
     return record;
   }
+  if (fence.canonicalByteLength(record) > ACTIVE_RECORD_BYTES_CAP) throw reject();
   if (!fence.isMillisecondTimestamp(record.updated_at) || fence.millis(record.updated_at) < fence.millis(record.created_at)) throw reject();
   if (record.state === "deleting") {
     if (!Number.isInteger(record.target_index) || record.target_index < 0 || record.target_index > 3) throw reject();
@@ -1024,7 +1036,8 @@ function finalReceiptOf(record) {
 /** Recomputes and verifies the tombstone's receipt digest; mismatch fails closed. */
 function reconstructFinalReceipt(tombstone) {
   const receipt = finalReceiptOf(tombstone);
-  if (fence.sha256Hex(fence.TaskCanonicalV1(receipt)) !== tombstone.final_receipt_digest) {
+  const bytes = fence.TaskCanonicalV1(receipt);
+  if (Buffer.byteLength(bytes, "utf8") > FINAL_RECEIPT_BYTES_CAP || fence.sha256Hex(bytes) !== tombstone.final_receipt_digest) {
     throw failedPrecondition("OPERATION_REUSED", { operationId: tombstone.operation_id });
   }
   return receipt;
@@ -1094,7 +1107,8 @@ async function classifyPhase2Reset(db, uid, request, now, { finalize }) {
     if (finalize) throw failedPrecondition("STALE_STATE");
     const marker = root.taskReset;
     if (marker !== undefined) {
-      if (isLegacyResetMarker(marker)) throw failedPrecondition("LEGACY_RESET_MIGRATION_REQUIRED", { legacyOperationId: marker.operationId });
+      const markerClass = classifyLegacyMarker(marker);
+      if (markerClass === "deleting" || markerClass === "awaiting_local_reset") throw failedPrecondition("LEGACY_RESET_MIGRATION_REQUIRED", { legacyOperationId: marker.operationId });
       if (isPhase2ResetMarker(marker) && Number.isSafeInteger(marker.expectedTaskGenerationEpoch) && typeof marker.operationId === "string") {
         throw failedPrecondition("RESET_ACTIVE", { operationId: marker.operationId, expectedTaskGenerationEpoch: marker.expectedTaskGenerationEpoch });
       }
@@ -1237,6 +1251,7 @@ async function executePhase2Finalize(db, uid, request, now) {
     if (record.state !== "awaiting_local_reset") throw failedPrecondition("STALE_STATE");
     requireMarkerEqualsRecord(rootSnapshot.data()?.taskReset, record, ctx.canonicalId);
     const receipt = finalReceiptOf(record);
+    if (Buffer.byteLength(fence.TaskCanonicalV1(receipt), "utf8") > FINAL_RECEIPT_BYTES_CAP) throw failedPrecondition("OPERATION_REUSED", { operationId: ctx.canonicalId });
     const tombstone = {
       schema_version: 1,
       kind: "RESET_OPERATION",
@@ -1255,6 +1270,7 @@ async function executePhase2Finalize(db, uid, request, now) {
       created_at: record.created_at,
       finalized_at: timestampNow(now)
     };
+    validateResetRecord(tombstone, ctx);
     transaction.set(ctx.recordRef, tombstone);
     transaction.update(ctx.userRef, { taskReset: deleteValue() });
     return receipt;
@@ -1369,7 +1385,7 @@ function validateMigrationRecord(record, { uid, migrationId, legacyOperationId }
   const outcomeKeys = MIGRATION_OUTCOME_KEYS[record.outcome];
   if (!outcomeKeys || !exactKeySet(record, [...MIGRATION_BASE_KEYS, ...outcomeKeys])) throw reject();
   if (record.schema_version !== 1 || record.kind !== "LEGACY_RESET_MIGRATION" || record.account_uid !== uid) throw reject();
-  if (typeof record.legacy_operation_id !== "string" || !isValidDocumentId(record.legacy_operation_id) || RESERVED_ID_RE.test(record.legacy_operation_id)) throw reject();
+  if (typeof record.legacy_operation_id !== "string" || !isValidDocumentId(record.legacy_operation_id) || record.legacy_operation_id.startsWith("rlm1_")) throw reject();
   if (legacyOperationId !== undefined && record.legacy_operation_id !== legacyOperationId) throw reject();
   if (record.migration_id !== migrationId || migrationIdFor(uid, record.legacy_operation_id) !== migrationId) throw reject();
   if (record.request_fingerprint !== migrationFingerprintFor(uid, record.legacy_operation_id)) throw reject();
@@ -1458,8 +1474,11 @@ async function executeReconcileLegacyTaskReset(db, uid, request, now) {
       } catch {
         throw corrupt({ recordClass: "phase2", markerClass: "phase2" });
       }
-      if (recordClass === "absent" || recordClass === "finalized" || (legacyOperationId === canonicalId)) plan = { outcome: "phase2_active", current };
-      else throw corrupt({ recordClass: recordClass === "malformed" ? "malformed" : "phase2" });
+      if (recordClass === "absent" || recordClass === "finalized" || legacyOperationId === canonicalId || current.aliases.includes(legacyOperationId)) {
+        plan = { outcome: "phase2_active", current };
+      } else {
+        throw corrupt();
+      }
     } else {
       throw corrupt();
     }
@@ -1660,7 +1679,7 @@ async function handleTaskPlanRequest(request, dbFactory = () => admin.firestore(
 
 const changeTaskPlan = onCall(
   { region: "us-central1", timeoutSeconds: 540, memory: "512MiB" },
-  (request) => handleTaskPlanRequest(request)
+  fence.withFixedErrorBoundary("TASK_PLAN_INTERNAL_FAILURE", (request) => handleTaskPlanRequest(request))
 );
 
 module.exports = {

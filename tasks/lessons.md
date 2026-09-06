@@ -30,3 +30,5 @@
 - firebase-admin's package `exports` map blocks deep requires (`firebase-admin/lib/...`, even `package.json`); load SDK internals by filesystem path from `node_modules`.
 - Never put a cron string inside a `/** */` comment: `*/5` closes the comment and breaks the module at parse time.
 - Bash heredocs cannot carry raw control bytes (the tool rejects them); spell control characters in regexes with backslash-u escapes or use the Write tool.
+- Real Firestore `set(..., {merge:true})` deep-merges nested maps, so a marker rewritten that way keeps every member the new projection dropped; replace whole fields with `update` (or a non-merge set) and make the in-memory fake deep-merge so the offline suite catches it.
+- A fresh-context verification pass caught a test that had encoded the reducer's behavior instead of the contract sentence (enrollment during DELETING-guarding); write each falsifier's expectation from the contract line first, then watch it fail.
