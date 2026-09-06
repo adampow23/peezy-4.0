@@ -422,7 +422,15 @@ extension DailyDoseEngine {
                 transaction.updateData(["dailyDose": FieldValue.delete()], forDocument: ref)
             }
         }
-        _ = await localStore.cleanup(uid: authority.accountUid, taskGenerationEpoch: authority.taskGenerationEpoch)
-        await localStore.removeLegacyKeys(uid: authority.accountUid)
+        // C9.5.16: older → empty epoch-r; equal → preserved; absent → floor; newer → preserved and reported; malformed → preserved and blocked.
+        // The legacy v0 keys are removed only after an accepted cleanup transition.
+        switch await localStore.cleanup(uid: authority.accountUid, taskGenerationEpoch: authority.taskGenerationEpoch) {
+        case .cleaned, .preserved:
+            await localStore.removeLegacyKeys(uid: authority.accountUid)
+        case .malformed:
+            throw ResetCleanupError.localDoseMalformed
+        case let .drift(current):
+            throw ResetCleanupError.localDoseDrift(currentEpoch: current.taskGenerationEpoch)
+        }
     }
 }

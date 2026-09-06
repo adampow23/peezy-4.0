@@ -199,7 +199,8 @@ struct TaskSupersessionTests {
                 cleanup: await trace.callbacks(), postNotification: { await notifications.bump(); await trace.record("notification") }
             )
             await #expect(throws: DriveTraceError.failed) { try await coordinator.retake() }
-            #expect(await trace.order.last == failedStep)
+            // C9.5.14: the failed callback is followed by exactly one post-error inspection (byte-identical pending → the error propagates)
+            #expect(await trace.order.suffix(2) == [failedStep, "inspect"])
             #expect(await notifications.count == 0)
             let row = try #require(await registry.snapshot().records.first)
             #expect(row.phase == .resetReceiptAwaitingLocalReset)

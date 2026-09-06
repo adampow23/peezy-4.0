@@ -667,6 +667,9 @@ actor ResetOperationRegistry {
     /// The store owner's single `(RecoveryAttemptKey, Task)` slot: an identical key
     /// coalesces onto the task; a different key is `busy` before any callback, call, or write.
     fileprivate var recoverySlot: (key: String, task: Task<RecoveryResult, Never>)?
+    /// C9.5.8/C9.5.12 `inflightResetOperation`: one drive per handle; installed before the first suspension, cleared in
+    /// `defer`; joiners with the same UID/auth epoch and a revision at or above the baseline receive the outcome only.
+    fileprivate var inflightResetOperation: [ResetOperationHandle: (uid: String, authEpochUUID: String, credentialBaseline: Int, task: Task<ResetDriveOutcome, Error>)] = [:]
 
     init(directory: URL, clock: any LocalDurableClock, auth: any AuthAuthorityProviding, epochAuthority: any ResetEpochAuthorityProviding) {
         self.directory = directory
@@ -1340,6 +1343,10 @@ enum ResetCleanupError: Error, Equatable {
     case markerMismatch
     /// `RESET_LOCAL_GENERATION_INVALID`: a document carries no stamp outside the legacy 0→1 bridge; it is preserved and finalization is blocked.
     case localGenerationInvalid(path: String)
+    /// The local dose v2 bytes are malformed: preserved, legacy keys untouched, finalization blocked (C9.5.16).
+    case localDoseMalformed
+    /// The local dose store is at a newer epoch than the authority's result epoch: preserved and reported (C9.5.16).
+    case localDoseDrift(currentEpoch: Int)
 }
 
 /// Generation relation for one stamped document under the authority (C9.5.14): a stamp below the
@@ -1457,15 +1464,53 @@ enum ResetDriveError: Error, Equatable {
 extension ResetOperationRegistry {
     private static let driveStepBudget = 16
 
-    /// Drives one row to its final receipt and retires it. Each remote dispatch
-    /// is recorded durably before its await; after every await the envelope is
-    /// reread. Before each cleanup callback and before finalize the canonical
-    /// record is inspected: `pending` yields the callback's authority,
-    /// `committed` short-circuits to the replayed final receipt with no further
-    /// callback, `absent` stops with the row intact.
+    /// Drives one row to its final receipt and retires it. Entry reads fresh signed
+    /// auth for the handle's UID; a drive already in flight for the handle is joined
+    /// (outcome only, no callbacks) when the UID/auth epoch match and the credential
+    /// revision is at or above the baseline; a foreign caller waits for the slot,
+    /// discards its result, rereads auth, and restarts.
     func drive(handle: ResetOperationHandle, remote: any ResetRemoteProviding, cleanup: ResetCleanupCallbacks) async throws -> ResetDriveOutcome {
         let tuple = try await signedAuth()
         guard tuple.uid == handle.uid else { throw RegistryError.operationStale(uid: handle.uid, handleId: handle.handleId) }
+        if let slot = inflightResetOperation[handle] {
+            if slot.uid == tuple.uid && slot.authEpochUUID == tuple.authEpochUUID {
+                guard tuple.credentialRevision >= slot.credentialBaseline else { throw RegistryError.credentialRevisionRegressed }
+                let outcome = try await slot.task.value
+                let again = try await signedAuth()
+                guard again.uid == slot.uid, again.authEpochUUID == slot.authEpochUUID, again.credentialRevision >= slot.credentialBaseline else { throw RegistryError.authRequired }
+                return outcome
+            }
+            _ = try? await slot.task.value
+            await Task.yield()
+            return try await drive(handle: handle, remote: remote, cleanup: cleanup)
+        }
+        let task = Task { try await self.runDrive(handle: handle, remote: remote, cleanup: cleanup, baseline: tuple) }
+        inflightResetOperation[handle] = (uid: tuple.uid, authEpochUUID: tuple.authEpochUUID, credentialBaseline: tuple.credentialRevision, task: task)
+        defer { inflightResetOperation[handle] = nil }
+        return try await task.value
+    }
+
+    /// The winner revalidates signed auth after every suspension and before every
+    /// server call, protected callback, and return: a different UID or auth epoch or
+    /// signed-out state preserves the durable phase and returns the frozen auth
+    /// branch; a lower same-epoch revision is corruption; a higher one rebases.
+    private func revalidated(_ baseline: SignedAuthTuple) async throws -> SignedAuthTuple {
+        let now = try await signedAuth()
+        guard now.uid == baseline.uid, now.authEpochUUID == baseline.authEpochUUID else { throw RegistryError.authRequired }
+        guard now.credentialRevision >= baseline.credentialRevision else { throw RegistryError.credentialRevisionRegressed }
+        return now
+    }
+
+    /// The reducer. Each remote dispatch is recorded durably before its await; after
+    /// every await the auth is revalidated and the envelope reread. Before each cleanup
+    /// callback and before finalize the canonical record is inspected: `pending`
+    /// yields the callback's authority, `committed` short-circuits to the replayed
+    /// final receipt with no further callback, `absent` stops with the row intact.
+    /// After a callback error the record is re-inspected: committed adopts the final
+    /// receipt; a byte-identical pending authority retains the phase and rethrows;
+    /// anything else blocks.
+    private func runDrive(handle: ResetOperationHandle, remote: any ResetRemoteProviding, cleanup: ResetCleanupCallbacks, baseline: SignedAuthTuple) async throws -> ResetDriveOutcome {
+        var auth = baseline
         var storedFreshFinal = false
         for _ in 0..<Self.driveStepBudget {
             var row = try currentRow(handle)
@@ -1476,6 +1521,7 @@ extension ResetOperationRegistry {
                     try store(row)
                 }
                 let receipt = try await remote.reset(.resetAllTasks, alias: row.suggestedOperationId, expectedTaskGenerationEpoch: row.expectedTaskGenerationEpoch)
+                auth = try await revalidated(auth)
                 try Self.requireIdentity(receipt, row: row)
                 row = try currentRow(handle)
                 row.canonicalOperationId = receipt.operationId
@@ -1498,12 +1544,26 @@ extension ResetOperationRegistry {
                 var shortCircuited = false
                 for (_, callback) in steps {
                     let inspection = try await remote.inspectReset(uid: row.uid, canonicalOperationId: canonical, expectedTaskGenerationEpoch: row.expectedTaskGenerationEpoch)
+                    auth = try await revalidated(auth)
                     if try adoptCommitted(inspection, handle: handle) { shortCircuited = true; break }
                     guard let authority = ResetLocalCleanupAuthorityV1(inspection: inspection, progress: progress) else { throw ResetDriveError.receiptMismatch(detail: "authority") }
-                    try await callback(authority)
+                    do {
+                        try await callback(authority)
+                        auth = try await revalidated(auth)
+                    } catch let callbackError {
+                        auth = try await revalidated(auth)
+                        let again = try await remote.inspectReset(uid: row.uid, canonicalOperationId: canonical, expectedTaskGenerationEpoch: row.expectedTaskGenerationEpoch)
+                        auth = try await revalidated(auth)
+                        if try adoptCommitted(again, handle: handle) { shortCircuited = true; break }
+                        guard let retained = ResetLocalCleanupAuthorityV1(inspection: again, progress: progress), retained == authority else {
+                            throw ResetDriveError.receiptMismatch(detail: "post-error inspection")
+                        }
+                        throw callbackError
+                    }
                 }
                 if shortCircuited { continue }
                 let inspection = try await remote.inspectReset(uid: row.uid, canonicalOperationId: canonical, expectedTaskGenerationEpoch: row.expectedTaskGenerationEpoch)
+                auth = try await revalidated(auth)
                 if try adoptCommitted(inspection, handle: handle) { continue }
                 guard ResetLocalCleanupAuthorityV1(inspection: inspection, progress: progress) != nil else { throw ResetDriveError.receiptMismatch(detail: "authority") }
                 row = try currentRow(handle)
@@ -1511,6 +1571,7 @@ extension ResetOperationRegistry {
                 try store(row)
             case .finalizeDispatched:
                 let receipt = try await remote.reset(.finalizeTaskReset, alias: row.suggestedOperationId, expectedTaskGenerationEpoch: row.expectedTaskGenerationEpoch)
+                auth = try await revalidated(auth)
                 try Self.requireIdentity(receipt, row: row)
                 guard receipt.kind == .final else { throw ResetDriveError.receiptMismatch(detail: "finalize") }
                 row = try currentRow(handle)

@@ -1094,12 +1094,68 @@ struct DurableStoreRecoveryTests {
         await remote2.attach(trace2, registry: registry2, handle: handle2)
         await trace2.setFailing("deleteAssessments")
         await #expect(throws: DriveTraceError.failed) { _ = try await registry2.drive(handle: handle2, remote: remote2, cleanup: trace2.callbacks()) }
-        await remote2.setCommittedAtInspection(2) // the failed first drive already consumed inspection 1
+        await remote2.setCommittedAtInspection(3) // the failed first drive consumed inspection 1 and its post-error re-inspection 2
         await trace2.setFailing(nil)
         await trace2.clear()
         let adopted = try await registry2.drive(handle: handle2, remote: remote2, cleanup: trace2.callbacks())
         #expect(await trace2.order == ["inspect"] && adopted.replayed == true && adopted.notify == false)
         #expect(await registry2.snapshot().records.isEmpty)
+    }
+
+    /// C9.5.14 "after callback error": the same invocation re-inspects; committed → adopt the final receipt and skip forever.
+    @Test func driveAdoptsACommittedRecordInTheSameInvocationAfterACallbackError() async throws {
+        let (registry, handle) = try await preparedRegistry()
+        let remote = ScriptedResetRemote(wires: try frozenResetWires())
+        let trace = DriveTrace()
+        await remote.attach(trace, registry: registry, handle: handle)
+        await trace.setFailing("deleteAssessments")
+        await remote.setCommittedAtInspection(2) // the post-error re-inspection observes the other device's commit
+        let outcome = try await registry.drive(handle: handle, remote: remote, cleanup: trace.callbacks())
+        #expect(await trace.order == ["resetDispatch", "inspect", "deleteAssessments", "inspect"], "one post-error inspection, no further callback")
+        #expect(outcome.replayed == true && outcome.notify == false)
+        #expect(await registry.snapshot().records.isEmpty)
+    }
+
+    /// C9.5.12: the winner revalidates signed auth after every suspension (drift → frozen auth branch, phase preserved,
+    /// no later call or callback); a second call on the same handle joins the winner's outcome and never invokes its own callbacks.
+    @Test func driveFreezesOnAuthDriftAfterASuspensionAndASecondCallJoinsWithoutItsOwnCallbacks() async throws {
+        let wires = try frozenResetWires()
+        let directory = try temporaryDirectory()
+        let auth = SignedAuthStub(.signedIn(tupleA))
+        let registry = ResetOperationRegistry(directory: directory, clock: ResetClockStub(), auth: auth, epochAuthority: EpochStub(epoch: 1))
+        guard case let .binding(reservation) = try await registry.reserve(gestureId: "rsg1_11111111-1111-4111-8111-111111111111") else { Issue.record("reserve"); return }
+        let handle = try await registry.bind(reservation: reservation)
+        let remote = ScriptedResetRemote(wires: wires)
+        let trace = DriveTrace()
+        await remote.attach(trace, registry: registry, handle: handle)
+        // auth drift while the dispatch is in flight
+        await remote.setHoldDispatch()
+        let winner = Task { try await registry.drive(handle: handle, remote: remote, cleanup: await trace.callbacks()) }
+        while await remote.heldCount == 0 { await Task.yield() }
+        auth.set(.signedIn(tupleB))
+        await remote.releaseHeld()
+        await #expect(throws: ResetOperationRegistry.RegistryError.authRequired) { _ = try await winner.value }
+        #expect(await trace.order == ["resetDispatch"], "no call or callback after auth drift")
+        let row = try #require(await registry.snapshot().records.first)
+        #expect(row.phase == .resetDispatched, "durable phase preserved")
+        // join: the same auth again; a second call on the handle joins the in-flight drive
+        auth.set(.signedIn(tupleA))
+        await trace.clear()
+        await remote.setHoldDispatch()
+        let first = Task { try await registry.drive(handle: handle, remote: remote, cleanup: await trace.callbacks()) }
+        while await remote.heldCount == 0 { await Task.yield() }
+        let readsBefore = auth.reads
+        let joinerTrace = DriveTrace()
+        let joiner = Task { try await registry.drive(handle: handle, remote: remote, cleanup: await joinerTrace.callbacks()) }
+        while auth.reads == readsBefore { await Task.yield() }
+        await remote.releaseHeld()
+        let outcome = try await first.value
+        let joined = try await joiner.value
+        #expect(joined == outcome, "the joiner receives the winner's outcome")
+        #expect(await joinerTrace.order.isEmpty, "the joiner never invokes its own callbacks")
+        #expect(await trace.order == ["resetDispatch", "inspect", "deleteAssessments", "inspect", "deleteUserKnowledge", "inspect", "resetDose", "inspect", "finalize"], "exactly one callback bundle ran")
+        #expect(await remote.finalizeCalls == 1)
+        #expect(await registry.snapshot().records.isEmpty)
     }
 
     @Test func driveResumesServerDeletionWhileTheReceiptIsDeletingAndStopsOnAnAbsentRecord() async throws {
@@ -1283,6 +1339,19 @@ struct DurableStoreRecoveryTests {
         #expect(root?["dailyDose"] == nil && root?["taskReset"] != nil)
         #expect(await localStore.load(uid: uid) == .present(DailyDoseLocalStateV1(taskGenerationEpoch: 2, revision: 1, completedCount: 0, lastDate: nil, firstLaunchDate: nil)))
         #expect(defaults.object(forKey: "peezy.\(uid).dailyDose.completedCount") == nil)
+        // C9.5.16: malformed v2 bytes block (preserved, legacy keys untouched); a newer epoch is preserved and reported as drift
+        let malformedDefaults = try isolatedDefaults()
+        malformedDefaults.set(Data("{".utf8), forKey: DailyDoseLocalStore.key(uid: uid))
+        malformedDefaults.set(5, forKey: "peezy.\(uid).dailyDose.completedCount")
+        let malformedStore = DailyDoseLocalStore(defaults: malformedDefaults)
+        await #expect(throws: ResetCleanupError.localDoseMalformed) { try await DailyDoseEngine().resetForRetake(authority: authority, localStore: malformedStore) }
+        #expect(malformedDefaults.integer(forKey: "peezy.\(uid).dailyDose.completedCount") == 5, "legacy keys preserved under malformed v2")
+        #expect(await malformedStore.load(uid: uid) == .malformed)
+        let driftDefaults = try isolatedDefaults()
+        let driftStore = DailyDoseLocalStore(defaults: driftDefaults)
+        _ = await driftStore.ensure(uid: uid, taskGenerationEpoch: 3)
+        await #expect(throws: ResetCleanupError.localDoseDrift(currentEpoch: 3)) { try await DailyDoseEngine().resetForRetake(authority: authority, localStore: driftStore) }
+        #expect(await driftStore.load(uid: uid) == .present(DailyDoseLocalStateV1(taskGenerationEpoch: 3, revision: 0, completedCount: 0, lastDate: nil, firstLaunchDate: nil)), "newer epoch preserved")
     }
 
 }
@@ -1352,9 +1421,12 @@ final class ResetClockStub: LocalDurableClock, @unchecked Sendable {
 final class SignedAuthStub: AuthAuthorityProviding, @unchecked Sendable {
     private let lock = NSLock()
     private var value: SignedAuthAuthority
+    private var readCount = 0
     init(_ value: SignedAuthAuthority) { self.value = value }
     func set(_ newValue: SignedAuthAuthority) { lock.withLock { value = newValue } }
-    func currentSignedAuth() async -> SignedAuthAuthority { lock.withLock { value } }
+    /// Number of signed-auth reads so far (a test can wait for a caller's entry read).
+    var reads: Int { lock.withLock { readCount } }
+    func currentSignedAuth() async -> SignedAuthAuthority { lock.withLock { readCount += 1; return value } }
     func forceRefresh(expected: SignedAuthTuple) async -> AuthRefreshOutcome { .notCommitted }
     func confirmAccountDeleted(expected: AuthIdentity) async -> AccountDeletionAuthObservation { .notProven }
 }
