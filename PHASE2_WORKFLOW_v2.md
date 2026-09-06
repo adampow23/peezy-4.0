@@ -8,8 +8,27 @@ Supersedes the v6–v9 manifest loop. The manifest is a decision record now, not
 1. Specify what must be true, not how to make it true. Contracts, state machines, registries, and named tests are the spec. Prose byte-shapes are not.
 2. One brief per slice: job, why, boundaries with reasons, done. One page. If it needs a second page, the contract is missing something; fix the contract.
 3. Tests are the reviewer. A slice is done when its named falsifiers were red, then green, on the emulator. No spec reviews.
-4. Second-model diff review only on deletion slices (S3, S4). Everywhere else, skip it.
+4. Codex gates at every brief and every close-out (fresh Codex thread per gate), with the packet below; the deletion slices (S3, S4) additionally get the diff-scoped second-model review.
 5. You get pulled in for three things only: a destructive action, a real scope change, or input only you have.
+
+## Codex gate packet (adopted 2026-09-06 from the Codex retrospective)
+
+Every gate packet contains: base and head SHA; contract hash; the brief (job, boundaries, done); decisions taken since the last gate; the exact diff; a complete inventory of changed and created files; the disposition of every prior Codex finding.
+
+Close-out packets add: the transition, wire, and ownership tables the diff touches; the named falsifiers with their RED and GREEN outputs; the commands and environment used; the baseline failure list; a map from each changed writer and each failure or retry path to the test that covers it.
+
+Review rules Codex works under: one authority per rule (the contract), prose links to it rather than restating it; every blocker carries a concrete counterexample and a contract anchor; all affected transitions are checked in one pass; bounded dependency inspection is allowed, and uncertainty is recorded rather than escalated.
+
+## Session rules (adopted 2026-09-06 from PHASE2_RETRO_S1_S2)
+
+- Session start reads PEEZY_STATE §4, the last ledger entry, and the current brief. Section reads only; never a whole-file cat of the contract, state doc, or ledger.
+- One build-for-testing per session, project signing, background runs with a single until-wait. No polling turns.
+- RED means one named assertion fails. Build failures and compile errors are not RED. `functions/tests/support/fakeFirestore.js` is extended once from the prior slice's lessons before a slice's first Node RED.
+- A session never ends on "result unknown." If a run is in flight, wait for it.
+- No Sources sections, citations, or restated hashes in briefs or amendments.
+- Test and build logs are retained under `logs/` (gitignored).
+- Each slice close writes STATUS.md and HANDOFF.md; tasks/lessons.md records which retro recommendations were applied.
+- Contract outranks brief: a brief-versus-contract conflict where the contract wins, or a disclosed boundary exception, is a ledger line, not a stop.
 
 ## Standard preamble (paste at the top of every Claude Code session)
 
