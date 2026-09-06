@@ -48,14 +48,44 @@ test("C9.3.1 identities are instance-bound and deterministic: wake_id and intent
   assert.deepEqual([again.intentId, again.wakeId], [intentId, wakeId]);
   assert.equal([...db.__docs.keys()].filter((p) => p.includes("/notificationIntents/")).length, 1, "one intent per wake");
   // in-place normal → urgent upgrade retains the pointer and creates no second intent
-  await db.runTransaction(async (transaction) => intents.upgradeWakeUrgency(transaction, taskRef, db.__docs.get(`users/${UID}/tasks/t1`), { deadline_evidence_id: "de1", threshold_id: "th1" }));
+  await db.runTransaction(async (transaction) => intents.upgradeWakeUrgency(transaction, db, UID, taskRef, db.__docs.get(`users/${UID}/tasks/t1`), { deadline_evidence_id: "de1", threshold_id: "th1" }));
   const upgraded = db.__docs.get(`users/${UID}/tasks/t1`).wakeEvidence;
   assert.deepEqual([upgraded.urgency, upgraded.intent_id, upgraded.wake_id], ["urgent_recovery", intentId, wakeId]);
   assert.equal([...db.__docs.keys()].filter((p) => p.includes("/notificationIntents/")).length, 1);
+  // C9.3.1 pair atomicity: a crossed pointer (this task pointing at another task's pending intent) refuses cancellation with zero writes
+  const crossedWrites = db.__writes.length;
+  db.__docs.set(`users/${UID}/tasks/t2`, { ...baseTask(), wakeEvidence: { ...db.__docs.get(`users/${UID}/tasks/t1`).wakeEvidence } });
+  await assert.rejects(db.runTransaction(async (transaction) => intents.cancelPendingIntent(transaction, db, UID, db.doc(`users/${UID}/tasks/t2`), db.__docs.get(`users/${UID}/tasks/t2`))), /crossed task/);
+  assert.equal(db.__writes.length, crossedWrites, "crossed pointer: no cancellation, no pointer clear");
+  assert.equal(db.__docs.get(`users/${UID}/notificationIntents/${intentId}`).state, "pending");
+  db.__docs.delete(`users/${UID}/tasks/t2`);
   // a fresh successful command cancels the pending intent and clears the pointer atomically
   await db.runTransaction(async (transaction) => intents.cancelPendingIntent(transaction, db, UID, taskRef, db.__docs.get(`users/${UID}/tasks/t1`)));
   assert.equal(db.__docs.get(`users/${UID}/notificationIntents/${intentId}`).state, "cancelled");
   assert.equal("wakeEvidence" in db.__docs.get(`users/${UID}/tasks/t1`), false);
+  // C9.3.1 exact retry after consumption: replaying the producer never rewrites a consumed pair back to pending
+  const consumedCtx = await seeded();
+  await claim(consumedCtx.db, { intentId: consumedCtx.intentId });
+  const consumedBefore = JSON.stringify(consumedCtx.db.__docs.get(`users/${UID}/notificationIntents/${consumedCtx.intentId}`));
+  const replayWrites = consumedCtx.db.__writes.length;
+  const replayed = await consumedCtx.db.runTransaction(async (transaction) => intents.produceWake(transaction, consumedCtx.db, { uid: UID, taskRef: consumedCtx.taskRef, task: consumedCtx.db.__docs.get(`users/${UID}/tasks/t1`), cause: cause(), route: { kind: "row" }, resumeDestination: "flow:due", urgency: "normal", interactionEpoch: 2, interactionRevision: 5, policyFingerprint: "p".repeat(64), now: consumedCtx.clock.now() }));
+  assert.deepEqual([replayed.intentId, replayed.wakeId], [consumedCtx.intentId, consumedCtx.wakeId]);
+  assert.equal(JSON.stringify(consumedCtx.db.__docs.get(`users/${UID}/notificationIntents/${consumedCtx.intentId}`)), consumedBefore, "the consumed intent is not overwritten");
+  assert.equal(consumedCtx.db.__writes.length, replayWrites, "exact retry writes nothing");
+  // an incompatible existing wake (different cause under the same pointer) fails closed
+  consumedCtx.db.__docs.get(`users/${UID}/tasks/t1`).wakeEvidence.wake_id = "w1_" + "9".repeat(40);
+  await assert.rejects(consumedCtx.db.runTransaction(async (transaction) => intents.produceWake(transaction, consumedCtx.db, { uid: UID, taskRef: consumedCtx.taskRef, task: consumedCtx.db.__docs.get(`users/${UID}/tasks/t1`), cause: cause(), route: { kind: "row" }, resumeDestination: "flow:due", urgency: "normal", interactionEpoch: 2, interactionRevision: 5, policyFingerprint: "p".repeat(64), now: consumedCtx.clock.now() })), /incompatible wake/);
+  // C6.1: every shared writer reads the owner root and refuses under a deletion marker with zero writes
+  const fencedCtx = await seeded();
+  const marker = { accountDeletion: { schemaVersion: 1, state: "DELETING", capabilities: [{ operationId: "adel1_00000000-0000-4000-8000-000000000001", proofSHA256: "a".repeat(64) }], startedAt: Timestamp.fromMillis(0), storageGuardAfter: Timestamp.fromMillis(604800000) } };
+  fencedCtx.db.__docs.set(`users/${UID}`, marker);
+  const fencedWrites = fencedCtx.db.__writes.length;
+  const fencedTask = () => fencedCtx.db.__docs.get(`users/${UID}/tasks/t1`);
+  const isFenced = (e) => e.code === "failed-precondition" && e.details.reason === "ACCOUNT_DELETION_FENCED";
+  await assert.rejects(fencedCtx.db.runTransaction(async (transaction) => intents.produceWake(transaction, fencedCtx.db, { uid: UID, taskRef: fencedCtx.taskRef, task: { ...fencedTask(), wakeEvidence: undefined }, cause: cause(), route: { kind: "row" }, resumeDestination: "flow:due", urgency: "normal", interactionEpoch: 2, interactionRevision: 5, policyFingerprint: "p".repeat(64), now: fencedCtx.clock.now() })), isFenced, "produceWake");
+  await assert.rejects(fencedCtx.db.runTransaction(async (transaction) => intents.upgradeWakeUrgency(transaction, fencedCtx.db, UID, fencedCtx.taskRef, fencedTask(), { deadline_evidence_id: "de1", threshold_id: "th1" })), isFenced, "upgradeWakeUrgency");
+  await assert.rejects(fencedCtx.db.runTransaction(async (transaction) => intents.cancelPendingIntent(transaction, fencedCtx.db, UID, fencedCtx.taskRef, fencedTask())), isFenced, "cancelPendingIntent");
+  assert.equal(fencedCtx.db.__writes.length, fencedWrites, "fenced writers write nothing");
   // producer rejects a malformed route, cause, or urgent wake without a basis
   for (const [label, params] of [["row with session", { route: { kind: "row", session_id: "s" } }], ["bad cause", { cause: { kind: "OTHER" } }], ["urgent without basis", { urgency: "urgent_recovery" }]]) {
     await assert.rejects(db.runTransaction(async (transaction) => intents.produceWake(transaction, db, { uid: UID, taskRef, task: baseTask(), cause: cause(), route: { kind: "row" }, resumeDestination: "flow:due", urgency: "normal", interactionEpoch: 2, interactionRevision: 5, policyFingerprint: "p".repeat(64), now: Timestamp.fromDate(NOW), ...params })), label);
@@ -124,7 +154,8 @@ test("C9.3.2/C9.3.5 an absent intent is permission-denied/AUTH_FORBIDDEN with ze
     ["dangling pointer", (db) => { db.__docs.get(`users/${UID}/tasks/t1`).wakeEvidence.wake_id = "w1_" + "1".repeat(40); }],
     ["cleared pointer", (db) => { delete db.__docs.get(`users/${UID}/tasks/t1`).wakeEvidence; }],
     ["epoch drift", (db) => { db.__docs.get(`users/${UID}/tasks/t1`).taskInteractionState = { interaction_epoch: 3, policy_fingerprint: "p".repeat(64) }; }],
-    ["fingerprint drift", (db) => { db.__docs.get(`users/${UID}/tasks/t1`).taskInteractionState = { interaction_epoch: 2, policy_fingerprint: "q".repeat(64) }; }]
+    ["fingerprint drift", (db) => { db.__docs.get(`users/${UID}/tasks/t1`).taskInteractionState = { interaction_epoch: 2, policy_fingerprint: "q".repeat(64) }; }],
+    ["cause drift under a retained wake_id", (db) => { db.__docs.get(`users/${UID}/tasks/t1`).wakeEvidence.cause = { kind: "THRESHOLD", threshold_id: "th9", deadline_evidence_id: "de9" }; }]
   ];
   for (const [label, mutate] of staleCases) {
     ctx = await seeded();
@@ -138,8 +169,15 @@ test("C9.3.2/C9.3.5 an absent intent is permission-denied/AUTH_FORBIDDEN with ze
   assert.deepEqual((await claim(ctx.db, { intentId: ctx.intentId })).route, { kind: "outcome", sessionId: "s1" });
   ctx = await seeded({ route: { kind: "outcome", session_id: "s1" }, task: { ...baseTask(), activeHandoff: { state: "opened", session_id: "s1" } } });
   await assert.rejects(claim(ctx.db, { intentId: ctx.intentId }), (e) => e.details.reason === "INTENT_STALE");
-  ctx = await seeded({ route: { kind: "outcome" } });
+  const waiting = { ...baseTask(), status: "matching_in_progress", dispositionContract: { disposition: "WAITING_ON_EXTERNAL" } };
+  ctx = await seeded({ route: { kind: "outcome" }, task: waiting });
   assert.deepEqual((await claim(ctx.db, { intentId: ctx.intentId })).route, { kind: "outcome" });
+  // C9.3.12 row 5: an outcome route without a session is the WAITING transition's outcome surface; any other state is stale
+  ctx = await seeded({ route: { kind: "outcome" }, task: waiting });
+  ctx.db.__docs.get(`users/${UID}/tasks/t1`).status = "InProgress";
+  await assert.rejects(claim(ctx.db, { intentId: ctx.intentId }), (e) => e.details.reason === "INTENT_STALE", "direct outcome route on a non-WAITING task");
+  ctx = await seeded({ route: { kind: "outcome" } });
+  await assert.rejects(claim(ctx.db, { intentId: ctx.intentId }), (e) => e.details.reason === "INTENT_STALE", "direct outcome route on an Upcoming task");
   // the root fence: a deleting owner cannot claim
   ctx = await seeded();
   ctx.db.__docs.set(`users/${UID}`, { accountDeletion: { schemaVersion: 1, state: "DELETING", capabilities: [{ operationId: "adel1_00000000-0000-4000-8000-000000000001", proofSHA256: "a".repeat(64) }], startedAt: Timestamp.fromMillis(0), storageGuardAfter: Timestamp.fromMillis(604800000) } });

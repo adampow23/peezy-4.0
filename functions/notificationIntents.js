@@ -121,7 +121,7 @@ function validateWakePointer(task, taskDocumentId, intent, intentId) {
  * Creates the wake evidence on the task and its one intent atomically within the caller's transaction.
  * Identity is deterministic, so a transaction retry produces the same IDs and bytes.
  */
-function produceWake(transaction, db, params) {
+async function produceWake(transaction, db, params) {
   const { uid, taskRef, task, cause, route, resumeDestination, urgency, urgencyBasis, interactionEpoch, interactionRevision, policyFingerprint, now } = params;
   if (!isNonBlankString(uid) || !taskRef || !task || !isTimestamp(now)) throw new Error("produceWake params");
   if (!isNonBlankString(task.task_instance_id)) throw new Error("task instance");
@@ -140,16 +140,30 @@ function produceWake(transaction, db, params) {
     policy_fingerprint: policyFingerprint, route: cleanRoute, cause: { wake_evidence_id: wakeId }, created_at: now, expires_at: Timestamp.fromMillis(now.toMillis() + INTENT_TTL_MS)
   };
   validateIntent(intent);
+  const intentRef = intentRefFor(db, uid, intentId);
+  await fence.assertDeletionAbsent(transaction, db, [uid]); // C6.1: the shared child fences its own owner root
+  // C9.3.1 exact retry: an existing pair with the same identities is returned untouched (a consumed or cancelled
+  // intent is never rewritten to pending); any other existing wake under this pointer fails closed, never overwritten
+  if (task.wakeEvidence !== undefined) {
+    const existingSnapshot = await transaction.get(intentRef);
+    const existing = existingSnapshot.exists ? existingSnapshot.data() : null;
+    const wake = task.wakeEvidence;
+    const same = wake && typeof wake === "object" && wake.wake_id === wakeId && wake.intent_id === intentId && wake.task_instance_id === task.task_instance_id
+      && existing !== null && existing.cause && existing.cause.wake_evidence_id === wakeId && existing.task_document_id === taskDocumentId && existing.task_instance_id === task.task_instance_id;
+    if (!same) throw new Error("incompatible wake");
+    return { wakeId, intentId, wakeEvidence: wake, intent: existing };
+  }
   transaction.update(taskRef, { wakeEvidence });
-  transaction.set(intentRefFor(db, uid, intentId), intent);
+  transaction.create(intentRef, intent);
   return { wakeId, intentId, wakeEvidence, intent };
 }
 
 /** In-place normal → urgent_recovery upgrade: retains the pointer, creates no second intent. */
-function upgradeWakeUrgency(transaction, taskRef, task, urgencyBasis) {
+async function upgradeWakeUrgency(transaction, db, uid, taskRef, task, urgencyBasis) {
   const wake = task && task.wakeEvidence;
   if (!wake || wake.schema_version !== 1 || !WAKE_ID_RE.test(String(wake.wake_id))) throw new Error("wake missing");
   if (!urgencyBasis) throw new Error("urgency basis");
+  await fence.assertDeletionAbsent(transaction, db, [uid]); // C6.1
   const next = { ...wake, urgency: "urgent_recovery", urgency_basis: urgencyBasis };
   transaction.update(taskRef, { wakeEvidence: next });
   return next;
@@ -161,7 +175,11 @@ async function cancelPendingIntent(transaction, db, uid, taskRef, task) {
   if (!wake || typeof wake !== "object" || !isNonBlankString(wake.intent_id)) return null;
   const ref = intentRefFor(db, uid, wake.intent_id);
   const snapshot = await transaction.get(ref);
-  if (snapshot.exists && snapshot.data().state === "pending") transaction.update(ref, { state: "cancelled" });
+  await fence.assertDeletionAbsent(transaction, db, [uid]); // C6.1
+  // C9.3.1 pair atomicity: only the task's own exact pair is cancelled; a missing, dangling, crossed, or unequal pointer rejects
+  if (!snapshot.exists) throw new Error("pointer dangling");
+  validateWakePointer(task, taskRef.id, snapshot.data(), wake.intent_id);
+  if (snapshot.data().state === "pending") transaction.update(ref, { state: "cancelled" });
   transaction.update(taskRef, { wakeEvidence: FieldValue.delete() });
   return wake.intent_id;
 }
@@ -209,8 +227,13 @@ function validateClaimRecord(record, uid, request) {
   return record;
 }
 
-function claimStaleness(intent, task, taskDocumentId, intentId) {
+function claimStaleness(intent, task, taskDocumentId, intentId, uid) {
   try { validateWakePointer(task, taskDocumentId, intent, intentId); } catch (error) { return "INTENT_STALE"; }
+  // live wake cause: the retained wake_id must still derive from the cause the task carries
+  try {
+    const liveWakeId = wakeIdFor({ uid, taskDocumentId, taskInstanceId: intent.task_instance_id, interactionEpoch: intent.interaction_epoch, policyFingerprint: intent.policy_fingerprint, cause: validateCause(task.wakeEvidence.cause) });
+    if (liveWakeId !== task.wakeEvidence.wake_id) return "INTENT_STALE";
+  } catch (error) { return "INTENT_STALE"; }
   const state = task.taskInteractionState;
   if (state && typeof state === "object") {
     if (state.interaction_epoch !== undefined && state.interaction_epoch !== intent.interaction_epoch) return "INTENT_STALE";
@@ -219,6 +242,11 @@ function claimStaleness(intent, task, taskDocumentId, intentId) {
   if (intent.route.kind === "outcome" && intent.route.session_id !== undefined) {
     const handoff = task.activeHandoff;
     if (!handoff || typeof handoff !== "object" || handoff.state !== "returned" || handoff.session_id !== intent.route.session_id) return "INTENT_STALE";
+  }
+  // C9.3.12 row 5: an outcome route without a session opens the WAITING transition's outcome surface; any other live state is stale
+  if (intent.route.kind === "outcome" && intent.route.session_id === undefined) {
+    const contract = task.dispositionContract;
+    if (task.status !== "matching_in_progress" || !contract || typeof contract !== "object" || contract.disposition !== "WAITING_ON_EXTERNAL") return "INTENT_STALE";
   }
   return null;
 }
@@ -254,7 +282,7 @@ async function executeClaimTaskIntent(db, uid, request, now) {
     const taskSnapshot = await transaction.get(taskRef);
     if (!taskSnapshot.exists) throw failedPrecondition("INTENT_STALE");
     const task = taskSnapshot.data();
-    const stale = claimStaleness(intent, task, intent.task_document_id, request.intentId);
+    const stale = claimStaleness(intent, task, intent.task_document_id, request.intentId, uid);
     if (stale) throw failedPrecondition(stale);
     await fence.assertDeletionAbsent(transaction, db, [uid]); // C6.1 root fence (committing branch)
     let expiresAt;

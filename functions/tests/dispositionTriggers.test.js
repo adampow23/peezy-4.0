@@ -933,11 +933,12 @@ test("C9.1.14/C9.1.15/C9.1.17 the threshold lane pages exactly 50/51 run-locally
   assert.deepEqual([thresholdLaneOf(r3).settled, thresholdLaneOf(r3).admitted, thresholdLaneOf(r3).refused], [true, 0, 1]);
   assert.equal([...db3.__docs.values()].find((d) => d.lane === "threshold_attention").reasonCode, "IDENTITY_RACE");
   assert.equal(db3.__docs.get("users/u1/tasks/x").thresholdProjection.state, "armed", "no mutation under a moved identity");
-  // a fenced owner's row is classified by an AUTHORITY_REFUSAL and never mutated
+  // C6.1: a fenced owner's row settles with zero writes — no refusal record, no mutation
   const { db: db4, deps: deps4 } = await initialized({ "users/u2": { accountDeletion: { schemaVersion: 1, state: "DELETING", capabilities: [{ operationId: "adel1_00000000-0000-4000-8000-000000000001", proofSHA256: "a".repeat(64) }], startedAt: Timestamp.fromMillis(0), storageGuardAfter: Timestamp.fromMillis(604800000) } }, "users/u2/tasks/x": armedTask("2026-09-06T11:00:00Z") });
   const r4 = await scheduler.runDispositionScheduler({ scheduleTime: scheduleAt(0) }, deps4);
-  assert.deepEqual([r4.outcome, thresholdLaneOf(r4).settled, thresholdLaneOf(r4).refused, db4.__docs.get("users/u2/tasks/x").thresholdProjection.state], ["completed", true, 1, "armed"]);
-  assert.equal([...db4.__docs.values()].find((d) => d.lane === "threshold_attention").reasonCode, "AUTHORITY_REFUSAL");
+  assert.deepEqual([r4.outcome, thresholdLaneOf(r4).settled, thresholdLaneOf(r4).refused, thresholdLaneOf(r4).fenced, db4.__docs.get("users/u2/tasks/x").thresholdProjection.state], ["completed", true, 0, 1, "armed"]);
+  assert.equal([...db4.__docs.values()].some((d) => d.lane === "threshold_attention"), false, "a deletion fence never becomes a refusal write");
+  assert.equal(db4.__writes.filter((w) => w.path.startsWith("users/u2/")).length, 0, "zero writes beneath the deleting owner");
   // a missed threshold deadline starts no wave and leaves the run incomplete with nothing persisted
   const { db: db5, deps: deps5 } = await initialized({ "users/u1": { name: "U" }, "users/u1/tasks/x": armedTask("2026-09-06T11:00:00Z") });
   deps5.elapsedSeconds = () => 130;
@@ -1017,14 +1018,16 @@ test("C9.1.18 the refusal id and fingerprint derivations are exact and a record 
 
 test("C9.1.18/C9.1.20 branch (2) creates the exact refusal after rereading the candidate, same-fingerprint repeats back off min(2^(n-1),16) to saturation at 8 with no eviction, a fresh row with an ineligible same-fingerprint refusal is branch (4) with no write, a changed fingerprint restarts at one after the stale authority is removed, and a retry that succeeds deletes the refusal atomically with the wake", async () => {
   const at = new Date("2026-09-06T11:00:00.000Z");
-  const { db, deps, clock } = await initialized({ "users/u1": { name: "U" }, "users/u2": DELETING_ROOT, "users/u2/tasks/x": dateTask(at) });
+  // C9.3.11: a policy-present row cannot be fired by this build's reducers → VALIDATION_REFUSAL (fail-closed, durable, backed off); a deleting owner is fenced, never a refusal
+  const POLICY = { taskInteractionState: { interaction_epoch: 1, policy_fingerprint: "p".repeat(64) } };
+  const { db, deps, clock } = await initialized({ "users/u1": { name: "U" }, "users/u2": { name: "U2" }, "users/u2/tasks/x": { ...dateTask(at), ...POLICY } });
   const runAt = runAtK(deps, clock);
   const path = "users/u2/tasks/x";
   const rpath = `users/u2/schedulerRefusals/${scheduler.refusalId("date_snoozed_deferred", path)}`;
   let r = await runAt(0);
   assert.equal(r.outcome, "completed", "a classified refusal settles the row");
   let rec = db.__docs.get(rpath);
-  assert.deepEqual([rec.schemaVersion, rec.lane, rec.candidatePath, rec.reasonCode, rec.refusalCount, rec.saturated, rec.firstRefusedOrdinal, rec.lastAttemptOrdinal, rec.nextEligibleOrdinal], [1, "date_snoozed_deferred", path, "AUTHORITY_REFUSAL", 1, false, ORD0, ORD0, ORD0 + 1]);
+  assert.deepEqual([rec.schemaVersion, rec.lane, rec.candidatePath, rec.reasonCode, rec.refusalCount, rec.saturated, rec.firstRefusedOrdinal, rec.lastAttemptOrdinal, rec.nextEligibleOrdinal], [1, "date_snoozed_deferred", path, "VALIDATION_REFUSAL", 1, false, ORD0, ORD0, ORD0 + 1]);
   assert.equal(rec.firstRefusedAt.toMillis(), rec.lastRefusedAt.toMillis());
   assert.equal(db.__docs.get(path).status, "Snoozed", "no candidate mutation");
   assert.deepEqual([laneOf(r, "date_snoozed_deferred").refused, laneOf(r, "date_snoozed_deferred").retried], [1, 0]);
@@ -1049,9 +1052,25 @@ test("C9.1.18/C9.1.20 branch (2) creates the exact refusal after rereading the c
   r = await runAt(81);
   rec = db.__docs.get(rpath);
   assert.deepEqual([rec.refusalCount, rec.firstRefusedOrdinal - ORD0, rec.nextEligibleOrdinal - ORD0, rec.saturated], [1, 81, 82, false], "restart at one with the new fingerprint");
-  // retry succeeds: the owner is live again → the wake commits and the refusal is deleted in the same transaction
-  db.__docs.set("users/u2", { name: "live" });
+  // C6.1 on the fresh admission path: a deleting owner's candidate writes no refusal and no candidate byte
+  const { db: dbF, deps: depsF, clock: clockF } = await initialized({ "users/u1": { name: "U" }, "users/u3": DELETING_ROOT, "users/u3/tasks/y": { ...dateTask(at), ...POLICY } });
+  const rF = await runAtK(depsF, clockF)(0);
+  assert.equal(rF.outcome, "completed");
+  assert.deepEqual([laneOf(rF, "date_snoozed_deferred").fenced, laneOf(rF, "date_snoozed_deferred").refused, refusalsOf(dbF).length], [1, 0, 0], "fenced fresh admission: no refusal record");
+  assert.equal(dbF.__writes.filter((w) => w.path.startsWith("users/u3/")).length, 0, "zero writes beneath the deleting owner");
+  // C6.1: while the owner is deleting, the retry reread is fenced — no refusal update, no candidate byte, the row settles as fenced
+  db.__docs.set("users/u2", DELETING_ROOT);
+  const fencedBefore = db.__writes.length;
+  const recBefore = JSON.stringify(db.__docs.get(rpath));
   r = await runAt(82);
+  assert.equal(r.outcome, "completed");
+  assert.deepEqual([laneOf(r, "date_snoozed_deferred").fenced, laneOf(r, "date_snoozed_deferred").refused, laneOf(r, "date_snoozed_deferred").retried], [1, 0, 1], "fenced retry: settled, not refused");
+  assert.equal(db.__writes.slice(fencedBefore).filter((w) => w.path === rpath || w.path === path).length, 0, "a deletion fence never becomes a refusal write");
+  assert.equal(JSON.stringify(db.__docs.get(rpath)), recBefore, "the refusal record is untouched under the fence");
+  // retry succeeds: the owner is live again and the policy state is gone → the wake commits and the refusal is deleted in the same transaction
+  db.__docs.set("users/u2", { name: "live" });
+  delete db.__docs.get(path).taskInteractionState;
+  r = await runAt(83);
   assert.equal(db.__docs.get(path).status, "Upcoming");
   assert.equal(db.__docs.has(rpath), false, "success deletes the refusal atomically");
   const wake = db.__writes.findLast((w) => w.path === path);
@@ -1060,8 +1079,10 @@ test("C9.1.18/C9.1.20 branch (2) creates the exact refusal after rereading the c
 });
 
 test("C9.1.19 retries come first from the ordered aggregate-then-pages query with the ordinary reserve of 10 and both transfer directions; the fresh page shrinks by the retries admitted so the lane never exceeds 50; 51 early ineligible refusal rows are classified by branch (4) and later fresh rows are admitted", async () => {
-  const docs = { "users/u1": { name: "U" }, "users/u2": DELETING_ROOT };
-  for (let i = 0; i < 25; i += 1) docs[`users/u2/tasks/r${String(i).padStart(2, "0")}`] = dateTask(new Date("2026-09-06T11:30:00.000Z")); // sorts after the fresh rows below
+  // refusals are manufactured by policy-present rows (VALIDATION_REFUSAL, C9.3.11 fail-closed); a deleting owner is fenced, never refused
+  const REFUSING = { taskInteractionState: { interaction_epoch: 1, policy_fingerprint: "p".repeat(64) } };
+  const docs = { "users/u1": { name: "U" }, "users/u2": { name: "U2" } };
+  for (let i = 0; i < 25; i += 1) docs[`users/u2/tasks/r${String(i).padStart(2, "0")}`] = { ...dateTask(new Date("2026-09-06T11:30:00.000Z")), ...REFUSING }; // sorts after the fresh rows below
   const { db, deps, clock } = await initialized(docs);
   const runAt = runAtK(deps, clock);
   let r = await runAt(0);
@@ -1082,12 +1103,12 @@ test("C9.1.19 retries come first from the ordered aggregate-then-pages query wit
   lane = laneOf(r, "date_snoozed_deferred");
   assert.deepEqual([lane.retried, lane.admitted, lane.extant], [10, 0, 15], "retry → fresh transfer leaves nothing to admit; the ten eligible at +3 retry");
   // 51 early ineligible refusal rows sort before fresh rows: branch (4) advances the cursor; later fresh rows are admitted
-  const { db: db2, deps: deps2, clock: clock2 } = await initialized({ "users/u1": { name: "U" }, "users/u2": DELETING_ROOT });
+  const { db: db2, deps: deps2, clock: clock2 } = await initialized({ "users/u1": { name: "U" }, "users/u2": { name: "U2" } });
   const runAt2 = runAtK(deps2, clock2);
   const laneSpec = scheduler.ORDINARY_LANES[0];
   for (let i = 0; i < 51; i += 1) {
     const path = `users/u2/tasks/e${String(i).padStart(2, "0")}`;
-    db2.__docs.set(path, dateTask(new Date(Date.parse("2026-09-06T10:00:00.000Z") + i * 1000)));
+    db2.__docs.set(path, { ...dateTask(new Date(Date.parse("2026-09-06T10:00:00.000Z") + i * 1000)), ...REFUSING });
     db2.__docs.set(`users/u2/schedulerRefusals/${scheduler.refusalId(laneSpec.lane, path)}`, { schemaVersion: 1, lane: laneSpec.lane, candidatePath: path, candidateFingerprint: scheduler.candidateFingerprint(laneSpec, await db2.doc(path).get()), firstRefusedOrdinal: ORD0 - 1, lastAttemptOrdinal: ORD0 - 1, nextEligibleOrdinal: ORD0 + 50, refusalCount: 1, saturated: false, reasonCode: "AUTHORITY_REFUSAL", firstRefusedAt: clock2.now(), lastRefusedAt: clock2.now() });
   }
   for (let i = 0; i < 5; i += 1) db2.__docs.set(`users/u1/tasks/z${i}`, dateTask(new Date("2026-09-06T11:30:00.000Z")));
@@ -1154,15 +1175,18 @@ test("C9.1.11/C9.1.19 an eligible refusal count above the ceiling (100 contiguou
   assert.deepEqual([r.objective, laneOf(r, "date_snoozed_deferred").eligibleRefusalCount, db.__docs.has(slot)], [true, 200, false], "exactly 200 under catch-up writes nothing and clears the slot");
 });
 
-test("C9.1.19 the threshold lane admits eligible retries first from half the ceiling, a retried threshold candidate is settled once across both sources, and a fenced threshold candidate records a threshold_attention refusal", async () => {
-  const { db, deps, clock } = await initialized({ "users/u1": { name: "U" }, "users/u2": DELETING_ROOT, "users/u2/tasks/a": armedTask("2026-09-06T11:59:30Z"), "users/u1/tasks/b": armedTask("2026-09-06T11:59:30Z") });
+test("C9.1.19 the threshold lane admits eligible retries first from half the ceiling, a retried threshold candidate is settled once across both sources, a policy-present armed row records a threshold_attention VALIDATION_REFUSAL, and a fenced threshold candidate settles with zero writes", async () => {
+  const policy = { taskInteractionState: { interaction_epoch: 1, policy_fingerprint: "p".repeat(64) } };
+  const { db, deps, clock } = await initialized({ "users/u1": { name: "U" }, "users/u2": { name: "U2" }, "users/u2/tasks/a": armedTask("2026-09-06T11:59:30Z", policy), "users/u1/tasks/b": armedTask("2026-09-06T11:59:30Z"), "users/u3": DELETING_ROOT, "users/u3/tasks/c": armedTask("2026-09-06T11:59:30Z") });
   const runAt = runAtK(deps, clock);
   let r = await runAt(0);
   assert.equal(r.outcome, "completed");
   const rec = refusalsOf(db, "threshold_attention");
-  assert.equal(rec.length, 1);
-  assert.deepEqual([rec[0][1].candidatePath, rec[0][1].reasonCode, rec[0][1].nextEligibleOrdinal], ["users/u2/tasks/a", "AUTHORITY_REFUSAL", ORD0 + 1]);
-  assert.deepEqual([thresholdLaneOf(r).refused, thresholdLaneOf(r).admitted], [1, 1]);
+  assert.equal(rec.length, 1, "the fenced candidate records no refusal");
+  assert.deepEqual([rec[0][1].candidatePath, rec[0][1].reasonCode, rec[0][1].nextEligibleOrdinal], ["users/u2/tasks/a", "VALIDATION_REFUSAL", ORD0 + 1]);
+  assert.deepEqual([thresholdLaneOf(r).refused, thresholdLaneOf(r).admitted, thresholdLaneOf(r).fenced], [1, 1, 1]);
+  assert.equal(db.__writes.filter((w) => w.path.startsWith("users/u3/")).length, 0, "zero writes beneath the deleting owner");
+  assert.equal(db.__docs.get("users/u2/tasks/a").thresholdProjection.state, "armed", "a policy-present row is never mutated by this build");
   r = await runAt(1); // the rows are unchanged, so the retry's reread matches the refusal's fingerprint
   assert.equal(r.outcome, "completed");
   assert.deepEqual([r.thresholdAdmissionCapacity, thresholdLaneOf(r).retried, thresholdLaneOf(r).retryReserve, thresholdLaneOf(r).admitted], [400, 1, 200, 1], "an eligible threshold refusal is a catch-up cause (C9.1.12): reserve 200 of 400; one retry, one fresh; the retried path is not admitted again by the scan");
@@ -1305,9 +1329,10 @@ test("C9.1.26/C9.1.27 attempt 1 and 2 write the exact retry member and leave the
   assert.ok(deps.logs.some(([c]) => c === "PHASE0_QUARANTINE_INVARIANT"));
 });
 
-test("C9.1.29 REFERENCE_INVALID precedes every other reason for an events row outside users/{uid}/events, and the reference check never fences a missing owner", async () => {
+test("C9.1.29 REFERENCE_INVALID precedes every other reason for an events row outside users/{uid}/events, the reference check never fences a missing owner, and a nested events row beneath a deleting owner is fenced with zero writes", async () => {
   const path = "orgs/o1/events/e1";
-  const { db, deps, clock } = await initialized({ "users/u1": { name: "U" }, [path]: pendingEvent("e1") });
+  const nested = "users/u2/foo/x/events/e1";
+  const { db, deps, clock } = await initialized({ "users/u1": { name: "U" }, [path]: pendingEvent("e1"), "users/u2": DELETING_ROOT, [nested]: pendingEvent("e1") });
   const runAt = async (k) => { clock.millis = Date.parse(scheduleAt(k)) + 1000; return scheduler.runDispositionScheduler({ scheduleTime: scheduleAt(k) }, deps); };
   for (let k = 0; k < 3; k += 1) assert.equal((await runAt(k)).outcome, "completed", `ordinal +${k}`);
   const source = db.__docs.get(path);
@@ -1317,6 +1342,9 @@ test("C9.1.29 REFERENCE_INVALID precedes every other reason for an events row ou
   const record = db.__docs.get(`${QUARANTINE_COLLECTION}/qev1_${digest.slice(0, 40)}`);
   assert.ok(record, "the qev1 record is keyed by the digest of the pending source as stored");
   assert.deepEqual([record.sourcePath, record.reason.code], [path, "REFERENCE_INVALID"]);
+  assert.deepEqual([db.__docs.get(nested).processingState, "phase0ValidationFailure" in db.__docs.get(nested)], ["pending", false], "nested descendant of a deleting owner is not mutated");
+  assert.equal(db.__writes.filter((w) => w.path.startsWith("users/u2/")).length, 0, "zero writes beneath the deleting owner");
+  assert.equal([...db.__docs.keys()].filter((p) => p.startsWith(QUARANTINE_COLLECTION) && db.__docs.get(p).sourcePath === nested).length, 0, "no quarantine row for the fenced source");
 });
 
 test("C9.1.22 a source holding a non-plain object is quarantined on first occurrence with the exact qevu1 record and terminal source in one transaction (producer fields retained, retry member deleted), size never precedes unencodable, exact existence is replay, and a disagreeing record fails closed", async () => {

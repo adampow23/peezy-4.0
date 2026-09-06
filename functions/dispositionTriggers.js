@@ -1133,7 +1133,11 @@ async function consumeEventEnvelopeInTransaction(db, eventRef, rawNow, run = nul
     const data = eventSnapshot.data();
     let userId = null;
     try { userId = eventUserId(eventRef); } catch (error) { userId = null; }
-    if (userId !== null) await assertDeletionAbsent(transaction, db, [userId]); // C6.1 root fence (every committing branch)
+    // C6.1 root fence (every committing branch): the exact owner, or the enclosing owner of a nested (invalid) events path
+    const owner = userId !== null ? userId : enclosingOwner(eventRef.path);
+    if (owner !== null) {
+      try { await assertDeletionAbsent(transaction, db, [owner]); } catch (error) { if (isDeletionFence(error)) return "fenced"; throw error; }
+    }
 
     let digest;
     try {
@@ -1574,9 +1578,19 @@ function ordinaryQuery(db, lane, run) {
   return query.select(...laneMask(lane));
 }
 
+/**
+ * C9.3.11: a policy-present row (`taskInteractionState`) belongs to the intent-producing branches this build cannot
+ * fire (they need the live policy state, deadline evidence, and handoff surfaces); it is refused fail-closed —
+ * a durable, backed-off VALIDATION_REFUSAL — rather than settled as a silent no-op.
+ */
+function requirePolicyAbsent(snapshot) {
+  if (snapshot.get("taskInteractionState") !== undefined) throw new RefusalSignal("VALIDATION_REFUSAL");
+}
+
 /** H55 branch (C9.3.11 policy-absent rows): Snoozed lanes wake through the Phase 1 reducers; other policy-absent rows are definitive no-ops. */
 function ordinaryReducerFor(lane, run) {
   return async (transaction, snapshot) => {
+    requirePolicyAbsent(snapshot);
     if (lane.status !== "Snoozed") return { woke: false };
     const now = toDate(run.runNow);
     const woke = lane.kind === "date"
@@ -1595,6 +1609,7 @@ function ordinaryReducerFor(lane, run) {
 function thresholdReducerFor(run) {
   return async (transaction, snapshot) => {
     await assertDeletionAbsent(transaction, run.deps.db, [taskUserId(snapshot.ref)]);
+    requirePolicyAbsent(snapshot);
     const projection = snapshot.get("thresholdProjection");
     const at = projection && projection.threshold_at;
     if (!projection || projection.state !== "armed" || !isMillisTimestamp(at) || at.toMillis() > run.runNow.toMillis()) return { woke: false };
@@ -1732,18 +1747,36 @@ function validateRefusal(record, lane, candidatePath, id) {
 
 function refusalReasonOf(error) {
   if (error instanceof RefusalSignal) return error.refusalReason;
-  if (error && error.details && error.details.reason === "ACCOUNT_DELETION_FENCED") return "AUTHORITY_REFUSAL";
   if (error && error.code === 10) return "TRANSACTION_RETRY_EXHAUSTED";
   return "VALIDATION_REFUSAL";
+}
+
+/** C6.1: a deletion fence is never translated into a descendant write; the candidate settles as fenced with zero writes. */
+function isDeletionFence(error) {
+  return Boolean(error && error.details && error.details.reason === "ACCOUNT_DELETION_FENCED");
+}
+
+/** The enclosing `users/{uid}` owner of a path, or null when the path has no owner root the contract names. */
+function enclosingOwner(path) {
+  const parts = typeof path === "string" ? path.split("/") : [];
+  return parts[0] === "users" && parts.length > 1 && parts[1].length > 0 ? parts[1] : null;
+}
+
+async function fenceOwnerOf(transaction, db, path) {
+  const owner = enclosingOwner(path);
+  if (owner !== null) await assertDeletionAbsent(transaction, db, [owner]);
 }
 
 /** Branch (2): exact refusal create/update after rereading the candidate identity (its own fenced bookkeeping transaction). */
 async function recordRefusal(deps, run, lane, ref, reasonCode) {
   const { db } = deps;
   const rref = refusalRefFor(db, lane, ref.path);
-  return fenced(deps, run, async (transaction) => {
+  let outcome;
+  try {
+    outcome = await fenced(deps, run, async (transaction) => {
     const refusalSnapshot = await transaction.get(rref);
     const snapshot = await transaction.get(ref);
+    await fenceOwnerOf(transaction, db, ref.path); // C6.1: the refusal row is an owner descendant
     const existing = refusalSnapshot.exists ? validateRefusal(refusalSnapshot.data(), lane, ref.path, rref.id) : null;
     if (!snapshot.exists) { if (existing) transaction.delete(rref); return { kind: "absent" }; }
     const fingerprint = candidateFingerprint(lane, snapshot);
@@ -1760,7 +1793,12 @@ async function recordRefusal(deps, run, lane, ref, reasonCode) {
     validateRefusal(next, lane, ref.path, rref.id);
     transaction.set(rref, next);
     return { kind: "refused", reasonCode, refusalCount: next.refusalCount };
-  });
+    });
+  } catch (error) {
+    if (isDeletionFence(error)) return { kind: "fenced" };
+    throw error;
+  }
+  return outcome;
 }
 
 /**
@@ -1777,6 +1815,7 @@ async function admitFresh(deps, run, lane, candidate, reducer) {
       await requireSchedulerFence(transaction, db, run);
       const refusalSnapshot = await transaction.get(rref);
       const snapshot = await transaction.get(candidate.ref);
+      await fenceOwnerOf(transaction, db, candidate.ref.path); // C6.1 before any refusal delete or reducer write
       const refusal = refusalSnapshot.exists ? validateRefusal(refusalSnapshot.data(), lane, candidate.ref.path, rref.id) : null;
       if (!snapshot.exists) { if (refusal) transaction.delete(rref); return { kind: "absent" }; }
       const current = candidateFingerprint(lane, snapshot);
@@ -1788,6 +1827,7 @@ async function admitFresh(deps, run, lane, candidate, reducer) {
     });
   } catch (error) {
     if (error instanceof SchedulerInvariant) throw error;
+    if (isDeletionFence(error)) return { kind: "fenced" };
     return recordRefusal(deps, run, lane, candidate.ref, refusalReasonOf(error));
   }
 }
@@ -1837,6 +1877,7 @@ async function retryRefusal(deps, run, lane, refusalDoc, reducer) {
       if (!refusalSnapshot.exists) return { kind: "retry_missing" };
       const refusal = validateRefusal(refusalSnapshot.data(), lane, candidatePath, rref.id);
       const snapshot = await transaction.get(ref);
+      await fenceOwnerOf(transaction, db, candidatePath); // C6.1 before any refusal delete or reducer write
       if (!snapshot.exists) { transaction.delete(rref); return { kind: "absent" }; }
       if (candidateFingerprint(lane, snapshot) !== refusal.candidateFingerprint) { transaction.delete(rref); return { kind: "changed" }; }
       const result = await reducer(transaction, snapshot);
@@ -1845,6 +1886,7 @@ async function retryRefusal(deps, run, lane, refusalDoc, reducer) {
     });
   } catch (error) {
     if (error instanceof SchedulerInvariant) throw error;
+    if (isDeletionFence(error)) return { kind: "fenced" };
     return recordRefusal(deps, run, lane, ref, refusalReasonOf(error));
   }
 }
@@ -1870,7 +1912,8 @@ function tally(outcomes, items, pathOf, settled, result, source) {
     const path = pathOf(items[index]);
     const kind = outcome.value.kind;
     if (source === "retried") result.retried += 1;
-    if (kind === "woke" || kind === "noop" || kind === "absent") {
+    if (kind === "fenced") { result.fenced += 1; settled.set(path, null); }
+    else if (kind === "woke" || kind === "noop" || kind === "absent") {
       settled.set(path, null);
       if (kind === "woke") { result.woke += 1; if (outcome.value.thresholdAt) result.committed = [...result.committed, { path, thresholdAt: outcome.value.thresholdAt }]; }
       if (source === "fresh") result.admitted += 1;
@@ -1881,7 +1924,7 @@ function tally(outcomes, items, pathOf, settled, result, source) {
 }
 
 function laneResult(lane, eligibleRefusalCount, retryReserve) {
-  return { lane: lane.lane, eligibleRefusalCount, retryReserve, retried: 0, admitted: 0, examined: 0, extant: 0, refused: 0, woke: 0, committed: [], settled: false };
+  return { lane: lane.lane, eligibleRefusalCount, retryReserve, retried: 0, admitted: 0, examined: 0, extant: 0, refused: 0, fenced: 0, woke: 0, committed: [], settled: false };
 }
 
 function isSettled(settled, path, fingerprint) {
