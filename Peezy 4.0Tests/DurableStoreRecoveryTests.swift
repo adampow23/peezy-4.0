@@ -1151,11 +1151,47 @@ struct DurableStoreRecoveryTests {
         await remote.releaseHeld()
         let outcome = try await first.value
         let joined = try await joiner.value
-        #expect(joined == outcome, "the joiner receives the winner's outcome")
+        #expect(joined.finalReceipt == outcome.finalReceipt && joined.replayed == outcome.replayed, "the joiner receives the winner's outcome")
+        #expect(outcome.notify == true && joined.notify == false, "C9.5.17: only the winner notifies; a joiner never does")
         #expect(await joinerTrace.order.isEmpty, "the joiner never invokes its own callbacks")
         #expect(await trace.order == ["resetDispatch", "inspect", "deleteAssessments", "inspect", "deleteUserKnowledge", "inspect", "resetDose", "inspect", "finalize"], "exactly one callback bundle ran")
         #expect(await remote.finalizeCalls == 1)
         #expect(await registry.snapshot().records.isEmpty)
+    }
+
+    /// C9.5.8 post-task reread: a joiner rereads signed auth after the winner's task settles, even when the task threw;
+    /// an account switch in that window returns the frozen auth branch instead of the winner's error.
+    @Test func joinerRereadsAuthAfterAThrowingWinnerAndReturnsTheAuthBranchOnDrift() async throws {
+        // calibration run: the same schedule with a steady auth; the last read is the joiner's post-task reread
+        func scenario(_ auth: SignedAuthStub) async throws -> (winner: Result<ResetDriveOutcome, Error>, joiner: Result<ResetDriveOutcome, Error>) {
+            let directory = try temporaryDirectory()
+            let registry = ResetOperationRegistry(directory: directory, clock: ResetClockStub(), auth: auth, epochAuthority: EpochStub(epoch: 1))
+            guard case let .binding(reservation) = try await registry.reserve(gestureId: "rsg1_11111111-1111-4111-8111-111111111111") else { throw DriveTraceError.failed }
+            let handle = try await registry.bind(reservation: reservation)
+            let remote = ScriptedResetRemote(wires: try frozenResetWires())
+            let trace = DriveTrace()
+            await remote.attach(trace, registry: registry, handle: handle)
+            await trace.setFailing("deleteAssessments")
+            await remote.setHoldDispatch()
+            let winner = Task { try await registry.drive(handle: handle, remote: remote, cleanup: await trace.callbacks()) }
+            while await remote.heldCount == 0 { await Task.yield() }
+            let readsBefore = auth.reads
+            let joiner = Task { try await registry.drive(handle: handle, remote: remote, cleanup: await DriveTrace().callbacks()) }
+            while auth.reads == readsBefore { await Task.yield() }
+            await remote.releaseHeld()
+            return (await winner.result, await joiner.result)
+        }
+        let steady = SignedAuthStub(.signedIn(tupleA))
+        let calibration = try await scenario(steady)
+        #expect((try? calibration.winner.get()) == nil && (try? calibration.joiner.get()) == nil, "both callers see the callback failure under steady auth")
+        let lastRead = steady.reads
+        let switching = SignedAuthStub(.signedIn(tupleA))
+        switching.switchOnRead(lastRead, to: .signedIn(tupleB))
+        let drifted = try await scenario(switching)
+        guard case let .failure(winnerError) = drifted.winner, winnerError is DriveTraceError else { Issue.record("the winner propagates the callback error"); return }
+        guard case let .failure(joinerError) = drifted.joiner, let registryError = joinerError as? ResetOperationRegistry.RegistryError, registryError == .authRequired else {
+            Issue.record("the joiner must reread auth after the winner's task and return the auth branch, not the winner's error"); return
+        }
     }
 
     @Test func driveResumesServerDeletionWhileTheReceiptIsDeletingAndStopsOnAnAbsentRecord() async throws {
@@ -1424,9 +1460,18 @@ final class SignedAuthStub: AuthAuthorityProviding, @unchecked Sendable {
     private var readCount = 0
     init(_ value: SignedAuthAuthority) { self.value = value }
     func set(_ newValue: SignedAuthAuthority) { lock.withLock { value = newValue } }
+    private var switchAt: (read: Int, value: SignedAuthAuthority)?
     /// Number of signed-auth reads so far (a test can wait for a caller's entry read).
     var reads: Int { lock.withLock { readCount } }
-    func currentSignedAuth() async -> SignedAuthAuthority { lock.withLock { readCount += 1; return value } }
+    /// The `read`-th read (1-based) and every later read return `value`.
+    func switchOnRead(_ read: Int, to value: SignedAuthAuthority) { lock.withLock { switchAt = (read, value) } }
+    func currentSignedAuth() async -> SignedAuthAuthority {
+        lock.withLock {
+            readCount += 1
+            if let switchAt, readCount >= switchAt.read { value = switchAt.value }
+            return value
+        }
+    }
     func forceRefresh(expected: SignedAuthTuple) async -> AuthRefreshOutcome { .notCommitted }
     func confirmAccountDeleted(expected: AuthIdentity) async -> AccountDeletionAuthObservation { .notProven }
 }

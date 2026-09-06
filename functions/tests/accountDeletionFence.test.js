@@ -3485,6 +3485,10 @@ test("C9.4.1 stops and drift: a third Auth check that finds the user is LEGACY_A
   assert.equal(result.report.refusal, "ACCOUNT_DELETION_LEGACY_MIGRATION_INVARIANT");
   const source = fs.readFileSync(path.join(__dirname, "..", "scripts", "purgeLegacyDeletedAccounts.js"), "utf8");
   assert.equal(/deleteUser|sendMail|messaging\(|httpsCallable|twilio|nodemailer/.test(source), false, "zero reachable Auth-delete or provider-send call sites");
+  // C9.4.1 residency: every candidate-collection read is a bounded page (no unlimited collection get)
+  const candidateReaders = source.split(/\n(?=(?:async )?function )/).filter((fn) => fn.includes("collection(CANDIDATES)"));
+  assert.ok(candidateReaders.length > 0);
+  assert.deepEqual(candidateReaders.filter((fn) => !fn.includes(".limit(")).map((fn) => fn.split("\n")[0]), [], "every reader of the candidate collection bounds its page");
   assert.match(source, /if \(require\.main === module\) main\(\)/);
 });
 

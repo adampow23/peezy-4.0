@@ -1475,10 +1475,14 @@ extension ResetOperationRegistry {
         if let slot = inflightResetOperation[handle] {
             if slot.uid == tuple.uid && slot.authEpochUUID == tuple.authEpochUUID {
                 guard tuple.credentialRevision >= slot.credentialBaseline else { throw RegistryError.credentialRevisionRegressed }
-                let outcome = try await slot.task.value
+                // post-task reread: every joiner rereads signed auth after the task settles (outcome or error) and
+                // exposes the outcome only when UID/epoch match and the revision is at or above the baseline
+                let settled = await slot.task.result
                 let again = try await signedAuth()
                 guard again.uid == slot.uid, again.authEpochUUID == slot.authEpochUUID, again.credentialRevision >= slot.credentialBaseline else { throw RegistryError.authRequired }
-                return outcome
+                let outcome = try settled.get()
+                // C9.5.17: only the winner's invocation notifies
+                return ResetDriveOutcome(finalReceipt: outcome.finalReceipt, replayed: outcome.replayed, notify: false)
             }
             _ = try? await slot.task.value
             await Task.yield()
@@ -1513,6 +1517,8 @@ extension ResetOperationRegistry {
         var auth = baseline
         var storedFreshFinal = false
         for _ in 0..<Self.driveStepBudget {
+            // before every server call, callback, or return: the task hop and each earlier await are suspensions
+            auth = try await revalidated(auth)
             var row = try currentRow(handle)
             switch row.phase {
             case .prepared, .resetDispatched, .resetReceiptDeleting:

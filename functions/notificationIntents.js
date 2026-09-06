@@ -67,6 +67,12 @@ function validateCause(cause) {
   throw new Error("cause kind");
 }
 
+/** C6.1: a shared writer mutates only `users/{uid}/tasks/{id}` beneath the owner root it fences. */
+function requireTaskOwner(uid, taskRef) {
+  const parts = taskRef && typeof taskRef.path === "string" ? taskRef.path.split("/") : [];
+  if (parts.length !== 4 || parts[0] !== "users" || parts[1] !== uid || parts[2] !== "tasks" || !isNonBlankString(parts[3])) throw new Error("task owner");
+}
+
 function wakeIdFor({ uid, taskDocumentId, taskInstanceId, interactionEpoch, policyFingerprint, cause }) {
   return `w1_${first40({ uid, task_document_id: taskDocumentId, task_instance_id: taskInstanceId, interaction_epoch: interactionEpoch, policy_fingerprint: policyFingerprint, cause })}`;
 }
@@ -124,6 +130,7 @@ function validateWakePointer(task, taskDocumentId, intent, intentId) {
 async function produceWake(transaction, db, params) {
   const { uid, taskRef, task, cause, route, resumeDestination, urgency, urgencyBasis, interactionEpoch, interactionRevision, policyFingerprint, now } = params;
   if (!isNonBlankString(uid) || !taskRef || !task || !isTimestamp(now)) throw new Error("produceWake params");
+  requireTaskOwner(uid, taskRef);
   if (!isNonBlankString(task.task_instance_id)) throw new Error("task instance");
   if (!["normal", "urgent_recovery"].includes(urgency)) throw new Error("urgency");
   if (urgency === "urgent_recovery" && !urgencyBasis) throw new Error("urgency basis");
@@ -148,8 +155,17 @@ async function produceWake(transaction, db, params) {
     const existingSnapshot = await transaction.get(intentRef);
     const existing = existingSnapshot.exists ? existingSnapshot.data() : null;
     const wake = task.wakeEvidence;
-    const same = wake && typeof wake === "object" && wake.wake_id === wakeId && wake.intent_id === intentId && wake.task_instance_id === task.task_instance_id
-      && existing !== null && existing.cause && existing.cause.wake_evidence_id === wakeId && existing.task_document_id === taskDocumentId && existing.task_instance_id === task.task_instance_id;
+    // both documents must validate and carry exactly this pair's identity and content; only lifecycle members may differ
+    const lifecycle = ({ state, created_at, expires_at, consumed_at, claim_operation_id, ...rest }) => rest;
+    const stable = ({ fired_at, urgency, urgency_basis, ...rest }) => rest;
+    let same = false;
+    try {
+      validateIntent(existing);
+      validateIntentIdentity(uid, intentId, existing);
+      same = wake !== null && typeof wake === "object" && !Array.isArray(wake)
+        && canonical(stable(wake)) === canonical(stable(wakeEvidence))
+        && canonical(lifecycle(existing)) === canonical(lifecycle(intent));
+    } catch (error) { same = false; }
     if (!same) throw new Error("incompatible wake");
     return { wakeId, intentId, wakeEvidence: wake, intent: existing };
   }
@@ -163,6 +179,7 @@ async function upgradeWakeUrgency(transaction, db, uid, taskRef, task, urgencyBa
   const wake = task && task.wakeEvidence;
   if (!wake || wake.schema_version !== 1 || !WAKE_ID_RE.test(String(wake.wake_id))) throw new Error("wake missing");
   if (!urgencyBasis) throw new Error("urgency basis");
+  requireTaskOwner(uid, taskRef);
   await fence.assertDeletionAbsent(transaction, db, [uid]); // C6.1
   const next = { ...wake, urgency: "urgent_recovery", urgency_basis: urgencyBasis };
   transaction.update(taskRef, { wakeEvidence: next });
@@ -173,6 +190,7 @@ async function upgradeWakeUrgency(transaction, db, uid, taskRef, task, urgencyBa
 async function cancelPendingIntent(transaction, db, uid, taskRef, task) {
   const wake = task && task.wakeEvidence;
   if (!wake || typeof wake !== "object" || !isNonBlankString(wake.intent_id)) return null;
+  requireTaskOwner(uid, taskRef);
   const ref = intentRefFor(db, uid, wake.intent_id);
   const snapshot = await transaction.get(ref);
   await fence.assertDeletionAbsent(transaction, db, [uid]); // C6.1
@@ -220,11 +238,28 @@ function validateClaimRecord(record, uid, request) {
   if (record.schema_version !== 1 || record.kind !== "INTENT_CLAIM" || record.state !== "COMMITTED" || record.account_uid !== uid || record.operation_id !== request.claimOperationId || record.action !== "claimTaskIntent") throw reject();
   if (record.request_sha256 !== sha || record.request_fingerprint !== `op1_${sha}`) throw reject();
   if (!Array.isArray(record.task_identities) || record.task_identities.length !== 0 || !Array.isArray(record.prior_snapshots) || record.prior_snapshots.length !== 0) throw reject();
-  if (record.response === null || typeof record.response !== "object" || Array.isArray(record.response)) throw reject();
-  if (record.response.kind !== "task_route" || record.response.replayed !== false || record.response.claimOperationId !== request.claimOperationId || record.response.intentId !== request.intentId) throw reject();
+  if (!isClaimResponse(record.response, uid, request)) throw reject();
   if (record.response_sha256 !== fence.sha256Hex(canonical(record.response))) throw reject();
   if (!isTimestamp(record.created_at) || !isTimestamp(record.committed_at) || record.created_at.toMillis() !== record.committed_at.toMillis()) throw reject();
   return record;
+}
+
+const RESPONSE_MEMBERS = "accountUid,claimOperationId,expiresAt,intentId,interactionEpoch,kind,policyFingerprint,replayed,route,schemaVersion,taskDocumentId,taskGenerationEpoch,taskInstanceId";
+
+/** C9.3.3: the stored `task_route` response is the closed typed wire; any other shape, value, or size is a reuse defect. */
+function isClaimResponse(response, uid, request) {
+  if (response === null || typeof response !== "object" || Array.isArray(response)) return false;
+  if (Object.keys(response).sort().join(",") !== RESPONSE_MEMBERS) return false;
+  if (response.schemaVersion !== 1 || response.kind !== "task_route" || response.replayed !== false) return false;
+  if (response.accountUid !== uid || response.claimOperationId !== request.claimOperationId || response.intentId !== request.intentId) return false;
+  if (!isNonBlankString(response.taskDocumentId) || !isNonBlankString(response.taskInstanceId) || !isNonBlankString(response.policyFingerprint)) return false;
+  if (!(response.taskGenerationEpoch === null || Number.isSafeInteger(response.taskGenerationEpoch)) || !isSafeNonNegative(response.interactionEpoch)) return false;
+  const route = response.route;
+  if (route === null || typeof route !== "object" || Array.isArray(route)) return false;
+  const routeKeys = Object.keys(route).sort().join(",");
+  if (!((route.kind === "row" && routeKeys === "kind") || (route.kind === "outcome" && (routeKeys === "kind" || (routeKeys === "kind,sessionId" && isNonBlankString(route.sessionId)))))) return false;
+  if (typeof response.expiresAt !== "string" || !WIRE_RE.test(response.expiresAt)) return false;
+  return Buffer.byteLength(canonical(response), "utf8") <= RESPONSE_CAP_BYTES;
 }
 
 function claimStaleness(intent, task, taskDocumentId, intentId, uid) {
@@ -234,11 +269,10 @@ function claimStaleness(intent, task, taskDocumentId, intentId, uid) {
     const liveWakeId = wakeIdFor({ uid, taskDocumentId, taskInstanceId: intent.task_instance_id, interactionEpoch: intent.interaction_epoch, policyFingerprint: intent.policy_fingerprint, cause: validateCause(task.wakeEvidence.cause) });
     if (liveWakeId !== task.wakeEvidence.wake_id) return "INTENT_STALE";
   } catch (error) { return "INTENT_STALE"; }
+  // C9.3.2: the live policy state must be present and match the intent's epoch and fingerprint (an intent exists only for a valid-policy wake)
   const state = task.taskInteractionState;
-  if (state && typeof state === "object") {
-    if (state.interaction_epoch !== undefined && state.interaction_epoch !== intent.interaction_epoch) return "INTENT_STALE";
-    if (state.policy_fingerprint !== undefined && state.policy_fingerprint !== intent.policy_fingerprint) return "INTENT_STALE";
-  }
+  if (!state || typeof state !== "object" || Array.isArray(state)) return "INTENT_STALE";
+  if (state.interaction_epoch !== intent.interaction_epoch || state.policy_fingerprint !== intent.policy_fingerprint) return "INTENT_STALE";
   if (intent.route.kind === "outcome" && intent.route.session_id !== undefined) {
     const handoff = task.activeHandoff;
     if (!handoff || typeof handoff !== "object" || handoff.state !== "returned" || handoff.session_id !== intent.route.session_id) return "INTENT_STALE";

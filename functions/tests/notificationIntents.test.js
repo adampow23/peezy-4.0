@@ -14,7 +14,7 @@ const UID = "u1";
 const NOW = new Date("2026-09-06T12:00:00.000Z");
 const CLAIM_OP = "11111111-1111-4111-8111-111111111111";
 const cause = () => ({ kind: "TRIGGER", original_trigger: { kind: "date", at: Timestamp.fromMillis(0), fired: true } });
-const baseTask = () => ({ status: "Upcoming", task_instance_id: "ti1", task_generation_epoch: 3 });
+const baseTask = () => ({ status: "Upcoming", task_instance_id: "ti1", task_generation_epoch: 3, taskInteractionState: { interaction_epoch: 2, policy_fingerprint: "p".repeat(64) } });
 
 /** Produces a wake + intent pair on a fresh fake and returns everything the claim needs. */
 async function seeded({ route = { kind: "row" }, task = baseTask(), clockIso = "2026-09-06T11:00:00.000Z", extraDocs = {} } = {}) {
@@ -75,6 +75,28 @@ test("C9.3.1 identities are instance-bound and deterministic: wake_id and intent
   // an incompatible existing wake (different cause under the same pointer) fails closed
   consumedCtx.db.__docs.get(`users/${UID}/tasks/t1`).wakeEvidence.wake_id = "w1_" + "9".repeat(40);
   await assert.rejects(consumedCtx.db.runTransaction(async (transaction) => intents.produceWake(transaction, consumedCtx.db, { uid: UID, taskRef: consumedCtx.taskRef, task: consumedCtx.db.__docs.get(`users/${UID}/tasks/t1`), cause: cause(), route: { kind: "row" }, resumeDestination: "flow:due", urgency: "normal", interactionEpoch: 2, interactionRevision: 5, policyFingerprint: "p".repeat(64), now: consumedCtx.clock.now() })), /incompatible wake/);
+  // C6.1: the task must be the fenced owner's own `users/{uid}/tasks/{id}`; another owner's task path is rejected before any write
+  const foreignCtx = await seeded();
+  foreignCtx.db.__docs.set("users/B/tasks/t1", { ...baseTask() });
+  const foreignRef = foreignCtx.db.doc("users/B/tasks/t1");
+  const foreignWrites = foreignCtx.db.__writes.length;
+  await assert.rejects(foreignCtx.db.runTransaction(async (transaction) => intents.produceWake(transaction, foreignCtx.db, { uid: UID, taskRef: foreignRef, task: baseTask(), cause: cause(), route: { kind: "row" }, resumeDestination: "flow:due", urgency: "normal", interactionEpoch: 2, interactionRevision: 5, policyFingerprint: "p".repeat(64), now: foreignCtx.clock.now() })), /task owner/, "produceWake");
+  await assert.rejects(foreignCtx.db.runTransaction(async (transaction) => intents.upgradeWakeUrgency(transaction, foreignCtx.db, UID, foreignRef, { ...baseTask(), wakeEvidence: foreignCtx.wakeEvidence }, { deadline_evidence_id: "de1", threshold_id: "th1" })), /task owner/, "upgradeWakeUrgency");
+  await assert.rejects(foreignCtx.db.runTransaction(async (transaction) => intents.cancelPendingIntent(transaction, foreignCtx.db, UID, foreignRef, { ...baseTask(), wakeEvidence: foreignCtx.wakeEvidence })), /task owner/, "cancelPendingIntent");
+  assert.equal(foreignCtx.db.__writes.length, foreignWrites, "a foreign task path writes nothing");
+  // C9.3.1: an existing pair is preserved only when both documents are exact; a drifted intent member or surplus content fails closed
+  for (const [label, mutate] of [
+    ["intent fingerprint drift", (db, id) => { db.__docs.get(`users/${UID}/notificationIntents/${id}`).policy_fingerprint = "q".repeat(64); }],
+    ["intent surplus member", (db, id) => { db.__docs.get(`users/${UID}/notificationIntents/${id}`).extra = 1; }],
+    ["intent route drift", (db, id) => { db.__docs.get(`users/${UID}/notificationIntents/${id}`).route = { kind: "outcome" }; }],
+    ["wake resume destination drift", (db) => { db.__docs.get(`users/${UID}/tasks/t1`).wakeEvidence.resume_destination = "flow:other"; }]
+  ]) {
+    const driftCtx = await seeded();
+    mutate(driftCtx.db, driftCtx.intentId);
+    const driftWrites = driftCtx.db.__writes.length;
+    await assert.rejects(driftCtx.db.runTransaction(async (transaction) => intents.produceWake(transaction, driftCtx.db, { uid: UID, taskRef: driftCtx.taskRef, task: driftCtx.db.__docs.get(`users/${UID}/tasks/t1`), cause: cause(), route: { kind: "row" }, resumeDestination: "flow:due", urgency: "normal", interactionEpoch: 2, interactionRevision: 5, policyFingerprint: "p".repeat(64), now: driftCtx.clock.now() })), /incompatible wake/, label);
+    assert.equal(driftCtx.db.__writes.length, driftWrites, `${label}: no write`);
+  }
   // C6.1: every shared writer reads the owner root and refuses under a deletion marker with zero writes
   const fencedCtx = await seeded();
   const marker = { accountDeletion: { schemaVersion: 1, state: "DELETING", capabilities: [{ operationId: "adel1_00000000-0000-4000-8000-000000000001", proofSHA256: "a".repeat(64) }], startedAt: Timestamp.fromMillis(0), storageGuardAfter: Timestamp.fromMillis(604800000) } };
@@ -155,7 +177,9 @@ test("C9.3.2/C9.3.5 an absent intent is permission-denied/AUTH_FORBIDDEN with ze
     ["cleared pointer", (db) => { delete db.__docs.get(`users/${UID}/tasks/t1`).wakeEvidence; }],
     ["epoch drift", (db) => { db.__docs.get(`users/${UID}/tasks/t1`).taskInteractionState = { interaction_epoch: 3, policy_fingerprint: "p".repeat(64) }; }],
     ["fingerprint drift", (db) => { db.__docs.get(`users/${UID}/tasks/t1`).taskInteractionState = { interaction_epoch: 2, policy_fingerprint: "q".repeat(64) }; }],
-    ["cause drift under a retained wake_id", (db) => { db.__docs.get(`users/${UID}/tasks/t1`).wakeEvidence.cause = { kind: "THRESHOLD", threshold_id: "th9", deadline_evidence_id: "de9" }; }]
+    ["cause drift under a retained wake_id", (db) => { db.__docs.get(`users/${UID}/tasks/t1`).wakeEvidence.cause = { kind: "THRESHOLD", threshold_id: "th9", deadline_evidence_id: "de9" }; }],
+    ["absent live policy state", (db) => { delete db.__docs.get(`users/${UID}/tasks/t1`).taskInteractionState; }],
+    ["policy state missing its fingerprint", (db) => { db.__docs.get(`users/${UID}/tasks/t1`).taskInteractionState = { interaction_epoch: 2 }; }]
   ];
   for (const [label, mutate] of staleCases) {
     ctx = await seeded();
@@ -207,6 +231,10 @@ test("C9.3.2/C9.3.3 request validation and record reuse: surplus or missing memb
   for (const [label, mutate] of [
     ["hash mismatch", (r) => { r.request_sha256 = "0".repeat(64); }],
     ["altered response", (r) => { r.response = { ...r.response, taskDocumentId: "t9" }; }],
+    ["response account altered with a recomputed digest", (r) => { r.response = { ...r.response, accountUid: "u9" }; r.response_sha256 = fence.sha256Hex(fence.TaskCanonicalV1(r.response)); }],
+    ["response surplus member with a recomputed digest", (r) => { r.response = { ...r.response, extra: 1 }; r.response_sha256 = fence.sha256Hex(fence.TaskCanonicalV1(r.response)); }],
+    ["response route malformed with a recomputed digest", (r) => { r.response = { ...r.response, route: { kind: "row", sessionId: "s" } }; r.response_sha256 = fence.sha256Hex(fence.TaskCanonicalV1(r.response)); }],
+    ["response expiry malformed with a recomputed digest", (r) => { r.response = { ...r.response, expiresAt: "2026-09-07" }; r.response_sha256 = fence.sha256Hex(fence.TaskCanonicalV1(r.response)); }],
     ["surplus member", (r) => { r.extra = 1; }],
     ["missing member", (r) => { delete r.prior_snapshots; }],
     ["malformed timestamp", (r) => { r.committed_at = "yesterday"; }],

@@ -418,10 +418,14 @@ function samePathSet(a, b) {
   return x.length === y.length && x.every((p, i) => p === y[i]);
 }
 
-/** Two consecutive complete passes with zero drift, the same pending count, and the same failing/out-of-scope sets. */
+/**
+ * C9.2.1 two-pass: the second full uncursored pass runs only after a complete zero-failing first pass (zero failing,
+ * zero out-of-scope, zero drift); stable = both complete passes agree on the pending count with zero drift; the
+ * C9.2.9 criterion additionally needs zero failing/out-of-scope rows in the confirmation pass.
+ */
 async function runAudit(client, protos, projectId, callOptions, now) {
   const first = await runPass(client, protos, projectId, callOptions, now);
-  if (!first.complete) return { passes: [first], stable: false, preShipCriterion: false };
+  if (!first.complete || first.failing.length > 0 || first.outOfScope.length > 0 || first.drifted.length > 0) return { passes: [first], stable: false, preShipCriterion: false };
   const second = await runPass(client, protos, projectId, callOptions, now);
   const stable = first.complete && second.complete && first.drifted.length === 0 && second.drifted.length === 0
     && first.pendingCount === second.pendingCount && samePathSet(first.failing, second.failing) && samePathSet(first.outOfScope, second.outOfScope);
@@ -892,10 +896,12 @@ async function runApply(client, protos, projectId, callOptions, now, deps) {
   const summary = { refusal: null, lease: { ownerToken, fencingGeneration: lease.fencingGeneration, migratedSchedulerLease: acquisition.migratedSchedulerLease }, migrated: [], cleanup: [], gate: null, release: null };
   try {
     const audit = await runAudit(client, protos, projectId, callOptions, now);
-    summary.audit = { stable: audit.stable, preShipCriterion: audit.preShipCriterion, failing: audit.passes.at(-1) ? audit.passes.at(-1).failing.length : null };
-    if (!audit.stable) { summary.refusal = "AUDIT_UNSTABLE"; return summary; }
-    if (audit.passes.at(-1).outOfScope.length > 0) { summary.refusal = "OUT_OF_SCOPE_SOURCE"; return summary; }
-    for (const failing of audit.passes.at(-1).failing) summary.migrated = [...summary.migrated, await migrateSource(client, projectId, callOptions, lease, failing, now)];
+    const confirmation = audit.passes.at(-1);
+    summary.audit = { stable: audit.stable, preShipCriterion: audit.preShipCriterion, failing: confirmation ? confirmation.failing.length : null };
+    // the confirmation under the lease: a complete pass with zero drift (a zero-failing pass is confirmed by its second pass)
+    if (!confirmation.complete || confirmation.drifted.length > 0 || (confirmation.failing.length === 0 && confirmation.outOfScope.length === 0 && !audit.stable)) { summary.refusal = "AUDIT_UNSTABLE"; return summary; }
+    if (confirmation.outOfScope.length > 0) { summary.refusal = "OUT_OF_SCOPE_SOURCE"; return summary; }
+    for (const failing of confirmation.failing) summary.migrated = [...summary.migrated, await migrateSource(client, projectId, callOptions, lease, failing, now)];
     summary.cleanup = await cleanupOrphans(client, protos, projectId, callOptions, lease);
     summary.gate = await preShipGate(client, protos, projectId, callOptions, now);
     summary.refusal = summary.gate.passed ? null : "PRE_SHIP_GATE_FAILED";

@@ -1911,7 +1911,9 @@ test("C9.2.1 classification: in-scope names only (one segment each), OUT_OF_SCOP
 test("C9.2.1/C9.2.9 two-pass audit: stable when both complete passes agree on the pending count and the failing/out-of-scope sets with zero drift; an insertion between passes is unstable (restart); a systemic stream error leaves the first pass incomplete; the pre-ship criterion additionally needs zero failing and zero out-of-scope", async () => {
   const client = new FakeV1Client({ projectId: MIG_PROJECT, documents: { "users/u1/events/ok": migPending("ok"), "users/u1/events/big": migOversize("big") } });
   let audit = await migration.runAudit(client, gapicProtos, MIG_PROJECT, {}, MIG_NOW);
-  assert.deepEqual([audit.stable, audit.preShipCriterion, audit.passes.length, audit.passes[1].pendingCount, audit.passes[1].failing.length], [true, false, 2, 2, 1]);
+  // C9.2.1 two-pass: the second pass runs only after a complete zero-failing first pass; a failing first pass is one pass, unstable, and exits nonzero
+  assert.deepEqual([audit.stable, audit.preShipCriterion, audit.passes.length, audit.passes[0].pendingCount, audit.passes[0].failing.length], [false, false, 1, 2, 1]);
+  assert.equal((await migration.run([], migDeps(client))).exitCode, 1, "a failing first pass exits nonzero");
   const clean = new FakeV1Client({ projectId: MIG_PROJECT, documents: { "users/u1/events/ok": migPending("ok") } });
   audit = await migration.runAudit(clean, gapicProtos, MIG_PROJECT, {}, MIG_NOW);
   assert.deepEqual([audit.stable, audit.preShipCriterion], [true, true]);

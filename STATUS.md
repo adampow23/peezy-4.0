@@ -8,19 +8,21 @@ Authority: `docs/plans/PHASE2_CONTRACT.md` (sha256 `fb6a8bf63da7d0388229bcc8525f
 |---|---|---|
 | S1 seams / reset stamps / runtime consumers / TaskPlanService transport | closed | `c967d59` (I6) + amendments `b2cf756`, `73dbd18` |
 | S2 workflow / server implementation | closed | `8f9cbdf` |
-| S3 scheduler / migration / deletion / outbound integration | code complete at `eb0cc81`; close-out review checkpoint in progress (workflow rule 4) | the close-out commit is tagged in `tasks/todo.md` under "S3 close-out" |
+| S3 scheduler / migration / deletion / outbound integration | code complete at `eb0cc81`; the close-out review (Swift pass + Sol diff review) fixed 14 findings through `4a86f0f`; the S3 head is tagged in `tasks/todo.md` under "S3 close-out" | see the ledger |
 | S4 recovery / privacy UI + deletion orchestration | not started; next deletion slice, diff-reviewed | — |
 | S5 identity, S6 (after S4), S7 close-out | not started | — |
 
-## Verification envelope at `eb0cc81`
+## Verification envelope at `4a86f0f` (after the close-out review fixes)
 
 | Suite | Result | Log |
 |---|---|---|
-| Offline Node (C10.9 list that exists + `accountDeletionFence.test.js`, node@24 by path) | 368 tests, 363 pass, 5 emulator-gated skips, 0 fail | `logs/S3-close-offline.log` |
-| Emulator Node subset (`scripts/test-emulator.sh node`) | 189 / 189 | `logs/S3-close-emulator-node.log` |
-| Rules (`scripts/test-emulator.sh rules`, Firestore + Storage) | 25 / 25 | `logs/S3-close-emulator-rules.log` |
-| Swift (`DurableStoreRecoveryTests`, `TaskPlanDispositionTests`, `TaskSupersessionTests` on the emulator) | 67 tests in 3 suites passed | `logs/S3-close-emulator-swift.log` |
+| Offline Node (C10.9 list that exists + `accountDeletionFence.test.js`, node@24 by path) | 369 tests, 364 pass, 5 emulator-gated skips, 0 fail | `logs/S3-review-offline.log` |
+| Emulator Node subset (`scripts/test-emulator.sh node`) | 190 / 190 | `logs/S3-review-emulator-node.log` |
+| Rules (`scripts/test-emulator.sh rules`, Firestore + Storage) | 25 / 25 | `logs/S3-review-emulator-rules.log` |
+| Swift (`DurableStoreRecoveryTests`, `TaskPlanDispositionTests`, `TaskSupersessionTests` on the emulator) | 70 tests in 3 suites passed | `logs/S3-review-swift-F13-F15-green.log` |
 | `xcodebuild build-for-testing` (project signing) | TEST BUILD SUCCEEDED | `logs/S3-swift-build-for-testing.log` |
+
+The pre-review envelope at `eb0cc81` (368/363/5, 189/189, 25/25, 67 tests) is in `logs/S3-close-*.log`.
 
 Static gates at the same commit: `firestore.rules` sha256 `0d271775…` and `firestore.indexes.json` (5,872 bytes, sha256 `a6de8daf…`) equal `ROLLOUT_TUPLE_V1` in `functions/scripts/migrateOversizeEvents.js`; C7 pins re-verified at I4 and I12b; `node --check` on every touched `.js`.
 
@@ -40,6 +42,14 @@ Baseline failures (pre-existing, not Phase 2's): the whole unit target carries 1
 - `RetakeAssessmentCoordinator.swift`: drives through the registry with authority-taking cleanup closures; at-most-once notification; C9.4.6 outcome switch.
 - `DailyDoseEngine.swift`: `DailyDoseLocalStore` epoch-r cleanup and the exact 0→1 bridge; `resetForRetake(authority:)`.
 - Frozen cross-language wires: `functions/tests/fixtures/resetWiresV1.json` (produced by the real handler, byte-asserted from Node, decoded by the Swift mirrors).
+
+## Contract gaps surfaced by the close-out review (owner decisions, recorded in the ledger)
+
+- C9.1.20: whether a deletion-fenced candidate settles the lane cursor (the code settles it without a write).
+- C9.2.1/C9.2.2: no audit-mode exit criterion for MIG-EVENT; L1256's second-pass sequencing wording.
+- C9.4.1: NEW_UID during confirmation is never nominated (candidate amendment: NEW_UID → discovering at row 0, `pass_ordinal + 1`).
+- C9.3: the live policy-state shape and the PC-linkage referent on the intent document are undefined; C10.1/C6.5 charge the C9.3.11 firing branches to `dispositionTriggers.js` (S3) while the ledger records them as S6's.
+- C9.5.16: whether a later reset removes the legacy dose keys when v2 is malformed (the code now preserves them, matching the bridge).
 
 ## Owner inputs outstanding (input only the owner has)
 

@@ -527,9 +527,8 @@ async function discoverStep(deps, checkpoint) {
 }
 
 function candidatesQuery(deps, afterId) {
-  let query = deps.db.collection(CANDIDATES).orderBy(FieldPath.documentId(), "asc");
-  if (afterId !== "") query = query.startAfter(deps.db.doc(`${CANDIDATES}/${afterId}`));
-  return query.limit(1);
+  const ordered = deps.db.collection(CANDIDATES).orderBy(FieldPath.documentId(), "asc");
+  return (afterId === "" ? ordered : ordered.startAfter(deps.db.doc(`${CANDIDATES}/${afterId}`))).limit(1);
 }
 
 async function authCheck(deps, uid) {
@@ -651,18 +650,35 @@ async function reduceStep(deps, checkpoint, sweep) {
   return { checkpoint: advanced, done: false, outcome: `ADOPTED_${phase}` };
 }
 
+/** One bounded page of candidate rows in document-ID order, after `after` (a snapshot) when given. */
+function candidatePage(deps, after, size) {
+  const ordered = deps.db.collection(CANDIDATES).orderBy(FieldPath.documentId(), "asc");
+  return (after === null ? ordered : ordered.startAfter(after)).limit(size).get();
+}
+
+/** Bounded walk over the candidate rows (100 per page, one resident page): returns the first row for which `test` is true, else null. */
+async function findCandidate(deps, test) {
+  let after = null;
+  for (;;) {
+    const page = await candidatePage(deps, after, CLEANUP_PAGE);
+    for (const row of page.docs) {
+      const candidate = validateCandidate(row.data(), row.id);
+      if (await test(candidate)) return candidate;
+    }
+    if (page.docs.length < CLEANUP_PAGE) return null;
+    after = page.docs[page.docs.length - 1];
+  }
+}
+
 /** A complete sweep: zero pending/ambiguous and every adopted candidate's marker carries firestoreCleanupAt. */
 async function sweepComplete(deps) {
-  const all = await deps.db.collection(CANDIDATES).orderBy(FieldPath.documentId(), "asc").get();
-  for (const row of all.docs) {
-    const candidate = validateCandidate(row.data(), row.id);
-    if (candidate.disposition === "pending") return false;
-    if (candidate.disposition === "adopted") {
-      const root = await rootState(deps, candidate.account_uid);
-      if (root.kind !== "marker" || !["DELETING_GUARDING", "DATA_DELETED", "AUTH_GUARDING", "ACCOUNT_DELETED"].includes(root.phase)) return false;
-    }
-  }
-  return true;
+  const blocking = await findCandidate(deps, async (candidate) => {
+    if (candidate.disposition === "pending") return true;
+    if (candidate.disposition !== "adopted") return false;
+    const root = await rootState(deps, candidate.account_uid);
+    return root.kind !== "marker" || !["DELETING_GUARDING", "DATA_DELETED", "AUTH_GUARDING", "ACCOUNT_DELETED"].includes(root.phase);
+  });
+  return blocking === null;
 }
 
 /** UID-specific residue proof over all 23 adapters plus the injected global destination-zero proof. */
@@ -704,8 +720,7 @@ async function residueProof(deps, uid) {
 async function waitingStep(deps, checkpoint, sweep) {
   const page = await candidatesQuery(deps, checkpoint.reduction_cursor_id).get();
   if (page.empty) {
-    const remaining = await deps.db.collection(CANDIDATES).orderBy(FieldPath.documentId(), "asc").get();
-    const blocking = remaining.docs.map((d) => validateCandidate(d.data(), d.id)).some((c) => c.disposition !== "excluded_live");
+    const blocking = (await findCandidate(deps, async (candidate) => candidate.disposition !== "excluded_live")) !== null;
     if (!blocking) return { checkpoint: await checkpointTransaction(deps, checkpoint, async () => ({ status: "confirming", reduction_cursor_id: "", source_ordinal: 0, source_cursor: { kind: "start" }, confirmation_zero_passes: 0 })), done: true };
     sweep.sawAny = false;
     return { checkpoint: await checkpointTransaction(deps, checkpoint, async () => ({ reduction_cursor_id: "", reduction_round: checkpoint.reduction_round + 1 })), done: false };
@@ -733,9 +748,7 @@ function confirmationFailure() {
 async function excludedRowsStillTrue(deps) {
   let after = null;
   for (;;) {
-    let query = deps.db.collection(CANDIDATES).orderBy(FieldPath.documentId(), "asc");
-    if (after !== null) query = query.startAfter(after);
-    const page = await query.limit(CLEANUP_PAGE).get();
+    const page = await candidatePage(deps, after, CLEANUP_PAGE);
     for (const row of page.docs) {
       const candidate = validateCandidate(row.data(), row.id);
       if (candidate.disposition !== "excluded_live") return "NON_EXCLUDED_CANDIDATE";
