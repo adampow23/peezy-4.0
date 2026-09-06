@@ -16,6 +16,7 @@ const { submitCheckIn } = require('./submitCheckIn');
 const { redeemGiftCode } = require('./entitlement');
 const { spawnTasks } = require('./spawnTasks');
 const { changeTaskPlan } = require('./taskPlan');
+const { handleAccountDeletionRequest, productionDependencies } = require('./accountDeletionFence');
 const { evaluateDispositionTriggers } = require('./dispositionTriggers');
 const { notifySupport } = require('./notifySupport');
 const {
@@ -207,65 +208,12 @@ exports.submitSupportMessage = onCall(
 );
 
 /**
- * Delete user account: all Firestore data + Firebase Auth user.
- * Runs as admin — can delete anything under users/{uid}/.
- * Called ONLY from the iOS app's "Delete Account" flow in Settings.
+ * Account deletion (PHASE2_CONTRACT.md C2.3/C3): discover|begin|resume|finalize against the
+ * root marker. The core lives in ./accountDeletionFence; this export binds only the pinned options.
  */
 exports.deleteAccount = onCall(
   { region: 'us-central1', timeoutSeconds: 60, memory: '512MiB' },
-  async (request) => {
-    const userId = request.auth?.uid;
-
-    if (!userId) {
-      throw new HttpsError('unauthenticated', 'Must be signed in to delete account.');
-    }
-
-    const db = admin.firestore();
-    const auth = admin.auth();
-
-    try {
-      // 1. Recursively delete all user data under users/{uid}.
-      // This uses Firebase's built-in recursive delete helper.
-      const userDocRef = db.collection('users').doc(userId);
-      await db.recursiveDelete(userDocRef);
-
-      // 2. Delete top-level user data documents and collections that reference this user.
-      await db.collection('userKnowledge').doc(userId).delete();
-
-      const collectionsToScan = [
-        'conciergeRequests',
-        'taskFlowSubmissions',
-        'inventorySessions'
-      ];
-
-      for (const collectionName of collectionsToScan) {
-        const snapshot = await db.collection(collectionName)
-          .where('userId', '==', userId)
-          .get();
-
-        const batch = db.batch();
-        snapshot.forEach(doc => batch.delete(doc.ref));
-        if (snapshot.size > 0) {
-          await batch.commit();
-        }
-      }
-
-      // 3. Delete Firebase Storage files for this user.
-      // Inventory scan frames and future user-owned files should live under this prefix.
-      const bucket = admin.storage().bucket();
-      const [files] = await bucket.getFiles({ prefix: `users/${userId}/` });
-      await Promise.all(files.map(file => file.delete().catch(() => {})));
-
-      // 4. LAST: delete Firebase Auth user.
-      // Only runs if everything above succeeded.
-      await auth.deleteUser(userId);
-
-      return { success: true };
-    } catch (error) {
-      console.error('Account deletion failed for user', userId, error);
-      throw new HttpsError('internal', 'Account deletion failed. Please try again or contact support.');
-    }
-  }
+  (request) => handleAccountDeletionRequest(request, productionDependencies())
 );
 
 /**

@@ -6,7 +6,8 @@
 
 const { createHash, randomUUID } = require("node:crypto");
 const { HttpsError } = require("firebase-functions/v2/https");
-const { Timestamp, FieldPath } = require("firebase-admin/firestore");
+const { Timestamp, FieldPath, FieldValue } = require("firebase-admin/firestore");
+const { accountabilityTransition, normalizeStrikes } = require("./accountabilityLadder");
 
 // ---------------------------------------------------------------------------
 // Constants (C3, C6)
@@ -596,6 +597,709 @@ async function withOutboundLease(deps, { uid, channel, deliveryId }, fn) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Logging, deadlines, read time, schedule ordinals
+// ---------------------------------------------------------------------------
+
+/** Fixed event codes and bounded counts only — never a UID, path, payload, or Error. */
+function emit(deps, code, counts) {
+  if (typeof deps.log === "function") deps.log(code, counts || {});
+}
+
+function withDeadline(promise, ms, code) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new InvariantError(code, "deadline")), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
+/** Server read time of a transaction snapshot, truncated to milliseconds; falls back to the injected clock. */
+function readTimeOf(snapshot, deps) {
+  const readTime = snapshot && snapshot.readTime;
+  if (isTimestampLike(readTime)) return Timestamp.fromMillis(millis(readTime));
+  return deps.now();
+}
+
+// Storage reconciler: schedule every 5 minutes on the boundary → ordinal floor(epochSeconds / 300).
+function storageScheduleOrdinal(epochSeconds) {
+  if (!Number.isSafeInteger(epochSeconds) || epochSeconds % 300 !== 0) throw new InvariantError("ACCOUNT_DELETION_SCHEDULE_BOUNDARY_INVALID");
+  return epochSeconds / 300;
+}
+
+// Auth reconciler: schedule 2-57/5 (boundary + 120 s) → ordinal floor((epochSeconds - 120) / 300).
+function authScheduleOrdinal(epochSeconds) {
+  if (!Number.isSafeInteger(epochSeconds) || epochSeconds % 300 !== 120) throw new InvariantError("ACCOUNT_DELETION_SCHEDULE_BOUNDARY_INVALID");
+  return (epochSeconds - 120) / 300;
+}
+
+function firstStorageOrdinalAfter(timestamp) {
+  return Math.floor(Math.floor(millis(timestamp) / 1000) / 300) + 1;
+}
+
+function firstAuthOrdinalAfter(timestamp) {
+  return Math.floor((Math.floor(millis(timestamp) / 1000) - 120) / 300) + 1;
+}
+
+/** The auth-schedule ordinal of the most recent boundary at or before `timestamp`. */
+function currentAuthOrdinal(timestamp) {
+  return Math.floor((Math.floor(millis(timestamp) / 1000) - 120) / 300);
+}
+
+function isUserNotFound(error) {
+  return Boolean(error) && (error.code === "auth/user-not-found" || error.errorInfo?.code === "auth/user-not-found");
+}
+
+function requireEvidence(deps) {
+  const evidence = deps.evidence();
+  if (!evidence || evidence.ok !== true) {
+    emit(deps, (evidence && evidence.code) || "PROVIDER_EVIDENCE_NOT_ACTIVATED");
+    throw deletionError("DELETION_RETRY_REQUIRED");
+  }
+  return evidence.authority;
+}
+
+function leasesQuery(db, uid) {
+  return db.collection(`users/${uid}/outboundLeases`).orderBy(FieldPath.documentId()).limit(OUTBOUND_LEASE_QUERY_LIMIT);
+}
+
+/** §11.3: the reserved lease collection must be exact zero for progress; any document is the fixed invariant. */
+function requireZeroLeaseDocuments(snapshot) {
+  if (!snapshot.empty) throw new InvariantError("OUTBOUND_LEASE_INVARIANT", "present");
+}
+
+// ---------------------------------------------------------------------------
+// Firestore descendant discovery (§11:1483) and deletion (§11:1485)
+// ---------------------------------------------------------------------------
+
+const COLLECTION_ID_MAX_BYTES = 1500;
+const PAGE_TOKEN_MAX_BYTES = 4096;
+
+function isCollectionId(value) {
+  return typeof value === "string" && value.length > 0 && Buffer.byteLength(value, "utf8") <= COLLECTION_ID_MAX_BYTES &&
+    value !== "." && value !== ".." && !value.includes("/");
+}
+
+/** Validates the pinned public-v1 listCollectionIds tuple and returns its page of IDs. */
+async function listDirectCollections(deps, documentPath) {
+  const invariant = (detail) => new InvariantError("ACCOUNT_DELETION_LIST_COLLECTIONS_INVARIANT", detail);
+  const parent = `${deps.firestore.documentsRoot}/${documentPath}`;
+  const request = { parent, pageSize: 100 };
+  let tuple;
+  try {
+    tuple = await deps.firestore.client.listCollectionIds(request, { autoPaginate: false });
+  } catch (error) {
+    throw invariant("call");
+  }
+  if (!Array.isArray(tuple) || tuple.length !== 3) throw invariant("tuple");
+  const [pageIds, nextRequest, raw] = tuple;
+  if (!Array.isArray(pageIds) || pageIds.length > 100 || !isPlainMap(raw) || !Array.isArray(raw.collectionIds)) throw invariant("shape");
+  if (raw.collectionIds.length !== pageIds.length) throw invariant("length");
+  const seen = new Set();
+  for (let i = 0; i < pageIds.length; i += 1) {
+    const id = pageIds[i];
+    if (!isCollectionId(id) || raw.collectionIds[i] !== id || seen.has(id)) throw invariant("id");
+    seen.add(id);
+  }
+  const token = raw.nextPageToken;
+  if (typeof token !== "string" || Buffer.byteLength(token, "utf8") > PAGE_TOKEN_MAX_BYTES) throw invariant("token");
+  if (token === "") {
+    if (nextRequest !== null) throw invariant("nextRequest");
+  } else {
+    if (!isPlainMap(nextRequest) || Object.keys(nextRequest).length !== 3 || nextRequest.parent !== parent ||
+        nextRequest.pageSize !== 100 || nextRequest.pageToken !== token) throw invariant("nextRequest");
+  }
+  return pageIds;
+}
+
+async function requireZeroLeases(deps, uid) {
+  await deps.db.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(leasesQuery(deps.db, uid));
+    requireZeroLeaseDocuments(snapshot);
+  });
+}
+
+/** One pass over the user root's direct subcollections; returns true when anything was deleted. */
+async function sweepDescendants(deps, ctx) {
+  let hit = false;
+  for (let page = 0; page < 10; page += 1) {
+    const ids = await listDirectCollections(deps, `users/${ctx.uid}`);
+    let deleted = false;
+    for (const id of ids) {
+      if (id === "outboundLeases") {
+        await requireZeroLeases(deps, ctx.uid);
+        continue;
+      }
+      await deps.db.recursiveDelete(deps.db.collection(`users/${ctx.uid}/${id}`));
+      deleted = true;
+      hit = true;
+    }
+    if (!deleted) break;
+  }
+  return hit;
+}
+
+/** The root document keeps only the marker (the minimal tombstone). */
+async function scrubRoot(deps, ctx) {
+  return deps.db.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(ctx.rootRef);
+    const root = snapshot.exists ? snapshot.data() : undefined;
+    if (!root || root.accountDeletion === undefined) throw new InvariantError("ACCOUNT_DELETION_MARKER_MALFORMED", "root");
+    if (Object.keys(root).length === 1) return false;
+    transaction.set(ctx.rootRef, { accountDeletion: root.accountDeletion });
+    return true;
+  });
+}
+
+// ---------------------------------------------------------------------------
+// External families (C6.7; §11:1479)
+// ---------------------------------------------------------------------------
+
+async function deleteDirectFamily(deps, ctx, documentPath) {
+  const ref = deps.db.doc(documentPath);
+  const snapshot = await ref.get();
+  const collections = await listDirectCollections(deps, documentPath);
+  if (!snapshot.exists && collections.length === 0) return false;
+  await deps.db.recursiveDelete(ref);
+  return true;
+}
+
+async function authorizeFamilyRow(deps, ctx, family, ref) {
+  if (deps.hooks && typeof deps.hooks.beforeFamilyReread === "function") deps.hooks.beforeFamilyReread(family.collection, ref.path);
+  return deps.db.runTransaction(async (transaction) => {
+    const rootSnapshot = await transaction.get(ctx.rootRef);
+    const marker = rootSnapshot.exists ? rootSnapshot.data()?.accountDeletion : undefined;
+    if (marker === undefined) throw new InvariantError("ACCOUNT_DELETION_MARKER_MALFORMED", "root");
+    const snapshot = await transaction.get(ref);
+    if (!snapshot.exists) return false;
+    const row = snapshot.data();
+    const owned = family.union
+      ? row.userId === ctx.uid || row.owner === ctx.uid
+      : row[family.field] === ctx.uid;
+    if (!owned) return false;
+    if (family.mode === "scrub") {
+      transaction.update(ref, { [family.field]: FieldValue.delete() });
+      return true;
+    }
+    if (family.strike) {
+      const vendorId = typeof row.vendorId === "string" && row.vendorId ? row.vendorId : null;
+      if (vendorId) {
+        const vendorRef = deps.db.doc(`${family.strike}/${vendorId}`);
+        const vendorSnapshot = await transaction.get(vendorRef);
+        if (vendorSnapshot.exists) {
+          const vendor = vendorSnapshot.data();
+          const remaining = normalizeStrikes(vendor.accountability?.strikes).filter((strike) => strike.source !== snapshot.id);
+          const transition = accountabilityTransition(remaining, vendor.active !== false);
+          transaction.update(vendorRef, { "accountability.strikes": transition.strikes, active: transition.active });
+        }
+      }
+    }
+    transaction.delete(ref);
+    return true;
+  });
+}
+
+async function sweepQueryFamily(deps, ctx, family, seenPaths) {
+  let hit = false;
+  let cursor = null;
+  for (let page = 0; page < 10; page += 1) {
+    let query = deps.db.collection(family.collection).where(family.field, "==", ctx.uid).orderBy(FieldPath.documentId());
+    if (cursor !== null) query = query.startAfter(cursor);
+    const snapshot = await query.limit(ACCOUNT_DELETION_FIRESTORE_PAGE_SIZE).get();
+    const rows = snapshot.docs.filter((row) => !seenPaths.has(row.ref.path));
+    for (let start = 0; start < rows.length; start += 10) {
+      const chunk = rows.slice(start, start + 10);
+      const results = await Promise.all(chunk.map((row) => authorizeFamilyRow(deps, ctx, family, row.ref)));
+      if (results.some(Boolean)) hit = true;
+    }
+    for (const row of snapshot.docs) seenPaths.add(row.ref.path);
+    if (snapshot.docs.length < ACCOUNT_DELETION_FIRESTORE_PAGE_SIZE) break;
+    cursor = snapshot.docs[snapshot.docs.length - 1].id;
+  }
+  return hit;
+}
+
+async function sweepExternalFamilies(deps, ctx) {
+  let hit = false;
+  const unions = new Map();
+  for (const family of ACCOUNT_DELETION_EXTERNAL_FAMILIES_V1) {
+    if (family.mode === "direct") {
+      if (await deleteDirectFamily(deps, ctx, `${family.collection}/${ctx.uid}`)) hit = true;
+      continue;
+    }
+    let seenPaths = new Set();
+    if (family.union) {
+      if (!unions.has(family.union)) unions.set(family.union, new Set());
+      seenPaths = unions.get(family.union);
+    }
+    if (await sweepQueryFamily(deps, ctx, family, seenPaths)) hit = true;
+  }
+  return hit;
+}
+
+// ---------------------------------------------------------------------------
+// Storage (§11:1489–1493)
+// ---------------------------------------------------------------------------
+
+const ACCEPTED_BUCKET_NAME = "peezy-1ecrdl.firebasestorage.app";
+const INT64_MAX = 9223372036854775807n;
+
+function isGenerationToken(value) {
+  if (typeof value !== "string" || !/^[1-9][0-9]*$/.test(value)) return false;
+  try { return BigInt(value) <= INT64_MAX; } catch { return false; }
+}
+
+async function verifyBucketGate(deps, bucket) {
+  const drift = (detail) => new InvariantError("ACCOUNT_DELETION_BUCKET_CONFIG_DRIFT", detail);
+  let tuple;
+  try { tuple = await bucket.getMetadata(); } catch { throw drift("call"); }
+  if (!Array.isArray(tuple) || tuple.length !== 2) throw drift("tuple");
+  const [metadata, apiResponse] = tuple;
+  if (!isPlainMap(metadata) || metadata.name !== ACCEPTED_BUCKET_NAME || !isGenerationToken(metadata.metageneration)) throw drift("metadata");
+  if (apiResponse === null || typeof apiResponse !== "object" || apiResponse.statusCode !== 200) throw drift("response");
+  deps.verifyBucketConfiguration(tuple);
+  return tuple;
+}
+
+/** Validates one getFiles three-tuple for `prefix`; returns [{name, generation}] (zero-length for the terminal observation). */
+function validateFilesTuple(tuple, { prefix, limit, mode }) {
+  const invariant = (detail) => new InvariantError("ACCOUNT_DELETION_STORAGE_TUPLE_INVARIANT", detail);
+  if (!Array.isArray(tuple) || tuple.length !== 3) throw invariant("tuple");
+  const [files, nextQuery, raw] = tuple;
+  if (!Array.isArray(files) || files.length > limit || raw === null || typeof raw !== "object") throw invariant("shape");
+  const items = raw.items;
+  if (files.length === 0) {
+    if (items !== undefined) throw invariant("items");
+  } else {
+    if (!Array.isArray(items) || items.length !== files.length) throw invariant("items");
+  }
+  const out = [];
+  for (let i = 0; i < files.length; i += 1) {
+    const file = files[i];
+    const item = items[i];
+    if (!file || !isPlainMap(item)) throw invariant("pair");
+    const name = item.name;
+    if (typeof name !== "string" || !name.startsWith(prefix) || name.length === prefix.length) throw invariant("name");
+    if (file.name !== name || item.bucket !== ACCEPTED_BUCKET_NAME || file.bucket?.name !== ACCEPTED_BUCKET_NAME) throw invariant("identity");
+    if (!isGenerationToken(item.generation) || file.metadata?.generation !== item.generation) throw invariant("generation");
+    if (mode === "versions") {
+      if (item.timeDeleted !== undefined || file.metadata?.timeDeleted !== undefined) throw new InvariantError("ACCOUNT_DELETION_NONCURRENT_GENERATION_PRESENT", "timeDeleted");
+      for (const hold of ["temporaryHold", "eventBasedHold"]) {
+        if ((item[hold] !== undefined && item[hold] !== false) || (file.metadata?.[hold] !== undefined && file.metadata[hold] !== false)) {
+          throw new InvariantError("ACCOUNT_DELETION_NONCURRENT_GENERATION_PRESENT", hold);
+        }
+      }
+    }
+    out.push({ name, generation: item.generation });
+  }
+  const token = raw.nextPageToken;
+  if (token !== undefined) {
+    if (typeof token !== "string" || token.length === 0 || Buffer.byteLength(token, "utf8") > PAGE_TOKEN_MAX_BYTES) throw invariant("token");
+    if (!isPlainMap(nextQuery) || nextQuery.pageToken !== token || nextQuery.prefix !== prefix) throw invariant("nextQuery");
+  } else if (nextQuery !== null) {
+    throw invariant("nextQuery");
+  }
+  return { files: out, terminal: token === undefined };
+}
+
+async function deleteObject(bucket, { name, generation }) {
+  try {
+    await bucket.file(name, { preconditionOpts: { ifGenerationMatch: generation } }).delete();
+    return "deleted";
+  } catch (error) {
+    if (error && error.code === 404) return "absent";
+    if (error && error.code === 412) return "restart";
+    throw new InvariantError("ACCOUNT_DELETION_STORAGE_DELETE_FAILED");
+  }
+}
+
+/** Sweeps one prefix: returns {hit, empty}; throws the fixed invariants. */
+async function sweepStoragePrefix(deps, bucket, prefix, { limit, pages }) {
+  let hit = false;
+  for (let page = 0; page < pages; page += 1) {
+    const listing = await bucket.getFiles({ prefix, maxResults: limit, autoPaginate: false, versions: true });
+    const { files, terminal } = validateFilesTuple(listing, { prefix, limit, mode: "versions" });
+    if (files.length === 0) {
+      if (!terminal) throw new InvariantError("ACCOUNT_DELETION_STORAGE_TUPLE_INVARIANT", "empty with token");
+      const probe = await bucket.getFiles({ prefix, maxResults: 1, autoPaginate: false, softDeleted: true });
+      const probed = validateFilesTuple(probe, { prefix, limit: 1, mode: "softDeleted" });
+      if (probed.files.length !== 0 || !probed.terminal) throw new InvariantError("ACCOUNT_DELETION_SOFT_DELETED_OBJECT_PRESENT");
+      return { hit, empty: true };
+    }
+    hit = true;
+    for (let start = 0; start < files.length; start += 10) {
+      const chunk = files.slice(start, start + 10);
+      await Promise.all(chunk.map((file) => deleteObject(bucket, file)));
+    }
+    // discard the tuple and restart the prefix from an absent token
+  }
+  return { hit, empty: false };
+}
+
+async function sweepStorage(deps, ctx, { limit }) {
+  const bucket = deps.bucket;
+  await verifyBucketGate(deps, bucket);
+  let hit = false;
+  let empty = true;
+  for (const prefix of [`inventory/${ctx.uid}/`, `users/${ctx.uid}/`]) {
+    const result = await sweepStoragePrefix(deps, bucket, prefix, { limit, pages: deps.budget.storagePages });
+    if (result.hit) hit = true;
+    if (!result.empty) empty = false;
+  }
+  return { hit, empty };
+}
+
+// ---------------------------------------------------------------------------
+// Application sweep and the sweeping → guarding transition (§11:1497)
+// ---------------------------------------------------------------------------
+
+async function runApplicationSweep(deps, ctx) {
+  let hit = false;
+  if (await scrubRoot(deps, ctx)) hit = true;
+  if (await sweepDescendants(deps, ctx)) hit = true;
+  if (await sweepExternalFamilies(deps, ctx)) hit = true;
+  const storage = await sweepStorage(deps, ctx, { limit: 100 });
+  if (storage.hit || !storage.empty) hit = true;
+  return { empty: !hit };
+}
+
+async function transitionSweepingToGuarding(deps, ctx) {
+  await deps.db.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(ctx.rootRef);
+    const root = snapshot.exists ? snapshot.data() : undefined;
+    const { phase, marker } = validateAccountDeletionMarker(root?.accountDeletion);
+    if (phase !== "DELETING_SWEEPING") return;
+    if (Object.keys(root).length !== 1) throw new InvariantError("ACCOUNT_DELETION_MARKER_MALFORMED", "root");
+    const leases = await transaction.get(leasesQuery(deps.db, ctx.uid));
+    requireZeroLeaseDocuments(leases);
+    const readTime = readTimeOf(snapshot, deps);
+    const guarding = { ...marker, firestoreCleanupAt: readTime };
+    validateAccountDeletionMarker(guarding);
+    transaction.update(ctx.rootRef, { accountDeletion: guarding });
+  });
+}
+
+function elapsedExceeded(deps, ctx) {
+  return Date.now() - ctx.startedMs > deps.budget.deadlineMs;
+}
+
+async function runSweepingReducer(deps, ctx) {
+  requireEvidence(deps);
+  let emptyStreak = 0;
+  for (let pass = 0; pass < deps.budget.sweeps; pass += 1) {
+    if (elapsedExceeded(deps, ctx)) return;
+    const outcome = await runApplicationSweep(deps, ctx);
+    if (!outcome.empty) {
+      emptyStreak = 0;
+      continue;
+    }
+    emptyStreak += 1;
+    if (emptyStreak === 2) {
+      await transitionSweepingToGuarding(deps, ctx);
+      return;
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Begin: root-plus-lease marker creation (§11:1415, §11:1435, §11.3:1666)
+// ---------------------------------------------------------------------------
+
+function createMarkerAndWork(transaction, deps, ctx, snapshot, data) {
+  const readTime = readTimeOf(snapshot, deps);
+  const marker = {
+    schemaVersion: 1,
+    state: "DELETING",
+    capabilities: [{ operationId: data.operationId, proofSHA256: capabilityProofSHA256(data) }],
+    startedAt: readTime,
+    storageGuardAfter: plusSeconds(readTime, STORAGE_GUARD_SECONDS)
+  };
+  validateAccountDeletionMarker(marker);
+  const work = {
+    schema_version: 1,
+    kind: "ACCOUNT_DELETION_STORAGE_WORK",
+    work_id: storageWorkId(ctx.uid),
+    account_uid: ctx.uid,
+    marker_started_at: marker.startedAt,
+    storage_guard_after: marker.storageGuardAfter,
+    failure_count: 0,
+    next_eligible_run: 0,
+    created_at: readTime,
+    updated_at: readTime
+  };
+  validateStorageWork(work, { uid: ctx.uid, marker });
+  transaction.set(ctx.rootRef, { accountDeletion: marker });
+  transaction.create(deps.db.doc(`accountDeletionStorageWork/${work.work_id}`), work);
+  return marker;
+}
+
+async function pruneLeasesForBegin(transaction, deps, ctx) {
+  const snapshot = await transaction.get(leasesQuery(deps.db, ctx.uid));
+  const current = deps.now();
+  for (const row of snapshot.docs) {
+    const lease = validateOutboundLease(row.data(), { uid: ctx.uid, leaseId: row.id });
+    if (millis(lease.expires_at) <= millis(current)) transaction.delete(row.ref);
+    else throw new InvariantError("OUTBOUND_LEASE_LIVE");
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Finalize: Auth work row and the Auth reducer (§11:1497, §11.3:1694–1700)
+// ---------------------------------------------------------------------------
+
+function authWorkRef(deps, uid) {
+  return deps.db.doc(`accountDeletionAuthWork/${authWorkId(uid)}`);
+}
+
+async function ensurePendingAuthWork(deps, ctx, expectedMarker, authority) {
+  return deps.db.runTransaction(async (transaction) => {
+    const rootSnapshot = await transaction.get(ctx.rootRef);
+    const root = rootSnapshot.exists ? rootSnapshot.data() : undefined;
+    const { phase, marker } = validateAccountDeletionMarker(root?.accountDeletion);
+    if (phase !== "DATA_DELETED") return { moved: marker };
+    if (TaskCanonicalV1(marker) !== TaskCanonicalV1(expectedMarker)) throw new InvariantError("ACCOUNT_DELETION_MARKER_DRIFT");
+    const leases = await transaction.get(leasesQuery(deps.db, ctx.uid));
+    requireZeroLeaseDocuments(leases);
+    const storageWork = await transaction.get(deps.db.doc(`accountDeletionStorageWork/${storageWorkId(ctx.uid)}`));
+    if (storageWork.exists) throw new InvariantError("ACCOUNT_DELETION_STORAGE_WORK_INVARIANT", "present after DATA_DELETED");
+    const workSnapshot = await transaction.get(authWorkRef(deps, ctx.uid));
+    const readTime = readTimeOf(rootSnapshot, deps);
+    if (workSnapshot.exists) {
+      const row = validateAuthWork(workSnapshot.data(), { uid: ctx.uid });
+      if (row.state !== "delete_pending" || !sameInstant(row.data_deleted_at, marker.dataDeletedAt) ||
+          row.authority_generation_id !== authority.generationId || row.authority_sha256 !== authority.authoritySHA256) {
+        throw new InvariantError("ACCOUNT_DELETION_AUTH_WORK_INVARIANT", "disagreement");
+      }
+      return { marker, work: row };
+    }
+    const work = {
+      schema_version: 1,
+      kind: "ACCOUNT_DELETION_AUTH_WORK",
+      work_id: authWorkId(ctx.uid),
+      account_uid: ctx.uid,
+      state: "delete_pending",
+      data_deleted_at: marker.dataDeletedAt,
+      authority_generation_id: authority.generationId,
+      authority_sha256: authority.authoritySHA256,
+      failure_count: 0,
+      next_eligible_run: 0,
+      created_at: readTime,
+      updated_at: readTime
+    };
+    validateAuthWork(work, { uid: ctx.uid });
+    transaction.create(authWorkRef(deps, ctx.uid), work);
+    return { marker, work };
+  });
+}
+
+async function recordAuthFailure(deps, { uid, work }) {
+  await deps.db.runTransaction(async (transaction) => {
+    const ref = authWorkRef(deps, uid);
+    const snapshot = await transaction.get(ref);
+    if (!snapshot.exists) return;
+    const current = snapshot.data();
+    if (TaskCanonicalV1(current) !== TaskCanonicalV1(work)) return;
+    const readTime = readTimeOf(snapshot, deps);
+    const failureCount = Math.min(current.failure_count + 1, FAILURE_COUNT_MAX);
+    const next = {
+      ...current,
+      failure_count: failureCount,
+      next_eligible_run: currentAuthOrdinal(readTime) + Math.min(2 ** failureCount, 16),
+      updated_at: readTime
+    };
+    validateAuthWork(next, { uid });
+    transaction.set(ref, next);
+  });
+  emit(deps, "ACCOUNT_DELETION_AUTH_RETRY");
+  return { transitioned: false };
+}
+
+/**
+ * Pending-row Auth reducer: user-not-found or an accepted deleteUser transitions
+ * DATA_DELETED → AUTH_GUARDING and pending → guarding at one read time.
+ * Transport, timeout, or unknown failure retains pending under fenced backoff.
+ */
+async function runAuthPendingReducer(deps, { uid, marker, work, authority }) {
+  let absent = false;
+  try {
+    await withDeadline(deps.auth.getUser(uid), deps.timeouts.getUserMs, "ACCOUNT_DELETION_AUTH_TIMEOUT");
+  } catch (error) {
+    if (isUserNotFound(error)) absent = true;
+    else return recordAuthFailure(deps, { uid, work });
+  }
+  if (!absent) {
+    try {
+      await withDeadline(deps.auth.deleteUser(uid), deps.timeouts.deleteUserMs, "ACCOUNT_DELETION_AUTH_TIMEOUT");
+      absent = true;
+    } catch (error) {
+      if (isUserNotFound(error)) absent = true;
+      else return recordAuthFailure(deps, { uid, work });
+    }
+  }
+  const rootRef = deps.db.doc(`users/${uid}`);
+  const workRef = authWorkRef(deps, uid);
+  const transitioned = await deps.db.runTransaction(async (transaction) => {
+    const rootSnapshot = await transaction.get(rootRef);
+    const root = rootSnapshot.exists ? rootSnapshot.data() : undefined;
+    const current = validateAccountDeletionMarker(root?.accountDeletion);
+    if (current.phase !== "DATA_DELETED") return null;
+    if (TaskCanonicalV1(current.marker) !== TaskCanonicalV1(marker)) throw new InvariantError("ACCOUNT_DELETION_MARKER_DRIFT");
+    const workSnapshot = await transaction.get(workRef);
+    if (!workSnapshot.exists || TaskCanonicalV1(workSnapshot.data()) !== TaskCanonicalV1(work)) throw new InvariantError("ACCOUNT_DELETION_AUTH_WORK_INVARIANT", "drift");
+    const readTime = readTimeOf(rootSnapshot, deps);
+    const authGuardAfter = plusSeconds(readTime, authority.authResidualRetentionSeconds);
+    const guarding = { ...marker, state: "AUTH_GUARDING", authAbsenceObservedAt: readTime, authGuardAfter };
+    validateAccountDeletionMarker(guarding);
+    const guardingWork = {
+      ...work,
+      state: "guarding",
+      auth_absence_observed_at: readTime,
+      auth_guard_after: authGuardAfter,
+      failure_count: 0,
+      next_eligible_run: firstAuthOrdinalAfter(authGuardAfter),
+      updated_at: readTime
+    };
+    validateAuthWork(guardingWork, { uid, authResidualRetentionSeconds: authority.authResidualRetentionSeconds });
+    transaction.update(rootRef, { accountDeletion: guarding });
+    transaction.set(workRef, guardingWork);
+    return guarding;
+  });
+  if (transitioned === null) return { transitioned: false, moved: true };
+  return { transitioned: true, marker: transitioned };
+}
+
+async function runFinalize(deps, ctx, marker) {
+  const authority = requireEvidence(deps);
+  const pending = await ensurePendingAuthWork(deps, ctx, marker, authority);
+  if (pending.moved) return buildRootWire(pending.moved, { operationId: ctx.operationId, authorityKind: ctx.authorityKind, replayed: true });
+  const outcome = await runAuthPendingReducer(deps, { uid: ctx.uid, marker: pending.marker, work: pending.work, authority });
+  if (outcome.transitioned) return buildRootWire(outcome.marker, { operationId: ctx.operationId, authorityKind: ctx.authorityKind, replayed: false });
+  throw deletionError("DELETION_RETRY_REQUIRED");
+}
+
+// ---------------------------------------------------------------------------
+// The callable (C2.3; §11:1435, §11:1437)
+// ---------------------------------------------------------------------------
+
+async function classifyRequest(deps, ctx, data, authenticated) {
+  return deps.db.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(ctx.rootRef);
+    const root = snapshot.exists ? snapshot.data() : undefined;
+    const rawMarker = root?.accountDeletion;
+    if (rawMarker === undefined) {
+      if (data.action === "discover") return { kind: "absent" };
+      if (data.action !== "begin") throw deletionError("DELETION_CAPABILITY_INVALID");
+      requireEvidence(deps);
+      await pruneLeasesForBegin(transaction, deps, ctx);
+      const marker = createMarkerAndWork(transaction, deps, ctx, snapshot, data);
+      return { kind: "present", marker, phase: "DELETING_SWEEPING", authorityKind: "member" };
+    }
+    let validated;
+    try {
+      validated = validateAccountDeletionMarker(rawMarker);
+    } catch (error) {
+      if (error instanceof InvariantError) {
+        emit(deps, error.code);
+        throw deletionError("DELETION_CAPABILITY_INVALID");
+      }
+      throw error;
+    }
+    const proofSHA256 = capabilityProofSHA256(data);
+    const existing = validated.marker.capabilities.find((item) => item.operationId === data.operationId);
+    if (existing) {
+      if (existing.proofSHA256 !== proofSHA256) throw deletionError("DELETION_CAPABILITY_INVALID");
+      return { kind: "present", marker: validated.marker, phase: validated.phase, authorityKind: "member" };
+    }
+    if (data.action === "resume" || !authenticated) throw deletionError("DELETION_CAPABILITY_INVALID");
+    if (data.action === "finalize") {
+      if (validated.marker.capabilities.length < CAPABILITY_LIMIT) throw deletionError("DELETION_CAPABILITY_INVALID");
+      return { kind: "present", marker: validated.marker, phase: validated.phase, authorityKind: "authenticatedOverflow" };
+    }
+    const classified = classifyCapability(validated.marker, data);
+    if (classified.changed) {
+      requireEvidence(deps);
+      transaction.update(ctx.rootRef, { accountDeletion: classified.marker });
+    }
+    return { kind: "present", marker: classified.marker, phase: validated.phase, authorityKind: classified.authorityKind };
+  });
+}
+
+/**
+ * `deleteAccount` request handler. `request` is the callable request (`data`, `auth`);
+ * `deps` carries db/auth/bucket/firestore client/clock/evidence/log/budget/timeouts/hooks.
+ */
+async function handleAccountDeletionRequest(request, deps) {
+  const data = validateAccountDeletionRequest(request ? request.data : undefined);
+  const authUid = request && request.auth ? request.auth.uid : undefined;
+  const authenticated = typeof authUid === "string" && authUid === data.uid;
+  if (data.action === "discover" || data.action === "begin") {
+    if (typeof authUid !== "string" || authUid.length === 0) throw deletionError("AUTH_REQUIRED");
+    if (!authenticated) throw deletionError("DELETION_CAPABILITY_INVALID");
+  }
+  const ctx = { uid: data.uid, operationId: data.operationId, rootRef: deps.db.doc(`users/${data.uid}`), startedMs: Date.now() };
+  try {
+    const classified = await classifyRequest(deps, ctx, data, authenticated);
+    if (classified.kind === "absent") return absentWire(data.operationId);
+    ctx.authorityKind = classified.authorityKind;
+    const wireArgs = { operationId: data.operationId, authorityKind: classified.authorityKind, replayed: true };
+    switch (classified.phase) {
+      case "DELETING_SWEEPING":
+        if (data.action === "finalize") throw deletionError("DELETION_RETRY_REQUIRED");
+        await runSweepingReducer(deps, ctx);
+        throw deletionError("DELETION_RETRY_REQUIRED");
+      case "DELETING_GUARDING":
+        throw deletionError("DELETION_RETRY_REQUIRED");
+      case "DATA_DELETED":
+        if (data.action !== "finalize") return buildRootWire(classified.marker, wireArgs);
+        return await runFinalize(deps, ctx, classified.marker);
+      case "AUTH_GUARDING":
+      case "ACCOUNT_DELETED":
+        return buildRootWire(classified.marker, wireArgs);
+      default:
+        throw new InvariantError("ACCOUNT_DELETION_MARKER_MALFORMED", "phase");
+    }
+  } catch (error) {
+    if (error instanceof HttpsError) throw error;
+    if (error instanceof InvariantError) {
+      emit(deps, error.code);
+      throw deletionError("DELETION_RETRY_REQUIRED");
+    }
+    emit(deps, "ACCOUNT_DELETION_UNEXPECTED_FAILURE");
+    throw deletionError("DELETION_RETRY_REQUIRED");
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Production dependencies (lazy; the only place Firebase Admin is touched)
+// ---------------------------------------------------------------------------
+
+let productionCache = null;
+
+function productionDependencies() {
+  if (productionCache) return productionCache;
+  const admin = require("firebase-admin");
+  const logger = require("firebase-functions/logger");
+  const { v1 } = require("@google-cloud/firestore");
+  if (!admin.apps.length) admin.initializeApp();
+  const db = admin.firestore();
+  const projectId = process.env.GCLOUD_PROJECT || process.env.GCP_PROJECT || admin.app().options.projectId || "peezy-1ecrdl";
+  productionCache = {
+    db,
+    auth: admin.auth(),
+    bucket: admin.storage().bucket(),
+    now: () => Timestamp.fromMillis(Date.now()),
+    log: (code, counts) => logger.info(code, counts || {}),
+    firestore: { client: new v1.FirestoreClient(), documentsRoot: `projects/${projectId}/databases/(default)/documents` },
+    // I3 replaces these two with the provider-evidence authority loader (§11.2).
+    evidence: () => ({ ok: false, code: "PROVIDER_EVIDENCE_NOT_ACTIVATED" }),
+    verifyBucketConfiguration: () => { throw new InvariantError("ACCOUNT_DELETION_BUCKET_CONFIG_DRIFT", "no accepted configuration"); },
+    budget: { sweeps: 4, storagePages: 4, deadlineMs: 42_000 },
+    timeouts: { getUserMs: 3000, deleteUserMs: 10000 },
+    hooks: {}
+  };
+  return productionCache;
+}
+
 module.exports = {
   // constants and registries
   STORAGE_GUARD_SECONDS, OUTBOUND_LEASE_TTL_SECONDS, OUTBOUND_LEASE_LIMIT, OUTBOUND_LEASE_QUERY_LIMIT,
@@ -616,5 +1320,13 @@ module.exports = {
   // wires
   wireTime, absentWire, buildRootWire,
   // fence and lease
-  assertDeletionAbsent, validateOutboundLease, withOutboundLease
+  assertDeletionAbsent, validateOutboundLease, withOutboundLease,
+  // callable and sweep
+  handleAccountDeletionRequest, runApplicationSweep, runSweepingReducer, transitionSweepingToGuarding,
+  listDirectCollections, validateFilesTuple, sweepStoragePrefix, verifyBucketGate, requireZeroLeases,
+  // auth reducer and schedule ordinals
+  runAuthPendingReducer, ensurePendingAuthWork, recordAuthFailure, isUserNotFound,
+  storageScheduleOrdinal, authScheduleOrdinal, firstStorageOrdinalAfter, firstAuthOrdinalAfter, currentAuthOrdinal,
+  // misc
+  withDeadline, readTimeOf, requireEvidence, emit, productionDependencies
 };
