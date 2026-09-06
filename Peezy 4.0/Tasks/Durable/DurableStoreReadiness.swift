@@ -1083,6 +1083,11 @@ enum DurableFileKind: String, Sendable, CaseIterable {
     case handoffAuthorityV1 = "HANDOFF_AUTHORITY_V1"
     case taskPlanResetV2 = "TASK_PLAN_RESET_V2"
     case workflowRequestsV2 = "WORKFLOW_REQUESTS_V2"
+    /// C2.1 intent (cap 16,384), C2.5 completion (cap 4,096), C3 purge journal (cap 4,096): the same envelope
+    /// grammar, no quarantine sibling and no recovery receipt.
+    case accountDeletionIntentV1 = "ACCOUNT_DELETION_INTENT_V1"
+    case accountDeletionCompletionV1 = "ACCOUNT_DELETION_COMPLETION_V1"
+    case localPrivacyPurgeV1 = "LOCAL_PRIVACY_PURGE_V1"
 
     /// C9.7.1 normal `storeCap` (complete canonical outer-envelope bytes); the handoff
     /// expanded regime (68,157,440) is the owner's, applied only when its predicates hold.
@@ -1092,6 +1097,17 @@ enum DurableFileKind: String, Sendable, CaseIterable {
         case .handoffAuthorityV1: return 524_288
         case .taskPlanResetV2: return 131_072
         case .workflowRequestsV2: return 16_777_216
+        case .accountDeletionIntentV1: return 16_384
+        case .accountDeletionCompletionV1, .localPrivacyPurgeV1: return 4_096
+        }
+    }
+
+    /// The four recoverable stores reserve the C9.7.1 receipt bytes on every normal write; the account-deletion
+    /// files carry no receipt and use their complete-byte cap.
+    var reservesRecoveryReceipt: Bool {
+        switch self {
+        case .taskRouteInboxV1, .handoffAuthorityV1, .taskPlanResetV2, .workflowRequestsV2: return true
+        case .accountDeletionIntentV1, .accountDeletionCompletionV1, .localPrivacyPurgeV1: return false
         }
     }
 
@@ -1121,7 +1137,7 @@ enum DurableEnvelopeCodec {
         var base: [String: Any] = ["schemaVersion": 1, "fileKind": fileKind.rawValue, "generationId": generationId, "payload": payload]
         guard let unsignedBase = TaskCanonicalV1.data(base) else { return nil }
         base["sha256"] = TaskCanonicalV1.sha256Hex(data: unsignedBase)
-        guard let baseBytes = TaskCanonicalV1.data(base), baseBytes.count + recoveryReceiptReserve <= cap else { return nil }
+        guard let baseBytes = TaskCanonicalV1.data(base), baseBytes.count + (fileKind.reservesRecoveryReceipt ? recoveryReceiptReserve : 0) <= cap else { return nil }
         guard let recoveryReceipt else { return baseBytes }
         var envelope: [String: Any] = ["schemaVersion": 1, "fileKind": fileKind.rawValue, "generationId": generationId, "payload": payload, "recoveryReceipt": recoveryReceipt]
         guard let unsigned = TaskCanonicalV1.data(envelope) else { return nil }

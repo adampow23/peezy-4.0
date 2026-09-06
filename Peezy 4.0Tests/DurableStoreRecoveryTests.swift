@@ -587,6 +587,164 @@ struct DurableStoreRecoveryTests {
         #expect(await owner.acquire(uid: "A", sessionId: "s5") != nil)
     }
 
+    // MARK: - S4 I2b — completion presentation (C2.5), preference barrier (C2.2/C6.6), purge journal (C3), local privacy purge
+
+    @Test func completionFileDerivesReplaysBlocksAndPresentsTheExactC25Maps() async throws {
+        let directory = try temporaryDirectory()
+        let consumed = NotificationCounter()
+        let opened = OpenedURLs()
+        let presentation = AccountDeletionCompletionPresentation(directory: directory, clock: ResetClockStub(), consume: { _ in await consumed.bump(); return true }, opener: { url in await opened.record(url); return true })
+        #expect(await presentation.observe() == .absent)
+        #expect(await presentation.current() == nil)
+        let result = CompletionResultV1.completed(appleRevocation: .manualRequired, googleRevocation: .notRequired)
+        guard case let .written(snapshot) = await presentation.derive(result) else { Issue.record("derive"); return }
+        let url = directory.appendingPathComponent(AccountDeletionCompletionPresentation.fileName)
+        let bytes = try Data(contentsOf: url)
+        let object = try #require(JSONSerialization.jsonObject(with: bytes) as? [String: Any])
+        #expect(object["fileKind"] as? String == "ACCOUNT_DELETION_COMPLETION_V1")
+        let payload = try #require(object["payload"] as? [String: Any])
+        #expect(Set(payload.keys) == ["schemaVersion", "result", "createdAt"])
+        #expect(TaskCanonicalV1.data(try #require(payload["result"] as? [String: Any])) == TaskCanonicalV1.data(["schemaVersion": 1, "kind": "ACCOUNT_DELETION_COMPLETED", "appleRevocation": "manual_required", "googleRevocation": "not_required"]))
+        #expect(bytes.count <= 4_096 && snapshot.createdAt == "2026-09-06T12:00:00.000Z" && snapshot.result == result)
+        #expect(await presentation.current() == snapshot)
+        // exact replay preserves bytes; a different pending snapshot blocks
+        #expect(await presentation.derive(result) == .replayed(snapshot))
+        #expect(try Data(contentsOf: url) == bytes)
+        #expect(await presentation.derive(.localCleared) == .blocked)
+        // open: offered only for the matching manual-required provider and its frozen URL; never consumes
+        #expect(await presentation.open(expectedGenerationId: snapshot.generationId, expectedSHA256: snapshot.sha256, provider: .apple) == .opened)
+        #expect(await opened.urls == [AccountDeletionCompletionCopy.appleURL])
+        #expect(await presentation.open(expectedGenerationId: snapshot.generationId, expectedSHA256: snapshot.sha256, provider: .google) == .notOffered)
+        #expect(await presentation.open(expectedGenerationId: snapshot.generationId, expectedSHA256: "0", provider: .apple) == .stale)
+        #expect(await presentation.current() == snapshot, "open never consumes")
+        // acknowledge: the sole consuming action; drift is stale; exact runs the consumption then unlinks
+        #expect(await presentation.acknowledge(expectedGenerationId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", expectedSHA256: snapshot.sha256) == .stale)
+        #expect(await consumed.count == 0)
+        #expect(await presentation.acknowledge(expectedGenerationId: snapshot.generationId, expectedSHA256: snapshot.sha256) == .acknowledged)
+        #expect(await consumed.count == 1)
+        #expect(await presentation.observe() == .absent)
+        #expect(await presentation.acknowledge(expectedGenerationId: snapshot.generationId, expectedSHA256: snapshot.sha256) == .stale)
+        // a malformed file is observed, never read as absence
+        try Data("{".utf8).write(to: url)
+        #expect(await presentation.observe() == .malformed)
+        #expect(await presentation.derive(.localCleared) == .blocked)
+        // the local-cleared and remote-unconfirmed maps and the exact copy
+        #expect(TaskCanonicalV1.data(CompletionResultV1.localCleared.presentation) == TaskCanonicalV1.data(["schemaVersion": 1, "kind": "ACCOUNT_DELETION_LOCAL_CLEARED"]))
+        #expect(TaskCanonicalV1.data(CompletionResultV1.remoteUnconfirmed.presentation) == TaskCanonicalV1.data(["schemaVersion": 1, "kind": "ACCOUNT_DELETION_REMOTE_UNCONFIRMED"]))
+        #expect(CompletionResultV1.decode(["schemaVersion": 1, "kind": "ACCOUNT_DELETION_COMPLETED", "appleRevocation": "manual_required"]) == nil)
+        #expect(AccountDeletionCompletionCopy.title == "Account deleted" && AccountDeletionCompletionCopy.body == "Your Peezy account was deleted." && AccountDeletionCompletionCopy.button == "Done")
+        #expect(AccountDeletionCompletionCopy.appleURL.absoluteString == "https://support.apple.com/102571")
+        #expect(AccountDeletionCompletionCopy.googleURL.absoluteString == "https://support.google.com/accounts/answer/13533235?hl=en")
+        #expect(AccountDeletionCompletionCopy.localCleared == "This account was deleted from another device. This device has been cleared.")
+        #expect(AccountDeletionCompletionCopy.remoteUnconfirmedTitle == "Deletion not verified")
+        #expect(AccountDeletionCompletionCopy.remoteUnconfirmed == "Local data for this account was removed, but remote account deletion could not be verified. Sign in again to retry if the account still exists.")
+        #expect(AccountDeletionCompletionCopy.telemetryRelaunch == "Close and reopen Peezy to finish clearing local diagnostics.")
+    }
+
+    @Test func preferenceBarrierRemovesTheElevenKeysAndTheConditionalGlobalFirstName() throws {
+        #expect(PreferenceBarrier.uidScopedTemplates.count == 11)
+        let defaults = try isolatedDefaults()
+        for uid in ["A", "B"] { for key in PreferenceBarrier.keys(for: uid) { defaults.set("v", forKey: key) } }
+        defaults.set("Adam", forKey: PreferenceBarrier.globalFirstNameKey)
+        defaults.set("keep", forKey: "peezy.unscoped.setting")
+        // UID scope with a different current UID: A's keys go, B's and the global first name stay
+        #expect(PreferenceBarrier.run(scope: .uid("A"), defaults: defaults, currentFirebaseUID: "B") == .acknowledged)
+        #expect(PreferenceBarrier.keys(for: "A").allSatisfy { defaults.object(forKey: $0) == nil })
+        #expect(PreferenceBarrier.keys(for: "B").allSatisfy { defaults.object(forKey: $0) != nil })
+        #expect(defaults.string(forKey: PreferenceBarrier.globalFirstNameKey) == "Adam", "a different current UID keeps the global first name")
+        // UID scope while Firebase still names that UID (or no different UID is established): the global first name goes too
+        for key in PreferenceBarrier.keys(for: "A") { defaults.set("v", forKey: key) }
+        #expect(PreferenceBarrier.run(scope: .uid("A"), defaults: defaults, currentFirebaseUID: nil) == .acknowledged)
+        #expect(defaults.object(forKey: PreferenceBarrier.globalFirstNameKey) == nil)
+        // all scope: every UID's keys and the global first name; unscoped settings untouched
+        defaults.set("Adam", forKey: PreferenceBarrier.globalFirstNameKey)
+        defaults.set("v", forKey: "peezy.C.dailyDose.v2.quarantine")
+        #expect(PreferenceBarrier.uidScopedKeys(in: defaults).contains("peezy.C.dailyDose.v2.quarantine"))
+        #expect(PreferenceBarrier.run(scope: .all, defaults: defaults, currentFirebaseUID: "B") == .acknowledged)
+        #expect(PreferenceBarrier.uidScopedKeys(in: defaults).isEmpty && defaults.object(forKey: PreferenceBarrier.globalFirstNameKey) == nil)
+        #expect(defaults.string(forKey: "peezy.unscoped.setting") == "keep")
+    }
+
+    @Test func purgeJournalEnvelopeIsExactAndValidated() throws {
+        let context = PurgeProviderContextV1(deletionOperationId: "adel1_11111111-1111-4111-8111-111111111111", deletionProofSHA256: String(repeating: "a", count: 64), googleRevocation: .sdkDisconnectRequired, googleProviderUid: "g1")
+        let journal = LocalPrivacyPurgeJournalV1(scope: .uid("A"), providerContext: context, terminalDeletionLink: nil, acks: [.route, .handoff], createdAt: "2026-09-06T12:00:00.000Z", updatedAt: "2026-09-06T12:00:01.000Z")
+        #expect(journal.isValid)
+        #expect(LocalPrivacyPurgeJournalV1.decode(journal.canonical) == journal)
+        #expect(TaskCanonicalV1.data(journal.canonical)!.count <= 4_096)
+        let bytes = try #require(DurableEnvelopeCodec.encode(fileKind: .localPrivacyPurgeV1, generationId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", payload: journal.canonical))
+        #expect(DurableEnvelopeCodec.decode(bytes, fileKind: .localPrivacyPurgeV1) != nil)
+        #expect(LocalPrivacyPurgeJournalV1(scope: .uid("A"), providerContext: nil, terminalDeletionLink: nil, acks: [], createdAt: journal.createdAt, updatedAt: journal.updatedAt).isValid == false, "providerContext required for UID scope")
+        #expect(LocalPrivacyPurgeJournalV1(scope: .all, providerContext: context, terminalDeletionLink: nil, acks: [], createdAt: journal.createdAt, updatedAt: journal.updatedAt).isValid == false, "no providerContext for all scope")
+        let link = TerminalDeletionLinkV1(deletionOperationId: context.deletionOperationId, deletionProofSHA256: context.deletionProofSHA256)
+        #expect(LocalPrivacyPurgeJournalV1(scope: .uid("A"), providerContext: context, terminalDeletionLink: link, acks: [], createdAt: journal.createdAt, updatedAt: journal.updatedAt).isValid == false, "terminalDeletionLink only for the all-scope handoff")
+        #expect(LocalPrivacyPurgeJournalV1(scope: .all, providerContext: nil, terminalDeletionLink: link, acks: PurgeOwner.order, createdAt: journal.createdAt, updatedAt: journal.updatedAt).isValid)
+        #expect(LocalPrivacyPurgeJournalV1(scope: .all, providerContext: nil, terminalDeletionLink: nil, acks: [.handoff], createdAt: journal.createdAt, updatedAt: journal.updatedAt).isValid == false, "acks are a displayed-order prefix")
+        #expect(PurgeOwner.order.map(\.rawValue) == ["route", "handoff", "reset", "workflow", "room_capture", "firestore_cache", "notifications", "google"])
+        var surplus = journal.canonical; surplus["extra"] = 1
+        #expect(LocalPrivacyPurgeJournalV1.decode(surplus) == nil)
+        #expect(PurgeProviderContextV1.decode(["deletionOperationId": context.deletionOperationId, "deletionProofSHA256": context.deletionProofSHA256, "googleRevocation": "sdk_disconnect_required"]) == nil, "sdk_disconnect_required needs the provider UID")
+    }
+
+    @Test func localPrivacyPurgeRunsTheEightOwnersInOrderJournalsEachAckAndResumesAfterAFailure() async throws {
+        let directory = try temporaryDirectory()
+        let owners = RecordingPurgeOwners()
+        let defaults = try isolatedDefaults()
+        let telemetry = TelemetryStub()
+        let coordinator = LocalPrivacyPurgeCoordinator(directory: directory, clock: ResetClockStub(), owners: owners.owners, defaults: defaults, currentUID: UIDProbe(nil), telemetry: telemetry)
+        // all scope: the eight owners in the C2.2 order, google via signOutAll, both barriers, journal unlinked
+        defaults.set("Adam", forKey: PreferenceBarrier.globalFirstNameKey)
+        #expect(await coordinator.purge(scope: .all) == .cleared)
+        #expect(owners.calls == ["route(all)", "handoff(all)", "reset(all)", "workflow(all)", "room_capture(all)", "firestore_cache(all)", "notifications(all)", "google.signOutAll"])
+        #expect(telemetry.calls == 1 && defaults.object(forKey: PreferenceBarrier.globalFirstNameKey) == nil)
+        #expect(await coordinator.observeJournal() == .absent, "a non-terminal all-scope purge unlinks its own journal")
+        // UID scope needs the intent's provider context; a failure at notifications blocks with the journal retained at six acks
+        let context = PurgeProviderContextV1(deletionOperationId: "adel1_11111111-1111-4111-8111-111111111111", deletionProofSHA256: String(repeating: "a", count: 64), googleRevocation: .sdkDisconnectRequired, googleProviderUid: "g1")
+        #expect(await coordinator.purge(scope: .uid("A")) == .blocked(.localPrivacyPurgeFailed), "a UID purge without its provider context is refused")
+        owners.fail("notifications")
+        let request = LocalPrivacyPurgeCoordinator.Request(scope: .uid("A"), providerContext: context, terminalDeletionLink: nil)
+        #expect(await coordinator.purge(request) == .blocked(.localPrivacyPurgeFailed))
+        guard case let .present(journal) = await coordinator.observeJournal() else { Issue.record("journal"); return }
+        #expect(journal.scope == .uid("A") && journal.acks == [.route, .handoff, .reset, .workflow, .roomCapture, .firestoreCache] && journal.providerContext == context)
+        // resume: the six acknowledged owners are not run again; google disconnects the exact provider UID; the journal is retained for the caller
+        let before = owners.calls.count
+        owners.fail("notifications", false)
+        #expect(await coordinator.purge(request) == .cleared)
+        #expect(Array(owners.calls.dropFirst(before)) == ["notifications(A)", "google.disconnect(g1)"])
+        guard case let .present(complete) = await coordinator.observeJournal() else { Issue.record("journal retained"); return }
+        #expect(complete.acks == PurgeOwner.order)
+        #expect(await coordinator.unlinkJournal())
+        // manual-required google acks with no SDK mutation; a telemetry relaunch blocks with the journal retained
+        let manual = PurgeProviderContextV1(deletionOperationId: context.deletionOperationId, deletionProofSHA256: context.deletionProofSHA256, googleRevocation: .manualRequired, googleProviderUid: nil)
+        telemetry.set(.relaunchRequired)
+        let count = owners.calls.count
+        #expect(await coordinator.purge(LocalPrivacyPurgeCoordinator.Request(scope: .uid("B"), providerContext: manual, terminalDeletionLink: nil)) == .blocked(.localPrivacyPurgeFailed))
+        #expect(owners.calls.dropFirst(count).contains(where: { $0.hasPrefix("google.") }) == false, "manual-required acks without an SDK call")
+        guard case let .present(retained) = await coordinator.observeJournal() else { Issue.record("journal retained after telemetry"); return }
+        #expect(retained.acks == PurgeOwner.order && retained.scope == .uid("B"))
+        #expect(await coordinator.purge(LocalPrivacyPurgeCoordinator.Request(scope: .uid("B"), providerContext: manual, terminalDeletionLink: link(context))) == .blocked(.localPrivacyPurgeFailed), "a UID request never carries the terminal link")
+    }
+
+    @Test func localPrivacyPurgeGivesAnIntentLinkedUIDPurgeAbsolutePriority() async throws {
+        let directory = try temporaryDirectory()
+        let owners = RecordingPurgeOwners()
+        let coordinator = LocalPrivacyPurgeCoordinator(directory: directory, clock: ResetClockStub(), owners: owners.owners, defaults: try isolatedDefaults(), currentUID: UIDProbe(nil), telemetry: TelemetryStub())
+        owners.setHoldRoute()
+        let first = Task { await coordinator.purge(scope: .all) }
+        while !owners.isHoldingRoute { await Task.yield() }
+        let context = PurgeProviderContextV1(deletionOperationId: "adel1_11111111-1111-4111-8111-111111111111", deletionProofSHA256: String(repeating: "a", count: 64), googleRevocation: .notRequired, googleProviderUid: nil)
+        let secondAll = Task { await coordinator.purge(scope: .all) }
+        for _ in 0..<20 { await Task.yield() }
+        let intentLinked = Task { await coordinator.purge(LocalPrivacyPurgeCoordinator.Request(scope: .uid("A"), providerContext: context, terminalDeletionLink: nil)) }
+        for _ in 0..<20 { await Task.yield() }
+        owners.releaseRoute()
+        #expect(await first.value == .cleared)
+        #expect(await intentLinked.value == .cleared)
+        #expect(await secondAll.value == .cleared)
+        let order = owners.calls.filter { $0.hasPrefix("route(") }
+        #expect(order == ["route(all)", "route(A)", "route(all)"], "the intent-linked UID purge runs before the earlier-queued all-scope request")
+        _ = await coordinator.unlinkJournal()
+    }
+
     // MARK: - Epoch stamps (I4, stamps only; manifest §5:540-546). Cleanup belongs to S3.
 
     @Test func dailyDoseLocalStoreWritesAStampedV2EnvelopeAndCASesRevision() async throws {
@@ -1726,6 +1884,72 @@ final class GateSnapshotStub: @unchecked Sendable {
         lock.withLock { if let gate { self.gate = gate }; if let generation { self.generation = GateGeneration(rawValue: generation) } }
     }
     var snapshot: RoomCaptureArtifactOwner.GateSnapshot { { [self] in self.lock.withLock { (self.gate, self.generation) } } }
+}
+
+/// Records the eight purge owners' calls in order; one owner can be made to fail or to wait on a gate.
+final class RecordingPurgeOwners: RouteAccountDeletionPurging, HandoffAccountDeletionPurging, ResetAccountDeletionPurging, WorkflowAccountDeletionPurging, RoomCaptureArtifactPurging, FirestoreLocalCachePurging, NotificationIdentityPurging, GoogleIdentityControlling, @unchecked Sendable {
+    private let lock = NSLock()
+    private var recorded: [String] = []
+    private var failing: Set<String> = []
+    private var holdRoute: CheckedContinuation<Void, Never>?
+    private var routeHeld = false
+    var calls: [String] { lock.withLock { recorded } }
+    func fail(_ owner: String, _ on: Bool = true) { lock.withLock { if on { failing.insert(owner) } else { failing.remove(owner) } } }
+    func setHoldRoute() { lock.withLock { routeHeld = true } }
+    var isHoldingRoute: Bool { lock.withLock { holdRoute != nil } }
+    func releaseRoute() { let held: CheckedContinuation<Void, Never>? = lock.withLock { defer { holdRoute = nil; routeHeld = false }; return holdRoute }; held?.resume() }
+    private func ack(_ owner: String, scope: LocalPurgeScope) -> LocalPurgeAck {
+        let scopeText: String
+        switch scope { case .all: scopeText = "all"; case let .uid(uid): scopeText = uid }
+        return lock.withLock { recorded.append("\(owner)(\(scopeText))"); return failing.contains(owner) ? .failed : .acknowledged }
+    }
+    func purgeForAccountDeletion(scope: LocalPurgeScope) async -> LocalPurgeAck {
+        // the route conformance: the first owner, optionally held so a second request can queue behind it
+        let shouldHold: Bool = lock.withLock { routeHeld }
+        if shouldHold { await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in lock.withLock { holdRoute = continuation } } }
+        return ack("route", scope: scope)
+    }
+    var handoff: any HandoffAccountDeletionPurging { Delegate(self, "handoff") }
+    var reset: any ResetAccountDeletionPurging { Delegate(self, "reset") }
+    var workflow: any WorkflowAccountDeletionPurging { Delegate(self, "workflow") }
+    var roomCapture: any RoomCaptureArtifactPurging { Delegate(self, "room_capture") }
+    var firestoreCache: any FirestoreLocalCachePurging { Delegate(self, "firestore_cache") }
+    var notifications: any NotificationIdentityPurging { Delegate(self, "notifications") }
+    struct Delegate: HandoffAccountDeletionPurging, ResetAccountDeletionPurging, WorkflowAccountDeletionPurging, RoomCaptureArtifactPurging, FirestoreLocalCachePurging, NotificationIdentityPurging, @unchecked Sendable {
+        let owners: RecordingPurgeOwners
+        let name: String
+        init(_ owners: RecordingPurgeOwners, _ name: String) { self.owners = owners; self.name = name }
+        func purgeForAccountDeletion(scope: LocalPurgeScope) async -> LocalPurgeAck { owners.ack(name, scope: scope) }
+    }
+    // GoogleIdentityControlling
+    func currentProviderUID() async -> String? { nil }
+    func handle(_ url: URL) async -> GoogleURLHandleOutcomeV1 { .notHandled }
+    func signIn() async -> GoogleFirebaseSignInOutcomeV1 { .cancelled }
+    func disconnect(expectedProviderUID: String) async -> GoogleCredentialOutcomeV1 {
+        lock.withLock { recorded.append("google.disconnect(\(expectedProviderUID))"); return failing.contains("google") ? .failed : .disconnected }
+    }
+    func signOutAll() async -> GoogleCredentialOutcomeV1 {
+        lock.withLock { recorded.append("google.signOutAll"); return failing.contains("google") ? .failed : .signedOut }
+    }
+    var owners: LocalPurgeOwners { LocalPurgeOwners(route: self, handoff: handoff, reset: reset, workflow: workflow, roomCapture: roomCapture, firestoreCache: firestoreCache, notifications: notifications, google: self) }
+}
+
+final class TelemetryStub: ClientTelemetryPrivacyPurging, @unchecked Sendable {
+    private let lock = NSLock()
+    private var outcome: ClientTelemetryPurgeOutcomeV1
+    private(set) var calls = 0
+    init(_ outcome: ClientTelemetryPurgeOutcomeV1 = .cleared) { self.outcome = outcome }
+    func set(_ value: ClientTelemetryPurgeOutcomeV1) { lock.withLock { outcome = value } }
+    func purgeAll() async -> ClientTelemetryPurgeOutcomeV1 { lock.withLock { calls += 1; return outcome } }
+}
+
+actor OpenedURLs {
+    private(set) var urls: [URL] = []
+    func record(_ url: URL) { urls.append(url) }
+}
+
+func link(_ context: PurgeProviderContextV1) -> TerminalDeletionLinkV1 {
+    TerminalDeletionLinkV1(deletionOperationId: context.deletionOperationId, deletionProofSHA256: context.deletionProofSHA256)
 }
 
 /// Synchronous UID snapshot double for `CurrentFirebaseUIDProviding`.

@@ -344,3 +344,563 @@ actor RoomCaptureArtifactOwner: RoomCaptureArtifactPurging {
         return failed ? .failed : .acknowledged
     }
 }
+
+// MARK: - Durable file replacement, unlink, and observation (C9.7.5) for the S4-owned files (S1 owns `DurableFileReplacement`)
+
+/// The C9.7.5 replacement and unlink sequences over one target: unique temp → complete write → file fsync →
+/// atomic rename → directory fsync; unlink → directory fsync. Failures are the C9.7.2 storage codes.
+enum PrivacyDurableFile {
+    struct Failure: Error, Equatable { let code: StorageIOErrorCode }
+
+    /// A file as read: complete bytes plus the device/inode identity the CAS compares.
+    struct Observation: Equatable, Sendable {
+        let bytes: Data
+        let device: UInt64
+        let inode: UInt64
+    }
+
+    static func replace(at target: URL, bytes: Data) throws {
+        let directory = target.deletingLastPathComponent()
+        let temporary = directory.appendingPathComponent(".\(target.lastPathComponent).\(UUID().uuidString.lowercased()).tmp")
+        guard FileManager.default.createFile(atPath: temporary.path, contents: nil, attributes: [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication]) else {
+            throw Failure(code: .fileOpenFailed)
+        }
+        defer { try? FileManager.default.removeItem(at: temporary) }
+        let descriptor = open(temporary.path, O_WRONLY)
+        guard descriptor >= 0 else { throw Failure(code: .fileOpenFailed) }
+        var written = 0
+        let result: Bool = bytes.withUnsafeBytes { buffer in
+            guard let base = buffer.baseAddress else { return bytes.isEmpty }
+            while written < bytes.count {
+                let count = Foundation.write(descriptor, base + written, bytes.count - written)
+                if count <= 0 { return false }
+                written += count
+            }
+            return true
+        }
+        guard result else { close(descriptor); throw Failure(code: .fileWriteFailed) }
+        guard fsync(descriptor) == 0 else { close(descriptor); throw Failure(code: .fileFsyncFailed) }
+        close(descriptor)
+        guard rename(temporary.path, target.path) == 0 else { throw Failure(code: .fileRenameFailed) }
+        try syncDirectory(directory)
+    }
+
+    static func unlink(at target: URL) throws {
+        if FileManager.default.fileExists(atPath: target.path) {
+            guard Foundation.unlink(target.path) == 0 else { throw Failure(code: .fileUnlinkFailed) }
+        }
+        try syncDirectory(target.deletingLastPathComponent())
+    }
+
+    /// Reads the complete bytes through a no-follow descriptor bounded by `limit + 1`; nil when absent.
+    static func observe(at target: URL, limit: Int) throws -> Observation? {
+        let descriptor = open(target.path, O_RDONLY | O_NOFOLLOW)
+        if descriptor < 0 {
+            if errno == ENOENT { return nil }
+            throw Failure(code: .fileOpenFailed)
+        }
+        defer { close(descriptor) }
+        var status = stat()
+        guard fstat(descriptor, &status) == 0 else { throw Failure(code: .fileReadFailed) }
+        let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: false)
+        guard let bytes = try? handle.read(upToCount: limit + 1) else { throw Failure(code: .fileReadFailed) }
+        return Observation(bytes: bytes ?? Data(), device: UInt64(status.st_dev), inode: UInt64(status.st_ino))
+    }
+
+    private static func syncDirectory(_ directory: URL) throws {
+        let descriptor = open(directory.path, O_RDONLY)
+        guard descriptor >= 0 else { throw Failure(code: .directoryFsyncFailed) }
+        defer { close(descriptor) }
+        guard fsync(descriptor) == 0 else { throw Failure(code: .directoryFsyncFailed) }
+    }
+}
+
+// MARK: - Completion presentation owner (C2.5)
+
+/// The exact C2.5 surface copy, titles, buttons, and frozen provider URLs.
+enum AccountDeletionCompletionCopy {
+    static let title = "Account deleted"
+    static let body = "Your Peezy account was deleted."
+    static let button = "Done"
+    static let appleManual = "Your Peezy account was deleted. To stop using Sign in with Apple for Peezy, open Settings, tap your name, tap Sign in with Apple, select Peezy, then tap Delete."
+    static let appleInstructions = "Apple instructions"
+    static let appleURL = URL(string: "https://support.apple.com/102571")!
+    static let googleManual = "Your Peezy account was deleted. To stop using Sign in with Google for Peezy, open your Google Account's linked apps, select Peezy, and choose Stop using Sign in with Google."
+    static let googleInstructions = "Google instructions"
+    static let googleURL = URL(string: "https://support.google.com/accounts/answer/13533235?hl=en")!
+    static let localCleared = "This account was deleted from another device. This device has been cleared."
+    static let remoteUnconfirmedTitle = "Deletion not verified"
+    static let remoteUnconfirmed = "Local data for this account was removed, but remote account deletion could not be verified. Sign in again to retry if the account still exists."
+    static let queued = "Deletion is queued while Peezy finishes clearing protected copies. You can close the app and try again later."
+    static let guardingTemplate = "Deletion is in progress. Protected copies clear by {date}."
+    static let telemetryRelaunch = "Close and reopen Peezy to finish clearing local diagnostics."
+}
+
+extension CompletionResultV1 {
+    /// The C2.5 presentation map that is also the completion file's `result`.
+    var presentation: [String: Any] {
+        switch self {
+        case let .completed(apple, google):
+            return ["schemaVersion": 1, "kind": "ACCOUNT_DELETION_COMPLETED", "appleRevocation": apple.rawValue, "googleRevocation": google.rawValue]
+        case .localCleared:
+            return ["schemaVersion": 1, "kind": "ACCOUNT_DELETION_LOCAL_CLEARED"]
+        case .remoteUnconfirmed:
+            return ["schemaVersion": 1, "kind": "ACCOUNT_DELETION_REMOTE_UNCONFIRMED"]
+        }
+    }
+
+    static func decode(_ map: [String: Any]) -> CompletionResultV1? {
+        guard TaskGenerationEpochStamp.safeInteger(map["schemaVersion"]) == 1, let kind = map["kind"] as? String else { return nil }
+        switch kind {
+        case "ACCOUNT_DELETION_COMPLETED":
+            guard Set(map.keys) == ["schemaVersion", "kind", "appleRevocation", "googleRevocation"],
+                  let apple = (map["appleRevocation"] as? String).flatMap(AppleRevocationDisposition.init(rawValue:)),
+                  let google = (map["googleRevocation"] as? String).flatMap(GoogleCompletedRevocation.init(rawValue:)) else { return nil }
+            return .completed(appleRevocation: apple, googleRevocation: google)
+        case "ACCOUNT_DELETION_LOCAL_CLEARED":
+            return Set(map.keys) == ["schemaVersion", "kind"] ? .localCleared : nil
+        case "ACCOUNT_DELETION_REMOTE_UNCONFIRMED":
+            return Set(map.keys) == ["schemaVersion", "kind"] ? .remoteUnconfirmed : nil
+        default:
+            return nil
+        }
+    }
+}
+
+enum CompletionObservation: Sendable, Equatable {
+    case absent
+    case present(CompletionSnapshotV1)
+    case malformed
+    case ioFailed(StorageIOErrorCode)
+}
+
+enum CompletionDeriveOutcome: Sendable, Equatable {
+    case written(CompletionSnapshotV1)
+    /// Exact replay: the pending file already carries this result; bytes preserved.
+    case replayed(CompletionSnapshotV1)
+    /// A different pending snapshot blocks; the source phase is retained.
+    case blocked
+    case failed(StorageIOErrorCode)
+}
+
+/// The completion-presentation owner (C2.5): sole reader/writer of `PeezyAccountDeletionCompletion-v1.json`.
+/// `acknowledge` is the sole consuming action and runs the injected terminal consumption before unlinking;
+/// `open` is offered only for the matching manual-required provider and its frozen URL and never consumes.
+actor AccountDeletionCompletionPresentation: AccountDeletionCompletionPresenting {
+    static let fileName = "PeezyAccountDeletionCompletion-v1.json"
+    typealias Consume = @Sendable (CompletionSnapshotV1) async -> Bool
+    typealias Opener = @Sendable (URL) async -> Bool
+
+    private let directory: URL
+    private let clock: any LocalDurableClock
+    private let consume: Consume
+    private let opener: Opener
+
+    init(directory: URL, clock: any LocalDurableClock, consume: @escaping Consume, opener: @escaping Opener) {
+        self.directory = directory
+        self.clock = clock
+        self.consume = consume
+        self.opener = opener
+    }
+
+    private var target: URL { directory.appendingPathComponent(Self.fileName) }
+
+    private func decode(_ bytes: Data) -> CompletionSnapshotV1? {
+        guard let decoded = DurableEnvelopeCodec.decode(bytes, fileKind: .accountDeletionCompletionV1),
+              Set(decoded.payload.keys) == ["schemaVersion", "result", "createdAt"],
+              TaskGenerationEpochStamp.safeInteger(decoded.payload["schemaVersion"]) == 1,
+              let resultMap = decoded.payload["result"] as? [String: Any], let result = CompletionResultV1.decode(resultMap),
+              let createdAt = decoded.payload["createdAt"] as? String, CanonicalInstant.isCanonical(createdAt) else { return nil }
+        return CompletionSnapshotV1(generationId: decoded.generationId, sha256: decoded.sha256, result: result, createdAt: createdAt)
+    }
+
+    func observe() -> CompletionObservation {
+        do {
+            guard let observation = try PrivacyDurableFile.observe(at: target, limit: DurableFileKind.accountDeletionCompletionV1.storeCap) else { return .absent }
+            guard let snapshot = decode(observation.bytes) else { return .malformed }
+            return .present(snapshot)
+        } catch let failure as PrivacyDurableFile.Failure {
+            return .ioFailed(failure.code)
+        } catch {
+            return .ioFailed(.fileReadFailed)
+        }
+    }
+
+    /// Entry to a terminal derives the file before publication: exact replay preserves bytes; a different pending snapshot blocks.
+    func derive(_ result: CompletionResultV1) -> CompletionDeriveOutcome {
+        switch observe() {
+        case let .present(existing):
+            return existing.result == result ? .replayed(existing) : .blocked
+        case .malformed:
+            return .blocked
+        case let .ioFailed(code):
+            return .failed(code)
+        case .absent:
+            let instant = clock.now()
+            let generation = UUID().uuidString.lowercased()
+            let payload: [String: Any] = ["schemaVersion": 1, "result": result.presentation, "createdAt": instant]
+            guard let bytes = DurableEnvelopeCodec.encode(fileKind: .accountDeletionCompletionV1, generationId: generation, payload: payload) else { return .failed(.fileWriteFailed) }
+            do { try PrivacyDurableFile.replace(at: target, bytes: bytes) } catch let failure as PrivacyDurableFile.Failure { return .failed(failure.code) } catch { return .failed(.fileWriteFailed) }
+            guard let written = decode(bytes) else { return .failed(.fileWriteFailed) }
+            return .written(written)
+        }
+    }
+
+    func current() async -> CompletionSnapshotV1? {
+        if case let .present(snapshot) = observe() { return snapshot }
+        return nil
+    }
+
+    /// Rereads complete bytes/device/inode and requires the expected generation and hash before consuming.
+    private func matching(generationId: String, sha256: String) -> (snapshot: CompletionSnapshotV1, observation: PrivacyDurableFile.Observation)? {
+        guard let observation = try? PrivacyDurableFile.observe(at: target, limit: DurableFileKind.accountDeletionCompletionV1.storeCap),
+              let snapshot = decode(observation.bytes), snapshot.generationId == generationId, snapshot.sha256 == sha256 else { return nil }
+        return (snapshot, observation)
+    }
+
+    func acknowledge(expectedGenerationId: String, expectedSHA256: String) async -> CompletionAcknowledgeResult {
+        guard let match = matching(generationId: expectedGenerationId, sha256: expectedSHA256) else { return .stale }
+        guard await consume(match.snapshot) else { return .failed }
+        // The consumption may take time: the file must still be the same bytes/identity before the unlink.
+        guard let again = matching(generationId: expectedGenerationId, sha256: expectedSHA256), again.observation == match.observation else { return .stale }
+        do { try PrivacyDurableFile.unlink(at: target) } catch { return .failed }
+        return .acknowledged
+    }
+
+    func open(expectedGenerationId: String, expectedSHA256: String, provider: CompletionProvider) async -> CompletionOpenResult {
+        guard let match = matching(generationId: expectedGenerationId, sha256: expectedSHA256) else { return .stale }
+        guard case let .completed(apple, google) = match.snapshot.result else { return .notOffered }
+        let url: URL
+        switch provider {
+        case .apple:
+            guard apple == .manualRequired else { return .notOffered }
+            url = AccountDeletionCompletionCopy.appleURL
+        case .google:
+            guard google == .manualRequired else { return .notOffered }
+            url = AccountDeletionCompletionCopy.googleURL
+        }
+        return await opener(url) ? .opened : .failed
+    }
+}
+
+// MARK: - Preference barrier (C2.2; C6.6 eleven-key registry)
+
+/// The eleven C6.6 UID-scoped key templates (`{uid}` interpolated) and the conditional global first name.
+enum PreferenceBarrier {
+    static let uidScopedTemplates: [String] = [
+        "phase1.pendingRetakeOperation.{uid}",
+        "peezy.{uid}.dailyDose.completedCount",
+        "peezy.{uid}.dailyDose.lastDate",
+        "peezy.{uid}.dailyDose.firstLaunchDate",
+        "peezy.{uid}.dailyDose.v2",
+        "peezy.{uid}.hasSeenFirstTimeWelcome",
+        "peezy.{uid}.lastGreetingDate",
+        "peezy.{uid}.totalCompletedCount",
+        "inventory.scanCoaching.seen.{uid}",
+        "inventory.narrationOffer.seen.{uid}",
+        "peezy.{uid}.dailyDose.v2.quarantine",
+    ]
+    static let globalFirstNameKey = "peezy.user.firstName"
+
+    static func keys(for uid: String) -> [String] { uidScopedTemplates.map { $0.replacingOccurrences(of: "{uid}", with: uid) } }
+
+    /// Every stored key that matches a template for any UID (all-scope).
+    static func uidScopedKeys(in defaults: UserDefaults) -> [String] {
+        let patterns = uidScopedTemplates.map { "^" + NSRegularExpression.escapedPattern(for: $0).replacingOccurrences(of: "\\{uid\\}", with: "[^.]+") + "$" }
+        let regexes = patterns.compactMap { try? NSRegularExpression(pattern: $0) }
+        return defaults.dictionaryRepresentation().keys.filter { key in
+            let range = NSRange(key.startIndex..., in: key)
+            return regexes.contains { $0.firstMatch(in: key, range: range) != nil }
+        }.sorted()
+    }
+
+    /// Remove the keys, `synchronize()` success, reread absence (C2.2 L58). UID deletion removes the global first
+    /// name only while Firebase still names that UID or no different current UID is established.
+    static func run(scope: LocalPurgeScope, defaults: UserDefaults, currentFirebaseUID: String?) -> LocalPurgeAck {
+        var removed: [String]
+        switch scope {
+        case let .uid(uid):
+            removed = keys(for: uid)
+            if currentFirebaseUID == nil || currentFirebaseUID == uid { removed.append(globalFirstNameKey) }
+        case .all:
+            removed = uidScopedKeys(in: defaults) + [globalFirstNameKey]
+        }
+        for key in removed { defaults.removeObject(forKey: key) }
+        guard defaults.synchronize() else { return .failed }
+        return removed.allSatisfy { defaults.object(forKey: $0) == nil } ? .acknowledged : .failed
+    }
+}
+
+// MARK: - Local privacy purge journal (C3)
+
+/// `{deletionOperationId,deletionProofSHA256,googleRevocation,googleProviderUid?}`; required iff UID scope and must match the intent.
+struct PurgeProviderContextV1: Sendable, Equatable {
+    let deletionOperationId: String
+    let deletionProofSHA256: String
+    let googleRevocation: GoogleRevocationDisposition
+    let googleProviderUid: String?
+
+    var canonical: [String: Any] {
+        var map: [String: Any] = ["deletionOperationId": deletionOperationId, "deletionProofSHA256": deletionProofSHA256, "googleRevocation": googleRevocation.rawValue]
+        if let googleProviderUid { map["googleProviderUid"] = googleProviderUid }
+        return map
+    }
+
+    static func decode(_ map: [String: Any]) -> PurgeProviderContextV1? {
+        let keys = Set(map.keys)
+        guard keys == ["deletionOperationId", "deletionProofSHA256", "googleRevocation"] || keys == ["deletionOperationId", "deletionProofSHA256", "googleRevocation", "googleProviderUid"],
+              let operation = map["deletionOperationId"] as? String, operation.range(of: #"^adel1_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"#, options: .regularExpression) != nil,
+              let proof = map["deletionProofSHA256"] as? String, proof.range(of: #"^[0-9a-f]{64}$"#, options: .regularExpression) != nil,
+              let google = (map["googleRevocation"] as? String).flatMap(GoogleRevocationDisposition.init(rawValue:)) else { return nil }
+        let providerUid = map["googleProviderUid"] as? String
+        if keys.contains("googleProviderUid") && (providerUid ?? "").isEmpty { return nil }
+        if google == .sdkDisconnectRequired && providerUid == nil { return nil }
+        return PurgeProviderContextV1(deletionOperationId: operation, deletionProofSHA256: proof, googleRevocation: google, googleProviderUid: providerUid)
+    }
+}
+
+/// `{deletionOperationId,deletionProofSHA256}`; only for the terminal all-scope handoff.
+struct TerminalDeletionLinkV1: Sendable, Equatable {
+    let deletionOperationId: String
+    let deletionProofSHA256: String
+    var canonical: [String: Any] { ["deletionOperationId": deletionOperationId, "deletionProofSHA256": deletionProofSHA256] }
+    static func decode(_ map: [String: Any]) -> TerminalDeletionLinkV1? {
+        guard Set(map.keys) == ["deletionOperationId", "deletionProofSHA256"], let operation = map["deletionOperationId"] as? String, let proof = map["deletionProofSHA256"] as? String,
+              operation.range(of: #"^adel1_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"#, options: .regularExpression) != nil,
+              proof.range(of: #"^[0-9a-f]{64}$"#, options: .regularExpression) != nil else { return nil }
+        return TerminalDeletionLinkV1(deletionOperationId: operation, deletionProofSHA256: proof)
+    }
+}
+
+/// The eight purge owners in the exact C2.2 order; `acks` is a displayed-order prefix of this list.
+enum PurgeOwner: String, CaseIterable, Sendable {
+    case route, handoff, reset, workflow, roomCapture = "room_capture", firestoreCache = "firestore_cache", notifications, google
+    static let order: [PurgeOwner] = allCases
+}
+
+/// `PeezyLocalPrivacyPurge-v1.json` payload (C3): `{schemaVersion:1,scope,providerContext?,terminalDeletionLink?,acks,createdAt,updatedAt}`.
+struct LocalPrivacyPurgeJournalV1: Sendable, Equatable {
+    let scope: LocalPurgeScope
+    let providerContext: PurgeProviderContextV1?
+    let terminalDeletionLink: TerminalDeletionLinkV1?
+    let acks: [PurgeOwner]
+    let createdAt: String
+    let updatedAt: String
+
+    /// `providerContext` required iff UID scope; `terminalDeletionLink` only for all-scope; acks an exact prefix.
+    var isValid: Bool {
+        switch scope {
+        case .uid: if providerContext == nil || terminalDeletionLink != nil { return false }
+        case .all: if providerContext != nil { return false }
+        }
+        return Array(PurgeOwner.order.prefix(acks.count)) == acks && CanonicalInstant.isCanonical(createdAt) && CanonicalInstant.isCanonical(updatedAt)
+    }
+
+    var canonical: [String: Any] {
+        var map: [String: Any] = ["schemaVersion": 1, "acks": acks.map(\.rawValue), "createdAt": createdAt, "updatedAt": updatedAt]
+        switch scope {
+        case .all: map["scope"] = ["kind": "all"]
+        case let .uid(uid): map["scope"] = ["kind": "uid", "uid": uid]
+        }
+        if let providerContext { map["providerContext"] = providerContext.canonical }
+        if let terminalDeletionLink { map["terminalDeletionLink"] = terminalDeletionLink.canonical }
+        return map
+    }
+
+    static func decode(_ map: [String: Any]) -> LocalPrivacyPurgeJournalV1? {
+        let keys = Set(map.keys)
+        let allowed: Set<String> = ["schemaVersion", "scope", "providerContext", "terminalDeletionLink", "acks", "createdAt", "updatedAt"]
+        guard keys.isSubset(of: allowed), keys.isSuperset(of: ["schemaVersion", "scope", "acks", "createdAt", "updatedAt"]),
+              TaskGenerationEpochStamp.safeInteger(map["schemaVersion"]) == 1,
+              let scopeMap = map["scope"] as? [String: Any], let kind = scopeMap["kind"] as? String,
+              let ackNames = map["acks"] as? [String], let createdAt = map["createdAt"] as? String, let updatedAt = map["updatedAt"] as? String else { return nil }
+        let scope: LocalPurgeScope
+        switch kind {
+        case "all": guard Set(scopeMap.keys) == ["kind"] else { return nil }; scope = .all
+        case "uid": guard Set(scopeMap.keys) == ["kind", "uid"], let uid = scopeMap["uid"] as? String, !uid.isEmpty else { return nil }; scope = .uid(uid)
+        default: return nil
+        }
+        let acks = ackNames.compactMap(PurgeOwner.init(rawValue:))
+        guard acks.count == ackNames.count else { return nil }
+        var providerContext: PurgeProviderContextV1?
+        if keys.contains("providerContext") { guard let raw = map["providerContext"] as? [String: Any], let decoded = PurgeProviderContextV1.decode(raw) else { return nil }; providerContext = decoded }
+        var link: TerminalDeletionLinkV1?
+        if keys.contains("terminalDeletionLink") { guard let raw = map["terminalDeletionLink"] as? [String: Any], let decoded = TerminalDeletionLinkV1.decode(raw) else { return nil }; link = decoded }
+        let journal = LocalPrivacyPurgeJournalV1(scope: scope, providerContext: providerContext, terminalDeletionLink: link, acks: acks, createdAt: createdAt, updatedAt: updatedAt)
+        return journal.isValid ? journal : nil
+    }
+}
+
+enum JournalObservation: Sendable, Equatable {
+    case absent
+    case present(LocalPrivacyPurgeJournalV1)
+    case malformed
+    case ioFailed(StorageIOErrorCode)
+}
+
+/// The eight purge seams the coordinator drives, in the C2.2 order; each is injected (S5/S7 conformers, S4's own two).
+struct LocalPurgeOwners: Sendable {
+    let route: any RouteAccountDeletionPurging
+    let handoff: any HandoffAccountDeletionPurging
+    let reset: any ResetAccountDeletionPurging
+    let workflow: any WorkflowAccountDeletionPurging
+    let roomCapture: any RoomCaptureArtifactPurging
+    let firestoreCache: any FirestoreLocalCachePurging
+    let notifications: any NotificationIdentityPurging
+    let google: any GoogleIdentityControlling
+
+    init(route: any RouteAccountDeletionPurging, handoff: any HandoffAccountDeletionPurging, reset: any ResetAccountDeletionPurging, workflow: any WorkflowAccountDeletionPurging, roomCapture: any RoomCaptureArtifactPurging, firestoreCache: any FirestoreLocalCachePurging, notifications: any NotificationIdentityPurging, google: any GoogleIdentityControlling) {
+        self.route = route; self.handoff = handoff; self.reset = reset; self.workflow = workflow
+        self.roomCapture = roomCapture; self.firestoreCache = firestoreCache; self.notifications = notifications; self.google = google
+    }
+}
+
+/// The local privacy purge (C2.2 L55–58; C3 journal): the eight owners in order with each ack journaled, then the
+/// preference and telemetry barriers. An intent-linked UID purge has absolute priority; an all-scope or other request
+/// waits and reclassifies after all eight owners and both barriers.
+actor LocalPrivacyPurgeCoordinator: LocalPrivacyPurgeCoordinating {
+    static let journalFileName = "PeezyLocalPrivacyPurge-v1.json"
+
+    struct Request: Sendable, Equatable {
+        let scope: LocalPurgeScope
+        let providerContext: PurgeProviderContextV1?
+        let terminalDeletionLink: TerminalDeletionLinkV1?
+        /// A UID purge linked to the durable intent: absolute priority (C2.2 singleflight).
+        var isIntentLinked: Bool { if case .uid = scope { return providerContext != nil }; return false }
+    }
+
+    private let directory: URL
+    private let clock: any LocalDurableClock
+    private let owners: LocalPurgeOwners
+    private let defaults: UserDefaults
+    private let currentUID: any CurrentFirebaseUIDProviding
+    private let telemetry: any ClientTelemetryPrivacyPurging
+    private var running = false
+    private var waiters: [(intentLinked: Bool, continuation: CheckedContinuation<Void, Never>)] = []
+    private(set) var log: [String] = []
+
+    init(directory: URL, clock: any LocalDurableClock, owners: LocalPurgeOwners, defaults: UserDefaults, currentUID: any CurrentFirebaseUIDProviding, telemetry: any ClientTelemetryPrivacyPurging) {
+        self.directory = directory
+        self.clock = clock
+        self.owners = owners
+        self.defaults = defaults
+        self.currentUID = currentUID
+        self.telemetry = telemetry
+    }
+
+    private var journalURL: URL { directory.appendingPathComponent(Self.journalFileName) }
+
+    // MARK: journal
+
+    func observeJournal() -> JournalObservation {
+        do {
+            guard let observation = try PrivacyDurableFile.observe(at: journalURL, limit: DurableFileKind.localPrivacyPurgeV1.storeCap) else { return .absent }
+            guard let decoded = DurableEnvelopeCodec.decode(observation.bytes, fileKind: .localPrivacyPurgeV1), let journal = LocalPrivacyPurgeJournalV1.decode(decoded.payload) else { return .malformed }
+            return .present(journal)
+        } catch let failure as PrivacyDurableFile.Failure { return .ioFailed(failure.code) } catch { return .ioFailed(.fileReadFailed) }
+    }
+
+    private func writeJournal(_ journal: LocalPrivacyPurgeJournalV1) -> Bool {
+        guard journal.isValid, let bytes = DurableEnvelopeCodec.encode(fileKind: .localPrivacyPurgeV1, generationId: UUID().uuidString.lowercased(), payload: journal.canonical) else { return false }
+        return (try? PrivacyDurableFile.replace(at: journalURL, bytes: bytes)) != nil
+    }
+
+    /// Unlinks the journal (the caller decides when a UID journal's lifecycle ends; all-scope purges unlink their own).
+    func unlinkJournal() -> Bool { (try? PrivacyDurableFile.unlink(at: journalURL)) != nil }
+
+    // MARK: singleflight
+
+    private func acquireSlot(intentLinked: Bool) async {
+        guard running else { running = true; return }
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            waiters.append((intentLinked, continuation))
+        }
+    }
+
+    private func releaseSlot() {
+        if let index = waiters.firstIndex(where: { $0.intentLinked }) ?? (waiters.isEmpty ? nil : 0) {
+            let next = waiters.remove(at: index)
+            next.continuation.resume() // stays `running`
+        } else {
+            running = false
+        }
+    }
+
+    // MARK: purge
+
+    func purge(scope: LocalPurgeScope) async -> LocalPrivacyPurgeResult {
+        await purge(Request(scope: scope, providerContext: nil, terminalDeletionLink: nil))
+    }
+
+    func purge(_ request: Request) async -> LocalPrivacyPurgeResult {
+        if case .uid = request.scope, request.providerContext == nil { return .blocked(.localPrivacyPurgeFailed) }
+        if case .uid = request.scope, request.terminalDeletionLink != nil { return .blocked(.localPrivacyPurgeFailed) }
+        await acquireSlot(intentLinked: request.isIntentLinked)
+        defer { releaseSlot() }
+        return await runPurge(request)
+    }
+
+    private func runPurge(_ request: Request) async -> LocalPrivacyPurgeResult {
+        // resume a matching journal; a different journal is finished first (its scope), then this request starts fresh
+        var journal: LocalPrivacyPurgeJournalV1
+        switch observeJournal() {
+        case let .ioFailed(code):
+            log.append("journal:\(code.rawValue)")
+            return .blocked(.fileIO)
+        case .malformed:
+            return .blocked(.localPrivacyPurgeFailed)
+        case let .present(existing) where existing.scope == request.scope && existing.providerContext == request.providerContext && existing.terminalDeletionLink == request.terminalDeletionLink:
+            journal = existing
+        case let .present(existing):
+            let finished = await runPurge(Request(scope: existing.scope, providerContext: existing.providerContext, terminalDeletionLink: existing.terminalDeletionLink))
+            guard finished == .cleared, unlinkJournal() else { return finished == .cleared ? .blocked(.fileIO) : finished }
+            fallthrough
+        case .absent:
+            let now = clock.now()
+            journal = LocalPrivacyPurgeJournalV1(scope: request.scope, providerContext: request.providerContext, terminalDeletionLink: request.terminalDeletionLink, acks: [], createdAt: now, updatedAt: now)
+            guard writeJournal(journal) else { return .blocked(.fileIO) }
+        }
+        for owner in PurgeOwner.order.dropFirst(journal.acks.count) {
+            let ack = await run(owner, scope: request.scope, providerContext: request.providerContext)
+            log.append("\(owner.rawValue):\(ack.rawValue)")
+            guard ack == .acknowledged else { return .blocked(.localPrivacyPurgeFailed) }
+            let now = clock.now()
+            journal = LocalPrivacyPurgeJournalV1(scope: journal.scope, providerContext: journal.providerContext, terminalDeletionLink: journal.terminalDeletionLink, acks: journal.acks + [owner], createdAt: journal.createdAt, updatedAt: now)
+            guard writeJournal(journal) else { return .blocked(.fileIO) }
+        }
+        let preferences = PreferenceBarrier.run(scope: request.scope, defaults: defaults, currentFirebaseUID: currentUID.currentFirebaseUID())
+        log.append("preferences:\(preferences.rawValue)")
+        guard preferences == .acknowledged else { return .blocked(.localPrivacyPurgeFailed) }
+        let telemetry = await telemetry.purgeAll()
+        log.append("telemetry:\(telemetry.rawValue)")
+        guard telemetry == .cleared else { return .blocked(.localPrivacyPurgeFailed) }
+        if case .all = request.scope, request.terminalDeletionLink == nil { _ = unlinkJournal() }
+        return .cleared
+    }
+
+    private func run(_ owner: PurgeOwner, scope: LocalPurgeScope, providerContext: PurgeProviderContextV1?) async -> LocalPurgeAck {
+        switch owner {
+        case .route: return await owners.route.purgeForAccountDeletion(scope: scope)
+        case .handoff: return await owners.handoff.purgeForAccountDeletion(scope: scope)
+        case .reset: return await owners.reset.purgeForAccountDeletion(scope: scope)
+        case .workflow: return await owners.workflow.purgeForAccountDeletion(scope: scope)
+        case .roomCapture: return await owners.roomCapture.purgeForAccountDeletion(scope: scope)
+        case .firestoreCache: return await owners.firestoreCache.purgeForAccountDeletion(scope: scope)
+        case .notifications: return await owners.notifications.purgeForAccountDeletion(scope: scope)
+        case .google:
+            switch scope {
+            case .all:
+                return await owners.google.signOutAll() == .signedOut ? .acknowledged : .failed
+            case .uid:
+                guard let context = providerContext else { return .failed }
+                switch context.googleRevocation {
+                case .sdkDisconnectRequired:
+                    guard let providerUid = context.googleProviderUid else { return .failed }
+                    return await owners.google.disconnect(expectedProviderUID: providerUid) == .disconnected ? .acknowledged : .failed
+                case .manualRequired, .notRequired:
+                    return .acknowledged // no SDK mutation
+                }
+            }
+        }
+    }
+}
