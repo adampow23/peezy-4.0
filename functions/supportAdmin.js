@@ -3,7 +3,27 @@
  */
 
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
+const logger = require('firebase-functions/logger');
 const admin = require('firebase-admin');
+const { Timestamp } = require('firebase-admin/firestore');
+const { withOutboundLease, assertDeletionAbsent } = require('./accountDeletionFence');
+
+// C6.8 — the sole FCM surface. Payload is content-free; the reply text never leaves Firestore.
+const FCM_DESTINATION_CAPACITY = 501;
+const SUPPORT_REPLY_NOTIFICATION = Object.freeze({ title: 'Peezy', body: 'You have a new support reply.' });
+/** Frozen from Firebase Admin 13.6.0 `MessagingClientErrorCode` (19 codes). */
+const FCM_ACCEPTED_FAILURE_CODES_V1 = Object.freeze([
+  'messaging/authentication-error', 'messaging/device-message-rate-exceeded', 'messaging/internal-error', 'messaging/invalid-argument',
+  'messaging/invalid-data-payload-key', 'messaging/invalid-options', 'messaging/invalid-package-name', 'messaging/invalid-payload',
+  'messaging/invalid-recipient', 'messaging/invalid-registration-token', 'messaging/message-rate-exceeded', 'messaging/mismatched-credential',
+  'messaging/payload-size-limit-exceeded', 'messaging/registration-token-not-registered', 'messaging/server-unavailable',
+  'messaging/third-party-auth-error', 'messaging/too-many-topics', 'messaging/topics-message-rate-exceeded', 'messaging/unknown-error'
+]);
+const FCM_TOKEN_DELETION_CODES_V1 = Object.freeze(['messaging/invalid-registration-token', 'messaging/registration-token-not-registered']);
+
+function fixedLog(code, counts) {
+  logger.info(code, counts || {});
+}
 
 const CALLABLE_OPTIONS = {
   region: 'us-central1',
@@ -100,57 +120,48 @@ function threadFromDocument(document) {
   };
 }
 
-function supportReplyNotificationBody(text) {
-  if (text.length <= 120) return text;
-  return `${text.slice(0, 119).trimEnd()}…`;
-}
-
-async function sendSupportReplyPush(uid, text) {
-  const tokenSnapshot = await admin.firestore()
-    .collection('users').doc(uid)
-    .collection('fcmTokens').get();
+/**
+ * Support-reply multicast under the outbound lease (C6.2/C6.8): `limit(501)` on
+ * `users/{uid}/fcmTokens`, exact content-free payload, token deletion only for the two
+ * accepted codes, fixed event codes with bounded counts. Never throws to the caller.
+ */
+async function sendSupportReplyPush(uid, deps = {}) {
+  const db = deps.db || admin.firestore();
+  const messaging = deps.messaging || admin.messaging();
+  const now = deps.now || (() => Timestamp.fromMillis(Date.now()));
+  const log = deps.log || fixedLog;
+  const tokenSnapshot = await db.collection(`users/${uid}/fcmTokens`).orderBy(admin.firestore.FieldPath.documentId()).limit(FCM_DESTINATION_CAPACITY).get();
   if (tokenSnapshot.empty) return;
-
-  for (let start = 0; start < tokenSnapshot.docs.length; start += 500) {
-    const tokenDocuments = tokenSnapshot.docs.slice(start, start + 500);
-    const invalidTokenRefs = [];
-    const result = await admin.messaging().sendEachForMulticast({
-      tokens: tokenDocuments.map(document => document.id),
-      notification: {
-        title: 'Peezy',
-        body: supportReplyNotificationBody(text)
-      },
-      apns: {
-        payload: {
-          aps: {
-            sound: 'default',
-            badge: 1
-          }
-        }
-      },
-      data: {
-        thread: 'support'
-      }
-    });
-
-    result.responses.forEach((response, index) => {
-      if (response.success) return;
-
-      if (response.error?.code === 'messaging/registration-token-not-registered') {
-        invalidTokenRefs.push(tokenDocuments[index].ref);
-      }
-    });
-
-    if (result.failureCount > 0) {
-      console.error(`Support reply push had ${result.failureCount} delivery failure(s) for user ${uid}.`);
-    }
-
-    if (invalidTokenRefs.length > 0) {
-      const cleanupBatch = admin.firestore().batch();
-      invalidTokenRefs.forEach(ref => cleanupBatch.delete(ref));
-      await cleanupBatch.commit();
-    }
+  if (tokenSnapshot.size >= FCM_DESTINATION_CAPACITY) {
+    log('FCM_DESTINATION_CAPACITY', { count: tokenSnapshot.size });
+    return;
   }
+  const tokenDocuments = tokenSnapshot.docs;
+  let result;
+  try {
+    result = await withOutboundLease({ db, now }, { uid, channel: 'fcm' }, () => messaging.sendEachForMulticast({
+      tokens: tokenDocuments.map(document => document.id),
+      notification: { title: SUPPORT_REPLY_NOTIFICATION.title, body: SUPPORT_REPLY_NOTIFICATION.body },
+      data: { thread: 'support' },
+      android: { ttl: 0 },
+      apns: { headers: { 'apns-expiration': '0' }, payload: { aps: { sound: 'default', badge: 1, category: 'PEEZY_SUPPORT_REPLY_V1' } } }
+    }));
+  } catch (error) {
+    log(error && error.details && error.details.reason === 'ACCOUNT_DELETION_FENCED' ? 'FCM_SEND_FENCED' : (error && typeof error.code === 'string' && error.code.startsWith('OUTBOUND_LEASE') ? error.code : 'FCM_SEND_FAILED'), { tokens: tokenDocuments.length });
+    return;
+  }
+  let unknownCodes = 0;
+  const invalidTokenRefs = [];
+  (result.responses || []).forEach((response, index) => {
+    if (response.success) return;
+    const code = response.error && typeof response.error.code === 'string' ? response.error.code : '';
+    if (!FCM_ACCEPTED_FAILURE_CODES_V1.includes(code)) { unknownCodes += 1; return; }
+    if (FCM_TOKEN_DELETION_CODES_V1.includes(code)) invalidTokenRefs.push(tokenDocuments[index].ref);
+  });
+  if (unknownCodes > 0) log('FCM_UNKNOWN_FAILURE_CODE', { count: unknownCodes });
+  if (result.failureCount > 0) log('FCM_DELIVERY_FAILURES', { failures: result.failureCount, deleted: invalidTokenRefs.length });
+  // support invalid-token deletion is an explicit C6.1 exclusion (deletion-only)
+  for (const ref of invalidTokenRefs) await ref.delete();
 }
 
 const adminListThreads = onCall(CALLABLE_OPTIONS, async (request) => {
@@ -225,10 +236,11 @@ const adminGetThread = onCall(CALLABLE_OPTIONS, async (request) => {
 
   const thread = threadSnapshot.exists ? threadFromDocument(threadSnapshot) : null;
   const now = admin.firestore.FieldValue.serverTimestamp();
-  const batch = db.batch();
-  batch.set(supportChatRef.doc('_meta'), { adminSeenAt: now }, { merge: true });
-  batch.set(threadRef, { uid, unreadForAdmin: 0 }, { merge: true });
-  await batch.commit();
+  await db.runTransaction(async (transaction) => {
+    await assertDeletionAbsent(transaction, db, [uid]);
+    transaction.set(supportChatRef.doc('_meta'), { adminSeenAt: now }, { merge: true });
+    transaction.set(threadRef, { uid, unreadForAdmin: 0 }, { merge: true });
+  });
 
   return {
     uid,
@@ -263,29 +275,26 @@ const adminReplySupport = onCall(CALLABLE_OPTIONS, async (request) => {
   const messageRef = supportChatRef.doc();
   const threadRef = db.collection('supportThreads').doc(uid);
   const now = admin.firestore.FieldValue.serverTimestamp();
-  const batch = db.batch();
-
-  batch.set(messageRef, {
-    text,
-    sender: 'support',
-    timestamp: now,
-    read: false
+  await db.runTransaction(async (transaction) => {
+    await assertDeletionAbsent(transaction, db, [uid]);
+    transaction.set(messageRef, {
+      text,
+      sender: 'support',
+      timestamp: now,
+      read: false
+    });
+    transaction.set(threadRef, {
+      uid,
+      lastMessageText: text,
+      lastMessageAt: now,
+      lastSender: 'support',
+      unreadForAdmin: 0
+    }, { merge: true });
+    transaction.set(supportChatRef.doc('_meta'), {
+      adminSeenAt: now
+    }, { merge: true });
   });
-  batch.set(threadRef, {
-    uid,
-    lastMessageText: text,
-    lastMessageAt: now,
-    lastSender: 'support',
-    unreadForAdmin: 0
-  }, { merge: true });
-  batch.set(supportChatRef.doc('_meta'), {
-    adminSeenAt: now
-  }, { merge: true });
-
-  await batch.commit();
-  await sendSupportReplyPush(uid, text).catch(error => {
-    console.error(`Support reply push failed for user ${uid}.`, error);
-  });
+  await sendSupportReplyPush(uid, { db }).catch(() => fixedLog('FCM_SEND_FAILED', {}));
   return { success: true, messageId: messageRef.id };
 });
 
@@ -295,20 +304,19 @@ const adminMarkSeen = onCall(CALLABLE_OPTIONS, async (request) => {
   const uid = requireUid(request.data);
   const db = admin.firestore();
   const now = admin.firestore.FieldValue.serverTimestamp();
-  const batch = db.batch();
-
-  batch.set(
-    db.collection('users').doc(uid).collection('supportChat').doc('_meta'),
-    { adminSeenAt: now },
-    { merge: true }
-  );
-  batch.set(
-    db.collection('supportThreads').doc(uid),
-    { unreadForAdmin: 0 },
-    { merge: true }
-  );
-
-  await batch.commit();
+  await db.runTransaction(async (transaction) => {
+    await assertDeletionAbsent(transaction, db, [uid]);
+    transaction.set(
+      db.collection('users').doc(uid).collection('supportChat').doc('_meta'),
+      { adminSeenAt: now },
+      { merge: true }
+    );
+    transaction.set(
+      db.collection('supportThreads').doc(uid),
+      { unreadForAdmin: 0 },
+      { merge: true }
+    );
+  });
   return { success: true };
 });
 
@@ -321,7 +329,11 @@ const adminSetThreadStatus = onCall(CALLABLE_OPTIONS, async (request) => {
     throw new HttpsError('invalid-argument', 'Status must be open or resolved.');
   }
 
-  await admin.firestore().collection('supportThreads').doc(uid).update({ status });
+  const db = admin.firestore();
+  await db.runTransaction(async (transaction) => {
+    await assertDeletionAbsent(transaction, db, [uid]);
+    transaction.update(db.collection('supportThreads').doc(uid), { status });
+  });
   return { success: true };
 });
 
@@ -330,5 +342,12 @@ module.exports = {
   adminGetThread,
   adminReplySupport,
   adminMarkSeen,
-  adminSetThreadStatus
+  adminSetThreadStatus,
+  _test: {
+    sendSupportReplyPush,
+    FCM_ACCEPTED_FAILURE_CODES_V1,
+    FCM_TOKEN_DELETION_CODES_V1,
+    FCM_DESTINATION_CAPACITY,
+    SUPPORT_REPLY_NOTIFICATION
+  }
 };

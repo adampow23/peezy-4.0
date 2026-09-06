@@ -7,6 +7,8 @@
 
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const admin = require("firebase-admin");
+const { Timestamp } = require("firebase-admin/firestore");
+const { withOutboundLease } = require("./accountDeletionFence");
 const Anthropic = require("@anthropic-ai/sdk");
 const { getAIConfig } = require("./aiConfig");
 
@@ -195,21 +197,32 @@ function directoryRecordPayload(record, fallbackName, intent) {
   }, fallbackName);
 }
 
-async function loadDirectory() {
+/** Phase 2 (v9 §11:1439): only complete exact `source:"seeded"` rows enter the process-global cache or lookup output. */
+function isSeededDirectoryRow(row) {
+  return row !== null && typeof row === "object" && !Array.isArray(row) && row.source === "seeded" &&
+    typeof row.providerId === "string" && row.providerId.length > 0 && typeof row.name === "string" && row.name.length > 0;
+}
+
+function resetDirectoryCache() {
+  directoryCache = { loadedAt: 0, providers: [] };
+}
+
+async function loadDirectory(dependencies = {}) {
   const now = Date.now();
   if (directoryCache.providers.length > 0 && now - directoryCache.loadedAt < DIRECTORY_CACHE_MS) {
     return directoryCache.providers;
   }
-  const snapshot = await admin.firestore().collection("providerDirectory").get();
-  const providers = snapshot.docs.map((document) => document.data());
+  const db = dependencies.db || admin.firestore();
+  const snapshot = await db.collection("providerDirectory").get();
+  const providers = snapshot.docs.map((document) => document.data()).filter(isSeededDirectoryRow);
   directoryCache = { loadedAt: now, providers };
   return providers;
 }
 
-async function lookupDirectory(name, category, intent) {
+async function lookupDirectory(name, category, intent, dependencies = {}) {
   const key = normalize(name);
   if (!key) return null;
-  const providers = await loadDirectory();
+  const providers = await loadDirectory(dependencies);
   return providers.find((provider) => {
     const nameMatches = [provider.name, ...(Array.isArray(provider.aliases) ? provider.aliases : [])]
       .some((candidate) => normalize(candidate) === key);
@@ -324,8 +337,7 @@ function resolvedDocument(payload, requestedName, category, intent) {
     verified: false,
     source: "resolved",
     citations: payload.citations,
-    requirements: payload.requirements,
-    resolvedAt: admin.firestore.FieldValue.serverTimestamp()
+    requirements: payload.requirements
   };
   if (payload.method === "link") {
     document[INTENT_URL_FIELDS[intent]] = payload.url;
@@ -334,32 +346,34 @@ function resolvedDocument(payload, requestedName, category, intent) {
   return document;
 }
 
-async function cacheResolved(payload, requestedName, category, intent) {
-  const document = resolvedDocument(payload, requestedName, category, intent);
-  await admin.firestore().collection("providerDirectory").doc(document.providerId).set(document, { merge: true });
-  directoryCache = { loadedAt: 0, providers: [] };
-}
-
+/**
+ * Phase 2: a high-confidence resolution returns the validated safe response with no Firestore
+ * mutation (v9 §11:1439), and every Anthropic search runs under the outbound lease (C6.2).
+ */
 async function resolveProviderRequest(name, category, intent, dependencies = {}) {
   const lookup = dependencies.lookup || lookupDirectory;
   const search = dependencies.search || searchOfficialProvider;
-  const cache = dependencies.cache || cacheResolved;
   const timeoutMs = dependencies.timeoutMs || SEARCH_TIMEOUT_MS;
 
   try {
-    const record = await lookup(name, category, intent);
+    const record = await lookup(name, category, intent, dependencies);
     if (record) return directoryRecordPayload(record, name, intent);
 
-    const searched = await withTimeout(
+    if (typeof dependencies.uid !== "string" || dependencies.uid.length === 0) {
+      throw new Error("resolveProviderRequest requires the authenticated uid for the outbound lease");
+    }
+    const leaseDependencies = {
+      db: dependencies.db || admin.firestore(),
+      now: dependencies.now || (() => Timestamp.fromMillis(Date.now()))
+    };
+    const searched = await withOutboundLease(leaseDependencies, { uid: dependencies.uid, channel: "anthropic" }, () => withTimeout(
       Promise.resolve().then(() => search(name, category, intent, dependencies.resolverModel)),
       timeoutMs
-    );
+    ));
     const safe = safePayload(searched, name);
     if (safe.confidence !== "high" || safe.method === "concierge") {
       return conciergePayload(safe.name, safe.citations);
     }
-
-    await cache(safe, name, category, intent);
     return safe;
   } catch {
     return conciergePayload(name);
@@ -385,7 +399,7 @@ const resolveProvider = onCall(
       throw new HttpsError("invalid-argument", "name, category, and valid intent are required");
     }
     const resolverModel = await getAIConfig("resolverModel");
-    return resolveProviderRequest(name, category, intent, { resolverModel });
+    return resolveProviderRequest(name, category, intent, { resolverModel, uid: request.auth.uid });
   }
 );
 
@@ -397,6 +411,8 @@ module.exports = {
     categoryFamily,
     conciergePayload,
     directoryRecordPayload,
+    loadDirectory,
+    resetDirectoryCache,
     normalize,
     parseSearchResponse,
     providerMatchesCategory,

@@ -1775,4 +1775,190 @@ test("historical entry: a migration-only marker carries one server-generated cap
   assert.equal(markerOf(pdb, "uid-H").state, "DATA_DELETED");
 });
 
+// ---------------------------------------------------------------------------
+// I5 — provider cache (resolveProvider.js), support-reply FCM surface and writing tails
+// (supportAdmin.js), submitWorkflowAnswers fence (getWorkflowQualifying.js)
+// ---------------------------------------------------------------------------
+
+const fs = require("node:fs");
+const path = require("node:path");
+const admin = require("firebase-admin");
+const { FieldValue: AdminFieldValue, FieldPath: AdminFieldPath, Timestamp: AdminTimestamp } = require("firebase-admin/firestore");
+
+let activeDb = null;
+let activeMessaging = null;
+const firestoreStub = () => activeDb;
+firestoreStub.FieldValue = AdminFieldValue;
+firestoreStub.FieldPath = AdminFieldPath;
+firestoreStub.Timestamp = AdminTimestamp;
+Object.defineProperty(admin, "firestore", { configurable: true, value: firestoreStub });
+Object.defineProperty(admin, "messaging", { configurable: true, value: () => activeMessaging });
+process.env.SUPPORT_ADMIN_EMAILS = "admin@example.com";
+
+const resolveProviderModule = require("../resolveProvider");
+const supportAdmin = require("../supportAdmin");
+const { executeWorkflowAnswers } = require("../getWorkflowQualifying");
+
+function fakeMessaging(script = () => ({ success: true })) {
+  const calls = [];
+  return {
+    calls,
+    async sendEachForMulticast(message) {
+      calls.push(message);
+      const responses = message.tokens.map((token) => {
+        const outcome = script(token);
+        if (outcome.success) return { success: true, messageId: `m-${token}` };
+        return { success: false, error: { code: outcome.code, message: "x" } };
+      });
+      return { successCount: responses.filter((r) => r.success).length, failureCount: responses.filter((r) => !r.success).length, responses };
+    }
+  };
+}
+
+const ADMIN_REQUEST = (data) => ({ auth: { uid: "admin-1", token: { email: "admin@example.com" } }, data });
+
+test("provider cache graph: cacheResolved is gone, high-confidence resolutions write nothing, loadDirectory admits only exact seeded rows, and the Anthropic search runs under the outbound lease", async () => {
+  const source = fs.readFileSync(path.join(__dirname, "..", "resolveProvider.js"), "utf8");
+  assert.equal(source.includes("cacheResolved"), false);
+  assert.equal(source.includes("resolvedAt"), false);
+  assert.equal(resolveProviderModule._test.cacheResolved, undefined);
+  const { resolveProviderRequest, loadDirectory, resetDirectoryCache, safePayload } = resolveProviderModule._test;
+
+  const clock = new FakeClock();
+  const seeded = { providerId: "seeded1", name: "Comcast", aliases: ["xfinity"], category: "internet", method: "link", source: "seeded", cancelUrl: "https://www.xfinity.com/cancel", citations: [], requirements: [] };
+  const db = fakeFirestore({ docs: {
+    "users/uid-A": { name: "A" },
+    "providerDirectory/seeded1": seeded,
+    "providerDirectory/resolved1": { ...seeded, providerId: "resolved1", name: "Resolved Co", source: "resolved" },
+    "providerDirectory/nosource": { ...seeded, providerId: "nosource", name: "No Source", source: undefined },
+    "providerDirectory/wrongsource": { ...seeded, providerId: "wrongsource", name: "Wrong", source: "SEEDED" }
+  }, clock });
+  resetDirectoryCache();
+  const providers = await loadDirectory({ db });
+  assert.deepEqual(providers.map((p) => p.providerId), ["seeded1"]);
+  assert.deepEqual(await loadDirectory({ db }), providers, "the process-global cache retains only admitted rows");
+
+  const searched = { name: "Foo Energy", url: "https://foo.example/cancel", phone: null, method: "link", confidence: "high", citations: [{ title: "Cancel", url: "https://foo.example/cancel" }], requirements: [] };
+  let searches = 0;
+  const result = await resolveProviderRequest("Foo Energy", "utilities", "cancel", { db, uid: "uid-A", now: () => clock.now(), lookup: async () => null, search: async () => { searches += 1; return searched; } });
+  assert.deepEqual(result, safePayload(searched, "Foo Energy"));
+  assert.equal(searches, 1);
+  assert.equal(db.__writes.some((w) => w.path.startsWith("providerDirectory/")), false, "no Firestore mutation from a resolution");
+  const leaseWrites = db.__writes.filter((w) => w.path.startsWith("users/uid-A/outboundLeases/uol1_"));
+  assert.deepEqual(leaseWrites.map((w) => w.type), ["create", "delete"]);
+  assert.equal(leaseWrites[0].data.channel, "anthropic");
+  assert.equal([...db.__docs.keys()].filter((p) => p.includes("/outboundLeases/")).length, 0);
+
+  // a deleting account never reaches the provider
+  const fenced = fakeFirestore({ docs: { "users/uid-A": { accountDeletion: sweepingMarker([capability(UID, freshOperationId(), freshProofNonce())]) } }, clock });
+  let fencedSearches = 0;
+  const fencedResult = await resolveProviderRequest("Foo Energy", "utilities", "cancel", { db: fenced, uid: "uid-A", now: () => clock.now(), lookup: async () => null, search: async () => { fencedSearches += 1; return searched; } });
+  assert.equal(fencedSearches, 0);
+  assert.equal(fencedResult.method, "concierge");
+  assert.equal(fenced.__writes.length, 0);
+});
+
+test("support-reply FCM surface: exact C6.8 payload, limit(501) with FCM_DESTINATION_CAPACITY, the frozen 19-code union, token deletion only for the two codes, lease-dominated send, and fixed-code logging", async () => {
+  const errorModule = require(path.join(__dirname, "..", "node_modules", "firebase-admin", "lib", "utils", "error.js"));
+  const sdkCodes = Object.values(errorModule.MessagingClientErrorCode).map((v) => `messaging/${v.code}`).sort();
+  assert.equal(sdkCodes.length, 19);
+  assert.deepEqual([...supportAdmin._test.FCM_ACCEPTED_FAILURE_CODES_V1].sort(), sdkCodes);
+  assert.equal(supportAdmin._test.FCM_DESTINATION_CAPACITY, 501);
+  assert.deepEqual(supportAdmin._test.FCM_TOKEN_DELETION_CODES_V1, ["messaging/invalid-registration-token", "messaging/registration-token-not-registered"]);
+  const source = fs.readFileSync(path.join(__dirname, "..", "supportAdmin.js"), "utf8");
+  assert.equal(/console\.(log|error|warn|info)/.test(source), false, "no dynamic server log sink");
+
+  const clock = new FakeClock();
+  const tokens = { "users/uid-A/fcmTokens/tok-ok": { createdAt: clock.now(), platform: "ios" }, "users/uid-A/fcmTokens/tok-gone": { createdAt: clock.now(), platform: "ios" }, "users/uid-A/fcmTokens/tok-invalid": { createdAt: clock.now(), platform: "ios" }, "users/uid-A/fcmTokens/tok-internal": { createdAt: clock.now(), platform: "ios" }, "users/uid-A/fcmTokens/tok-weird": { createdAt: clock.now(), platform: "ios" } };
+  const db = fakeFirestore({ docs: { "users/uid-A": { name: "A" }, ...tokens }, clock });
+  const messaging = fakeMessaging((token) => ({
+    "tok-ok": { success: true }, "tok-gone": { success: false, code: "messaging/registration-token-not-registered" },
+    "tok-invalid": { success: false, code: "messaging/invalid-registration-token" }, "tok-internal": { success: false, code: "messaging/internal-error" },
+    "tok-weird": { success: false, code: "messaging/not-a-real-code" }
+  }[token]));
+  const logs = [];
+  await supportAdmin._test.sendSupportReplyPush("uid-A", { db, messaging, now: () => clock.now(), log: (code, counts) => logs.push([code, counts]) });
+  assert.equal(messaging.calls.length, 1);
+  const message = messaging.calls[0];
+  assert.deepEqual([...message.tokens].sort(), ["tok-gone", "tok-internal", "tok-invalid", "tok-ok", "tok-weird"]);
+  assert.deepEqual({ ...message, tokens: null }, {
+    tokens: null,
+    notification: { title: "Peezy", body: "You have a new support reply." },
+    data: { thread: "support" },
+    android: { ttl: 0 },
+    apns: { headers: { "apns-expiration": "0" }, payload: { aps: { sound: "default", badge: 1, category: "PEEZY_SUPPORT_REPLY_V1" } } }
+  });
+  assert.deepEqual([...db.__docs.keys()].filter((p) => p.startsWith("users/uid-A/fcmTokens/")).sort(), ["users/uid-A/fcmTokens/tok-internal", "users/uid-A/fcmTokens/tok-ok", "users/uid-A/fcmTokens/tok-weird"]);
+  const leaseWrites = db.__writes.filter((w) => w.path.startsWith("users/uid-A/outboundLeases/uol1_"));
+  assert.deepEqual(leaseWrites.map((w) => [w.type, w.data?.channel]), [["create", "fcm"], ["delete", undefined]]);
+  assert.ok(logs.some(([code]) => code === "FCM_UNKNOWN_FAILURE_CODE"));
+  assert.ok(logs.every(([code, counts]) => typeof code === "string" && !JSON.stringify(counts).includes("uid-A") && !JSON.stringify(counts).includes("tok-")));
+
+  // 501 rows: capacity invariant, nothing sent
+  const many = {};
+  for (let i = 0; i < 501; i += 1) many[`users/uid-B/fcmTokens/t${String(i).padStart(3, "0")}`] = { createdAt: clock.now(), platform: "ios" };
+  const capDb = fakeFirestore({ docs: { "users/uid-B": {}, ...many }, clock });
+  const capMessaging = fakeMessaging();
+  const capLogs = [];
+  await supportAdmin._test.sendSupportReplyPush("uid-B", { db: capDb, messaging: capMessaging, now: () => clock.now(), log: (code) => capLogs.push(code) });
+  assert.equal(capMessaging.calls.length, 0);
+  assert.ok(capLogs.includes("FCM_DESTINATION_CAPACITY"));
+
+  // a deleting account: the lease refuses and nothing is sent
+  const fencedDb = fakeFirestore({ docs: { "users/uid-A": { accountDeletion: sweepingMarker([capability(UID, freshOperationId(), freshProofNonce())]) }, ...tokens }, clock });
+  const fencedMessaging = fakeMessaging();
+  await supportAdmin._test.sendSupportReplyPush("uid-A", { db: fencedDb, messaging: fencedMessaging, now: () => clock.now(), log: () => {} });
+  assert.equal(fencedMessaging.calls.length, 0);
+  assert.equal(fencedDb.__writes.length, 0);
+});
+
+test("supportAdmin writing tails are root-fenced: adminGetThread, adminReplySupport, adminMarkSeen, and adminSetThreadStatus refuse a deleting account with zero writes and otherwise commit their records", async () => {
+  const clock = new FakeClock();
+  const marker = sweepingMarker([capability(UID, freshOperationId(), freshProofNonce())]);
+  const fencedDocs = () => ({ "users/uid-A": { accountDeletion: marker }, "supportThreads/uid-A": { uid: "uid-A", status: "open" }, "users/uid-A/supportChat/m1": { text: "hi", sender: "user", timestamp: clock.now() } });
+  const calls = [
+    ["adminGetThread", { uid: "uid-A" }],
+    ["adminReplySupport", { uid: "uid-A", text: "hello" }],
+    ["adminMarkSeen", { uid: "uid-A" }],
+    ["adminSetThreadStatus", { uid: "uid-A", status: "resolved" }]
+  ];
+  for (const [name, data] of calls) {
+    activeDb = fakeFirestore({ docs: fencedDocs(), clock });
+    activeMessaging = fakeMessaging();
+    await assert.rejects(supportAdmin[name].run(ADMIN_REQUEST(data)), (e) => e.code === "failed-precondition" && e.details?.reason === "ACCOUNT_DELETION_FENCED", name);
+    assert.equal(activeDb.__writes.length, 0, name);
+    assert.equal(activeMessaging.calls.length, 0, name);
+  }
+  // unfenced commits
+  activeDb = fakeFirestore({ docs: { "users/uid-A": { name: "A" }, "supportThreads/uid-A": { uid: "uid-A", status: "open", unreadForAdmin: 2 }, "users/uid-A/fcmTokens/tok": { createdAt: clock.now(), platform: "ios" } }, clock });
+  activeMessaging = fakeMessaging();
+  const reply = await supportAdmin.adminReplySupport.run(ADMIN_REQUEST({ uid: "uid-A", text: "hello" }));
+  assert.equal(reply.success, true);
+  const message = activeDb.__docs.get(`users/uid-A/supportChat/${reply.messageId}`);
+  assert.deepEqual({ ...message, timestamp: null }, { text: "hello", sender: "support", timestamp: null, read: false });
+  assert.equal(activeDb.__docs.get("supportThreads/uid-A").lastSender, "support");
+  assert.equal(activeDb.__docs.get("supportThreads/uid-A").unreadForAdmin, 0);
+  assert.equal(activeMessaging.calls.length, 1);
+  await supportAdmin.adminMarkSeen.run(ADMIN_REQUEST({ uid: "uid-A" }));
+  assert.ok(activeDb.__docs.get("users/uid-A/supportChat/_meta").adminSeenAt);
+  await supportAdmin.adminSetThreadStatus.run(ADMIN_REQUEST({ uid: "uid-A", status: "resolved" }));
+  assert.equal(activeDb.__docs.get("supportThreads/uid-A").status, "resolved");
+  const thread = await supportAdmin.adminGetThread.run(ADMIN_REQUEST({ uid: "uid-A" }));
+  assert.equal(thread.uid, "uid-A");
+  assert.equal(thread.status, "resolved");
+  activeDb = null;
+  activeMessaging = null;
+});
+
+test("submitWorkflowAnswers is root-fenced: a deleting account refuses before any write", async () => {
+  const clock = new FakeClock();
+  const marker = sweepingMarker([capability(UID, freshOperationId(), freshProofNonce())]);
+  const db = fakeFirestore({ docs: { "users/uid-A": { accountDeletion: marker }, "users/uid-A/tasks/cancel_utilities": { status: "Upcoming" } }, clock });
+  await assert.rejects(executeWorkflowAnswers(db, "uid-A", "cancel_utilities", {}, new Date(clock.millis), () => clock.now()), (e) => e.code === "failed-precondition" && e.details?.reason === "ACCOUNT_DELETION_FENCED");
+  assert.equal(db.__writes.length, 0);
+  const open = fakeFirestore({ docs: { "users/uid-A": { name: "A" }, "users/uid-A/tasks/cancel_utilities": { status: "Upcoming" } }, clock });
+  const result = await executeWorkflowAnswers(open, "uid-A", "cancel_utilities", {}, new Date(clock.millis), () => clock.now());
+  assert.equal(result.success, true);
+});
+
 module.exports = { fakeFirestore, FakeClock, capability, sweepingMarker, guardingMarker, dataDeletedMarker, authGuardingMarker, accountDeletedMarker, freshOperationId, freshProofNonce, ts, UID, STARTED, GUARD_AFTER };

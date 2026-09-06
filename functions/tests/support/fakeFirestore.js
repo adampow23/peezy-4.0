@@ -108,7 +108,17 @@ function fakeFirestore({ docs: initial = {}, clock } = {}) {
     return { empty: list.length === 0, size: list.length, docs: list, readTime: now() };
   }
 
+  function resolveSentinels(value) {
+    if (value === null || typeof value !== "object") return value;
+    if (value instanceof Timestamp) return value;
+    if (value.methodName === "FieldValue.serverTimestamp") return now();
+    if (value.methodName === "FieldValue.delete") return value;
+    if (Array.isArray(value)) return value.map(resolveSentinels);
+    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, resolveSentinels(v)]));
+  }
+
   function applyOps(ops, readVersions) {
+    for (const op of ops) if (op.data !== undefined) op.data = resolveSentinels(op.data);
     for (const [path, version] of readVersions || []) {
       if ((versions.get(path) || 0) !== version) {
         const error = new Error(`contention on ${path}`);

@@ -8,6 +8,7 @@
 
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
+const { deletionError } = require('./accountDeletionFence');
 const { createHash } = require('node:crypto');
 const { WORKFLOW_QUALIFYING } = require('./workflowQualifying');
 const { MINI_ASSESSMENT_WORKFLOWS } = require('./miniAssessmentWorkflows');
@@ -335,6 +336,8 @@ async function executeWorkflowAnswers(
         workflowId
       });
     }
+    // C6.1 root fence: every committing branch requires accountDeletion absent on the owner root.
+    if (rootSnapshot.exists && rootSnapshot.data()?.accountDeletion !== undefined) throw deletionError('ACCOUNT_DELETION_FENCED');
     if (taskResetIsActive(rootSnapshot)) {
       throw new HttpsError('failed-precondition', 'Task reset is active');
     }
