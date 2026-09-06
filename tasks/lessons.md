@@ -45,3 +45,11 @@
 - Swift Testing rejects a `#require` nested inside another `#require` (and `try` inside its argument) with "recursive expansion"; hoist the inner expression.
 - A background poller that greps for `xcodebuild` by command line matches itself; match the binary (`pgrep -x`) or run the build in the foreground.
 - Freeze cross-language wire fixtures through the real handler on the fake Firestore and assert byte-equality from the Node side; the Swift decoder mirrors then read one committed file instead of restating shapes.
+
+## 2026-09-06 — retro recommendations applied (PHASE2_RETRO_S1_S2, adopted as rules)
+- Rec 1 (R12: C8 → C9 shapes + C10 ownership, then archive manifest v9 / spec v5): applied 2026-09-06; eight parallel ports, eight fresh-context verifiers, eight fixers; sources archived under docs/archive/phase2/ after the port.
+- Rec 2 (one decision list per slice; never end on "result unknown"): applied — Decisions 10–11 raised in the ledger mid-slice and carried to the next report; in-flight runs are waited on before a turn ends.
+- Rec 3 (warm project-signed build once per session; background runs with a single until-wait): applied — one `build-for-testing` per Swift change set; pollers match the xcodebuild binary, not their own command line.
+- Rec 4 (drop process precision: preimage hashes → diff gate, C8 → PEEZY_STATE list, Reconciled → archive, no citations/Sources/restated hashes): applied in R12 (C7 diff gate, C1 spec row dropped, provenance archived, PEEZY_STATE §4 trail).
+- Rec 5 (section reads only; PEEZY_STATE §4 + last ledger entry + brief at session start): applied from this point; recorded in PHASE2_WORKFLOW_v2 session rules.
+- Rec 6 (RED = one named assertion fails; extend fakeFirestore.js once per slice before the first Node RED): applied — fakeFirestore.js gained field orderBy, forEach, range/in/array-contains operators, collection groups, snapshot cursors, count(); the I6 Swift families were re-run red under a deliberate break after the compile-only red.
