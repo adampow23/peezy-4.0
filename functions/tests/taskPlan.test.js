@@ -1449,3 +1449,38 @@ test("frozen reset wires: the committed fixture equals what the handler produces
   if (process.env.FREEZE_RESET_WIRES === "1" || !fs.existsSync(fixturePath)) fs.writeFileSync(fixturePath, bytes);
   assert.equal(fs.readFileSync(fixturePath, "utf8"), bytes, "committed fixture equals the live wires (FREEZE_RESET_WIRES=1 to rewrite)");
 });
+
+// ---------------------------------------------------------------------------
+// S3 I10 — C9.4.5 inspectLegacyTaskReset and the claim follow-on routing (PHASE2_CONTRACT.md)
+// ---------------------------------------------------------------------------
+
+test("C9.4.5 inspectLegacyTaskReset: exactly {action}; unauthenticated is AUTH_REQUIRED; none, legacy_active, phase2_active with the validated canonical id; a marker that disagrees with the record or the formula is LEGACY_RESET_CORRUPT; read-only", async () => {
+  const { executeInspectLegacyTaskReset, resetCanonicalId } = require("../taskPlan");
+  const { fakeFirestore: F } = require("./support/fakeFirestore");
+  const inspect = (db, data = { action: "inspectLegacyTaskReset" }, auth = { uid: "u1" }) => handleTaskPlanRequest({ auth, data }, () => db, NOW);
+  await assert.rejects(inspect(F({ docs: {} }), undefined, null), (error) => error.code === "unauthenticated" && error.details.reason === "AUTH_REQUIRED");
+  await assert.rejects(inspect(F({ docs: {} }), { action: "inspectLegacyTaskReset", extra: 1 }), (error) => error.code === "invalid-argument");
+  let db = F({ docs: { "users/u1": { name: "U" } } });
+  assert.deepEqual(await inspect(db), { schemaVersion: 1, kind: "legacy_reset_inspection", outcome: "none", accountUid: "u1" });
+  db = F({ docs: {} });
+  assert.deepEqual(await inspect(db), { schemaVersion: 1, kind: "legacy_reset_inspection", outcome: "none", accountUid: "u1" });
+  const legacyId = "33333333-3333-4333-8333-333333333333";
+  db = F({ docs: { "users/u1": { taskReset: { operationId: legacyId, state: "deleting", workerLease: null, startedAt: Timestamp.fromMillis(0) } } } });
+  assert.deepEqual(await inspect(db), { schemaVersion: 1, kind: "legacy_reset_inspection", outcome: "legacy_active", accountUid: "u1", legacyOperationId: legacyId });
+  const canonical = resetCanonicalId("u1", 4);
+  const marker = { schemaVersion: 1, kind: "reset", operationId: canonical, state: "deleting", expectedTaskGenerationEpoch: 3 };
+  db = F({ docs: { "users/u1": { taskReset: marker }, [`users/u1/taskPlanOperations/${canonical}`]: { account_uid: "u1", operation_id: canonical, state: "deleting" } } });
+  const before = db.__writes.length;
+  assert.deepEqual(await inspect(db), { schemaVersion: 1, kind: "legacy_reset_inspection", outcome: "phase2_active", accountUid: "u1", canonicalOperationId: canonical, expectedTaskGenerationEpoch: 3 });
+  assert.equal(db.__writes.length, before, "read-only");
+  for (const [label, docs] of [
+    ["formula disagreement", { "users/u1": { taskReset: { ...marker, operationId: resetCanonicalId("u1", 5) } } }],
+    ["record missing", { "users/u1": { taskReset: marker } }],
+    ["record disagreement", { "users/u1": { taskReset: marker }, [`users/u1/taskPlanOperations/${canonical}`]: { account_uid: "u1", operation_id: canonical, state: "awaiting_local_reset" } }],
+    ["malformed marker", { "users/u1": { taskReset: { kind: "reset", state: "deleting" } } }]
+  ]) {
+    await assert.rejects(inspect(F({ docs })), (error) => error.code === "failed-precondition" && error.details.reason === "LEGACY_RESET_CORRUPT", label);
+  }
+  db = F({ docs: { "users/u1": { taskReset: { ...marker, state: "finalized" } } } });
+  assert.equal((await executeInspectLegacyTaskReset(db, "u1")).outcome, "none", "a non-active Phase 2 marker is none");
+});

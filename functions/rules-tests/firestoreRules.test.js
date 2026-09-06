@@ -242,6 +242,19 @@ test("active reset blocks every client task create update and delete", async () 
   }
 });
 
+test("C9.3.13 notification intents deny every client operation: owner, other, and anonymous get, list, create, update, delete", async () => {
+  const { getDocs: listDocs, collection: collectionOf } = require("firebase/firestore");
+  const documentPath = `users/${OWNER}/notificationIntents/ni1_${"a".repeat(40)}`;
+  await seed({ [documentPath]: { schema_version: 1, state: "pending" } });
+  for (const client of [dbFor(OWNER), dbFor(OTHER), anonymousDb()]) {
+    await assertFails(getDoc(doc(client, documentPath)));
+    await assertFails(listDocs(collectionOf(client, `users/${OWNER}/notificationIntents`)));
+    await assertFails(setDoc(doc(client, `users/${OWNER}/notificationIntents/ni1_${"b".repeat(40)}`), { schema_version: 1 }));
+    await assertFails(updateDoc(doc(client, documentPath), { state: "consumed" }));
+    await assertFails(deleteDoc(doc(client, documentPath)));
+  }
+});
+
 test("server-owned per-user lifecycle collections are owner-readable and client-write-false", async () => {
   const paths = [
     `users/${OWNER}/spawnTokens/token-1`,

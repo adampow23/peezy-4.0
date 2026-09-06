@@ -263,6 +263,10 @@ service cloud.firestore {
       allow read: if isLiveOwner(userId);
       allow write: if false;
     }
+    // C9.3.13: notification intents are server-only; claimTaskIntent is the only client path.
+    match /users/{userId}/notificationIntents/{document=**} {
+      allow read, write: if false;
+    }
     match /users/{userId}/taskPlanOperations/{document=**} {
       allow read: if isLiveOwner(userId);
       allow write: if false;

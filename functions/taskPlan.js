@@ -28,8 +28,10 @@ if (!admin.apps.length) admin.initializeApp();
 const ACTIONS = new Set([
   "supersede", "confirmAmendment", "undoConfirmation", "reopen",
   "resetAllTasks", "finalizeTaskReset",
-  "reconcileLegacyTaskReset", "inspectCommittedOperation"
+  "reconcileLegacyTaskReset", "inspectCommittedOperation",
+  "claimTaskIntent", "inspectLegacyTaskReset"
 ]);
+const intents = require("./notificationIntents");
 const RESET_REASON = "retake_assessment";
 const MAX_HISTORY = 50;
 const LEASE_MS = 10 * 60 * 1000;
@@ -170,6 +172,8 @@ function validateTaskPlanRequest(data, now = new Date()) {
   if (!ACTIONS.has(input.action)) failValidation("action is not supported");
   if (input.action === "inspectCommittedOperation") return validateInspectionRequest(input);
   if (input.action === "reconcileLegacyTaskReset") return validateReconciliationRequest(input);
+  if (input.action === "claimTaskIntent") return intents.validateClaimRequest(input); // C9.3.2: non-task envelope, exactly three members
+  if (input.action === "inspectLegacyTaskReset") { if (!exactKeySet(input, ["action"])) failRequestInvalid("request"); return { action: input.action }; }
   const reset = input.action === "resetAllTasks" || input.action === "finalizeTaskReset";
   if (reset && input.expectedTaskGenerationEpoch !== undefined) return validatePhase2ResetRequest(input);
   const operationId = cleanDocId(input.operationId, "operationId");
@@ -1643,11 +1647,35 @@ async function executeInspectCommittedOperation(db, uid, request) {
   });
 }
 
+// ---- inspectLegacyTaskReset (C9.4.5): authenticated, read-only; none | legacy_active | phase2_active; corrupt fails closed
+
+async function executeInspectLegacyTaskReset(db, uid) {
+  const userRef = db.collection("users").doc(uid);
+  const base = { schemaVersion: 1, kind: "legacy_reset_inspection", accountUid: uid };
+  return db.runTransaction(async (transaction) => {
+    const rootSnapshot = await transaction.get(userRef);
+    const marker = rootSnapshot.exists ? rootSnapshot.data()?.taskReset : undefined;
+    if (marker === undefined || marker === null) return { ...base, outcome: "none" };
+    if (isLegacyResetMarker(marker)) return { ...base, outcome: "legacy_active", legacyOperationId: marker.operationId };
+    if (!isPhase2ResetMarker(marker)) throw failedPrecondition("LEGACY_RESET_CORRUPT");
+    if (!["deleting", "awaiting_local_reset"].includes(marker.state)) return { ...base, outcome: "none" };
+    const e = marker.expectedTaskGenerationEpoch;
+    if (!Number.isSafeInteger(e) || e < 0 || !Number.isSafeInteger(e + 1)) throw failedPrecondition("LEGACY_RESET_CORRUPT");
+    const canonicalId = resetCanonicalId(uid, e + 1);
+    if (marker.operationId !== canonicalId) throw failedPrecondition("LEGACY_RESET_CORRUPT");
+    const recordSnapshot = await transaction.get(operationRef(userRef, canonicalId));
+    if (!recordSnapshot.exists) throw failedPrecondition("LEGACY_RESET_CORRUPT");
+    const record = recordSnapshot.data();
+    if (record.account_uid !== uid || record.operation_id !== canonicalId || record.state !== marker.state) throw failedPrecondition("LEGACY_RESET_CORRUPT");
+    return { ...base, outcome: "phase2_active", canonicalOperationId: canonicalId, expectedTaskGenerationEpoch: e };
+  });
+}
+
 async function handleTaskPlanRequest(request, dbFactory = () => admin.firestore(), now = new Date(), options = {}) {
   const uid = request.auth?.uid;
   if (!uid) {
     const action = request && request.data ? request.data.action : undefined;
-    if (action === "inspectCommittedOperation" || action === "reconcileLegacyTaskReset") {
+    if (["inspectCommittedOperation", "reconcileLegacyTaskReset", "claimTaskIntent", "inspectLegacyTaskReset"].includes(action)) {
       throw new HttpsError("unauthenticated", "AUTH_REQUIRED", { schemaVersion: 1, reason: "AUTH_REQUIRED" });
     }
     throw new HttpsError("unauthenticated", "Sign in before changing a task plan");
@@ -1665,6 +1693,8 @@ async function handleTaskPlanRequest(request, dbFactory = () => admin.firestore(
   const mode = Object.prototype.hasOwnProperty.call(options, "resetProtocolMode") ? options.resetProtocolMode : ENV_RESET_PROTOCOL_MODE;
   if (reset && mode === undefined) throw new HttpsError("unavailable", "Reset protocol mode is not configured");
   const db = dbFactory();
+  if (cleaned.action === "claimTaskIntent") return intents.executeClaimTaskIntent(db, uid, cleaned, now);
+  if (cleaned.action === "inspectLegacyTaskReset") return executeInspectLegacyTaskReset(db, uid);
   if (cleaned.action === "inspectCommittedOperation") return executeInspectCommittedOperation(db, uid, cleaned);
   if (cleaned.action === "reconcileLegacyTaskReset") return executeReconcileLegacyTaskReset(db, uid, cleaned, now);
   if (reset && cleaned.expectedTaskGenerationEpoch !== undefined) {
@@ -1691,6 +1721,7 @@ module.exports = {
   cleanReplacement,
   deleteResetPage,
   executeFinalizeReset,
+  executeInspectLegacyTaskReset,
   executeLifecycle,
   executeResetAllTasks,
   finishResetDeletion,
