@@ -983,7 +983,7 @@ base equations (Standard edition 2026-09-01):
 index policy (frozen registry = firestore.indexes.json C7 result):
   every leaf field path of a document carries automatic COLLECTION-scope ascending and descending entries (two entries);
   an array leaf carries one array-contains entry per element instead; a map contributes only its leaf paths;
-  a fieldOverrides row replaces the automatic set for that (collectionGroup, fieldPath) exactly (empty list = exempt);
+  a fieldOverrides row replaces the automatic set for that (collectionGroup, fieldPath) and for every leaf path beneath it exactly (empty list = exempt);
   each composite index whose collectionGroup matches and whose fields are all present yields one entry over those values.
 
 FirestoreWriteBudgetV1(transition) = Σ over touched documents of

@@ -257,6 +257,588 @@ function canonicalEventStateId(eventName, canonicalKey) {
     .digest("hex");
 }
 
+// ---------------------------------------------------------------------------
+// C9.1.23 / C9.1.24 / C9.1.27 — D8 storage equations, the frozen index registry, FirestoreWriteBudgetV1, fitsPhase0Transition
+// ---------------------------------------------------------------------------
+
+/** The C7 index result (firestore.indexes.json), embedded because the deployed bundle carries no repository files. */
+const PHASE0_INDEX_REGISTRY_V1 = Object.freeze({
+  "indexes": [
+    {
+      "collectionGroup": "tasks",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "dispositionContract.next_trigger.kind",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "dispositionContract.next_trigger.fired",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "dispositionContract.next_trigger.at",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "tasks",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "dispositionContract.next_trigger.kind",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "dispositionContract.next_trigger.fired",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "tasks",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        {
+          "fieldPath": "thresholdProjection.state",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "thresholdProjection.threshold_at",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "schedulerRefusals",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        {
+          "fieldPath": "lane",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "nextEligibleOrdinal",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "firstRefusedOrdinal",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "lastAttemptOrdinal",
+          "order": "ASCENDING"
+        }
+      ]
+    }
+  ],
+  "fieldOverrides": [
+    {
+      "collectionGroup": "events",
+      "fieldPath": "processingState",
+      "indexes": [
+        {
+          "order": "ASCENDING",
+          "queryScope": "COLLECTION_GROUP"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "tasks",
+      "fieldPath": "activeHandoff",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "tasks",
+      "fieldPath": "conditions",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "tasks",
+      "fieldPath": "dispositionContract",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "tasks",
+      "fieldPath": "flowAnswerIdentities",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "tasks",
+      "fieldPath": "flowAnswers",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "tasks",
+      "fieldPath": "flowPath",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "tasks",
+      "fieldPath": "flowRows",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "tasks",
+      "fieldPath": "interactionHistory",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "tasks",
+      "fieldPath": "notes",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "tasks",
+      "fieldPath": "planChangeCycle",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "tasks",
+      "fieldPath": "planChangeHistory",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "tasks",
+      "fieldPath": "planChangeLink",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "tasks",
+      "fieldPath": "quotes",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "tasks",
+      "fieldPath": "resolution",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "tasks",
+      "fieldPath": "taskInteraction",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "tasks",
+      "fieldPath": "taskInteractionState",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "tasks",
+      "fieldPath": "thresholdProjection",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "tasks",
+      "fieldPath": "wakeEvidence",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "taskPlanOperations",
+      "fieldPath": "*",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "taskPlanOperations",
+      "fieldPath": "kind",
+      "indexes": [
+        {
+          "order": "ASCENDING",
+          "queryScope": "COLLECTION"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "notificationIntents",
+      "fieldPath": "*",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "packingPlan",
+      "fieldPath": "*",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "readiness",
+      "fieldPath": "*",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "spawnTokens",
+      "fieldPath": "*",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "taskDeadlineEvidence",
+      "fieldPath": "*",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "workflowResponses",
+      "fieldPath": "*",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "workflowSubmissions",
+      "fieldPath": "*",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "eventArchiveChunks",
+      "fieldPath": "payload",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "tasks",
+      "fieldPath": "foreignRoots",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "tasks",
+      "fieldPath": "evidence_reservation",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "workflowSubmissions",
+      "fieldPath": "userId",
+      "indexes": [
+        {
+          "order": "ASCENDING",
+          "queryScope": "COLLECTION"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "workflowSubmissions",
+      "fieldPath": "owner",
+      "indexes": [
+        {
+          "order": "ASCENDING",
+          "queryScope": "COLLECTION"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "legacyResetMigrations",
+      "fieldPath": "*",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "outboundLeases",
+      "fieldPath": "*",
+      "indexes": []
+    }
+  ]
+});
+
+const STORAGE_BOUNDS = Object.freeze({ document: 1048576, entry: 7680, entriesPerDocument: 40000, entryBytesPerDocument: 8388608, transaction: 8388608 });
+const PHASE0_SOURCE_ENVELOPE_BYTES = 1047552;
+const INDEX_VALUE_CAP = 1500;
+const RAW_SIZING_ATTEMPTS = 3;
+const RAW_FETCH_TIMEOUT_MS = 30000;
+
+function utf8Length(text) { return Buffer.byteLength(String(text), "utf8"); }
+
+function documentNameSize(docPath) {
+  const segments = String(docPath).split("/");
+  if (segments.length < 2 || segments.length % 2 !== 0 || segments.some((s) => s.length === 0)) throw new SchedulerInvariant("STORAGE_PATH_INVARIANT", "document path");
+  let total = 16;
+  for (const segment of segments) total += utf8Length(segment) + 1;
+  return total;
+}
+
+function collectionGroupOf(docPath) {
+  const segments = String(docPath).split("/");
+  return segments[segments.length - 2];
+}
+
+/** Semantic (Admin-decoded) value size. */
+function storageValueSize(value) {
+  if (value === null || typeof value === "boolean") return 1;
+  if (typeof value === "number") return 8;
+  if (typeof value === "string") return utf8Length(value) + 1;
+  if (value instanceof Date || value instanceof Timestamp) return 8;
+  if (value instanceof GeoPoint) return 16;
+  if (value instanceof DocumentReference) return documentNameSize(value.path);
+  if (value instanceof VectorValue) return 8 * value.toArray().length;
+  if (Buffer.isBuffer(value)) return value.length;
+  if (Array.isArray(value)) { let total = 0; for (const item of value) total += storageValueSize(item); return total; }
+  if (typeof value === "object" && isPlainMap(value)) { let total = 0; for (const key of Object.keys(value)) total += utf8Length(key) + 1 + storageValueSize(value[key]); return total; }
+  throw new SchedulerInvariant("STORAGE_VALUE_INVARIANT", typeof value);
+}
+
+/** Semantic leaves: [dottedPath, value]; a plain map contributes only its leaves; arrays, vectors, and scalars are leaves. */
+function storageLeaves(data) {
+  const out = [];
+  const stack = [["", data]];
+  while (stack.length) {
+    const [prefix, map] = stack.pop();
+    for (const key of Object.keys(map)) {
+      const value = map[key];
+      const dotted = prefix ? `${prefix}.${key}` : key;
+      if (value !== null && typeof value === "object" && !Array.isArray(value) && !Buffer.isBuffer(value) && !(value instanceof Date) && !(value instanceof Timestamp) && !(value instanceof GeoPoint) && !(value instanceof DocumentReference) && !(value instanceof VectorValue) && isPlainMap(value)) {
+        stack[stack.length] = [dotted, value];
+      } else {
+        out[out.length] = [dotted, value];
+      }
+    }
+  }
+  return out;
+}
+
+// ---- raw public-v1 Values ----
+
+function rawInvariant(code, detail) { return new SchedulerInvariant(code, detail); }
+
+/** C9.1.24 — the reserved Vector discriminator; null when the map is ordinary. */
+function rawVectorDimensions(mapValue) {
+  const fields = (mapValue && mapValue.fields) || {};
+  const type = fields.__type__;
+  if (!type || type.stringValue !== "__vector__") return null;
+  const keys = Object.keys(fields);
+  if (keys.length !== 2 || !("value" in fields)) throw rawInvariant("ARCHIVE_CODEC_INVARIANT", "vector members");
+  const holder = fields.value;
+  if (!holder || Object.keys(holder).length !== 1 || !("arrayValue" in holder)) throw rawInvariant("ARCHIVE_CODEC_INVARIANT", "vector value");
+  const array = holder.arrayValue || {};
+  const arrayKeys = Object.keys(array);
+  if (arrayKeys.length > 1 || (arrayKeys.length === 1 && (arrayKeys[0] !== "values" || !Array.isArray(array.values)))) throw rawInvariant("ARCHIVE_CODEC_INVARIANT", "vector array");
+  const values = array.values || [];
+  if (values.length > 2048) throw rawInvariant("ARCHIVE_CODEC_INVARIANT", "vector dimensions");
+  for (const element of values) {
+    const elementKeys = Object.keys(element || {});
+    if (elementKeys.length !== 1 || elementKeys[0] !== "doubleValue" || typeof element.doubleValue !== "number" || !Number.isFinite(element.doubleValue)) throw rawInvariant("ARCHIVE_CODEC_INVARIANT", "vector element");
+  }
+  return values.length;
+}
+
+function rawReferencePath(referenceValue) {
+  const marker = "/documents/";
+  const at = String(referenceValue).indexOf(marker);
+  if (at < 0) throw rawInvariant("RAW_VALUE_UNKNOWN", "referenceValue");
+  return String(referenceValue).slice(at + marker.length);
+}
+
+function rawValueSize(value) {
+  if (value === null || typeof value !== "object") throw rawInvariant("RAW_VALUE_UNKNOWN", "value");
+  const keys = Object.keys(value);
+  if (keys.length !== 1) throw rawInvariant("RAW_VALUE_UNKNOWN", keys.join(","));
+  const kind = keys[0];
+  if (kind === "nullValue" || kind === "booleanValue") return 1;
+  if (kind === "integerValue") { if (!/^-?\d+$/.test(String(value.integerValue))) throw rawInvariant("RAW_VALUE_UNKNOWN", "integerValue"); return 8; }
+  if (kind === "doubleValue" || kind === "timestampValue") return 8;
+  if (kind === "stringValue") return utf8Length(value.stringValue) + 1;
+  if (kind === "bytesValue") return Buffer.from(String(value.bytesValue), "base64").length;
+  if (kind === "referenceValue") return documentNameSize(rawReferencePath(value.referenceValue));
+  if (kind === "geoPointValue") return 16;
+  if (kind === "arrayValue") { let total = 0; for (const item of (value.arrayValue && value.arrayValue.values) || []) total += rawValueSize(item); return total; }
+  if (kind === "mapValue") {
+    const dimensions = rawVectorDimensions(value.mapValue);
+    if (dimensions !== null) return 8 * dimensions;
+    let total = 0;
+    const fields = (value.mapValue && value.mapValue.fields) || {};
+    for (const key of Object.keys(fields)) total += utf8Length(key) + 1 + rawValueSize(fields[key]);
+    return total;
+  }
+  throw rawInvariant("RAW_VALUE_UNKNOWN", kind);
+}
+
+function rawLeaves(fields) {
+  const out = [];
+  const stack = [["", fields || {}]];
+  while (stack.length) {
+    const [prefix, map] = stack.pop();
+    for (const key of Object.keys(map)) {
+      const value = map[key];
+      const dotted = prefix ? `${prefix}.${key}` : key;
+      if (value && typeof value === "object" && "mapValue" in value && rawVectorDimensions(value.mapValue) === null) stack[stack.length] = [dotted, (value.mapValue && value.mapValue.fields) || {}];
+      else out[out.length] = [dotted, value];
+    }
+  }
+  return out;
+}
+
+// ---- index policy and budgets, generic over the two value domains ----
+
+function makeSizer(domain) {
+  const { leavesOf, sizeOf, elementsOf } = domain;
+  const overrides = PHASE0_INDEX_REGISTRY_V1.fieldOverrides;
+  const composites = PHASE0_INDEX_REGISTRY_V1.indexes;
+  const cap = (n) => (n > INDEX_VALUE_CAP ? INDEX_VALUE_CAP : n);
+  function documentSize(docPath, data) {
+    let total = documentNameSize(docPath) + 32;
+    for (const key of Object.keys(data || {})) total += utf8Length(key) + 1 + sizeOf(data[key]);
+    return total;
+  }
+  function indexEntries(docPath, data) {
+    const group = collectionGroupOf(docPath);
+    const name = documentNameSize(docPath);
+    const leaves = leavesOf(data || {});
+    const entries = [];
+    const present = new Map();
+    for (const [dotted, value] of leaves) {
+      present.set(dotted, value);
+      const override = overrides.find((o) => o.collectionGroup === group && (o.fieldPath === dotted || o.fieldPath === "*" || dotted.startsWith(`${o.fieldPath}.`))) || null;
+      const single = name + cap(sizeOf(value)) + 32;
+      const elements = elementsOf(value);
+      if (override !== null) {
+        for (const index of override.indexes || []) {
+          if (index.order) entries[entries.length] = single;
+          else if (index.arrayConfig === "CONTAINS" && elements !== null) for (const e of elements) entries[entries.length] = name + cap(sizeOf(e)) + 32;
+        }
+      } else {
+        entries[entries.length] = single;
+        entries[entries.length] = single;
+        if (elements !== null) for (const e of elements) entries[entries.length] = name + cap(sizeOf(e)) + 32;
+      }
+    }
+    for (const index of composites) {
+      if (index.collectionGroup !== group) continue;
+      if (!index.fields.every((f) => present.has(f.fieldPath))) continue;
+      let total = name + 32;
+      for (const f of index.fields) total += cap(sizeOf(present.get(f.fieldPath)));
+      entries[entries.length] = total;
+    }
+    return entries;
+  }
+  function documentBudget(docPath, data) {
+    const entries = indexEntries(docPath, data);
+    let entryBytes = 0;
+    let maxEntry = 0;
+    for (const e of entries) { entryBytes += e; if (e > maxEntry) maxEntry = e; }
+    return { document: documentSize(docPath, data), entries, entryBytes, maxEntry };
+  }
+  /** Symmetric multiset delta: entries only in `a` plus entries only in `b` (sorted two-pointer walk). */
+  function symmetricEntryDelta(a, b) {
+    const x = [...a].sort((p, q) => p - q);
+    const y = [...b].sort((p, q) => p - q);
+    let i = 0; let j = 0; let delta = 0;
+    while (i < x.length || j < y.length) {
+      if (j >= y.length || (i < x.length && x[i] < y[j])) { delta += x[i]; i += 1; }
+      else if (i >= x.length || y[j] < x[i]) { delta += y[j]; j += 1; }
+      else { i += 1; j += 1; }
+    }
+    return delta;
+  }
+  function transitionBudget(documents) {
+    let charge = 0;
+    let fits = true;
+    const perDocument = [];
+    const empty = { document: 0, entries: [], entryBytes: 0, maxEntry: 0 };
+    for (const { path: docPath, before, after } of documents) {
+      const pre = before ? documentBudget(docPath, before) : empty;
+      const post = after ? documentBudget(docPath, after) : empty;
+      if (after) charge += post.document;
+      else if (before) charge += pre.document;
+      charge += symmetricEntryDelta(pre.entries, post.entries);
+      if (after) {
+        if (post.document > STORAGE_BOUNDS.document || post.maxEntry > STORAGE_BOUNDS.entry || post.entries.length > STORAGE_BOUNDS.entriesPerDocument || post.entryBytes > STORAGE_BOUNDS.entryBytesPerDocument) fits = false;
+        perDocument[perDocument.length] = { path: docPath, document: post.document, entryCount: post.entries.length, entryBytes: post.entryBytes, maxEntry: post.maxEntry };
+      }
+      if (!Number.isSafeInteger(charge)) throw new SchedulerInvariant("STORAGE_ARITHMETIC_INVARIANT");
+    }
+    if (charge > STORAGE_BOUNDS.transaction) fits = false;
+    return { charge, fits, perDocument };
+  }
+  return { documentSize, indexEntries, documentBudget, transitionBudget, documentNameSize, valueSize: sizeOf };
+}
+
+const storage = makeSizer({ leavesOf: storageLeaves, sizeOf: storageValueSize, elementsOf: (v) => (Array.isArray(v) ? v : null) });
+const rawStorage = makeSizer({ leavesOf: rawLeaves, sizeOf: rawValueSize, elementsOf: (v) => (v && typeof v === "object" && "arrayValue" in v ? ((v.arrayValue && v.arrayValue.values) || []) : null) });
+
+/** C9.1.27 — fitsPhase0Transition(preSource, preHighWater?, postSource, postHighWater?, quarantine?); each argument is {path, data} or null. */
+function fitsPhase0Transition(preSource, preHighWater, postSource, postHighWater, quarantine) {
+  const documents = [{ path: postSource ? postSource.path : preSource.path, before: preSource ? preSource.data : null, after: postSource ? postSource.data : null }];
+  if (preHighWater || postHighWater) documents[documents.length] = { path: (postHighWater || preHighWater).path, before: preHighWater ? preHighWater.data : null, after: postHighWater ? postHighWater.data : null };
+  if (quarantine && !(quarantine.existing && canonicalJSON(quarantine.existing) === canonicalJSON(quarantine.data))) documents[documents.length] = { path: quarantine.path, before: quarantine.existing || null, after: quarantine.data };
+  return storage.transitionBudget(documents);
+}
+
+function withoutRetryMember(data) {
+  const out = {};
+  for (const key of Object.keys(data)) if (key !== "phase0ValidationFailure") out[key] = data[key];
+  return out;
+}
+
+function terminalQuarantineData(data, now, message) {
+  return { ...withoutRetryMember(data), processingState: "terminal", processed: true, processedAt: now, outcome: "quarantined", processingError: message };
+}
+
+/**
+ * C9.1.27 retry-or-terminal envelope: the source is at most 1,047,552 bytes and every S→R(code,count), every qev1
+ * terminal with its record, and both qevu terminals with their records fit; returns the admission and the maxima.
+ */
+function phase0Envelope(sourcePath, data, now, sourceUpdateTime) {
+  const baseBytes = storage.documentSize(sourcePath, data);
+  let prospectiveMaxBytes = 0;
+  const source = { path: sourcePath, data };
+  const consider = (budget) => { if (budget.charge > prospectiveMaxBytes) prospectiveMaxBytes = budget.charge; return budget.fits; };
+  let admitted = baseBytes <= PHASE0_SOURCE_ENVELOPE_BYTES;
+  const digest = "0".repeat(64);
+  const stamp = isMillisTimestamp(sourceUpdateTime) ? sourceUpdateTime : now;
+  for (const code of QEV1_CODES) {
+    for (const count of [1, 2]) {
+      const retryData = { ...withoutRetryMember(data), phase0ValidationFailure: { schemaVersion: 1, originalBytesDigest: digest, reasonCode: code, failureCount: count, firstFailedAt: now, lastFailedAt: now } };
+      if (!consider(fitsPhase0Transition(source, null, { path: sourcePath, data: retryData }, null, null))) admitted = false;
+    }
+    const message = QEV1_MESSAGES[code];
+    const record = { schemaVersion: 1, sourcePath, sourceUpdateTime: stamp, originalBytesDigest: digest, reason: { code, message }, failureCount: 3, firstFailedAt: now, lastFailedAt: now, quarantinedAt: now };
+    if (!consider(fitsPhase0Transition(source, null, { path: sourcePath, data: terminalQuarantineData(data, now, message) }, null, { path: `${QUARANTINE_COLLECTION}/qev1_${digest.slice(0, 40)}`, data: record }))) admitted = false;
+  }
+  for (const token of Object.keys(UNENCODABLE_MESSAGES)) {
+    const message = UNENCODABLE_MESSAGES[token];
+    const record = { schemaVersion: 1, sourcePath, sourceUpdateTime: stamp, unencodableSourceDigest: digest, reason: { code: "SOURCE_UNENCODABLE", token, message }, failureCount: 1, firstFailedAt: now, lastFailedAt: now, quarantinedAt: now };
+    if (!consider(fitsPhase0Transition(source, null, { path: sourcePath, data: terminalQuarantineData(data, now, message) }, null, { path: `${QUARANTINE_COLLECTION}/qevu1_${digest.slice(0, 40)}`, data: record }))) admitted = false;
+  }
+  return { admitted, baseBytes, prospectiveMaxBytes };
+}
+
+function toRawScalarFields(map) {
+  const fields = {};
+  for (const key of Object.keys(map)) {
+    const value = map[key];
+    if (value === null) fields[key] = { nullValue: null };
+    else if (typeof value === "boolean") fields[key] = { booleanValue: value };
+    else if (typeof value === "number") fields[key] = Number.isInteger(value) ? { integerValue: String(value) } : { doubleValue: value };
+    else if (typeof value === "string") fields[key] = { stringValue: value };
+    else if (value instanceof Timestamp) fields[key] = { timestampValue: value.toDate().toISOString() };
+    else if (typeof value === "object" && isPlainMap(value)) fields[key] = { mapValue: { fields: toRawScalarFields(value) } };
+    else throw new SchedulerInvariant("STORAGE_VALUE_INVARIANT", "raw scalar");
+  }
+  return fields;
+}
+
+/** C9.1.25 — fitsPhase0TransitionRaw over the raw sidecar only: retry member removed, exact terminal fields overlaid, qevu record create. */
+function fitsPhase0TransitionRaw(rawFields, sourcePath, record, message, now) {
+  const after = {};
+  for (const key of Object.keys(rawFields || {})) if (key !== "phase0ValidationFailure") after[key] = rawFields[key];
+  Object.assign(after, toRawScalarFields({ processingState: "terminal", processed: true, processedAt: now, outcome: "quarantined", processingError: message }));
+  return rawStorage.transitionBudget([{ path: sourcePath, before: rawFields, after }, { path: record.path, before: null, after: toRawScalarFields(record.data) }]);
+}
+
+function postCutoff(fields) {
+  const error = new SchedulerInvariant("POST_CUTOFF_SOURCE_SIZE_INVARIANT");
+  error.fields = fields;
+  return error;
+}
+
+/** RFC 3339 with up to nine fractional digits → {seconds, nanoseconds}. */
+function parseRfc3339(text) {
+  const match = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d{1,9}))?Z$/.exec(String(text));
+  if (!match) return null;
+  const seconds = Math.floor(Date.parse(`${match[1]}Z`) / 1000);
+  const nanoseconds = match[2] ? Number((match[2] + "000000000").slice(0, 9)) : 0;
+  return Number.isSafeInteger(seconds) ? { seconds, nanoseconds } : null;
+}
+
 /** C9.1.29 — validators in the frozen precedence, each failing with its qev1 table code and message. */
 function validateEventEnvelope(data, documentId) {
   if (!data || typeof data !== "object" || Array.isArray(data)) throw new EnvelopeError("ENVELOPE_INVALID");
@@ -448,22 +1030,61 @@ async function phase0Failure(transaction, db, ref, snapshot, retry, digest, code
   return "quarantined";
 }
 
-/** C9.1.22 — first-occurrence SOURCE_UNENCODABLE: qevu1 record and terminal source in the same transaction; producer fields untouched. */
-async function quarantineUnencodable(transaction, db, ref, snapshot, error, now) {
-  const updateTime = snapshot.updateTime;
-  if (!isMillisTimestamp(updateTime)) throw bytesInvariant("updateTime");
-  const digest = createHash("sha256").update(canonicalJSON({ domain: "unencodable_source.v1", source_path: ref.path, reason_token: error.token, update_time: updateTime })).digest("hex");
-  const record = { schemaVersion: 1, sourcePath: ref.path, sourceUpdateTime: updateTime, unencodableSourceDigest: digest, reason: { code: "SOURCE_UNENCODABLE", token: error.token, message: error.message }, failureCount: 1, firstFailedAt: now, lastFailedAt: now, quarantinedAt: now };
-  const qref = quarantineRef(db, `qevu1_${digest.slice(0, 40)}`);
-  const existing = await transaction.get(qref);
-  if (existing.exists) {
-    if (!sameQuarantineIdentity(existing.data(), record, ["schemaVersion", "sourcePath", "sourceUpdateTime", "unencodableSourceDigest", "reason", "failureCount"])) throw new SchedulerInvariant("PHASE0_QUARANTINE_INVARIANT", "qevu1 disagreement");
-  } else {
-    assertRecordCap(record);
-    transaction.create(qref, record);
+function unencodableRecord(ref, updateTime, token, now) {
+  const digest = createHash("sha256").update(canonicalJSON({ domain: "unencodable_source.v1", source_path: ref.path, reason_token: token, update_time: updateTime })).digest("hex");
+  const data = { schemaVersion: 1, sourcePath: ref.path, sourceUpdateTime: updateTime, unencodableSourceDigest: digest, reason: { code: "SOURCE_UNENCODABLE", token, message: UNENCODABLE_MESSAGES[token] }, failureCount: 1, firstFailedAt: now, lastFailedAt: now, quarantinedAt: now };
+  return { path: `${QUARANTINE_COLLECTION}/qevu1_${digest.slice(0, 40)}`, data };
+}
+
+/**
+ * C9.1.22 / C9.1.25 RawPhase0SizingV1 — first-occurrence SOURCE_UNENCODABLE: the pinned public-v1 raw Document is
+ * fetched and sized (fitsPhase0TransitionRaw); an Admin transaction then rereads the source and requires the
+ * identical updateTime before the field-path terminalization and the qevu1 record create in the same transaction;
+ * drift restarts with a fresh raw read (bounded); absence, an unknown Value, or an over-budget raw prospective is
+ * POST_CUTOFF_SOURCE_SIZE_INVARIANT with no source write.
+ */
+async function terminalizeUnencodable(db, ref, token, now, run) {
+  const fetchRawDocument = run && run.deps && typeof run.deps.fetchRawDocument === "function" ? run.deps.fetchRawDocument : null;
+  if (fetchRawDocument === null) throw new SchedulerInvariant("RAW_DOCUMENT_UNAVAILABLE");
+  for (let attempt = 1; attempt <= RAW_SIZING_ATTEMPTS; attempt += 1) {
+    const fetched = await fetchRawDocument(ref.path);
+    if (!fetched || fetched.found !== true || !fetched.document) throw postCutoff({ sourcePath: ref.path, baseBytes: 0, prospectiveMaxBytes: 0 });
+    const rawUpdateTime = parseRfc3339(fetched.document.updateTime);
+    if (rawUpdateTime === null) throw postCutoff({ sourcePath: ref.path, baseBytes: 0, prospectiveMaxBytes: 0 });
+    const updateTime = new Timestamp(rawUpdateTime.seconds, rawUpdateTime.nanoseconds);
+    const record = unencodableRecord(ref, updateTime, token, now);
+    let budget;
+    let baseBytes;
+    try {
+      baseBytes = rawStorage.documentSize(ref.path, fetched.document.fields);
+      budget = fitsPhase0TransitionRaw(fetched.document.fields, ref.path, record, UNENCODABLE_MESSAGES[token], now);
+    } catch (error) {
+      if (error instanceof SchedulerInvariant && error.code === "ARCHIVE_CODEC_INVARIANT") throw error;
+      if (error instanceof SchedulerInvariant) throw postCutoff({ sourcePath: ref.path, baseBytes: 0, prospectiveMaxBytes: 0 });
+      throw error;
+    }
+    if (!budget.fits) throw postCutoff({ sourcePath: ref.path, baseBytes, prospectiveMaxBytes: budget.charge });
+    const outcome = await db.runTransaction(async (transaction) => {
+      if (run) await requireSchedulerFence(transaction, db, run);
+      const snapshot = await transaction.get(ref);
+      if (!snapshot.exists || snapshot.data()?.processingState !== "pending") return "noop";
+      const current = snapshot.updateTime;
+      if (!isMillisTimestamp(current) || current.seconds !== updateTime.seconds || current.nanoseconds !== updateTime.nanoseconds) return "drift";
+      await assertDeletionAbsent(transaction, db, [eventUserId(ref)]); // C6.1 root fence
+      const qref = db.doc(record.path);
+      const existing = await transaction.get(qref);
+      if (existing.exists) {
+        if (!sameQuarantineIdentity(existing.data(), record.data, ["schemaVersion", "sourcePath", "sourceUpdateTime", "unencodableSourceDigest", "reason", "failureCount"])) throw new SchedulerInvariant("PHASE0_QUARANTINE_INVARIANT", "qevu1 disagreement");
+      } else {
+        assertRecordCap(record.data);
+        transaction.create(qref, record.data);
+      }
+      transaction.update(ref, TERMINAL_QUARANTINE(now, UNENCODABLE_MESSAGES[token]));
+      return "unencodable";
+    });
+    if (outcome !== "drift") return outcome;
   }
-  transaction.update(ref, TERMINAL_QUARANTINE(now, error.message));
-  return "unencodable";
+  throw postCutoff({ sourcePath: ref.path, baseBytes: 0, prospectiveMaxBytes: 0 });
 }
 
 /**
@@ -473,7 +1094,7 @@ async function quarantineUnencodable(transaction, db, ref, snapshot, error, now)
  */
 async function consumeEventEnvelopeInTransaction(db, eventRef, rawNow, run = null) {
   const now = toTimestamp(rawNow);
-  return db.runTransaction(async (transaction) => {
+  const first = await db.runTransaction(async (transaction) => {
     if (run) await requireSchedulerFence(transaction, db, run);
     const eventSnapshot = await transaction.get(eventRef);
     if (!eventSnapshot.exists || eventSnapshot.data()?.processingState !== "pending") return "noop";
@@ -486,10 +1107,13 @@ async function consumeEventEnvelopeInTransaction(db, eventRef, rawNow, run = nul
     try {
       digest = originalBytesDigest(data);
     } catch (error) {
-      if (error instanceof UnencodableSource) return quarantineUnencodable(transaction, db, eventRef, eventSnapshot, error, now);
+      if (error instanceof UnencodableSource) return { unencodable: error.token };
       throw error;
     }
     const retry = validateRetryMember(data.phase0ValidationFailure);
+    // C9.1.27/C9.1.28 — the retry-or-terminal envelope precedes every validator; a failure after the cutoff is the invariant
+    const sizing = phase0Envelope(eventRef.path, data, now, eventSnapshot.updateTime);
+    if (!sizing.admitted) throw postCutoff({ sourcePath: eventRef.path, baseBytes: sizing.baseBytes, prospectiveMaxBytes: sizing.prospectiveMaxBytes });
     const fail = (code) => phase0Failure(transaction, db, eventRef, eventSnapshot, retry, digest, code, now);
     if (userId === null) return fail("REFERENCE_INVALID");
 
@@ -507,9 +1131,10 @@ async function consumeEventEnvelopeInTransaction(db, eventRef, rawNow, run = nul
     const highWater = stateSnapshot.exists ? stateSnapshot.data() : null;
     const outcome = classifyEnvelope(envelope, highWater);
     const fingerprint = fingerprintCanonicalEnvelope(envelope);
+    const terminalSource = { ...withoutRetryMember(data), processingState: "terminal", processed: true, processedAt: now, outcome };
 
     if (outcome === "advance") {
-      transaction.set(stateRef, {
+      const stateData = {
         event_name: envelope.event_name,
         canonical_key: envelope.canonical_key,
         source_version: envelope.source_version,
@@ -520,7 +1145,13 @@ async function consumeEventEnvelopeInTransaction(db, eventRef, rawNow, run = nul
         payload: envelope.payload,
         fingerprint,
         advancedAt: now
-      });
+      };
+      // C9.1.29 size predicate: the exact prospective event-state map and terminal source must fit; otherwise PAYLOAD_TOO_LARGE
+      const fit = fitsPhase0Transition({ path: eventRef.path, data }, highWater === null ? null : { path: stateRef.path, data: highWater }, { path: eventRef.path, data: terminalSource }, { path: stateRef.path, data: stateData }, null);
+      if (!fit.fits) return fail("PAYLOAD_TOO_LARGE");
+      transaction.set(stateRef, stateData);
+    } else if (!fitsPhase0Transition({ path: eventRef.path, data }, null, { path: eventRef.path, data: terminalSource }, null, null).fits) {
+      throw postCutoff({ sourcePath: eventRef.path, baseBytes: storage.documentSize(eventRef.path, data), prospectiveMaxBytes: 0 });
     }
     transaction.update(eventRef, {
       processingState: "terminal",
@@ -531,6 +1162,8 @@ async function consumeEventEnvelopeInTransaction(db, eventRef, rawNow, run = nul
     });
     return outcome;
   });
+  if (first !== null && typeof first === "object" && first.unencodable) return terminalizeUnencodable(db, eventRef, first.unencodable, now, run);
+  return first;
 }
 
 /** Transaction-form event reconcile over an already-read task snapshot. */
@@ -853,7 +1486,7 @@ async function runWaves(run, candidates, deadline, operation) {
     const wave = candidates.slice(start, start + WORK_LIMIT);
     const results = await Promise.all(wave.map(async (candidate) => {
       try { return { ok: true, value: await operation(candidate) }; }
-      catch (error) { return { ok: false, code: error && error.code }; }
+      catch (error) { return { ok: false, code: error && error.code, fields: error && error.fields }; }
     }));
     results.forEach((r, i) => { outcomes[start + i] = r; });
   }
@@ -876,7 +1509,14 @@ async function runPhase0(deps, run) {
   const selected = snapshot.docs.slice(0, PHASE0_SELECT);
   const outcomes = await runWaves(run, selected, PHASE0_DEADLINE, (candidate) => consumeEventEnvelopeInTransaction(db, candidate.ref, run.runNow, run));
   if (outcomes.some((o) => o !== undefined && !o.ok && o.code === "SCHEDULER_FENCE_LOST")) throw new SchedulerInvariant("SCHEDULER_FENCE_LOST");
-  for (const code of new Set(outcomes.filter((o) => o !== undefined && !o.ok && typeof o.code === "string").map((o) => o.code))) emit(deps, code);
+  const emitted = new Set();
+  for (const o of outcomes) {
+    if (o === undefined || o.ok || typeof o.code !== "string") continue;
+    if (o.code === "POST_CUTOFF_SOURCE_SIZE_INVARIANT") {
+      emit(deps, o.code, { ...(o.fields || {}), runOrdinal: run.runOrdinal });
+      metric(deps, "phase2/post_cutoff_source_size_invariant_count", 1);
+    } else if (!emitted.has(o.code)) { emitted.add(o.code); emit(deps, o.code); }
+  }
   const settled = outcomes.every((o) => o !== undefined && o.ok);
   if (!settled) return { lane: PHASE0_CURSOR_KEY, examined: selected.length, settled: false };
   if (snapshot.docs.length > PHASE0_SELECT) await writeCursor(deps, run, PHASE0_CURSOR_KEY, { path: selected.at(-1).ref.path });
@@ -1424,11 +2064,33 @@ async function runDispositionScheduler(event, deps) {
   }
 }
 
+/** C9.1.25 — the pinned public-v1 getDocument over REST (emulator host when set); never decodes. */
+async function fetchRawDocumentProduction(docPath) {
+  const app = admin.app();
+  const projectId = app.options.projectId || process.env.GCLOUD_PROJECT || process.env.GOOGLE_CLOUD_PROJECT;
+  if (!projectId) throw new SchedulerInvariant("RAW_DOCUMENT_UNAVAILABLE", "project");
+  const emulatorHost = process.env.FIRESTORE_EMULATOR_HOST;
+  const base = emulatorHost ? `http://${emulatorHost}/v1` : "https://firestore.googleapis.com/v1";
+  const url = `${base}/projects/${projectId}/databases/(default)/documents/${docPath.split("/").map(encodeURIComponent).join("/")}`;
+  const headers = {};
+  if (emulatorHost) {
+    headers.Authorization = "Bearer owner"; // the emulator's admin bypass; rules would otherwise apply to REST reads
+  } else {
+    const token = await app.options.credential.getAccessToken();
+    headers.Authorization = `Bearer ${token.access_token}`;
+  }
+  const response = await fetch(url, { headers, signal: AbortSignal.timeout(RAW_FETCH_TIMEOUT_MS) });
+  if (response.status === 404) return { found: false };
+  if (!response.ok) throw new SchedulerInvariant("RAW_DOCUMENT_UNAVAILABLE", String(response.status));
+  return { found: true, document: await response.json() };
+}
+
 function productionDependencies() {
   return {
     db: admin.firestore(),
     log: (code, counts) => logger.info(code, counts || {}),
-    metric: (metricName, value) => logger.info("phase2_metric", { metric: metricName, value })
+    metric: (metricName, value) => logger.info("phase2_metric", { metric: metricName, value }),
+    fetchRawDocument: fetchRawDocumentProduction
   };
 }
 
@@ -1477,6 +2139,14 @@ module.exports = {
   laneMask,
   encodeOriginalEventBytes,
   originalBytesDigest,
+  PHASE0_INDEX_REGISTRY_V1,
+  STORAGE_BOUNDS,
+  storage,
+  rawStorage,
+  fitsPhase0Transition,
+  fitsPhase0TransitionRaw,
+  phase0Envelope,
+  parseRfc3339,
   validateRetryMember,
   QEV1_MESSAGES,
   UNENCODABLE_MESSAGES,

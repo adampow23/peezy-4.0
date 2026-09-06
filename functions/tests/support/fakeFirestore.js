@@ -175,10 +175,13 @@ function fakeFirestore({ docs: initial = {}, clock } = {}) {
 
   function resolveSentinels(value) {
     if (value === null || typeof value !== "object") return value;
-    if (value instanceof Timestamp) return value;
+    if (value instanceof Timestamp || value instanceof Date) return value;
     if (value.methodName === "FieldValue.serverTimestamp") return now();
     if (value.methodName === "FieldValue.delete") return value;
     if (Array.isArray(value)) return value.map(resolveSentinels);
+    // S3 I9d: recognized SDK instances and other non-plain objects pass through untouched (a Date used to flatten into {})
+    const prototype = Object.getPrototypeOf(value);
+    if (prototype !== Object.prototype && prototype !== null) return value;
     return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, resolveSentinels(v)]));
   }
 

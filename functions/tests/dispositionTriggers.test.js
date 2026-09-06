@@ -534,7 +534,7 @@ const T0 = "2026-09-06T12:00:00Z"; // an exact 300 s boundary
 const ORD0 = Math.floor(Date.parse(T0) / 1000 / 300);
 const scheduleAt = (k) => new Date(Date.parse(T0) + k * 300_000).toISOString().replace(".000Z", "Z");
 function schedDeps(db, clock, extra = {}) {
-  const deps = { db, logs: [], metrics: [], now: () => clock.now(), log: (code, counts) => deps.logs.push([code, counts]), metric: (n, v) => deps.metrics.push([n, v]), elapsedSeconds: () => 0, ...extra };
+  const deps = { db, logs: [], metrics: [], now: () => clock.now(), log: (code, counts) => deps.logs.push([code, counts]), metric: (n, v) => deps.metrics.push([n, v]), elapsedSeconds: () => 0, fetchRawDocument: require("./support/rawDocument").rawFetcherFor(db), ...extra };
   return deps;
 }
 const healthOf = (db) => db.__docs.get(scheduler.STATE_PATH).schedulerHealth;
@@ -1354,6 +1354,296 @@ test("C9.1.22 a source holding a non-plain object is quarantined on first occurr
   assert.equal(r4.outcome, "completed");
   assert.equal(db.__docs.get(path2).processingError, "Source contains an unsupported runtime type.");
   assert.equal(db.__docs.get(`${QUARANTINE_COLLECTION}/qevu1_${createHash("sha256").update(JSON.stringify({ domain: "unencodable_source.v1", reason_token: "UNSUPPORTED_RUNTIME_TYPE", source_path: path2, update_time: updateTime2.toDate().toISOString() })).digest("hex").slice(0, 40)}`).reason.token, "UNSUPPORTED_RUNTIME_TYPE");
+});
+
+// ---------------------------------------------------------------------------
+// S3 I9d-2 — D8 storage equations (production and independent oracle), the raw Vector discriminator,
+// fitsPhase0Transition at every bound, the retry-or-terminal envelope and POST_CUTOFF_SOURCE_SIZE_INVARIANT,
+// PAYLOAD_TOO_LARGE, RawPhase0SizingV1 (C9.1.23–C9.1.25, C9.1.27–C9.1.29).
+// ---------------------------------------------------------------------------
+
+const oracle = require("./support/phase0SizingOracle");
+const raw = require("./support/rawDocument");
+const sameMultiset = (a, b) => JSON.stringify([...a].sort((x, y) => x - y)) === JSON.stringify([...b].sort((x, y) => x - y));
+
+test("C7/C9.1.23 the embedded index registry equals firestore.indexes.json exactly", () => {
+  const file = JSON.parse(fs.readFileSync(path.resolve(__dirname, "../../firestore.indexes.json"), "utf8"));
+  assert.deepEqual(scheduler.PHASE0_INDEX_REGISTRY_V1, file);
+});
+
+test("C9.1.23 production sizing (decoded data) and the independent oracle (raw v1 Document) agree on document size, every index entry, and transition charges across every value kind, exemptions, composites, and the 1,500-byte cap", () => {
+  const { GeoPoint: GP, VectorValue: VV, Firestore } = require("@google-cloud/firestore");
+  const db = new Firestore({ projectId: "demo-peezy-phase1" }); // real DocumentReference instances; nothing is read or written
+  const fixtures = [
+    ["users/u1/events/e1", pendingEvent("e1")],
+    ["users/u1/events/e2", { ...pendingEvent("e2"), payload: { nested: { deep: { s: "héllo", n: 1, d: 1.5, b: true, z: null } }, arr: [1, "ab", { m: 2 }, [3, 4]], ts: Timestamp.fromMillis(1_700_000_000_123), dt: new Date("2026-01-01T00:00:00Z"), geo: new GP(1, 2), ref: db.doc("users/u1/tasks/t1"), bytes: Buffer.from([1, 2, 3]), vec: new VV([1, 2, 3]), big: Number.MAX_SAFE_INTEGER, nan: NaN, empty: {}, long: "x".repeat(2000) } }],
+    ["users/u1/eventState/" + "a".repeat(64), { event_name: "n", canonical_key: "k", source_version: 2, effect: "fire", event_id: "e2", observed_at: Timestamp.fromMillis(0), source_evidence_id: "ev", payload: { a: [1, 2] }, fingerprint: "f".repeat(64), advancedAt: Timestamp.fromMillis(0) }],
+    ["users/u1/tasks/t1", { status: "Snoozed", dispositionContract: { next_trigger: { kind: "date", fired: false, at: Timestamp.fromMillis(0), payload: { basis: "x" } }, disposition: "DEFERRED" }, task_generation_epoch: 3, notes: ["n1", "n2"], thresholdProjection: { state: "armed", threshold_at: Timestamp.fromMillis(0) } }],
+    ["phase1System/dispositionTriggerState/quarantinedEvents/qev1_x", { schemaVersion: 1, sourcePath: "users/u1/events/e1", reason: { code: "EFFECT_INVALID", message: "effect must be fire or retract." }, failureCount: 3, quarantinedAt: Timestamp.fromMillis(0) }]
+  ];
+  for (const [docPath, data] of fixtures) {
+    const fields = raw.toRawFields(data);
+    assert.equal(scheduler.storage.documentSize(docPath, data), oracle.documentSize(docPath, fields), `${docPath} document size`);
+    assert.ok(sameMultiset(scheduler.storage.indexEntries(docPath, data), oracle.indexEntries(docPath, fields)), `${docPath} index entries: ${JSON.stringify(scheduler.storage.indexEntries(docPath, data))} vs ${JSON.stringify(oracle.indexEntries(docPath, fields))}`);
+    assert.equal(scheduler.rawStorage.documentSize(docPath, fields), oracle.documentSize(docPath, fields), `${docPath} raw document size`);
+    assert.ok(sameMultiset(scheduler.rawStorage.indexEntries(docPath, fields), oracle.indexEntries(docPath, fields)), `${docPath} raw index entries`);
+  }
+  // exact expectations the equations imply
+  assert.equal(scheduler.storage.documentSize("users/u1/events/e1", { a: "x" }), 71);
+  assert.deepEqual(scheduler.storage.indexEntries("users/u1/events/e1", { processingState: "pending" }), [75], "the events.processingState override yields exactly one COLLECTION_GROUP ascending entry");
+  assert.deepEqual(scheduler.storage.indexEntries("users/u1/eventState/x", { a: "x" }).length, 2, "automatic ascending + descending");
+  assert.deepEqual(scheduler.storage.indexEntries("users/u1/tasks/t1", { dispositionContract: { a: 1 } }), [], "an exempt map contributes no automatic entries");
+  const tasksComposite = scheduler.storage.indexEntries("users/u1/tasks/t1", { status: "S", dispositionContract: { next_trigger: { kind: "date", fired: false, at: Timestamp.fromMillis(0) } } });
+  const nTasks = scheduler.storage.documentNameSize("users/u1/tasks/t1"); // 34
+  assert.equal(nTasks, 34);
+  assert.deepEqual(tasksComposite.sort((a, b) => a - b), [nTasks + 2 + 32, nTasks + 2 + 32, nTasks + 2 + 5 + 1 + 32, nTasks + 2 + 5 + 1 + 8 + 32].sort((a, b) => a - b), "status automatic pair plus the two composite indexes (three-field and four-field)");
+  const nState = scheduler.storage.documentNameSize("users/u1/eventState/x"); // 38
+  assert.equal(nState, 38);
+  const capped = scheduler.storage.indexEntries("users/u1/eventState/x", { s: "x".repeat(2000) });
+  assert.deepEqual(capped, [nState + 1500 + 32, nState + 1500 + 32], "1,500-byte cap per indexed value");
+  assert.equal(scheduler.storage.documentSize("users/u1/eventState/x", { v: new VV(new Array(4).fill(0)) }), nState + 2 + 32 + 32, "Vector = 8 × dimensions");
+  assert.equal(scheduler.storage.documentSize("users/u1/eventState/x", { g: new GP(0, 0), r: db.doc("users/u1/tasks/t1") }), nState + 2 + 16 + 2 + nTasks + 32);
+  // transition parity: create, update with removed+added entries, delete
+  const before = { ...pendingEvent("e2"), payload: { k: "v".repeat(10), gone: 1 } };
+  const after = { ...before, payload: { k: "w".repeat(10), added: [1, 2] }, processingState: "terminal" };
+  const transition = [{ path: "users/u1/events/e2", before, after }, { path: "users/u1/eventState/x", before: null, after: { a: 1 } }, { path: "users/u1/events/old", before: { a: "b" }, after: null }];
+  const production = scheduler.storage.transitionBudget(transition);
+  const expected = oracle.transitionBudget(transition.map((t) => ({ path: t.path, before: t.before && raw.toRawFields(t.before), after: t.after && raw.toRawFields(t.after) })));
+  assert.deepEqual([production.charge, production.fits], [expected.charge, expected.fits]);
+});
+
+test("C9.1.24 the raw Vector discriminator: both zero spellings, 1 and 2,048 dimensions, 2,049, missing/malformed/surplus members, ordinary {value:…} and {__type__:\"other\",value:…} maps — production raw sizing and the oracle agree, and int64 extrema and nonfinite doubles are 8 bytes", () => {
+  const vec = (values, extra = {}) => ({ mapValue: { fields: { __type__: { stringValue: "__vector__" }, value: { arrayValue: values }, ...extra } } });
+  const dims = (n) => ({ values: Array.from({ length: n }, (_, i) => ({ doubleValue: i })) });
+  for (const [label, value, size] of [["zero {}", vec({}), 0], ["zero values:[]", vec({ values: [] }), 0], ["one", vec(dims(1)), 8], ["2048", vec(dims(2048)), 16384]]) {
+    assert.equal(scheduler.rawStorage.valueSize(value), size, label);
+    assert.equal(oracle.valueSize(value), size, `oracle ${label}`);
+  }
+  for (const [label, value] of [["2049", vec(dims(2049))], ["missing value", { mapValue: { fields: { __type__: { stringValue: "__vector__" } } } }], ["malformed element", vec({ values: [{ integerValue: "1" }] })], ["surplus member", vec(dims(1), { extra: { nullValue: null } })], ["nonfinite element", vec({ values: [{ doubleValue: "NaN" }] })]]) {
+    assert.throws(() => scheduler.rawStorage.valueSize(value), (e) => e.code === "ARCHIVE_CODEC_INVARIANT", label);
+    assert.throws(() => oracle.valueSize(value), (e) => e.code === "ARCHIVE_CODEC_INVARIANT", `oracle ${label}`);
+  }
+  const ordinary1 = { mapValue: { fields: { value: { arrayValue: dims(3) } } } };
+  const ordinary2 = { mapValue: { fields: { __type__: { stringValue: "other" }, value: { arrayValue: dims(3) } } } };
+  assert.equal(scheduler.rawStorage.valueSize(ordinary1), 5 + 1 + 24, "ordinary map arithmetic: name + elements");
+  assert.equal(oracle.valueSize(ordinary1), 5 + 1 + 24);
+  assert.equal(scheduler.rawStorage.valueSize(ordinary2), (8 + 1 + 6) + (5 + 1 + 24));
+  assert.equal(oracle.valueSize(ordinary2), (8 + 1 + 6) + (5 + 1 + 24));
+  for (const v of [{ integerValue: "9223372036854775807" }, { integerValue: "-9223372036854775808" }, { doubleValue: "NaN" }, { doubleValue: "-Infinity" }, { doubleValue: 1.5 }]) {
+    assert.equal(scheduler.rawStorage.valueSize(v), 8); assert.equal(oracle.valueSize(v), 8);
+  }
+  assert.throws(() => scheduler.rawStorage.valueSize({ weirdValue: 1 }), (e) => e.code === "RAW_VALUE_UNKNOWN");
+  assert.equal(scheduler.rawStorage.valueSize({ referenceValue: `${raw.ROOT}/users/u1/tasks/t1` }), 34);
+  assert.equal(scheduler.rawStorage.valueSize({ bytesValue: Buffer.from([1, 2, 3]).toString("base64") }), 3);
+});
+
+test("C9.1.27 fitsPhase0Transition admits equality at every bound and refuses +1: prospective document 1,048,576, entry 7,680 (four-field composite with a long name), 40,000 entries, 8,388,608 entry bytes, and the valid-advance full transition at 8,388,608 including an old high-water update with long shared field paths", () => {
+  const S = scheduler.storage;
+  // document bound: pad a payload string so the prospective document is exactly 1,048,576
+  const base = { ...pendingEvent("e1"), payload: { s: "" } };
+  const pad = 1048576 - S.documentSize("users/u1/events/e1", base);
+  const exact = { ...base, payload: { s: "x".repeat(pad) } };
+  assert.equal(S.documentSize("users/u1/events/e1", exact), 1048576);
+  assert.equal(S.transitionBudget([{ path: "users/u1/events/e1", before: null, after: exact }]).fits, true);
+  assert.equal(S.transitionBudget([{ path: "users/u1/events/e1", before: null, after: { ...exact, payload: { s: "x".repeat(pad + 1) } } }]).fits, false);
+  // entry bound: tasks four-field composite = name + 4 capped values + 32; choose the uid so the entry is exactly 7,680
+  const composite = { status: "s".repeat(1500), dispositionContract: { next_trigger: { kind: "k".repeat(1500), fired: "f".repeat(1500), at: "a".repeat(1500) } } };
+  const uidFor = (target) => "u".repeat(target - 6064); // name = uid + 32; four-field entry = name + 4 × 1,500 + 32 = uid + 6,064
+  const entryOf = (uid) => Math.max(...S.indexEntries(`users/${uid}/tasks/t1`, composite));
+  assert.equal(entryOf(uidFor(7680)), 7680);
+  assert.equal(S.transitionBudget([{ path: `users/${uidFor(7680)}/tasks/t1`, before: null, after: composite }]).fits, true);
+  assert.equal(S.transitionBudget([{ path: `users/${uidFor(7681)}/tasks/t1`, before: null, after: composite }]).fits, false);
+  // entry count: eventState (no exemptions) 20,000 leaves = 40,000 entries; 19,999 leaves + one single-element array = 40,001
+  const leavesOf = (n) => Object.fromEntries(Array.from({ length: n }, (_, i) => [`f${i}`, 1]));
+  const forty = leavesOf(20000);
+  assert.equal(S.indexEntries("users/u1/eventState/x", forty).length, 40000);
+  assert.equal(S.transitionBudget([{ path: "users/u1/eventState/x", before: null, after: forty }]).fits, true);
+  const fortyOne = { ...leavesOf(19999), arr: [1] };
+  assert.equal(S.indexEntries("users/u1/eventState/x", fortyOne).length, 40001);
+  assert.equal(S.transitionBudget([{ path: "users/u1/eventState/x", before: null, after: fortyOne }]).fits, false);
+  // entry-byte sum: 40,000 entries over a long document name (the name counts in every entry but once in the document) with values "x" (2) and "xx" (3) mixed to land exactly on 8,388,608
+  const targetName = Math.floor(8388608 / 40000) - 34; // entry = name + 2 + 32 → name 175
+  const longPath = `users/${"u".repeat(targetName - (6 + 1 + 11 + 2 + 16))}/eventState/x`;
+  assert.equal(S.documentNameSize(longPath), targetName);
+  const nLongEntries = 8388608 - 40000 * (targetName + 34); // entries that carry "xx" instead of "x"
+  const mixed = {};
+  for (let i = 0; i < 20000; i += 1) mixed[`f${i}`] = i * 2 < nLongEntries ? "xx" : "x";
+  const create = S.transitionBudget([{ path: longPath, before: null, after: mixed }]);
+  assert.equal(create.perDocument[0].entryBytes, 8388608);
+  assert.ok(create.perDocument[0].document <= 1048576);
+  assert.deepEqual([create.fits, create.charge > 8388608], [false, true], "a create at the per-document entry-byte bound exceeds the transaction bound by the document itself");
+  // as an update whose delta is the last leaf's two entries, the per-document bound alone decides
+  const { f19999, ...prior } = mixed;
+  const update = S.transitionBudget([{ path: longPath, before: prior, after: mixed }]);
+  assert.deepEqual([update.perDocument[0].entryBytes, update.fits, update.charge < 8388608], [8388608, true, true]);
+  mixed.f19999 = "xx";
+  const over = S.transitionBudget([{ path: longPath, before: prior, after: mixed }]);
+  assert.deepEqual([over.perDocument[0].entryBytes, over.fits, over.charge < 8388608], [8388610, false, true], "+1 at the per-document entry-byte bound refuses even though the transaction charge is small");
+  void f19999;
+  // full valid-advance transition at exactly 8,388,608: the old high-water row is updated under long shared field paths
+  // (removed + added entries both charged); a source-only top-level string, identical before and after, tunes the
+  // post-source document by exactly one byte per character (no entry delta), so the charge lands to the byte.
+  const uid = "u".repeat(60);
+  const sourcePath = `users/${uid}/events/${"e".repeat(40)}`;
+  const stateId = scheduler.canonicalEventStateId("institution.updated", "service/provider-1");
+  const hwPath = `users/${uid}/eventState/${stateId}`;
+  const longKey = (i) => `${"k".repeat(24)}${i}`; // long shared paths, short enough that both documents stay under 1 MiB at the tuned count
+  const payloadOf = (mark, count, width) => Object.fromEntries(Array.from({ length: count }, (_, i) => [longKey(i), `${mark}${i}`.padEnd(width, "v")]));
+  // the old row: 6,000 leaves of 120-byte values (a legal ≤ 1 MiB document) so its removed entries carry ~3.7 MB of the charge
+  const oldHw = { event_name: "institution.updated", canonical_key: "service/provider-1", source_version: 1, effect: "fire", event_id: "old", observed_at: Timestamp.fromMillis(0), source_evidence_id: "ev", payload: payloadOf("o", 6000, 120), fingerprint: "f".repeat(64), advancedAt: Timestamp.fromMillis(0) };
+  const build = (count, tune) => {
+    const source = { ...pendingEvent("e"), event_id: "e".repeat(40), payload: payloadOf("n", count, 40), tuning: "z".repeat(tune) };
+    const envelope = validateEventEnvelope(source, "e".repeat(40));
+    const newHw = { event_name: envelope.event_name, canonical_key: envelope.canonical_key, source_version: envelope.source_version, effect: envelope.effect, event_id: envelope.event_id, observed_at: Timestamp.fromMillis(Date.parse(envelope.observed_at)), source_evidence_id: envelope.source_evidence_id, payload: envelope.payload, fingerprint: __private.fingerprintCanonicalEnvelope(envelope), advancedAt: Timestamp.fromMillis(0) };
+    const terminal = { ...source, processingState: "terminal", processed: true, processedAt: Timestamp.fromMillis(0), outcome: "advance" };
+    return S.transitionBudget([{ path: sourcePath, before: source, after: terminal }, { path: hwPath, before: oldHw, after: newHw }]);
+  };
+  // the charge is monotone in the leaf count (two regimes around the old high-water's 9,000 leaves): binary-search the largest count at or under the target
+  let lo = 0; let hi = 20000;
+  while (lo < hi) { const mid = Math.ceil((lo + hi) / 2); if (build(mid, 0).charge <= 8388608) lo = mid; else hi = mid - 1; }
+  const count = lo;
+  const tune = 8388608 - build(count, 0).charge;
+  const slope = build(count + 1, 0).charge - build(count, 0).charge;
+  assert.ok(tune >= 0 && tune < slope, `fine lever within one leaf's slope (${tune} of ${slope})`);
+  const exactCharge = build(count, tune);
+  assert.equal(exactCharge.charge, 8388608, "tuned to the byte by a source-only unindexed-delta string");
+  assert.ok(exactCharge.perDocument.every((d) => d.document <= 1048576 && d.entryCount <= 40000 && d.entryBytes <= 8388608 && d.maxEntry <= 7680), JSON.stringify(exactCharge.perDocument));
+  assert.equal(exactCharge.fits, true);
+  assert.equal(build(count, tune + 1).charge, 8388609);
+  assert.equal(build(count, tune + 1).fits, false);
+  const oracleView = oracle.transitionBudget([{ path: sourcePath, before: raw.toRawFields({ ...pendingEvent("e"), event_id: "e".repeat(40), payload: payloadOf("n", count, 40), tuning: "z".repeat(tune) }), after: raw.toRawFields({ ...pendingEvent("e"), event_id: "e".repeat(40), payload: payloadOf("n", count, 40), tuning: "z".repeat(tune), processingState: "terminal", processed: true, processedAt: Timestamp.fromMillis(0), outcome: "advance" }) }, { path: hwPath, before: raw.toRawFields(oldHw), after: raw.toRawFields({ ...oldHw, source_version: 2, event_id: "e".repeat(40), observed_at: Timestamp.fromMillis(Date.parse("2026-08-27T16:59:00.000Z")), source_evidence_id: "evidence-2", payload: payloadOf("n", count, 40) }) }]);
+  assert.equal(oracleView.charge, 8388608, "the independent oracle agrees on the exact full-transition charge");
+});
+
+test("C9.1.27/C9.1.28 the runtime envelope admits a source of exactly 1,047,552 bytes and treats 1,047,553 as POST_CUTOFF_SOURCE_SIZE_INVARIANT: zero writes, heartbeat running, no cursor, the exact metric and fixed fields, no raw bytes", async () => {
+  const S = scheduler.storage;
+  const make = (target) => { const base = { ...pendingEvent("big"), payload: { s: "" } }; return { ...base, payload: { s: "x".repeat(target - S.documentSize("users/u1/events/big", base)) } }; };
+  const { db, deps, clock } = await initialized({ "users/u1": { name: "U" }, "users/u1/events/big": make(1047552) });
+  assert.equal(S.documentSize("users/u1/events/big", db.__docs.get("users/u1/events/big")), 1047552);
+  const runAt = async (k) => { clock.millis = Date.parse(scheduleAt(k)) + 1000; return scheduler.runDispositionScheduler({ scheduleTime: scheduleAt(k) }, deps); };
+  let r = await runAt(0);
+  assert.deepEqual([r.outcome, db.__docs.get("users/u1/events/big").outcome], ["completed", "advance"], "exactly 1,047,552 is admitted and advances");
+  const { db: db2, deps: deps2, clock: clock2 } = await initialized({ "users/u1": { name: "U" }, "users/u1/events/big": make(1047553), "users/u1/events/ok": pendingEvent("ok") });
+  const before = db2.__writes.length;
+  clock2.millis = Date.parse(scheduleAt(0)) + 1000;
+  r = await scheduler.runDispositionScheduler({ scheduleTime: scheduleAt(0) }, deps2);
+  assert.equal(r.outcome, "incomplete");
+  assert.equal(db2.__docs.get("users/u1/events/big").processingState, "pending", "no source write");
+  assert.equal(db2.__writes.slice(before).filter((w) => w.path === "users/u1/events/big" || w.path.includes("quarantinedEvents")).length, 0, "no retry map, quarantine, or high-water write for the oversize source");
+  assert.equal([...db2.__docs.keys()].filter((p) => p.includes("/eventState/")).length, 1, "only the valid neighbour's high-water row exists");
+  assert.equal(db2.__docs.get("users/u1/events/ok").outcome, "advance", "the other candidate in the wave still settles idempotently");
+  assert.equal("event_envelope_prepass" in db2.__docs.get(scheduler.STATE_PATH), false, "no cursor movement for the page");
+  assert.equal(healthOf(db2).recentRuns.at(-1).state, "running");
+  const entry = deps2.logs.find(([c]) => c === "POST_CUTOFF_SOURCE_SIZE_INVARIANT");
+  assert.ok(entry, "fixed structured code");
+  assert.deepEqual(Object.keys(entry[1]).sort(), ["baseBytes", "prospectiveMaxBytes", "runOrdinal", "sourcePath"]);
+  assert.deepEqual([entry[1].sourcePath, entry[1].baseBytes, entry[1].runOrdinal], ["users/u1/events/big", 1047553, ORD0]);
+  assert.ok(!JSON.stringify(entry[1]).includes("xxxx"), "no raw source bytes in the log");
+  assert.deepEqual(deps2.metrics.filter(([n]) => n === "phase2/post_cutoff_source_size_invariant_count"), [["phase2/post_cutoff_source_size_invariant_count", 1]]);
+  assert.equal(deps2.metrics.filter(([n]) => n === "phase2/disposition_scheduler_completed_count").length, 0);
+});
+
+test("C9.1.29 PAYLOAD_TOO_LARGE: a legal source whose valid-advance transition exceeds 8,388,608 retries at attempts 1 and 2 and quarantines as qev1 at attempt 3 with the table message and no high-water row; a stale source of the same size keeps the semantic size-skip and terminalizes source-only", async () => {
+  const uid = "u".repeat(60);
+  const eventId = "e".repeat(40);
+  const sourcePath = `users/${uid}/events/${eventId}`;
+  const payload = Object.fromEntries(Array.from({ length: 19900 }, (_, i) => [`f${i}`, "v".repeat(10)])); // 39,800 payload entries + the fixed fields + the six retry-member leaves stay within 40,000
+  const source = { ...pendingEvent(eventId), payload };
+  const S = scheduler.storage;
+  const sourceBudget = S.transitionBudget([{ path: sourcePath, before: null, after: source }]);
+  assert.ok(sourceBudget.fits && sourceBudget.perDocument[0].entryBytes <= 8388608, "the source itself is a legal Firestore document");
+  const { db, deps, clock } = await initialized({ [`users/${uid}`]: { name: "U" }, [sourcePath]: source });
+  const runAt = async (k) => { clock.millis = Date.parse(scheduleAt(k)) + 1000; return scheduler.runDispositionScheduler({ scheduleTime: scheduleAt(k) }, deps); };
+  let r = await runAt(0);
+  assert.equal(r.outcome, "completed");
+  assert.deepEqual([db.__docs.get(sourcePath).processingState, db.__docs.get(sourcePath).phase0ValidationFailure.reasonCode, db.__docs.get(sourcePath).phase0ValidationFailure.failureCount], ["pending", "PAYLOAD_TOO_LARGE", 1]);
+  await runAt(1);
+  assert.equal(db.__docs.get(sourcePath).phase0ValidationFailure.failureCount, 2);
+  r = await runAt(2);
+  const s = db.__docs.get(sourcePath);
+  assert.deepEqual([s.processingState, s.outcome, s.processingError, "phase0ValidationFailure" in s], ["terminal", "quarantined", "Event payload cannot fit the Phase 2 high-water record.", false]);
+  assert.equal([...db.__docs.keys()].filter((p) => p.includes("/eventState/")).length, 0, "no high-water row");
+  const record = [...db.__docs.entries()].find(([p]) => p.includes("/quarantinedEvents/qev1_"));
+  assert.deepEqual([record[1].reason.code, record[1].failureCount], ["PAYLOAD_TOO_LARGE", 3]);
+  // stale: same bytes, lower source_version than the retained high water → terminal "stale", source-only transition, size predicate skipped
+  const stateId = scheduler.canonicalEventStateId("institution.updated", "service/provider-1");
+  db.__docs.set(`users/${uid}/eventState/${stateId}`, { event_name: "institution.updated", canonical_key: "service/provider-1", source_version: 9, effect: "fire", event_id: "later", observed_at: Timestamp.fromMillis(0), source_evidence_id: "ev", payload: {}, fingerprint: "f".repeat(64), advancedAt: Timestamp.fromMillis(0) });
+  await db.doc(`users/${uid}/events/stale`).set({ ...pendingEvent("stale"), payload });
+  r = await runAt(3);
+  assert.deepEqual([r.outcome, db.__docs.get(`users/${uid}/events/stale`).outcome, db.__docs.get(`users/${uid}/events/stale`).processingState], ["completed", "stale", "terminal"]);
+});
+
+test("C9.1.25 RawPhase0SizingV1: an unencodable source is terminalized only after the pinned raw read fits, in an Admin transaction that requires the identical updateTime; drift restarts with a fresh raw read (bounded), and raw absence, an unknown Value oneof, a malformed reserved Vector, or a raw prospective over budget is POST_CUTOFF_SOURCE_SIZE_INVARIANT with no source write", async () => {
+  class Foo { constructor() { this.x = 1; } }
+  const path = "users/u1/events/weird";
+  const seed = async () => { const ctx = await initialized({ "users/u1": { name: "U" }, [path]: { ...pendingEvent("weird"), payload: { thing: new Foo() } } }); return ctx; };
+  const runAt = (deps, clock) => async (k) => { clock.millis = Date.parse(scheduleAt(k)) + 1000; return scheduler.runDispositionScheduler({ scheduleTime: scheduleAt(k) }, deps); };
+  // happy path: the raw fetch is consulted before the terminalizing transaction
+  let { db, deps, clock } = await seed();
+  const calls = [];
+  const real = deps.fetchRawDocument;
+  deps.fetchRawDocument = async (p) => { calls.push(p); return real(p); };
+  let r = await runAt(deps, clock)(0);
+  assert.deepEqual([r.outcome, calls, db.__docs.get(path).outcome], ["completed", [path], "quarantined"]);
+  // drift: the first raw read carries a stale updateTime; the second (fresh) read matches → terminalized
+  ({ db, deps, clock } = await seed());
+  let n = 0;
+  deps.fetchRawDocument = async (p) => { n += 1; const result = await raw.rawFetcherFor(db)(p); if (n === 1) result.document.updateTime = "2000-01-01T00:00:00.000000000Z"; return result; };
+  r = await runAt(deps, clock)(0);
+  assert.deepEqual([r.outcome, n, db.__docs.get(path).outcome], ["completed", 2, "quarantined"], "one restart with a fresh raw read");
+  // persistent drift beyond the bound → invariant, no source write
+  ({ db, deps, clock } = await seed());
+  n = 0;
+  deps.fetchRawDocument = async (p) => { n += 1; const result = await raw.rawFetcherFor(db)(p); result.document.updateTime = "2000-01-01T00:00:00.000000000Z"; return result; };
+  r = await runAt(deps, clock)(0);
+  assert.deepEqual([r.outcome, db.__docs.get(path).processingState, n], ["incomplete", "pending", 3]);
+  assert.ok(deps.logs.some(([c]) => c === "POST_CUTOFF_SOURCE_SIZE_INVARIANT"));
+  assert.equal([...db.__docs.keys()].filter((p) => p.includes("quarantinedEvents")).length, 0);
+  // raw absence
+  ({ db, deps, clock } = await seed());
+  deps.fetchRawDocument = async () => ({ found: false });
+  r = await runAt(deps, clock)(0);
+  assert.deepEqual([r.outcome, db.__docs.get(path).processingState], ["incomplete", "pending"]);
+  // unknown Value oneof in the raw document
+  ({ db, deps, clock } = await seed());
+  deps.fetchRawDocument = async (p) => { const result = await raw.rawFetcherFor(db)(p); result.document.fields.payload = { weirdValue: 1 }; return result; };
+  r = await runAt(deps, clock)(0);
+  assert.deepEqual([r.outcome, db.__docs.get(path).processingState], ["incomplete", "pending"]);
+  assert.ok(deps.logs.some(([c]) => c === "POST_CUTOFF_SOURCE_SIZE_INVARIANT"));
+  // malformed reserved Vector → ARCHIVE_CODEC_INVARIANT blocks with no source write
+  ({ db, deps, clock } = await seed());
+  deps.fetchRawDocument = async (p) => { const result = await raw.rawFetcherFor(db)(p); result.document.fields.payload = { mapValue: { fields: { __type__: { stringValue: "__vector__" } } } }; return result; };
+  r = await runAt(deps, clock)(0);
+  assert.deepEqual([r.outcome, db.__docs.get(path).processingState], ["incomplete", "pending"]);
+  assert.ok(deps.logs.some(([c]) => c === "ARCHIVE_CODEC_INVARIANT"));
+  // raw prospective terminal over budget (the raw document is padded past the document bound) → invariant, no write
+  ({ db, deps, clock } = await seed());
+  deps.fetchRawDocument = async (p) => { const result = await raw.rawFetcherFor(db)(p); result.document.fields.pad = { stringValue: "x".repeat(1048576) }; return result; };
+  r = await runAt(deps, clock)(0);
+  assert.deepEqual([r.outcome, db.__docs.get(path).processingState], ["incomplete", "pending"]);
+  const entry = deps.logs.find(([c]) => c === "POST_CUTOFF_SOURCE_SIZE_INVARIANT");
+  assert.ok(entry && entry[1].sourcePath === path && !JSON.stringify(entry[1]).includes("xxxx"));
+  // a Phase-1 wrapper call without a raw reader cannot terminalize an unencodable source (fail closed, no write)
+  const plain = fakeFirestore({ docs: { "users/u1": { name: "U" }, [path]: { ...pendingEvent("weird"), payload: { thing: new Foo() } } } });
+  await assert.rejects(consumeEventEnvelopeInTransaction(plain, plain.doc(path), NOW), (e) => e.code === "RAW_DOCUMENT_UNAVAILABLE");
+  assert.equal(plain.__docs.get(path).processingState, "pending");
+});
+
+test("emulator: productionDependencies().fetchRawDocument reads the pinned public-v1 Document from the emulator with fields and updateTime, and reports absence", { skip: process.env.FIRESTORE_EMULATOR_HOST ? false : "FIRESTORE_EMULATOR_HOST is unset; run scripts/test-emulator.sh node" }, async () => {
+  const { initializeApp, getApps } = require("firebase-admin/app");
+  const { getFirestore } = require("firebase-admin/firestore");
+  const app = getApps().length ? getApps()[0] : initializeApp({ projectId: "demo-peezy-phase1" });
+  const live = getFirestore(app);
+  const docPath = `users/raw-${Date.now()}/events/e1`;
+  await live.doc(docPath).set({ ...pendingEvent("e1"), payload: { n: 1, s: "x", arr: [1, "a"], ts: Timestamp.fromMillis(1_700_000_000_123) } });
+  const fetched = await scheduler.productionDependencies().fetchRawDocument(docPath);
+  assert.equal(fetched.found, true);
+  assert.equal(fetched.document.name.endsWith(`/documents/${docPath}`), true);
+  assert.deepEqual(fetched.document.fields.payload.mapValue.fields.n, { integerValue: "1" });
+  assert.equal(fetched.document.fields.payload.mapValue.fields.ts.timestampValue, "2023-11-14T22:13:20.123Z");
+  assert.match(fetched.document.updateTime, /^\d{4}-\d{2}-\d{2}T/);
+  assert.equal(scheduler.rawStorage.documentSize(docPath, fetched.document.fields), scheduler.storage.documentSize(docPath, (await live.doc(docPath).get()).data()), "raw and decoded sizing agree on a live document");
+  assert.deepEqual(await scheduler.productionDependencies().fetchRawDocument(`${docPath}-absent`), { found: false });
 });
 
 test("timeouts do not exceed 300 seconds", () => {

@@ -35,7 +35,7 @@ SWIFT_CMD="env -u PEEZY_RUN_FIRESTORE_INTEGRATION \
 RULES_CMD="(cd functions && FIRESTORE_EMULATOR_HOST=\"\$FIRESTORE_EMULATOR_HOST\" node --test rules-tests/firestoreRules.test.js)"
 # S2 (briefs/S2_BRIEF.md, Decision 9): node@24 by explicit path, never PATH node.
 NODE24="/opt/homebrew/opt/node@24/bin/node"
-NODE_CMD="(cd functions && FIRESTORE_EMULATOR_HOST=\"\$FIRESTORE_EMULATOR_HOST\" FIREBASE_AUTH_EMULATOR_HOST=\"\$FIREBASE_AUTH_EMULATOR_HOST\" $NODE24 --test tests/accountDeletionFence.test.js tests/taskPlan.test.js)"
+NODE_CMD="(cd functions && FIRESTORE_EMULATOR_HOST=\"\$FIRESTORE_EMULATOR_HOST\" FIREBASE_AUTH_EMULATOR_HOST=\"\$FIREBASE_AUTH_EMULATOR_HOST\" $NODE24 --test tests/accountDeletionFence.test.js tests/taskPlan.test.js tests/dispositionTriggers.test.js)"
 
 case "$MODE" in
   swift) INNER="$SWIFT_CMD" ;;
