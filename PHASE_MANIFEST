@@ -76,3 +76,5 @@ functions/package.json
 functions/package-lock.json
 storage.rules
 firestore.indexes.json
+docs/archive/phase2/*
+logs/*

@@ -116,6 +116,22 @@ Evidence rule: sections 1–3 use only active reachable code/data at the committ
 - Cross-cutting changes: spec → codex-consensus adversarial review → execute converged plan → report.
 - No live seeds/deploys from inside a task; human runs them.
 - Session close-out: regenerate (not append) this file's sections 1–3 if anything changed; note the date.
-- Frozen artifact register: PHASE2_REPLACEMENT_MANIFEST_v6.md · sha256 d7c83fccc577264702e3b26905ab9e82d5fa36a33c9b1a87f6b59d32e5a0351a · status: v8 12ea8ee1b1fcd43dc88a993ebc4b6706a4b3d8f2ed93ebd09a59d2399262a251 decision record. Executable authority: docs/plans/PHASE2_CONTRACT.md sha256 759b6226e7ed4e21a438bcd10b2384d20b8925d99ace11e636624ad890f14f0f (2026-09-02; amended 2026-09-02 C7 Settings normalization, prior 5cf2d7d6; amended 2026-09-06 Reconciled 8–9 data-final wire and taskReset marker shape, prior bbba0a18; amended 2026-09-06 Reconciled 10 C2.8 reset/recovery wires, C2.3 wire times/replayed/resume/thrown retry, Reconciled 9 writer S2, C7 Node 24, prior d4e56ca0; amended 2026-09-06 Reconciled 11 fence error member, enrollment on every branch, Build A retry member, marker lease shape, detail-less unavailable, residual-retention check-array rule, protocol-mode deployment scope, prior 7e1fc4f9). Any change = v7 + new hash.
+- Executable authority: docs/plans/PHASE2_CONTRACT.md sha256 3f0c83ae0203764525160c6d908936701d11f05efd9f2326cc064ea0ddc1b785 (Reconciled 12, 2026-09-06: C8 pointer rows replaced by C9 state tables/unions/shapes and C10 ownership + test envelope; C7 preimage hashes replaced by the diff gate; header narrative and the Reconciled list archived at docs/archive/phase2/PHASE2_CONTRACT_PROVENANCE.md; prior 759b6226). Archived, never read again by any session: docs/archive/phase2/PHASE2_REPLACEMENT_MANIFEST_v9.md (sha256 a064bc68…) and docs/archive/phase2/PHASE2_EXECUTABLE_SPEC_v5.md (sha256 e02ef938…); a missing shape is a contract defect to fix in the contract. Any contract change = new hash here.
+
+### Resolution sign-off trail (36 IDs; moved from contract C8 by Reconciled 12, 2026-09-06)
+
+| ID | Closure | Status |
+|---|---|---|
+| D1–D9, B1, D11 | `functions/dispositionTriggers.js` · `functions/tests/dispositionTriggers.test.js` (D11 also `PEEZY_STATE_REGEN_SPEC.md`, `accountDeletionFence.test.js`) | S3, pending (C9.1) |
+| D10, MIG-EVENT-V1 | `functions/scripts/migrateOversizeEvents.js` · `functions/tests/dispositionTriggers.test.js` | S3, pending (C9.2) |
+| D12, D13 | `functions/taskPlan.js` · `functions/tests/taskPlan.test.js` | S6, pending (C9.5) |
+| D14, D15, D24, B2 | `TaskPlanService.swift`, `RetakeAssessmentCoordinator.swift` · `DurableStoreRecoveryTests.swift`, `TaskPlanDispositionTests.swift` | S1 closed (D14 reserve-first, D15, D24, B2 reserve/bind); S3 drive landed additively (I6) |
+| D18–D21 | `functions/taskPlan.js`, `TaskDispositionSurface.swift`, `TaskDispositionCoordinator.swift` · `TaskSupersessionTests.swift` | S6, pending (C9.5) |
+| D22, B3 | `DurableStoreRecoveryCoordinator.swift` · `DurableStoreRecoveryTests.swift` | S4, pending (C9.7) |
+| D23, D28, B4 | `DurableStoreReadiness.swift`, `PeezyV1App.swift` · `DurableStoreRecoveryTests.swift`, `TaskRouteTests.swift` | D23 S1 closed (seams); D28/B4 S7, pending (C9.7) |
+| D25, D26, D27 | `functions/taskInteraction.js`, `functions/taskPlan.js` · `functions/tests/taskInteraction.test.js` | S6, pending (C9.6) |
+| D29, D31, D32 | contract C10 count gate, file lists, selection, normalizer | S7, pending (C10) |
+| D30 | `RetakeAssessmentCoordinator.swift` · `DurableStoreRecoveryTests.swift` | S3 (I7, Decision 10 approved) |
+| MIG-RESET-V1 | `functions/taskPlan.js` · `functions/tests/taskPlan.test.js` | S2 closed (server); client §6.5 rows S3 (C9.4) |
 
 Addendum (added per adversarial review 2026-08-23; **binding by default** — the owner may amend or strike it): no live-service or billing operations from inside a task — production-connected UI/integration tests, callable invocations, remote Firestore/Storage writes, StoreKit purchase/restore — except against an explicitly enumerated non-production target or with exact human authorization naming the target and action. Regenerating sections 1–3 requires a full evidence-and-acceptance pass against a fresh snapshot, never a partial-knowledge overwrite; refresh ARCHIVE_MANIFEST.md if the root document set changed.
