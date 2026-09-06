@@ -1,10 +1,10 @@
 # HANDOFF — from the S3 close to the next session (2026-09-06)
 
-Read first, in this order and by section only: `PEEZY_STATE.md` §4, the last entry of `tasks/todo.md`, the current brief under `briefs/`, then `STATUS.md`. The contract (`docs/plans/PHASE2_CONTRACT.md`, sha256 `97ed60b7…`) is the sole executable authority; the manifest v9 and spec v5 are archived under `docs/archive/phase2/` and are never read again (Reconciled 12: a missing shape is a contract defect to fix in the contract).
+Read first, in this order and by section only: `PEEZY_STATE.md` §4, the last entry of `tasks/todo.md`, the current brief under `briefs/`, then `STATUS.md`. The contract (`docs/plans/PHASE2_CONTRACT.md`, sha256 `1ab1c970…`) is the sole executable authority; the manifest v9 and spec v5 are archived under `docs/archive/phase2/` and are never read again (Reconciled 12: a missing shape is a contract defect to fix in the contract).
 
 ## Next work
 
-1. S3 is closed: the diff review is at `docs/reviews/S3_DIFF_REVIEW.md` (four Sol rounds and the Swift pass, every finding fixed or dispositioned in `tasks/todo.md`); the close-out amendments S3-CD5..CD9 are in the contract (sha256 `97ed60b7…`).
+1. S3 is closed: the diff review is at `docs/reviews/S3_DIFF_REVIEW.md` (four Sol rounds and the Swift pass, every finding fixed or dispositioned in `tasks/todo.md`); the close-out amendments S3-CD5..CD9 are in the contract (sha256 `1ab1c970…`).
 2. S4 brief (recovery / privacy UI + durable deletion orchestration), written per the `PHASE2_WORKFLOW_v2.md` template with a Codex gate at the brief. S4 inherits from S3: the C9.4.5 client legacy-migration rows, the Settings `deleteAccount()` hunk (needs `Phase2ProductionRuntime.accountDeletionCoordinator`), `FirestoreRuntimeOwner` replacing `TransitionalFirestoreRuntime`, and the client halves of the C2 residual rows the S3 brief lists as "client halves remain S4's". S4 is a deletion slice: diff-reviewed at close.
 3. Owner actions at the S7 pre-ship gate (see `STATUS.md`): the owner-run sealer (Build B artifact), the observer wiring, the deploys.
 
