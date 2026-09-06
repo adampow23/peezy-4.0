@@ -277,27 +277,30 @@ enum FirebaseObservationV1: Sendable, Equatable {
 /// `recoveryStateDigest` every digest-bearing action CASes. The dose alternative (S4-CD1)
 /// carries the malformed v2 bytes' digest and length in place of file observations.
 enum RecoveryObservedStateV1: Sendable, Equatable {
+    /// The trailing three members are display facts derived from the hashed observations (the quarantine's enumerability
+    /// and counted universe, the reset occupants): they never enter `canonical` and are bound through the bytes they derive from.
     case files(store: DurableStore, baseState: String, target: FileObservationV1, quarantine: FileObservationV1, availableActions: [String],
-               keychainInstallationId: String? = nil, firebase: FirebaseObservationV1? = nil, auth: SignedAuthTuple? = nil, mismatchIdentityDigest: String? = nil)
+               keychainInstallationId: String? = nil, firebase: FirebaseObservationV1? = nil, auth: SignedAuthTuple? = nil, mismatchIdentityDigest: String? = nil,
+               quarantineEnumerable: Bool = false, pendingRecordCount: Int? = nil, epochOccupants: [ResetEpochOccupant]? = nil)
     case dose(bytesSHA256: String, byteLength: Int, quarantineCount: Int)
 
     var store: RecoveryStore {
         switch self {
-        case let .files(store, _, _, _, _, _, _, _, _): return RecoveryStore(store)
+        case let .files(store, _, _, _, _, _, _, _, _, _, _, _): return RecoveryStore(store)
         case .dose: return .dose
         }
     }
 
     var availableActions: [String] {
         switch self {
-        case let .files(_, _, _, _, actions, _, _, _, _): return actions
+        case let .files(_, _, _, _, actions, _, _, _, _, _, _, _): return actions
         case .dose: return ["quarantine_dose_bytes"]
         }
     }
 
     var canonical: [String: Any] {
         switch self {
-        case let .files(store, baseState, target, quarantine, actions, keychain, firebase, auth, mismatch):
+        case let .files(store, baseState, target, quarantine, actions, keychain, firebase, auth, mismatch, _, _, _):
             var map: [String: Any] = ["schemaVersion": 1, "store": store.rawValue, "baseState": baseState, "target": target.canonical, "quarantine": quarantine.canonical, "availableActions": actions]
             if let keychain { map["keychain"] = ["state": "valid", "installationId": keychain] }
             if let firebase { map["firebase"] = firebase.canonical }
@@ -403,7 +406,8 @@ enum RecoveryAction: Sendable, Equatable {
         case let (.reconcile(mismatch), .digest(d)): return .receiptReconcile(recoveryStateDigest: d, mismatchIdentityDigest: mismatch)
         case let (.foreignReconcile, .digest(d)): return .foreignReconcile(recoveryStateDigest: d)
         case let (.resolve(resolution, choices), .digest(d)):
-            return .resolveForeign(recoveryStateDigest: d, resolutionDigest: resolution, choicesSHA256: TaskCanonicalV1.sha256Hex(["choices": choices]))
+            // `choices` are the canonical element strings; `choicesSHA256 = SHA-256(TaskCanonicalV1(choices))` over the canonical array (C9.7.11).
+            return .resolveForeign(recoveryStateDigest: d, resolutionDigest: resolution, choicesSHA256: TaskCanonicalV1.sha256Hex(data: Data(("[" + choices.joined(separator: ",") + "]").utf8)))
         case let (.quarantineDoseBytes, .digest(d)): return .doseQuarantine(recoveryStateDigest: d)
         case let (.retry(errorCode), .unavailable(token)) where token.errorCode == errorCode:
             return .unavailable(store: token.store, state: token.state, errorCode: token.errorCode, action: "retry")

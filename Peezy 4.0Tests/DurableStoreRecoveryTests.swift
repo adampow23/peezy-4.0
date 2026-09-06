@@ -415,7 +415,7 @@ struct DurableStoreRecoveryTests {
         #expect(RecoveryAction.retryCleanup.attemptKey(expecting: digest) == .cleanup(recoveryStateDigest: "d"))
         #expect(RecoveryAction.reconcile(mismatchIdentityDigest: "m").attemptKey(expecting: digest) == .receiptReconcile(recoveryStateDigest: "d", mismatchIdentityDigest: "m"))
         #expect(RecoveryAction.foreignReconcile.attemptKey(expecting: digest) == .foreignReconcile(recoveryStateDigest: "d"))
-        #expect(RecoveryAction.resolve(resolutionDigest: "r", choices: ["b", "a"]).attemptKey(expecting: digest) == .resolveForeign(recoveryStateDigest: "d", resolutionDigest: "r", choicesSHA256: TaskCanonicalV1.sha256Hex(["choices": ["b", "a"]])))
+        #expect(RecoveryAction.resolve(resolutionDigest: "r", choices: ["b", "a"]).attemptKey(expecting: digest) == .resolveForeign(recoveryStateDigest: "d", resolutionDigest: "r", choicesSHA256: TaskCanonicalV1.sha256Hex(data: Data("[b,a]".utf8))))
         #expect(RecoveryAction.quarantineDoseBytes.attemptKey(expecting: digest) == .doseQuarantine(recoveryStateDigest: "d"))
         #expect(RecoveryAction.retry(errorCode: "FILE_OPEN_FAILED").attemptKey(expecting: .unavailable(token)) == .unavailable(store: .route, state: "storage_io_unavailable", errorCode: "FILE_OPEN_FAILED", action: "retry"))
         #expect(RecoveryAction.repairInstallationIdentity.attemptKey(expecting: .unavailable(token)) == .unavailable(store: .route, state: "storage_io_unavailable", errorCode: "FILE_OPEN_FAILED", action: "repair"))
@@ -1359,6 +1359,347 @@ struct DurableStoreRecoveryTests {
         #expect(await relaunch.completion.acknowledge(expectedGenerationId: snapshot.generationId, expectedSHA256: snapshot.sha256) == .acknowledged)
         #expect(relaunch.intentBytes() == nil && relaunch.gate.gates.last == .clear && relaunch.signOut.calls == ["A"])
         #expect(relaunch.owners.calls.contains("google.signOutAll"))
+    }
+
+    // MARK: - S4 I5 — blocked-store recovery: the dose store (S4-CD1), the reset store through `DurableStoreRecovering` (S4-CD5), the driver
+
+    @Test func doseStoreClassifiesMalformedBytesAndQuarantineDoseBytesCopiesThemBeforeRemoval() async throws {
+        let defaults = try isolatedDefaults()
+        let store = DailyDoseLocalStore(defaults: defaults)
+        let key = DailyDoseLocalStore.key(uid: "A")
+        let quarantineKey = DailyDoseLocalStore.quarantineKey(uid: "A")
+        #expect(quarantineKey == "peezy.A.dailyDose.v2.quarantine")
+        #expect(await store.observeMalformed(uid: "A") == nil)
+        _ = await store.ensure(uid: "A", taskGenerationEpoch: 1)
+        #expect(await store.observeMalformed(uid: "A") == nil, "a valid store is never malformed")
+        let malformed = Data("{\"schemaVersion\":1,\"completedCount\":-1}".utf8)
+        defaults.set(malformed, forKey: key)
+        for legacy in DailyDoseLocalStore.legacyKeys(uid: "A") { defaults.set("keep", forKey: legacy) }
+        let observed = try #require(await store.observeMalformed(uid: "A"))
+        let sha = TaskCanonicalV1.sha256Hex(data: malformed)
+        #expect(observed == .dose(bytesSHA256: sha, byteLength: malformed.count, quarantineCount: 0))
+        let digest = observed.recoveryStateDigest
+        #expect(await store.classification(uid: "A") == .blocked(.doseMalformed(recoveryStateDigest: digest, bytesSHA256: sha, byteLength: malformed.count)))
+        // a stale token returns the refreshed snapshot with zero writes
+        #expect(await store.performQuarantine(uid: "A", expecting: "stale") == .blocked(.doseMalformed(recoveryStateDigest: digest, bytesSHA256: sha, byteLength: malformed.count)))
+        #expect(defaults.data(forKey: key) == malformed && defaults.array(forKey: quarantineKey) == nil)
+        // drift on the bytes themselves
+        #expect(await store.quarantineMalformed(uid: "A", expectedBytesSHA256: "0") == .drifted)
+        // the action: copy aside, verify, only then remove; legacy keys untouched; identical concurrent keys coalesce
+        async let first = store.performQuarantine(uid: "A", expecting: digest)
+        async let second = store.performQuarantine(uid: "A", expecting: digest)
+        let results = await [first, second]
+        #expect(results == [.ready, .ready])
+        #expect(defaults.data(forKey: key) == nil)
+        #expect((defaults.array(forKey: quarantineKey) as? [Data]) == [malformed])
+        #expect(DailyDoseLocalStore.legacyKeys(uid: "A").allSatisfy { defaults.string(forKey: $0) == "keep" })
+        #expect(await store.load(uid: "A") == .absent)
+        // crash between (1) and (4): the same bytes with a quarantine copy already held reclassify with a fresh digest; the old token is stale
+        defaults.set(malformed, forKey: key)
+        let again = try #require(await store.observeMalformed(uid: "A"))
+        #expect(again == .dose(bytesSHA256: sha, byteLength: malformed.count, quarantineCount: 1) && again.recoveryStateDigest != digest)
+        #expect(await store.performQuarantine(uid: "A", expecting: digest) == .blocked(.doseMalformed(recoveryStateDigest: again.recoveryStateDigest, bytesSHA256: sha, byteLength: malformed.count)))
+        #expect(await store.performQuarantine(uid: "A", expecting: again.recoveryStateDigest) == .ready)
+        #expect((defaults.array(forKey: quarantineKey) as? [Data]) == [malformed, malformed], "a second append of the same bytes is harmless")
+        // a verification read that fails at step (3) leaves the v2 key untouched: the last copy is never removed before its copy is verified
+        let suite = "peezy.tests.\(UUID().uuidString)"
+        let failing = try #require(VerificationFailingDefaults(suiteName: suite))
+        defer { failing.removePersistentDomain(forName: suite) }
+        let failingStore = DailyDoseLocalStore(defaults: failing)
+        failing.set(malformed, forKey: key)
+        failing.failQuarantineReads = true
+        #expect(await failingStore.quarantineMalformed(uid: "A", expectedBytesSHA256: sha) == .ioFailed)
+        #expect(failing.data(forKey: key) == malformed, "the v2 bytes survive a failed verification")
+        failing.failQuarantineReads = false
+        #expect(await failingStore.quarantineMalformed(uid: "A", expectedBytesSHA256: sha) == .quarantined && failing.data(forKey: key) == nil)
+        // the eleven-key registry holds the quarantine key and the barrier removes it
+        #expect(PreferenceBarrier.uidScopedTemplates.contains("peezy.{uid}.dailyDose.v2.quarantine"))
+        #expect(PreferenceBarrier.run(scope: .uid("A"), defaults: defaults, currentFirebaseUID: "B") == .acknowledged && defaults.array(forKey: quarantineKey) == nil)
+    }
+
+    @Test func resetStoreClassificationSweepsTheDiskCombinationsInTheC973Order() async throws {
+        let directory = try temporaryDirectory()
+        let target = ResetFixtures.target(directory)
+        let quarantine = ResetFixtures.quarantine(directory)
+        let (registry, auth) = await ResetFixtures.registry(directory, auth: signedInA)
+        func classify() async -> (RecoveryObservation, RecoveryClassification) { let o = await registry.observe(); return (o, registry.classify(o)) }
+        // absent / absent → ready
+        var (observation, classification) = await classify()
+        #expect(classification == .ready)
+        guard case let .observed(readyState) = observation else { Issue.record("observed"); return }
+        #expect(TaskCanonicalV1.data(readyState.canonical) == TaskCanonicalV1.data(["schemaVersion": 1, "store": "reset", "baseState": "ready", "target": ["present": false], "quarantine": ["present": false], "availableActions": []]))
+        // malformed target / absent quarantine → renamed to the fixed sibling at once → quarantined, unenumerable (non-JSON): Discard only
+        try Data("not json".utf8).write(to: target)
+        (observation, classification) = await classify()
+        #expect(!FileManager.default.fileExists(atPath: target.path) && FileManager.default.fileExists(atPath: quarantine.path))
+        guard case let .observed(state) = observation, case let .files(_, base, targetObs, quarantineObs, actions, _, _, _, _, enumerable, count, _) = state else { Issue.record("files"); return }
+        #expect(base == "quarantined" && targetObs == .absent && actions == ["discard_quarantine"] && enumerable == false && count == nil)
+        #expect(quarantineObs == .malformed(byteLength: 8, bytesSHA256: TaskCanonicalV1.sha256Hex(data: Data("not json".utf8))))
+        #expect(classification == .blocked(.quarantined(store: .reset, recoveryStateDigest: state.recoveryStateDigest, quarantineEnumerable: false, pendingRecordCount: nil)))
+        // absent / two valid rows → quarantined with Recover, count 2
+        let rows = [ResetFixtures.row(uid: "A", epoch: 1), ResetFixtures.row(uid: "B", epoch: 2, createdAt: "2026-09-06T12:00:01.000Z", suggested: "rsa1_22222222-2222-4222-8222-222222222222")]
+        try ResetFixtures.envelope(records: rows).write(to: quarantine)
+        (observation, classification) = await classify()
+        guard case let .observed(recoverable) = observation else { Issue.record("recoverable"); return }
+        #expect(recoverable.availableActions == ["recover", "discard_quarantine"])
+        #expect(classification == .blocked(.quarantined(store: .reset, recoveryStateDigest: recoverable.recoveryStateDigest, quarantineEnumerable: true, pendingRecordCount: 2)))
+        // a duplicate member on a candidate path is unenumerable; an invalid candidate is enumerable but unrecoverable (count still reported by the observation, Discard only)
+        try Data("{\"payload\":{\"records\":[],\"legacyMigrations\":[]},\"payload\":{}}".utf8).write(to: quarantine)
+        (observation, classification) = await classify()
+        guard case let .observed(duplicate) = observation, case let .files(_, _, _, _, dupActions, _, _, _, _, dupEnumerable, _, _) = duplicate else { Issue.record("dup"); return }
+        #expect(dupActions == ["discard_quarantine"] && dupEnumerable == false)
+        try Data("{\"payload\":{\"records\":[{\"uid\":\"A\"}],\"legacyMigrations\":[]}}".utf8).write(to: quarantine)
+        (observation, classification) = await classify()
+        guard case let .observed(invalid) = observation, case let .files(_, _, _, _, invActions, _, _, _, _, invEnumerable, invCount, _) = invalid else { Issue.record("invalid"); return }
+        #expect(invActions == ["discard_quarantine"] && invEnumerable == true && invCount == 1)
+        #expect(classification == .blocked(.quarantined(store: .reset, recoveryStateDigest: invalid.recoveryStateDigest, quarantineEnumerable: false, pendingRecordCount: nil)), "S1's snapshot derives its actions from the enumerable flag, so the fallback reports false")
+        // malformed target / present quarantine → collision; Recover only for an enumerable zero-candidate target without a singleton
+        try ResetFixtures.envelope(records: rows).write(to: quarantine)
+        try Data("garbage".utf8).write(to: target)
+        (observation, classification) = await classify()
+        guard case let .observed(collision) = observation else { Issue.record("collision"); return }
+        #expect(collision.availableActions == ["discard_quarantine"])
+        #expect(classification == .blocked(.collision(store: .reset, recoveryStateDigest: collision.recoveryStateDigest, quarantineEnumerable: false, pendingRecordCount: nil)))
+        try Data("{\"payload\":{\"records\":[],\"legacyMigrations\":[]}}".utf8).write(to: target)
+        (observation, classification) = await classify()
+        guard case let .observed(emptyCollision) = observation else { Issue.record("empty collision"); return }
+        #expect(emptyCollision.availableActions == ["recover", "discard_quarantine"])
+        // valid target / present quarantine without a matching receipt → quarantine_conflict; Merge only when shared keys agree
+        try ResetFixtures.envelope(records: [rows[0]]).write(to: target)
+        (observation, classification) = await classify()
+        guard case let .observed(conflict) = observation else { Issue.record("conflict"); return }
+        #expect(conflict.availableActions == ["merge", "discard_quarantine"])
+        #expect(classification == .blocked(.quarantineConflict(store: .reset, recoveryStateDigest: conflict.recoveryStateDigest, quarantineEnumerable: true, pendingRecordCount: 2)))
+        var unequal = rows[0]; unequal["phase"] = "reset_dispatched"
+        try ResetFixtures.envelope(records: [unequal, rows[1]]).write(to: quarantine)
+        (observation, classification) = await classify()
+        guard case let .observed(unequalConflict) = observation else { Issue.record("unequal"); return }
+        #expect(unequalConflict.availableActions == ["discard_quarantine"], "same-key unequal rows are unresolved: Merge absent")
+        // a valid target whose receipt names the quarantine's digest and counts → recovered_pending_cleanup; a count disagreement stays a conflict
+        let quarantineBytes = ResetFixtures.envelope(records: rows)
+        try quarantineBytes.write(to: quarantine)
+        try ResetFixtures.envelope(records: rows, receipt: ["schemaVersion": 1, "quarantineSHA256": TaskCanonicalV1.sha256Hex(data: quarantineBytes), "recoveredCount": 2, "droppedCount": 0]).write(to: target)
+        (observation, classification) = await classify()
+        guard case let .observed(cleanup) = observation else { Issue.record("cleanup"); return }
+        #expect(cleanup.availableActions == ["retry_cleanup"] && classification == .blocked(.recoveredPendingCleanup(store: .reset, recoveryStateDigest: cleanup.recoveryStateDigest)))
+        try ResetFixtures.envelope(records: rows, receipt: ["schemaVersion": 1, "quarantineSHA256": TaskCanonicalV1.sha256Hex(data: quarantineBytes), "recoveredCount": 1, "droppedCount": 0]).write(to: target)
+        (observation, classification) = await classify()
+        guard case let .observed(disagree) = observation else { Issue.record("disagree"); return }
+        #expect(disagree.availableActions == ["merge", "discard_quarantine"])
+        // an over-cap quarantine is present, unenumerable, identified by descriptor identity: Discard only
+        try Data(repeating: 0x20, count: DurableFileKind.taskPlanResetV2.storeCap + 1).write(to: quarantine)
+        (observation, classification) = await classify()
+        guard case let .observed(overCap) = observation, case let .files(_, _, _, overQuarantine, overActions, _, _, _, _, _, _, _) = overCap else { Issue.record("overcap"); return }
+        guard case let .overCap(length, identity) = overQuarantine else { Issue.record("overCap observation: \(overQuarantine)"); return }
+        #expect(length == DurableFileKind.taskPlanResetV2.storeCap + 1 && identity.count == 64 && overActions == ["discard_quarantine"])
+        try FileManager.default.removeItem(at: quarantine)
+        // I/O failure is storage_io_unavailable, never Discard: the target path is a directory
+        try FileManager.default.removeItem(at: target)
+        try FileManager.default.createDirectory(at: target, withIntermediateDirectories: false)
+        (observation, classification) = await classify()
+        #expect(observation == .unavailable(UnavailableToken(store: .reset, state: "storage_io_unavailable", errorCode: "FILE_READ_FAILED")))
+        #expect(classification == .blocked(.storageIOUnavailable(store: .reset, errorCode: .fileReadFailed)))
+        try FileManager.default.removeItem(at: target)
+        // the current UID's epoch conflict through the protocol carries the same digest `recoverEpoch` CASes; signed out it is ready
+        try ResetFixtures.envelope(records: [ResetFixtures.row(uid: "A", epoch: 1), ResetFixtures.row(uid: "A", epoch: 2, createdAt: "2026-09-06T12:00:01.000Z", suggested: "rsa1_33333333-3333-4333-8333-333333333333")]).write(to: target)
+        (observation, classification) = await classify()
+        guard case let .blocked(.resetEpochConflict(digest, actionable, occupants)) = classification else { Issue.record("epoch conflict: \(classification)"); return }
+        #expect(actionable == 1 && occupants.count == 2)
+        #expect(await registry.classification() == .blocked(.resetEpochConflict(recoveryStateDigest: digest, actionableExpectedTaskGenerationEpoch: 1, occupants: occupants)))
+        auth.set(.signedOut)
+        (observation, classification) = await classify()
+        #expect(classification == .ready, "foreign-UID multiplicity never blocks")
+    }
+
+    @Test func resetRecoveryActionsHonorWholeStateCASAndTheReplacementSequences() async throws {
+        let directory = try temporaryDirectory()
+        let target = ResetFixtures.target(directory)
+        let quarantine = ResetFixtures.quarantine(directory)
+        let (registry, _) = await ResetFixtures.registry(directory, auth: signedInA)
+        func digest() async -> String { guard case let .observed(state) = await registry.observe() else { return "" }; return state.recoveryStateDigest }
+        let rows = [ResetFixtures.row(uid: "A", epoch: 1), ResetFixtures.row(uid: "B", epoch: 2, createdAt: "2026-09-06T12:00:01.000Z", suggested: "rsa1_22222222-2222-4222-8222-222222222222")]
+        // recover from `quarantined`: stale digest → the refreshed snapshot with zero writes; exact digest → fresh generation with the receipt, quarantine unlinked
+        let quarantineBytes = ResetFixtures.envelope(records: rows)
+        try quarantineBytes.write(to: quarantine)
+        let current = await digest()
+        #expect(await registry.perform(.recover, expecting: .digest("stale")) == .blocked(.quarantined(store: .reset, recoveryStateDigest: current, quarantineEnumerable: true, pendingRecordCount: 2)))
+        #expect(!FileManager.default.fileExists(atPath: target.path))
+        #expect(await registry.perform(.repairInstallationIdentity, expecting: .unavailable(UnavailableToken(store: .reset, state: "x", errorCode: "y"))) == .unavailable(store: .reset))
+        #expect(await registry.perform(.recover, expecting: .digest(current)) == .ready)
+        let recovered = try #require(DurableEnvelopeCodec.decode(try Data(contentsOf: target), fileKind: .taskPlanResetV2))
+        #expect(TaskCanonicalV1.data(recovered.recoveryReceipt ?? [:]) == TaskCanonicalV1.data(["schemaVersion": 1, "quarantineSHA256": TaskCanonicalV1.sha256Hex(data: quarantineBytes), "recoveredCount": 2, "droppedCount": 0]))
+        let recoveredRows = await registry.snapshot().records.count
+        #expect(!FileManager.default.fileExists(atPath: quarantine.path) && recoveredRows == 2)
+        let recoveredBytes = try Data(contentsOf: target)
+        let readyObservation = await registry.observe()
+        #expect(readyObservation == .observed(.files(store: .reset, baseState: "ready", target: .valid(byteLength: recoveredBytes.count, bytesSHA256: TaskCanonicalV1.sha256Hex(data: recoveredBytes), generationId: recovered.generationId, envelopeSHA256: recovered.sha256), quarantine: .absent, availableActions: [])))
+        // crash after rename before unlink → recovered_pending_cleanup → retry_cleanup unlinks only the quarantine
+        try quarantineBytes.write(to: quarantine)
+        let targetBytes = try Data(contentsOf: target)
+        let cleanupDigest = await digest()
+        #expect(await registry.perform(.retryCleanup, expecting: .digest(cleanupDigest)) == .ready)
+        let afterCleanup = try Data(contentsOf: target)
+        #expect(!FileManager.default.fileExists(atPath: quarantine.path) && afterCleanup == targetBytes)
+        // discard: the quarantine only; a two-step collision discard exposes the malformed target as the next quarantine
+        try Data("garbage".utf8).write(to: target)
+        try quarantineBytes.write(to: quarantine)
+        let collisionDigest = await digest()
+        let afterFirstDiscard = await registry.perform(.discardQuarantine, expecting: .digest(collisionDigest))
+        let renamedDigest = await digest()
+        #expect(afterFirstDiscard == .blocked(.quarantined(store: .reset, recoveryStateDigest: renamedDigest, quarantineEnumerable: false, pendingRecordCount: nil)))
+        let renamedBytes = try Data(contentsOf: quarantine)
+        #expect(renamedBytes == Data("garbage".utf8) && !FileManager.default.fileExists(atPath: target.path))
+        #expect(await registry.perform(.discardQuarantine, expecting: .digest(renamedDigest)) == .ready)
+        #expect(!FileManager.default.fileExists(atPath: quarantine.path))
+        // merge: live rows kept, same-key byte-equal rows not inserted, new rows added; the receipt counts every candidate
+        try ResetFixtures.envelope(records: [rows[0]]).write(to: target)
+        try quarantineBytes.write(to: quarantine)
+        #expect(await registry.perform(.merge, expecting: .digest(await digest())) == .ready)
+        let merged = try #require(DurableEnvelopeCodec.decode(try Data(contentsOf: target), fileKind: .taskPlanResetV2))
+        let mergedUIDs = await registry.snapshot().records.map(\.uid)
+        #expect(mergedUIDs == ["A", "B"] && (merged.recoveryReceipt?["recoveredCount"] as? Int) == 2)
+        // a different key while one attempt is in flight is RECOVERY_BUSY (the merged target's receipt now names this quarantine: cleanup)
+        try quarantineBytes.write(to: quarantine)
+        let cleanupAgain = await digest()
+        #expect(registry.classify(await registry.observe()) == .blocked(.recoveredPendingCleanup(store: .reset, recoveryStateDigest: cleanupAgain)))
+        async let winner = registry.perform(.retryCleanup, expecting: .digest(cleanupAgain))
+        async let loser = registry.perform(.discardQuarantine, expecting: .digest(cleanupAgain))
+        let outcomes = await [winner, loser]
+        #expect(outcomes == [.ready, .busy(store: .reset)])
+        #expect(!FileManager.default.fileExists(atPath: quarantine.path))
+        // unavailable retry: the token must match; a directory in the target's place fails the read, removing it and retrying classifies ready
+        try FileManager.default.removeItem(at: target)
+        try FileManager.default.createDirectory(at: target, withIntermediateDirectories: false)
+        let token = UnavailableToken(store: .reset, state: "storage_io_unavailable", errorCode: "FILE_READ_FAILED")
+        #expect(await registry.perform(.retry(errorCode: "FILE_OPEN_FAILED"), expecting: .unavailable(token)) == .unavailable(store: .reset), "the action and token disagree")
+        #expect(await registry.perform(.retry(errorCode: "FILE_READ_FAILED"), expecting: .unavailable(token)) == .blocked(.storageIOUnavailable(store: .reset, errorCode: .fileReadFailed)))
+        try FileManager.default.removeItem(at: target)
+        #expect(await registry.perform(.retry(errorCode: "FILE_READ_FAILED"), expecting: .unavailable(token)) == .ready)
+    }
+
+    @Test func resetReceiptMismatchReconcilesThroughInspectionOnlyAndInstallsProvenance() async throws {
+        let directory = try temporaryDirectory()
+        let target = ResetFixtures.target(directory)
+        let remote = InspectionRemote()
+        let (registry, auth) = await ResetFixtures.registry(directory, auth: signedInA, remote: remote)
+        let receipt = ResetFixtures.finalReceipt(uid: "A", epoch: 1)
+        try ResetFixtures.envelope(records: [ResetFixtures.row(uid: "A", epoch: 1, phase: "final_receipt", finalReceipt: receipt)]).write(to: target)
+        let identity = ResetOperationRegistry.identityDigest(uid: "A", expectedTaskGenerationEpoch: 1)
+        #expect(identity == TaskCanonicalV1.sha256Hex(["kind": "reset", "uid": "A", "expectedTaskGenerationEpoch": 1]))
+        // a loaded receipt-bearing row of the current UID is receipt_mismatch; signed out it is inert
+        var observation = await registry.observe()
+        guard case let .observed(state) = observation, case let .files(_, base, _, _, actions, _, _, authTuple, mismatch, _, _, _) = state else { Issue.record("observed"); return }
+        #expect(base == "receipt_mismatch" && actions == ["reconcile"] && mismatch == identity && authTuple?.uid == "A")
+        #expect(state.canonical["auth"] != nil)
+        let digest = state.recoveryStateDigest
+        #expect(registry.classify(observation) == .blocked(.receiptMismatch(store: .reset, recoveryStateDigest: digest, mismatchIdentityDigest: identity)))
+        auth.set(.signedOut)
+        #expect(registry.classify(await registry.observe()) == .ready)
+        auth.set(signedInA)
+        let bytes = try Data(contentsOf: target)
+        // stale digest and a transport failure: zero write, the same classification
+        #expect(await registry.perform(.reconcile(mismatchIdentityDigest: identity), expecting: .digest("stale")) == .blocked(.receiptMismatch(store: .reset, recoveryStateDigest: digest, mismatchIdentityDigest: identity)))
+        #expect(remote.calls.isEmpty)
+        remote.script(.transport)
+        #expect(await registry.perform(.reconcile(mismatchIdentityDigest: identity), expecting: .digest(digest)) == .blocked(.receiptMismatch(store: .reset, recoveryStateDigest: digest, mismatchIdentityDigest: identity)))
+        let untouched = try Data(contentsOf: target)
+        #expect(remote.calls == ["A|\(ResetFixtures.operationId)|1"] && untouched == bytes)
+        // committed: the exact receipt is installed as provenance and the store is ready until the auth tuple changes
+        remote.script(.committed(receipt))
+        #expect(await registry.perform(.reconcile(mismatchIdentityDigest: identity), expecting: .digest(digest)) == .ready)
+        #expect(registry.classify(await registry.observe()) == .ready)
+        auth.set(.signedIn(SignedAuthTuple(uid: "A", authEpochUUID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", credentialRevision: 4)))
+        observation = await registry.observe()
+        guard case let .observed(afterAuth) = observation else { Issue.record("after auth"); return }
+        #expect(registry.classify(observation) == .blocked(.receiptMismatch(store: .reset, recoveryStateDigest: afterAuth.recoveryStateDigest, mismatchIdentityDigest: identity)), "any signed-auth change clears the provenance")
+        // absent: the row returns to its pre-replay phase with every receipt member cleared, then the store is ready
+        remote.script(.absent)
+        #expect(await registry.perform(.reconcile(mismatchIdentityDigest: identity), expecting: .digest(afterAuth.recoveryStateDigest)) == .ready)
+        let row = try #require(await registry.snapshot().records.first)
+        #expect(row.phase == .resetDispatched && row.finalReceipt == nil && row.progressReceipt == nil && row.canonicalOperationId == nil && row.applicationId == nil)
+        // step 6 precedes step 7: two receipt-bearing rows of one UID are reconciled first-in-frozen-order, then the epoch conflict surfaces
+        try ResetFixtures.envelope(records: [
+            ResetFixtures.row(uid: "A", epoch: 1, phase: "final_receipt", finalReceipt: receipt),
+            ResetFixtures.row(uid: "A", epoch: 2, createdAt: "2026-09-06T12:00:01.000Z", phase: "final_receipt", finalReceipt: ResetFixtures.finalReceipt(uid: "A", epoch: 2, operationId: "rso1_" + String(repeating: "c", count: 40)), suggested: "rsa1_33333333-3333-4333-8333-333333333333")
+        ]).write(to: target)
+        guard case let .observed(first) = await registry.observe(), case let .files(_, _, _, _, _, _, _, _, firstMismatch, _, _, _) = first else { Issue.record("first"); return }
+        #expect(firstMismatch == identity)
+        remote.script(.committed(receipt))
+        let afterFirst = await registry.perform(.reconcile(mismatchIdentityDigest: identity), expecting: .digest(first.recoveryStateDigest))
+        guard case let .blocked(.receiptMismatch(_, _, secondMismatch)) = afterFirst else { Issue.record("second mismatch, got \(afterFirst)"); return }
+        #expect(secondMismatch == ResetOperationRegistry.identityDigest(uid: "A", expectedTaskGenerationEpoch: 2))
+        guard case let .observed(second) = await registry.observe() else { Issue.record("second"); return }
+        remote.script(.committed(ResetFixtures.finalReceipt(uid: "A", epoch: 2, operationId: "rso1_" + String(repeating: "c", count: 40))))
+        let afterSecond = await registry.perform(.reconcile(mismatchIdentityDigest: secondMismatch), expecting: .digest(second.recoveryStateDigest))
+        guard case .blocked(.resetEpochConflict) = afterSecond else { Issue.record("epoch conflict expected, got \(afterSecond)"); return }
+        #expect(remote.calls.count == 5, "transport, committed, absent, and the two ordered commits")
+    }
+
+    @Test func recoveryDriverClassifiesEveryStoreThroughTheProtocolPublishesReadinessAndRoutesActions() async throws {
+        let directory = try temporaryDirectory()
+        let defaults = try isolatedDefaults()
+        let dose = DailyDoseLocalStore(defaults: defaults)
+        defaults.set(Data("{".utf8), forKey: DailyDoseLocalStore.key(uid: "A"))
+        let route = ScriptedStoreOwner(store: .route)
+        let identity = InstallationIdentityStub(.error)
+        let handoff = KeychainHandoffOwner(identity: identity)
+        let workflow = ScriptedStoreOwner(store: .workflow, observation: .observed(.files(store: .workflow, baseState: "quarantined", target: .absent, quarantine: .malformed(byteLength: 3, bytesSHA256: String(repeating: "e", count: 64)), availableActions: ["discard_quarantine"])))
+        let (reset, _) = await ResetFixtures.registry(directory, auth: signedInA)
+        let published = NotificationCounter()
+        let log = OpenedURLs()
+        let driver = DurableStoreRecoveryDriver(owners: DurableStoreOwners(route: route, handoff: handoff, reset: reset, workflow: workflow), dose: dose, currentUID: UIDProbe("A")) { store, readiness in
+            await published.bump()
+            let state: String
+            switch readiness { case .loading: state = "loading"; case .ready: state = "ready"; case let .blocked(snapshot): state = snapshot.state }
+            await log.record(URL(string: "peezy://\(store.rawValue)/\(state)")!)
+        }
+        let classifications = await driver.classifyAll()
+        #expect(await log.urls.map(\.absoluteString) == ["peezy://route/ready", "peezy://handoff/installation_authority_unavailable", "peezy://reset/ready", "peezy://workflow/quarantined"], "frozen order; each result published as it settles")
+        #expect(classifications[.route] == .ready && classifications[.reset] == .ready)
+        #expect(classifications[.handoff] == .blocked(.installationAuthorityUnavailable(errorCode: KeychainUnavailableCode.allCases.first { $0.rawValue == "KEYCHAIN_LOAD_FAILED" }!)))
+        guard case .blocked(.doseMalformed(let doseDigest, _, 1)) = classifications[.dose] else { Issue.record("dose: \(String(describing: classifications[.dose]))"); return }
+        // keychain Retry repeats the exact authority operation; Repair runs `repairInvalid` with a fresh UUID
+        let token = UnavailableToken(store: .handoff, state: "installation_authority_unavailable", errorCode: "KEYCHAIN_LOAD_FAILED")
+        identity.set(.invalid)
+        #expect(await driver.perform(store: .handoff, action: .retry(errorCode: "KEYCHAIN_LOAD_FAILED"), expecting: .unavailable(token)) == .blocked(.installationAuthorityInvalid))
+        #expect(await log.urls.last?.absoluteString == "peezy://handoff/installation_authority_invalid")
+        let invalidToken = UnavailableToken(store: .handoff, state: "installation_authority_invalid", errorCode: "KEYCHAIN_VALUE_INVALID")
+        #expect(await driver.perform(store: .handoff, action: .repairInstallationIdentity, expecting: .unavailable(invalidToken)) == .ready)
+        #expect(identity.repairs.count == 1 && identity.repairs[0].range(of: DurableEnvelopeCodec.uuidPattern, options: .regularExpression) != nil)
+        #expect(await log.urls.last?.absoluteString == "peezy://handoff/ready")
+        // routed actions reach only their owner and reclassify that store; the dose store is driven through `DailyDoseLocalStore`
+        workflow.setResult(.ready)
+        workflow.set(.observed(.files(store: .workflow, baseState: "ready", target: .absent, quarantine: .absent, availableActions: [])))
+        #expect(await driver.perform(store: .workflow, action: .discardQuarantine, expecting: .digest("d")) == .ready)
+        #expect(workflow.performedActions == ["discard_quarantine"] && route.performedActions.isEmpty)
+        #expect(await log.urls.last?.absoluteString == "peezy://workflow/ready")
+        #expect(await driver.perform(store: .dose, action: .quarantineDoseBytes, expecting: .digest(doseDigest)) == .ready)
+        let doseAfter = await driver.classifications[.dose]
+        #expect(defaults.data(forKey: DailyDoseLocalStore.key(uid: "A")) == nil && doseAfter == .ready)
+        #expect(await driver.perform(store: .dose, action: .recover, expecting: .digest(doseDigest)) == .unavailable(store: .dose))
+        #expect(await published.count == 7)
+    }
+
+    @Test func foreignResolutionChoicesAreCollectedLocallyInDisplayedOrderWithOrdinals() {
+        let groups = [ForeignDecisionGroup(decisionDigest: String(repeating: "1", count: 64), actionLabel: "Continue on iPad"),
+                      ForeignDecisionGroup(decisionDigest: String(repeating: "2", count: 64), actionLabel: "Continue on iPad"),
+                      ForeignDecisionGroup(decisionDigest: String(repeating: "3", count: 64), actionLabel: "Restart here")]
+        #expect(ForeignResolutionChoices.displayLabels(groups) == ["Continue on iPad (1)", "Continue on iPad (2)", "Restart here"])
+        let selections = [groups[0].decisionDigest: "continue", groups[1].decisionDigest: "restart", groups[2].decisionDigest: "continue"]
+        let choices = ForeignResolutionChoices.choices(groups: groups, selections: selections)
+        #expect(choices == [["decisionDigest": groups[0].decisionDigest, "choice": "continue"], ["decisionDigest": groups[1].decisionDigest, "choice": "restart"], ["decisionDigest": groups[2].decisionDigest, "choice": "continue"]])
+        #expect(ForeignResolutionChoices.choices(groups: groups, selections: [groups[0].decisionDigest: "continue"]) == nil, "missing")
+        #expect(ForeignResolutionChoices.choices(groups: groups, selections: selections.merging([String(repeating: "9", count: 64): "continue"]) { a, _ in a }) == nil, "surplus")
+        #expect(ForeignResolutionChoices.choices(groups: groups, selections: selections.merging([groups[2].decisionDigest: "later"]) { _, b in b }) == nil, "unknown value")
+        let elements = ForeignResolutionChoices.elements(choices ?? [])
+        #expect(elements[0] == "{\"choice\":\"continue\",\"decisionDigest\":\"\(groups[0].decisionDigest)\"}")
+        let expected = TaskCanonicalV1.sha256Hex(data: Data(("[" + elements.joined(separator: ",") + "]").utf8))
+        #expect(ForeignResolutionChoices.choicesSHA256(elements: elements) == expected)
+        #expect(RecoveryAction.resolve(resolutionDigest: "r", choices: elements).attemptKey(expecting: .digest("d")) == .resolveForeign(recoveryStateDigest: "d", resolutionDigest: "r", choicesSHA256: expected))
+        #expect(ForeignResolutionChoices.resolutionDigest(recoveryStateDigest: "d", groups: groups) == TaskCanonicalV1.sha256Hex(["recovery_state_digest": "d", "decision_groups": groups.map { ["decisionDigest": $0.decisionDigest, "actionLabel": $0.actionLabel] }]))
+        #expect(JSONObjectScanner.hasNoDuplicateKeys(Data("{\"a\":{\"b\":1,\"b\":2}}".utf8)) == false)
+        #expect(JSONObjectScanner.hasNoDuplicateKeys(Data("{\"a\":[{\"b\":1},{\"b\":2}],\"c\":\"}{\"}".utf8)) == true)
+        #expect(JSONObjectScanner.object(Data("[1]".utf8)) == nil)
     }
 
     // MARK: - Epoch stamps (I4, stamps only; manifest §5:540-546). Cleanup belongs to S3.
@@ -2698,6 +3039,137 @@ func exactIntent(phase: AccountDeletionPhase, staged: AccountDeletionStagedRoot?
         startedAt: authority ? DeletionWires.startedAt : nil, dataDeletedAt: authority ? DeletionWires.dataDeletedAt : nil,
         authGuardAfter: phase == .guarding || staged == .authGuarding ? DeletionWires.authGuardAfter : nil,
         acks: allAcks ? PurgeOwner.order : [], createdAt: "2026-09-06T12:00:00.000Z", updatedAt: "2026-09-06T12:00:00.000Z")
+}
+
+/// A scripted `DurableStoreRecovering` owner for the stores S5/S7 conform (route, handoff, workflow).
+final class ScriptedStoreOwner: DurableStoreRecovering, @unchecked Sendable {
+    let store: DurableStore
+    private let lock = NSLock()
+    private var observation: RecoveryObservation
+    private var result: RecoveryResult = .ready
+    private var performed: [String] = []
+    init(store: DurableStore, observation: RecoveryObservation? = nil) {
+        self.store = store
+        self.observation = observation ?? .observed(.files(store: store, baseState: "ready", target: .absent, quarantine: .absent, availableActions: []))
+    }
+    func set(_ value: RecoveryObservation) { lock.withLock { observation = value } }
+    func setResult(_ value: RecoveryResult) { lock.withLock { result = value } }
+    var performedActions: [String] { lock.withLock { performed } }
+    func observe() async -> RecoveryObservation { lock.withLock { observation } }
+    func classify(_ observation: RecoveryObservation) -> RecoveryClassification {
+        switch observation {
+        case let .unavailable(token):
+            return .blocked(.storageIOUnavailable(store: store, errorCode: StorageIOErrorCode(rawValue: token.errorCode) ?? .fileReadFailed))
+        case let .observed(state):
+            guard case let .files(_, base, _, _, _, _, _, _, _, enumerable, count, _) = state, base != "ready" else { return .ready }
+            return .blocked(.quarantined(store: store, recoveryStateDigest: state.recoveryStateDigest, quarantineEnumerable: enumerable, pendingRecordCount: count))
+        }
+    }
+    func perform(_ action: RecoveryAction, expecting expectation: RecoveryExpectation) async -> RecoveryResult {
+        lock.withLock { performed.append(action.name); return result }
+    }
+}
+
+final class InstallationIdentityStub: InstallationIdentityProviding, @unchecked Sendable {
+    private let lock = NSLock()
+    private var loadResult: InstallationIdentityLoadResult
+    private var repaired: [String] = []
+    init(_ loadResult: InstallationIdentityLoadResult) { self.loadResult = loadResult }
+    func set(_ value: InstallationIdentityLoadResult) { lock.withLock { loadResult = value } }
+    var repairs: [String] { lock.withLock { repaired } }
+    func load() async -> InstallationIdentityLoadResult { lock.withLock { loadResult } }
+    func addIfAbsent(_ candidate: String) async -> InstallationIdentityAddResult { .inserted(candidate) }
+    func rekeyEmptyContainer(_ candidate: String) async -> InstallationIdentityRekeyResult { .rekeyed(candidate) }
+    func repairInvalid(_ candidate: String) async -> InstallationIdentityRepairResult {
+        lock.withLock { repaired.append(candidate); loadResult = .present(candidate); return .repaired(candidate) }
+    }
+}
+
+/// A handoff owner fake whose only authority is the Keychain seam: Retry repeats the load, Repair runs `repairInvalid`.
+final class KeychainHandoffOwner: DurableStoreRecovering, @unchecked Sendable {
+    let identity: InstallationIdentityStub
+    init(identity: InstallationIdentityStub) { self.identity = identity }
+    func observe() async -> RecoveryObservation {
+        switch await identity.load() {
+        case .error: return .unavailable(UnavailableToken(store: .handoff, state: "installation_authority_unavailable", errorCode: "KEYCHAIN_LOAD_FAILED"))
+        case .invalid: return .unavailable(UnavailableToken(store: .handoff, state: "installation_authority_invalid", errorCode: "KEYCHAIN_VALUE_INVALID"))
+        case .absent, .present: return .observed(.files(store: .handoff, baseState: "ready", target: .absent, quarantine: .absent, availableActions: []))
+        }
+    }
+    func classify(_ observation: RecoveryObservation) -> RecoveryClassification {
+        switch observation {
+        case let .unavailable(token) where token.state == "installation_authority_invalid": return .blocked(.installationAuthorityInvalid)
+        case let .unavailable(token): return .blocked(.installationAuthorityUnavailable(errorCode: KeychainUnavailableCode.allCases.first { $0.rawValue == token.errorCode }!))
+        case .observed: return .ready
+        }
+    }
+    func perform(_ action: RecoveryAction, expecting expectation: RecoveryExpectation) async -> RecoveryResult {
+        guard action.attemptKey(expecting: expectation) != nil else { return .unavailable(store: .handoff) }
+        if case .repairInstallationIdentity = action { _ = await identity.repairInvalid(UUID().uuidString.lowercased()) }
+        switch classify(await observe()) {
+        case .ready: return .ready
+        case let .blocked(snapshot): return .blocked(snapshot)
+        }
+    }
+}
+
+/// Inspection-only reset remote: scripted `inspectReset` outcomes, everything else refused.
+final class InspectionRemote: ResetRemoteProviding, @unchecked Sendable {
+    enum Script { case committed(ResetReceiptV1), absent, pending, transport }
+    private let lock = NSLock()
+    private var scripts: [Script] = []
+    private var recorded: [String] = []
+    var calls: [String] { lock.withLock { recorded } }
+    func script(_ next: Script) { lock.withLock { scripts.append(next) } }
+    func reset(_ action: ResetRemoteAction, alias: String, expectedTaskGenerationEpoch: Int) async throws -> ResetReceiptV1 { throw ResetRemoteError.protocolAmbiguity }
+    func reconcileLegacyReset(legacyOperationId: String, migrationAlias: String) async throws -> LegacyResetReconciliationV1 { throw ResetRemoteError.protocolAmbiguity }
+    func inspectReset(uid: String, canonicalOperationId: String, expectedTaskGenerationEpoch: Int) async throws -> ResetInspectionV1 {
+        let next: Script? = lock.withLock { recorded.append("\(uid)|\(canonicalOperationId)|\(expectedTaskGenerationEpoch)"); return scripts.isEmpty ? nil : scripts.removeFirst() }
+        let fingerprint = "reset1_" + String(repeating: "f", count: 64)
+        let identity = ResetOperationRegistry.identityDigest(uid: uid, expectedTaskGenerationEpoch: expectedTaskGenerationEpoch)
+        switch next {
+        case let .committed(receipt)?: return ResetInspectionV1(accountUid: uid, operationId: canonicalOperationId, requestFingerprint: fingerprint, identityDigest: identity, outcome: .committed, receipt: receipt)
+        case .absent?: return ResetInspectionV1(accountUid: uid, operationId: canonicalOperationId, requestFingerprint: fingerprint, identityDigest: identity, outcome: .absent, receipt: nil)
+        case .pending?: return ResetInspectionV1(accountUid: uid, operationId: canonicalOperationId, requestFingerprint: fingerprint, identityDigest: identity, outcome: .pending, receipt: nil)
+        case .transport?, nil: throw ResetRemoteError.transport
+        }
+    }
+}
+
+enum ResetFixtures {
+    static let operationId = "rso1_" + String(repeating: "a", count: 40)
+    static func finalReceipt(uid: String, epoch: Int, operationId: String = operationId) -> ResetReceiptV1 {
+        ResetReceiptV1(kind: .final, operationId: operationId, replayed: true, accountUid: uid, expectedTaskGenerationEpoch: epoch, taskGenerationEpoch: epoch + 1,
+                       activeMoveEventId: "me1_" + String(repeating: "b", count: 40), deletedCount: 0,
+                       deletedCounts: ResetDeletedCountsV1(tasks: 0, notificationIntents: 0, taskDeadlineEvidence: 0, confirmationSnapshots: 0), state: .finalized)
+    }
+    static func row(uid: String, epoch: Int, createdAt: String = "2026-09-06T12:00:00.000Z", phase: String = "prepared", finalReceipt: ResetReceiptV1? = nil, suggested: String = "rsa1_11111111-1111-4111-8111-111111111111") -> [String: Any] {
+        var map: [String: Any] = ["uid": uid, "suggestedOperationId": suggested, "expectedTaskGenerationEpoch": epoch, "phase": phase, "createdAt": createdAt, "updatedAt": createdAt]
+        if let finalReceipt { map["canonicalOperationId"] = finalReceipt.operationId; map["finalReceipt"] = finalReceipt.map() }
+        return map
+    }
+    static func envelope(records: [[String: Any]], migrations: [[String: Any]] = [], gesture: [String: Any]? = nil, receipt: [String: Any]? = nil) -> Data {
+        var payload: [String: Any] = ["records": records, "legacyMigrations": migrations]
+        if let gesture { payload["gesture"] = gesture }
+        return DurableEnvelopeCodec.encode(fileKind: .taskPlanResetV2, generationId: UUID().uuidString.lowercased(), payload: payload, recoveryReceipt: receipt)!
+    }
+    static func registry(_ directory: URL, auth: SignedAuthAuthority, remote: (any ResetRemoteProviding)? = nil) async -> (ResetOperationRegistry, SignedAuthStub) {
+        let stub = SignedAuthStub(auth)
+        let registry = ResetOperationRegistry(directory: directory, clock: ResetClockStub(), auth: stub, epochAuthority: EpochStub(epoch: 1))
+        if let remote { await registry.attachRecovery(ResetRecoveryBundle(remote: remote, cleanup: ResetCleanupCallbacks(deleteAssessments: { _ in }, deleteUserKnowledge: { _ in }, resetDose: { _ in }))) }
+        return (registry, stub)
+    }
+    static func target(_ directory: URL) -> URL { directory.appendingPathComponent(ResetOperationRegistry.fileName) }
+    static func quarantine(_ directory: URL) -> URL { directory.appendingPathComponent(ResetOperationRegistry.quarantineFileName) }
+}
+
+/// A `UserDefaults` whose quarantine-array reads can be made to fail: proves the dose copy is verified before the v2 key goes.
+final class VerificationFailingDefaults: UserDefaults, @unchecked Sendable {
+    var failQuarantineReads = false
+    override func array(forKey defaultName: String) -> [Any]? {
+        if failQuarantineReads, defaultName.hasSuffix(".dailyDose.v2.quarantine") { return nil }
+        return super.array(forKey: defaultName)
+    }
 }
 
 /// Synchronous UID snapshot double for `CurrentFirebaseUIDProviding`.

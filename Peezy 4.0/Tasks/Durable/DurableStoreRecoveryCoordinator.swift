@@ -1021,3 +1021,241 @@ extension CompletionResultV1 {
         return providers
     }
 }
+
+// MARK: - Durable-file observation shared by the store owners (C9.7.12 `FileObservationV1`; C9.7.5 enumerability)
+
+/// A file read through one no-follow descriptor bounded by `cap + 1`: absent, over-cap (identity digest only), or the
+/// complete bytes classified by the caller's strict decoder.
+enum DurableFileObserver {
+    struct Read: Sendable {
+        let observation: FileObservationV1
+        /// Complete bytes for a within-cap file; nil when absent or over-cap.
+        let bytes: Data?
+        /// The identity the unlink precondition compares (over-cap files by descriptor identity).
+        let identity: PrivacyDurableFile.Observation?
+    }
+
+    static func read(at url: URL, cap: Int, isValid: (Data) -> (generationId: String, envelopeSHA256: String)?) throws -> Read {
+        guard let observed = try PrivacyDurableFile.observe(at: url, limit: cap) else { return Read(observation: .absent, bytes: nil, identity: nil) }
+        if observed.bytes.count > cap {
+            return Read(observation: .overCap(byteLength: Int(observed.size), fileIdentityDigest: observed.fileIdentityDigest), bytes: nil, identity: observed)
+        }
+        let sha = TaskCanonicalV1.sha256Hex(data: observed.bytes)
+        if let valid = isValid(observed.bytes) {
+            return Read(observation: .valid(byteLength: observed.bytes.count, bytesSHA256: sha, generationId: valid.generationId, envelopeSHA256: valid.envelopeSHA256), bytes: observed.bytes, identity: observed)
+        }
+        return Read(observation: .malformed(byteLength: observed.bytes.count, bytesSHA256: sha), bytes: observed.bytes, identity: observed)
+    }
+
+    /// The unlink precondition (C9.7.12): within-cap bytes reread and hashed; over-cap by a new no-follow descriptor's identity.
+    static func matches(_ observation: FileObservationV1, at url: URL, cap: Int) -> Bool {
+        guard let current = try? PrivacyDurableFile.observe(at: url, limit: cap) else { return false }
+        switch observation {
+        case .absent:
+            return false
+        case let .valid(_, sha, _, _), let .malformed(_, sha):
+            return current.bytes.count <= cap && TaskCanonicalV1.sha256Hex(data: current.bytes) == sha
+        case let .overCap(_, identity):
+            return current.bytes.count > cap && current.fileIdentityDigest == identity
+        }
+    }
+}
+
+/// Enumerability (C9.7.5): bounded bytes parse as exactly one JSON object under a duplicate-member-rejecting parser.
+enum JSONObjectScanner {
+    /// The parsed top-level object, or nil for non-JSON bytes, a non-object root, or a duplicate member on any path.
+    static func object(_ data: Data) -> [String: Any]? {
+        guard hasNoDuplicateKeys(data), let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        return object
+    }
+
+    /// A structural scan that tracks the member names of every object on every path.
+    static func hasNoDuplicateKeys(_ data: Data) -> Bool {
+        let bytes = [UInt8](data)
+        var index = 0
+        var stack: [Set<String>?] = []   // nil = array frame
+        var expectingKey = false
+        func skipWhitespace() { while index < bytes.count, [0x20, 0x09, 0x0A, 0x0D].contains(bytes[index]) { index += 1 } }
+        func readString() -> String? {
+            guard index < bytes.count, bytes[index] == 0x22 else { return nil }
+            index += 1
+            var raw: [UInt8] = []
+            while index < bytes.count {
+                let byte = bytes[index]
+                if byte == 0x5C { // backslash: keep the escape verbatim (names compare on their escaped form)
+                    raw.append(byte)
+                    index += 1
+                    if index < bytes.count { raw.append(bytes[index]); index += 1 }
+                    continue
+                }
+                if byte == 0x22 { index += 1; return String(decoding: raw, as: UTF8.self) }
+                raw.append(byte)
+                index += 1
+            }
+            return nil
+        }
+        skipWhitespace()
+        guard index < bytes.count, bytes[index] == 0x7B else { return false }
+        while index < bytes.count {
+            skipWhitespace()
+            guard index < bytes.count else { break }
+            let byte = bytes[index]
+            switch byte {
+            case 0x7B: stack.append(Set<String>()); expectingKey = true; index += 1
+            case 0x5B: stack.append(nil); expectingKey = false; index += 1
+            case 0x7D, 0x5D: guard !stack.isEmpty else { return false }; stack.removeLast(); expectingKey = false; index += 1
+            case 0x2C: expectingKey = stack.last.map { $0 != nil } ?? false; index += 1
+            case 0x3A: index += 1
+            case 0x22:
+                guard let text = readString() else { return false }
+                if expectingKey, let frame = stack.last, var names = frame {
+                    if names.contains(text) { return false }
+                    names.insert(text)
+                    stack[stack.count - 1] = names
+                    expectingKey = false
+                }
+            default: index += 1
+            }
+        }
+        return stack.isEmpty
+    }
+}
+
+// MARK: - The store-recovery driver (S4-CD5): every store only through `DurableStoreRecovering`
+
+/// The four durable-store owners in the frozen order route, handoff, reset, workflow (S5/S7 conformers, S4's reset).
+struct DurableStoreOwners: Sendable {
+    let route: any DurableStoreRecovering
+    let handoff: any DurableStoreRecovering
+    let reset: any DurableStoreRecovering
+    let workflow: any DurableStoreRecovering
+
+    func owner(of store: DurableStore) -> any DurableStoreRecovering {
+        switch store {
+        case .route: return route
+        case .handoff: return handoff
+        case .reset: return reset
+        case .workflow: return workflow
+        }
+    }
+}
+
+/// Classifies every store through the protocol (never opening, replacing, or unlinking an owner's file), publishes the
+/// readiness vector, and routes each action to its owner; the dose store is classified for the current signed UID
+/// through `DailyDoseLocalStore` and blocks only the reset's dose cleanup (C9.7.13).
+actor DurableStoreRecoveryDriver {
+    typealias Publish = @Sendable (DurableStore, StoreReadiness) async -> Void
+
+    private let owners: DurableStoreOwners
+    private let dose: DailyDoseLocalStore
+    private let currentUID: any CurrentFirebaseUIDProviding
+    private let publish: Publish
+    private(set) var classifications: [RecoveryStore: RecoveryClassification] = [:]
+    private(set) var trace: [String] = []
+
+    init(owners: DurableStoreOwners, dose: DailyDoseLocalStore, currentUID: any CurrentFirebaseUIDProviding, publish: @escaping Publish) {
+        self.owners = owners
+        self.dose = dose
+        self.currentUID = currentUID
+        self.publish = publish
+    }
+
+    /// Frozen order route, handoff, reset, workflow, then the dose store; each result is published as it settles.
+    func classifyAll() async -> [RecoveryStore: RecoveryClassification] {
+        for store in DurableStore.allCases { _ = await classify(store) }
+        _ = await classifyDose()
+        return classifications
+    }
+
+    func classify(_ store: DurableStore) async -> RecoveryClassification {
+        let owner = owners.owner(of: store)
+        let observation = await owner.observe()
+        let classification = owner.classify(observation)
+        classifications[RecoveryStore(store)] = classification
+        trace.append("classify:\(store.rawValue):\(Self.label(classification))")
+        switch classification {
+        case .ready: await publish(store, .ready)
+        case let .blocked(snapshot): await publish(store, .blocked(snapshot))
+        }
+        return classification
+    }
+
+    func classifyDose() async -> RecoveryClassification {
+        let classification: RecoveryClassification
+        if let uid = currentUID.currentFirebaseUID(), let observed = await dose.observeMalformed(uid: uid), case let .dose(sha, length, _) = observed {
+            classification = .blocked(.doseMalformed(recoveryStateDigest: observed.recoveryStateDigest, bytesSHA256: sha, byteLength: length))
+        } else {
+            classification = .ready
+        }
+        classifications[.dose] = classification
+        trace.append("classify:dose:\(Self.label(classification))")
+        return classification
+    }
+
+    /// Routes the action to the owning store (the dose store to `DailyDoseLocalStore`), then reclassifies that store.
+    func perform(store: RecoveryStore, action: RecoveryAction, expecting expectation: RecoveryExpectation) async -> RecoveryResult {
+        trace.append("perform:\(store.rawValue):\(action.name)")
+        if store == .dose {
+            guard action == .quarantineDoseBytes, case let .digest(digest) = expectation, let uid = currentUID.currentFirebaseUID() else { return .unavailable(store: .dose) }
+            let result = await dose.performQuarantine(uid: uid, expecting: digest)
+            _ = await classifyDose()
+            return result
+        }
+        guard let durable = store.durable else { return .unavailable(store: store) }
+        let result = await owners.owner(of: durable).perform(action, expecting: expectation)
+        _ = await classify(durable)
+        return result
+    }
+
+    private static func label(_ classification: RecoveryClassification) -> String {
+        switch classification {
+        case .ready: return "ready"
+        case let .blocked(snapshot): return snapshot.state
+        }
+    }
+}
+
+// MARK: - Foreign resolution choice collection (C9.7.11; purely local until the single `resolve` call)
+
+enum ForeignResolutionChoices {
+    /// Display labels in displayed order; duplicate labels get a deterministic 1-based ordinal appended for display only
+    /// (the group's label bytes and digests are unchanged).
+    static func displayLabels(_ groups: [ForeignDecisionGroup]) -> [String] {
+        var counts: [String: Int] = [:]
+        for group in groups { counts[group.actionLabel, default: 0] += 1 }
+        var ordinals: [String: Int] = [:]
+        return groups.map { group in
+            guard counts[group.actionLabel, default: 0] > 1 else { return group.actionLabel }
+            ordinals[group.actionLabel, default: 0] += 1
+            return "\(group.actionLabel) (\(ordinals[group.actionLabel] ?? 1))"
+        }
+    }
+
+    /// The exact full ordered `choices` array for `resolve`: one `continue|restart` per displayed group in displayed order;
+    /// nil when any group lacks a choice or a selection names an unknown group or value.
+    static func choices(groups: [ForeignDecisionGroup], selections: [String: String]) -> [[String: String]]? {
+        let known = Set(groups.map(\.decisionDigest))
+        guard Set(selections.keys).isSubset(of: known) else { return nil }
+        var choices: [[String: String]] = []
+        for group in groups {
+            guard let choice = selections[group.decisionDigest], choice == "continue" || choice == "restart" else { return nil }
+            choices.append(["decisionDigest": group.decisionDigest, "choice": choice])
+        }
+        return choices
+    }
+
+    /// Each choice as its canonical element string (`{"choice":...,"decisionDigest":...}`), the form `RecoveryAction.resolve` carries.
+    static func elements(_ choices: [[String: String]]) -> [String] {
+        choices.map { String(decoding: TaskCanonicalV1.data($0) ?? Data(), as: UTF8.self) }
+    }
+
+    /// `choicesSHA256 = SHA-256(TaskCanonicalV1(choices))`: the canonical JSON array of the canonical elements.
+    static func choicesSHA256(elements: [String]) -> String {
+        TaskCanonicalV1.sha256Hex(data: Data(("[" + elements.joined(separator: ",") + "]").utf8))
+    }
+
+    /// `resolutionDigest = SHA-256(TaskCanonicalV1({recovery_state_digest, decision_groups}))`.
+    static func resolutionDigest(recoveryStateDigest: String, groups: [ForeignDecisionGroup]) -> String {
+        TaskCanonicalV1.sha256Hex(["recovery_state_digest": recoveryStateDigest, "decision_groups": groups.map { ["decisionDigest": $0.decisionDigest, "actionLabel": $0.actionLabel] }])
+    }
+}

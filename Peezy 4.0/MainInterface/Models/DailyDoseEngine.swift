@@ -266,6 +266,8 @@ actor DailyDoseLocalStore {
     static let shared = DailyDoseLocalStore(defaults: .standard)
 
     private let defaults: UserDefaults
+    /// S4 (S4-CD1): the dose store's single `(RecoveryAttemptKey,Task)` slot (C9.7.12).
+    private var doseRecoverySlot: (key: String, task: Task<RecoveryResult, Never>)?
 
     init(defaults: UserDefaults) {
         self.defaults = defaults
@@ -432,5 +434,64 @@ extension DailyDoseEngine {
         case let .drift(current):
             throw ResetCleanupError.localDoseDrift(currentEpoch: current.taskGenerationEpoch)
         }
+    }
+}
+
+// MARK: - S4 (S4-CD1): malformed-store observation and the non-destructive quarantine (C9.7.2, C9.7.4, C9.7.12)
+
+extension DailyDoseLocalStore {
+    /// The eleventh C6.6 key: an array of `Data` blobs, written only by `quarantine_dose_bytes`, never decoded or surfaced.
+    static func quarantineKey(uid: String) -> String { "peezy.\(uid).dailyDose.v2.quarantine" }
+
+    enum QuarantineResult: Equatable, Sendable { case quarantined, drifted, ioFailed }
+
+    /// The dose `RecoveryObservedStateV1` iff `load(uid:) == .malformed` (bytes reread and hashed, the quarantine array counted
+    /// in one call); nil otherwise. The only observation API for the key.
+    func observeMalformed(uid: String) -> RecoveryObservedStateV1? {
+        guard let data = defaults.data(forKey: Self.key(uid: uid)), DailyDoseLocalStateV1.decode(data) == nil else { return nil }
+        let count = (defaults.array(forKey: Self.quarantineKey(uid: uid)) ?? []).count
+        return .dose(bytesSHA256: TaskCanonicalV1.sha256Hex(data: data), byteLength: data.count, quarantineCount: count)
+    }
+
+    /// The exact six-step sequence of C9.7.4: copy aside, synchronize, verify, only then remove the v2 key, synchronize, verify.
+    /// The three legacy keys are never read, written, or removed.
+    func quarantineMalformed(uid: String, expectedBytesSHA256: String) -> QuarantineResult {
+        let key = Self.key(uid: uid)
+        let quarantineKey = Self.quarantineKey(uid: uid)
+        guard let data = defaults.data(forKey: key), DailyDoseLocalStateV1.decode(data) == nil,
+              TaskCanonicalV1.sha256Hex(data: data) == expectedBytesSHA256 else { return .drifted }
+        var blobs = defaults.array(forKey: quarantineKey) ?? []
+        blobs.append(data)
+        defaults.set(blobs, forKey: quarantineKey)                                    // (1) append, never replace
+        guard defaults.synchronize() else { return .ioFailed }                         // (2)
+        guard let reread = defaults.array(forKey: quarantineKey), let last = reread.last as? Data, last == data else { return .ioFailed } // (3)
+        defaults.removeObject(forKey: key)                                             // (4)
+        guard defaults.synchronize() else { return .ioFailed }                         // (5)
+        guard defaults.data(forKey: key) == nil else { return .ioFailed }              // (6)
+        return .quarantined
+    }
+
+    /// The `quarantine_dose_bytes` action under the dose slot: the displayed digest is CASed before the call and the store is
+    /// reclassified after it; an identical key coalesces, a different key is `RECOVERY_BUSY` for the dose store.
+    func performQuarantine(uid: String, expecting recoveryStateDigest: String) async -> RecoveryResult {
+        let keyString = String(decoding: TaskCanonicalV1.data(RecoveryAttemptKey.doseQuarantine(recoveryStateDigest: recoveryStateDigest).canonical) ?? Data(), as: UTF8.self)
+        if let slot = doseRecoverySlot { return slot.key == keyString ? await slot.task.value : .busy(store: .dose) }
+        let task = Task { await self.runQuarantine(uid: uid, expecting: recoveryStateDigest) }
+        doseRecoverySlot = (keyString, task)
+        defer { doseRecoverySlot = nil }
+        return await task.value
+    }
+
+    private func runQuarantine(uid: String, expecting recoveryStateDigest: String) -> RecoveryResult {
+        guard let observed = observeMalformed(uid: uid) else { return .ready }
+        guard observed.recoveryStateDigest == recoveryStateDigest, case let .dose(sha, _, _) = observed else { return classification(uid: uid) }
+        _ = quarantineMalformed(uid: uid, expectedBytesSHA256: sha)
+        return classification(uid: uid)
+    }
+
+    /// `ready`, or the fresh `dose/malformed` snapshot.
+    func classification(uid: String) -> RecoveryResult {
+        guard let observed = observeMalformed(uid: uid), case let .dose(sha, length, _) = observed else { return .ready }
+        return .blocked(.doseMalformed(recoveryStateDigest: observed.recoveryStateDigest, bytesSHA256: sha, byteLength: length))
     }
 }

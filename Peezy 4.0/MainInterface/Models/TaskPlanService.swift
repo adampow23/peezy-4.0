@@ -667,6 +667,10 @@ actor ResetOperationRegistry {
     /// The store owner's single `(RecoveryAttemptKey, Task)` slot: an identical key
     /// coalesces onto the task; a different key is `busy` before any callback, call, or write.
     fileprivate var recoverySlot: (key: String, task: Task<RecoveryResult, Never>)?
+    /// S4 (C9.7.8): process-local `validatedReceiptProvenance`, keyed by the RESET identity digest; an entry exists only when this
+    /// actor validated the exact response and durably committed the envelope; cleared on load and on any signed-auth change.
+    fileprivate var validatedReceiptProvenance: [String: String] = [:]
+    fileprivate var provenanceAuth: SignedAuthTuple?
     /// C9.5.8/C9.5.12 `inflightResetOperation`: one drive per handle; installed before the first suspension, cleared in
     /// `defer`; joiners with the same UID/auth epoch and a revision at or above the baseline receive the outcome only.
     fileprivate var inflightResetOperation: [ResetOperationHandle: (uid: String, authEpochUUID: String, credentialBaseline: Int, task: Task<ResetDriveOutcome, Error>)] = [:]
@@ -678,7 +682,7 @@ actor ResetOperationRegistry {
         self.epochAuthority = epochAuthority
     }
 
-    private struct Envelope {
+    fileprivate struct Envelope {
         var generationId: String
         var sha256: String
         var records: [ResetOperationRegistryRecordV2]
@@ -905,18 +909,87 @@ actor ResetOperationRegistry {
         sorted(rows).map { ResetEpochOccupant(expectedTaskGenerationEpoch: $0.expectedTaskGenerationEpoch, phase: $0.phase, recoveryAction: $0.recoveryAction) }
     }
 
+    /// S4 (C9.7.12): the conflict digest is the `RecoveryObservedStateV1` digest over the observed target, so the
+    /// protocol path and `recoverEpoch` CAS the same value.
     private func conflictSnapshot(_ rows: [ResetOperationRegistryRecordV2], tuple: SignedAuthTuple, envelope: Envelope) -> BlockedSnapshot {
         let occupants = Self.epochOccupants(rows)
         let actionable = occupants.map(\.expectedTaskGenerationEpoch).min() ?? 0
-        let digest = TaskCanonicalV1.sha256Hex([
-            "schemaVersion": 1, "store": "reset", "baseState": "reset_epoch_conflict",
-            "uid": tuple.uid, "authEpochUUID": tuple.authEpochUUID, "credentialRevision": tuple.credentialRevision,
-            "envelopeGeneration": envelope.generationId, "envelopeSHA256": envelope.sha256,
-            "actionableExpectedTaskGenerationEpoch": actionable,
-            "occupants": occupants.map { ["expectedTaskGenerationEpoch": $0.expectedTaskGenerationEpoch, "phase": $0.phase.rawValue, "recoveryAction": $0.recoveryAction.rawValue] }
-        ])
-        return .resetEpochConflict(recoveryStateDigest: digest, actionableExpectedTaskGenerationEpoch: actionable, occupants: occupants)
+        let target = (try? targetRead())?.observation ?? .absent
+        let quarantine = (try? quarantineRead())?.observation ?? .absent
+        let observed = RecoveryObservedStateV1.files(store: .reset, baseState: "reset_epoch_conflict", target: target, quarantine: quarantine, availableActions: ["recover_epoch"], auth: tuple, epochOccupants: occupants)
+        return .resetEpochConflict(recoveryStateDigest: observed.recoveryStateDigest, actionableExpectedTaskGenerationEpoch: actionable, occupants: occupants)
     }
+
+    // MARK: S4 file observation (S4-CD2: the `DurableStoreRecovering` conformance over the existing slot)
+
+    static let quarantineFileName = "PeezyTaskPlanReset-v2.quarantine-v1.json"
+    fileprivate var quarantineURL: URL { directory.appendingPathComponent(Self.quarantineFileName) }
+
+    fileprivate func targetRead() throws -> DurableFileObserver.Read {
+        try DurableFileObserver.read(at: fileURL, cap: DurableFileKind.taskPlanResetV2.storeCap) { bytes in
+            guard let decoded = DurableEnvelopeCodec.decode(bytes, fileKind: .taskPlanResetV2), Self.parse(decoded) != nil else { return nil }
+            return (decoded.generationId, decoded.sha256)
+        }
+    }
+
+    fileprivate func quarantineRead() throws -> DurableFileObserver.Read {
+        try DurableFileObserver.read(at: quarantineURL, cap: DurableFileKind.taskPlanResetV2.storeCap) { bytes in
+            guard let decoded = DurableEnvelopeCodec.decode(bytes, fileKind: .taskPlanResetV2), Self.parse(decoded) != nil else { return nil }
+            return (decoded.generationId, decoded.sha256)
+        }
+    }
+
+    /// The registry's own strict payload rule (the same one `read()` applies), over an already-decoded envelope.
+    fileprivate static func parse(_ decoded: DecodedDurableEnvelope) -> Envelope? {
+        let payload = decoded.payload
+        let keys = Set(payload.keys)
+        guard keys.isSubset(of: ["records", "legacyMigrations", "gesture"]), keys.isSuperset(of: ["records", "legacyMigrations"]),
+              let rawRecords = payload["records"] as? [[String: Any]], rawRecords.count <= capacity,
+              let rawMigrations = payload["legacyMigrations"] as? [[String: Any]], rawMigrations.count <= capacity else { return nil }
+        let records = rawRecords.compactMap(ResetOperationRegistryRecordV2.from)
+        guard records.count == rawRecords.count,
+              Set(records.map { "\($0.uid)|\($0.expectedTaskGenerationEpoch)" }).count == records.count,
+              Set(records.map(\.handleId)).count == records.count,
+              records == sorted(records) else { return nil }
+        var gesture: ResetGestureV1?
+        if let rawGesture = payload["gesture"] {
+            guard let map = rawGesture as? [String: Any], let parsed = ResetGestureV1.from(map) else { return nil }
+            gesture = parsed
+        }
+        return Envelope(generationId: decoded.generationId, sha256: decoded.sha256, records: records, migrations: rawMigrations, gesture: gesture)
+    }
+
+    fileprivate func writeRecovered(_ envelope: Envelope, receipt: [String: Any]?) throws -> String {
+        let generation = UUID().uuidString.lowercased()
+        var payload: [String: Any] = ["records": envelope.records.map { $0.map() }, "legacyMigrations": envelope.migrations]
+        if let gesture = envelope.gesture { payload["gesture"] = gesture.map() }
+        guard let bytes = DurableEnvelopeCodec.encode(fileKind: .taskPlanResetV2, generationId: generation, payload: payload, recoveryReceipt: receipt) else {
+            throw RegistryError.envelopeCorrupt
+        }
+        do { try DurableFileReplacement.replace(at: fileURL, bytes: bytes) } catch let failure as DurableFileReplacement.Failure { throw RegistryError.storageIO(failure.code) }
+        return generation
+    }
+
+    fileprivate func targetReceipt() -> (quarantineSHA256: String, recoveredCount: Int, droppedCount: Int)? {
+        guard let bytes = FileManager.default.contents(atPath: fileURL.path), let decoded = DurableEnvelopeCodec.decode(bytes, fileKind: .taskPlanResetV2),
+              let receipt = decoded.recoveryReceipt, let sha = receipt["quarantineSHA256"] as? String,
+              let recovered = TaskGenerationEpochStamp.safeInteger(receipt["recoveredCount"]), let dropped = TaskGenerationEpochStamp.safeInteger(receipt["droppedCount"]) else { return nil }
+        return (sha, recovered, dropped)
+    }
+
+    fileprivate func liveEnvelope() -> Envelope? { try? read() }
+
+    fileprivate func currentProvenanceAuth(_ tuple: SignedAuthTuple?) {
+        if provenanceAuth != tuple { validatedReceiptProvenance = [:]; provenanceAuth = tuple }
+    }
+
+    fileprivate func installProvenance(identityDigest: String, receiptSHA256: String) { validatedReceiptProvenance[identityDigest] = receiptSHA256 }
+    fileprivate func provenance(for identityDigest: String) -> String? { validatedReceiptProvenance[identityDigest] }
+    fileprivate var slot: (key: String, task: Task<RecoveryResult, Never>)? {
+        get { recoverySlot }
+        set { recoverySlot = newValue }
+    }
+    fileprivate var bundleRemote: (any ResetRemoteProviding)? { recoveryBundle?.remote }
 }
 
 // MARK: - Production conformers (S1 transitional auth; D15 epoch point path)
@@ -1704,4 +1777,260 @@ extension ResetOperationRegistry: ResetEpochConflictRecovering {
 
     /// Owner wiring (S7): the bundle every recovery action drives with.
     func attachRecovery(_ bundle: ResetRecoveryBundle) { recoveryBundle = bundle }
+}
+
+// MARK: - S4: `DurableStoreRecovering` conformance of the reset store (S4-CD2/S4-CD5; C9.7.2–C9.7.6, C9.7.8, C9.7.12)
+
+extension ResetOperationRegistry: DurableStoreRecovering {
+    fileprivate struct QuarantineCandidates {
+        let records: [ResetOperationRegistryRecordV2]
+        let migrations: [[String: Any]]
+        let gesture: ResetGestureV1?
+        /// records + legacy-migration elements + 1 when a gesture is present (C9.7.6 counted universe).
+        let rawCount: Int
+        /// Every candidate complete, identity-unique, within caps (C9.7.6 unresolved is any failure).
+        let allValid: Bool
+    }
+
+    private static var cap: Int { DurableFileKind.taskPlanResetV2.storeCap }
+
+    /// Enumerability (C9.7.5) and the counted universe (C9.7.6) of quarantine bytes, with candidate validity.
+    fileprivate static func enumerate(_ bytes: Data) -> (enumerable: Bool, candidates: QuarantineCandidates?) {
+        guard let object = JSONObjectScanner.object(bytes), let payload = object["payload"] as? [String: Any],
+              let rawRecords = payload["records"] as? [Any], let rawMigrations = payload["legacyMigrations"] as? [Any] else { return (false, nil) }
+        let gesturePresent = payload["gesture"] != nil
+        if gesturePresent, !(payload["gesture"] is [String: Any]) { return (false, nil) }
+        let records = rawRecords.compactMap { ($0 as? [String: Any]).flatMap(ResetOperationRegistryRecordV2.from) }
+        let migrations = rawMigrations.compactMap { $0 as? [String: Any] }
+        var gesture: ResetGestureV1?
+        var gestureValid = true
+        if gesturePresent { gesture = (payload["gesture"] as? [String: Any]).flatMap(ResetGestureV1.from); gestureValid = gesture != nil }
+        let uniqueRows = Set(records.map { "\($0.uid)|\($0.expectedTaskGenerationEpoch)" }).count == records.count
+        let migrationUIDs = migrations.compactMap { $0["uid"] as? String }
+        let uniqueMigrations = migrationUIDs.count == migrations.count && Set(migrationUIDs).count == migrations.count
+        let allValid = records.count == rawRecords.count && migrations.count == rawMigrations.count && gestureValid && uniqueRows && uniqueMigrations
+            && records.count <= capacity && migrations.count <= capacity
+        let rawCount = rawRecords.count + rawMigrations.count + (gesturePresent ? 1 : 0)
+        return (true, QuarantineCandidates(records: records, migrations: migrations, gesture: gesture, rawCount: rawCount, allValid: allValid))
+    }
+
+    func observe() async -> RecoveryObservation {
+        var tuple: SignedAuthTuple?
+        if case let .signedIn(signed) = await auth.currentSignedAuth() { tuple = signed }
+        currentProvenanceAuth(tuple)
+        return observeFiles(tuple: tuple)
+    }
+
+    /// The C9.7.3 order over the reset store's two files.
+    private func observeFiles(tuple: SignedAuthTuple?) -> RecoveryObservation {
+        func unavailable(_ code: StorageIOErrorCode) -> RecoveryObservation { .unavailable(UnavailableToken(store: .reset, state: "storage_io_unavailable", errorCode: code.rawValue)) }
+        var target: DurableFileObserver.Read
+        var quarantine: DurableFileObserver.Read
+        do { target = try targetRead(); quarantine = try quarantineRead() } catch let failure as PrivacyDurableFile.Failure { return unavailable(failure.code) } catch { return unavailable(.fileReadFailed) }
+        // a malformed (or over-cap) target beside no quarantine is renamed to the fixed sibling at once, directory fsync
+        if case .absent = quarantine.observation, target.bytes != nil || target.identity != nil, !Self.isValid(target.observation) {
+            do { try PrivacyDurableFile.rename(fileURL, to: quarantineURL) } catch let failure as PrivacyDurableFile.Failure { return unavailable(failure.code) } catch { return unavailable(.fileRenameFailed) }
+            do { target = try targetRead(); quarantine = try quarantineRead() } catch let failure as PrivacyDurableFile.Failure { return unavailable(failure.code) } catch { return unavailable(.fileReadFailed) }
+        }
+        let targetValid = Self.isValid(target.observation)
+        let quarantinePresent: Bool = { if case .absent = quarantine.observation { return false }; return true }()
+        var enumerable = false
+        var candidates: QuarantineCandidates?
+        if let bytes = quarantine.bytes { (enumerable, candidates) = Self.enumerate(bytes) }
+        let count = enumerable ? candidates?.rawCount : nil
+        let quarantineSHA: String? = {
+            switch quarantine.observation {
+            case let .valid(_, sha, _, _), let .malformed(_, sha): return sha
+            default: return nil
+            }
+        }()
+        func files(_ base: String, _ actions: [String], auth: SignedAuthTuple? = nil, mismatch: String? = nil, occupants: [ResetEpochOccupant]? = nil) -> RecoveryObservation {
+            .observed(.files(store: .reset, baseState: base, target: target.observation, quarantine: quarantine.observation, availableActions: actions,
+                             auth: auth, mismatchIdentityDigest: mismatch, quarantineEnumerable: enumerable, pendingRecordCount: count, epochOccupants: occupants))
+        }
+        // step 3: a valid target whose receipt names the quarantine's digest and counts
+        if targetValid, quarantinePresent, let receipt = targetReceipt(), let sha = quarantineSHA, receipt.quarantineSHA256 == sha, enumerable, let raw = count,
+           receipt.recoveredCount + receipt.droppedCount == raw {
+            return files("recovered_pending_cleanup", ["retry_cleanup"])
+        }
+        // step 5: structural
+        if quarantinePresent {
+            let recoverable = enumerable && (candidates?.allValid ?? false)
+            switch target.observation {
+            case .absent:
+                return files("quarantined", recoverable ? ["recover", "discard_quarantine"] : ["discard_quarantine"])
+            case .malformed, .overCap:
+                var targetEmpty = false
+                if let bytes = target.bytes { let parsed = Self.enumerate(bytes); if parsed.enumerable, parsed.candidates?.rawCount == 0 { targetEmpty = true } }
+                return files("collision", recoverable && targetEmpty ? ["recover", "discard_quarantine"] : ["discard_quarantine"])
+            case .valid:
+                var mergeable = recoverable
+                if mergeable, let live = liveEnvelope(), let cands = candidates {
+                    for row in cands.records {
+                        if let existing = live.records.first(where: { $0.uid == row.uid && $0.expectedTaskGenerationEpoch == row.expectedTaskGenerationEpoch }), existing != row { mergeable = false }
+                    }
+                    if let gesture = cands.gesture, let live = live.gesture, gesture != live { mergeable = false }
+                    if Self.merged(live, cands).records.count > Self.capacity || Self.merged(live, cands).migrations.count > Self.capacity { mergeable = false }
+                }
+                return files("quarantine_conflict", mergeable ? ["merge", "discard_quarantine"] : ["discard_quarantine"])
+            }
+        }
+        guard targetValid, let tuple, let live = liveEnvelope() else { return files("ready", []) }
+        // step 6: the first current-auth receipt-bearing row lacking or disagreeing with live provenance
+        for row in live.records where row.uid == tuple.uid && (row.progressReceipt != nil || row.finalReceipt != nil) {
+            let identity = Self.identityDigest(uid: row.uid, expectedTaskGenerationEpoch: row.expectedTaskGenerationEpoch)
+            if provenance(for: identity) != Self.receiptSHA256(row) { return files("receipt_mismatch", ["reconcile"], auth: tuple, mismatch: identity) }
+        }
+        // step 7: the current UID's epoch conflict
+        let mine = live.records.filter { $0.uid == tuple.uid }
+        if mine.count > 1 { return files("reset_epoch_conflict", ["recover_epoch"], auth: tuple, occupants: Self.epochOccupants(mine)) }
+        return files("ready", [])
+    }
+
+    private static func isValid(_ observation: FileObservationV1) -> Bool { if case .valid = observation { return true }; return false }
+
+    /// `{kind:"reset",uid,expectedTaskGenerationEpoch}` (C9.7.8 identity map).
+    static func identityDigest(uid: String, expectedTaskGenerationEpoch: Int) -> String {
+        TaskCanonicalV1.sha256Hex(["kind": "reset", "uid": uid, "expectedTaskGenerationEpoch": expectedTaskGenerationEpoch])
+    }
+
+    private static func receiptSHA256(_ row: ResetOperationRegistryRecordV2) -> String {
+        TaskCanonicalV1.sha256Hex(data: row.finalReceipt ?? row.progressReceipt ?? Data())
+    }
+
+    /// Live rows plus valid quarantine rows (same key byte-equal: no insertion; the live gesture is never replaced).
+    fileprivate static func merged(_ live: Envelope, _ candidates: QuarantineCandidates) -> (records: [ResetOperationRegistryRecordV2], migrations: [[String: Any]], gesture: ResetGestureV1?, recovered: Int) {
+        var records = live.records
+        var migrations = live.migrations
+        var gesture = live.gesture
+        var recovered = 0
+        for row in candidates.records {
+            if !records.contains(where: { $0.uid == row.uid && $0.expectedTaskGenerationEpoch == row.expectedTaskGenerationEpoch }) { records.append(row) }
+            recovered += 1
+        }
+        for migration in candidates.migrations {
+            if !migrations.contains(where: { ($0["uid"] as? String) == (migration["uid"] as? String) }) { migrations.append(migration) }
+            recovered += 1
+        }
+        if let candidate = candidates.gesture { if gesture == nil { gesture = candidate }; recovered += 1 }
+        return (sorted(records), migrations, gesture, recovered)
+    }
+
+    nonisolated func classify(_ observation: RecoveryObservation) -> RecoveryClassification {
+        switch observation {
+        case let .unavailable(token):
+            return .blocked(.storageIOUnavailable(store: .reset, errorCode: StorageIOErrorCode(rawValue: token.errorCode) ?? .fileReadFailed))
+        case let .observed(state):
+            guard case let .files(_, base, _, _, actions, _, _, _, mismatch, _, count, occupants) = state else { return .ready }
+            let digest = state.recoveryStateDigest
+            // S1's snapshot derives its action list from `quarantineEnumerable`; the precedence fallback (enumerable but
+            // unrecoverable) therefore reports `false` and no count so the displayed actions stay exact.
+            let recoverable = actions.contains("recover") || actions.contains("merge")
+            switch base {
+            case "quarantined": return .blocked(.quarantined(store: .reset, recoveryStateDigest: digest, quarantineEnumerable: recoverable, pendingRecordCount: recoverable ? count : nil))
+            case "collision": return .blocked(.collision(store: .reset, recoveryStateDigest: digest, quarantineEnumerable: recoverable, pendingRecordCount: recoverable ? count : nil))
+            case "recovered_pending_cleanup": return .blocked(.recoveredPendingCleanup(store: .reset, recoveryStateDigest: digest))
+            case "quarantine_conflict": return .blocked(.quarantineConflict(store: .reset, recoveryStateDigest: digest, quarantineEnumerable: recoverable, pendingRecordCount: recoverable ? count : nil))
+            case "receipt_mismatch": return .blocked(.receiptMismatch(store: .reset, recoveryStateDigest: digest, mismatchIdentityDigest: mismatch ?? ""))
+            case "reset_epoch_conflict":
+                let occupants = occupants ?? []
+                return .blocked(.resetEpochConflict(recoveryStateDigest: digest, actionableExpectedTaskGenerationEpoch: occupants.map(\.expectedTaskGenerationEpoch).min() ?? 0, occupants: occupants))
+            default: return .ready
+            }
+        }
+    }
+
+    func perform(_ action: RecoveryAction, expecting expectation: RecoveryExpectation) async -> RecoveryResult {
+        guard let key = action.attemptKey(expecting: expectation) else { return .unavailable(store: .reset) }
+        switch action {
+        case .recover, .discardQuarantine, .retryCleanup, .merge, .reconcile, .retry: break
+        default: return .unavailable(store: .reset)
+        }
+        let keyString = String(decoding: TaskCanonicalV1.data(key.canonical) ?? Data(), as: UTF8.self)
+        if let slot { return slot.key == keyString ? await slot.task.value : .busy(store: .reset) }
+        let task = Task { await self.performRecovery(action, key: key) }
+        slot = (keyString, task)
+        defer { slot = nil }
+        return await task.value
+    }
+
+    private static func result(_ classification: RecoveryClassification) -> RecoveryResult {
+        switch classification {
+        case .ready: return .ready
+        case let .blocked(snapshot): return .blocked(snapshot)
+        }
+    }
+
+    private func reclassified() async -> RecoveryResult { Self.result(classify(await observe())) }
+
+    private func performRecovery(_ action: RecoveryAction, key: RecoveryAttemptKey) async -> RecoveryResult {
+        let current = await observe()
+        // pre-call whole-state CAS (C9.7.12): drift returns the complete current classification with zero call/write
+        if case let .unavailable(_, state, errorCode, _) = key {
+            guard case let .unavailable(token) = current, token.state == state, token.errorCode == errorCode else { return Self.result(classify(current)) }
+            if errorCode == StorageIOErrorCode.directoryFsyncFailed.rawValue { try? PrivacyDurableFile.syncDirectory(directory) }
+            return await reclassified()
+        }
+        guard case let .observed(state) = current, case let .files(_, base, targetObservation, quarantineObservation, actions, _, _, _, mismatch, _, _, _) = state,
+              let expected = Self.digest(of: key), state.recoveryStateDigest == expected else { return Self.result(classify(current)) }
+        guard actions.contains(action.name) else { return .unavailable(store: .reset) }
+        switch action {
+        case .discardQuarantine:
+            guard DurableFileObserver.matches(quarantineObservation, at: quarantineURL, cap: Self.cap) else { return await reclassified() }
+            try? PrivacyDurableFile.unlink(at: quarantineURL)
+        case .retryCleanup:
+            guard base == "recovered_pending_cleanup", DurableFileObserver.matches(targetObservation, at: fileURL, cap: Self.cap),
+                  DurableFileObserver.matches(quarantineObservation, at: quarantineURL, cap: Self.cap) else { return await reclassified() }
+            try? PrivacyDurableFile.unlink(at: quarantineURL)
+        case .recover, .merge:
+            guard DurableFileObserver.matches(quarantineObservation, at: quarantineURL, cap: Self.cap),
+                  let bytes = try? PrivacyDurableFile.observe(at: quarantineURL, limit: Self.cap)?.bytes else { return await reclassified() }
+            let parsed = Self.enumerate(bytes)
+            guard parsed.enumerable, let candidates = parsed.candidates, candidates.allValid else { return await reclassified() }
+            let live: Envelope = (action == .merge ? liveEnvelope() : nil) ?? Envelope(generationId: "", sha256: "", records: [], migrations: [], gesture: nil)
+            let merged = Self.merged(live, candidates)
+            guard merged.records.count <= Self.capacity, merged.migrations.count <= Self.capacity else { return await reclassified() }
+            let receipt: [String: Any] = ["schemaVersion": 1, "quarantineSHA256": TaskCanonicalV1.sha256Hex(data: bytes), "recoveredCount": merged.recovered, "droppedCount": 0]
+            do { _ = try writeRecovered(Envelope(generationId: "", sha256: "", records: merged.records, migrations: merged.migrations, gesture: merged.gesture), receipt: receipt) } catch { return await reclassified() }
+            // durability barrier passed; a crash before this unlink reloads as `recovered_pending_cleanup`
+            try? PrivacyDurableFile.unlink(at: quarantineURL)
+        case let .reconcile(identity):
+            guard base == "receipt_mismatch", mismatch == identity, let remote = bundleRemote, let live = liveEnvelope(),
+                  case .signedIn(let tuple) = await auth.currentSignedAuth(),
+                  let row = live.records.first(where: { $0.uid == tuple.uid && (($0.progressReceipt != nil) || ($0.finalReceipt != nil)) && Self.identityDigest(uid: $0.uid, expectedTaskGenerationEpoch: $0.expectedTaskGenerationEpoch) == identity }),
+                  let operationId = row.canonicalOperationId else { return .unavailable(store: .reset) }
+            let inspection: ResetInspectionV1
+            do { inspection = try await remote.inspectReset(uid: row.uid, canonicalOperationId: operationId, expectedTaskGenerationEpoch: row.expectedTaskGenerationEpoch) } catch { return Self.result(classify(current)) }
+            // post-await: auth, observed state, and the first mismatch are recomputed before any write
+            let after = await observe()
+            guard case let .observed(afterState) = after, afterState.recoveryStateDigest == expected else { return Self.result(classify(after)) }
+            var next = row
+            switch inspection.outcome {
+            case .committed:
+                guard let receipt = inspection.receipt, receipt.accountUid == row.uid, receipt.expectedTaskGenerationEpoch == row.expectedTaskGenerationEpoch, receipt.operationId == operationId,
+                      let data = receipt.canonicalData(), data.count <= ResetOperationRegistryRecordV2.receiptCap else { return Self.result(classify(after)) }
+                next.finalReceipt = data
+                next.phase = .finalReceipt
+                do { try store(next) } catch { return await reclassified() }
+                installProvenance(identityDigest: identity, receiptSHA256: TaskCanonicalV1.sha256Hex(data: data))
+            case .absent, .pending:
+                next.progressReceipt = nil
+                next.finalReceipt = nil
+                next.applicationId = nil
+                next.canonicalOperationId = nil
+                next.phase = .resetDispatched
+                do { try store(next) } catch { return await reclassified() }
+            }
+        default:
+            return .unavailable(store: .reset)
+        }
+        return await reclassified()
+    }
+
+    private static func digest(of key: RecoveryAttemptKey) -> String? {
+        switch key {
+        case let .recover(d), let .merge(d), let .discard(d), let .cleanup(d), let .foreignReconcile(d), let .doseQuarantine(d), let .receiptReconcile(d, _), let .resolveForeign(d, _, _), let .recoverEpoch(d, _, _, _): return d
+        case .unavailable: return nil
+        }
+    }
 }

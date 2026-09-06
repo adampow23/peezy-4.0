@@ -352,11 +352,27 @@ actor RoomCaptureArtifactOwner: RoomCaptureArtifactPurging {
 enum PrivacyDurableFile {
     struct Failure: Error, Equatable { let code: StorageIOErrorCode }
 
-    /// A file as read: complete bytes plus the device/inode identity the CAS compares.
+    /// A file as read: complete bytes plus the device/inode identity the CAS compares, and the full fstat tuple the
+    /// C9.7.12 `fileIdentityDigest` hashes for an over-cap file.
     struct Observation: Equatable, Sendable {
         let bytes: Data
         let device: UInt64
         let inode: UInt64
+        let size: UInt64
+        let mtimeSeconds: Int64
+        let mtimeNanoseconds: Int64
+        let ctimeSeconds: Int64
+        let ctimeNanoseconds: Int64
+
+        var fileIdentityDigest: String {
+            FileObservationV1.fileIdentityDigest(device: device, inode: inode, size: size, mtimeSeconds: mtimeSeconds, mtimeNanoseconds: mtimeNanoseconds, ctimeSeconds: ctimeSeconds, ctimeNanoseconds: ctimeNanoseconds)
+        }
+    }
+
+    /// Atomic rename (target → sibling) followed by the directory fsync (the C9.7.3 malformed-target quarantine step).
+    static func rename(_ source: URL, to destination: URL) throws {
+        guard Foundation.rename(source.path, destination.path) == 0 else { throw Failure(code: .fileRenameFailed) }
+        try syncDirectory(destination.deletingLastPathComponent())
     }
 
     static func replace(at target: URL, bytes: Data) throws {
@@ -381,7 +397,7 @@ enum PrivacyDurableFile {
         guard result else { close(descriptor); throw Failure(code: .fileWriteFailed) }
         guard fsync(descriptor) == 0 else { close(descriptor); throw Failure(code: .fileFsyncFailed) }
         close(descriptor)
-        guard rename(temporary.path, target.path) == 0 else { throw Failure(code: .fileRenameFailed) }
+        guard Foundation.rename(temporary.path, target.path) == 0 else { throw Failure(code: .fileRenameFailed) }
         try syncDirectory(directory)
     }
 
@@ -404,10 +420,12 @@ enum PrivacyDurableFile {
         guard fstat(descriptor, &status) == 0 else { throw Failure(code: .fileReadFailed) }
         let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: false)
         guard let bytes = try? handle.read(upToCount: limit + 1) else { throw Failure(code: .fileReadFailed) }
-        return Observation(bytes: bytes ?? Data(), device: UInt64(status.st_dev), inode: UInt64(status.st_ino))
+        return Observation(bytes: bytes ?? Data(), device: UInt64(status.st_dev), inode: UInt64(status.st_ino), size: UInt64(max(status.st_size, 0)),
+                           mtimeSeconds: Int64(status.st_mtimespec.tv_sec), mtimeNanoseconds: Int64(status.st_mtimespec.tv_nsec),
+                           ctimeSeconds: Int64(status.st_ctimespec.tv_sec), ctimeNanoseconds: Int64(status.st_ctimespec.tv_nsec))
     }
 
-    private static func syncDirectory(_ directory: URL) throws {
+    static func syncDirectory(_ directory: URL) throws {
         let descriptor = open(directory.path, O_RDONLY)
         guard descriptor >= 0 else { throw Failure(code: .directoryFsyncFailed) }
         defer { close(descriptor) }
