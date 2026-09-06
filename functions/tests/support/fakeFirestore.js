@@ -79,6 +79,12 @@ function fakeFirestore({ docs: initial = {}, clock } = {}) {
       async update(data) { commitOps([{ type: "update", path, data }]); },
       async delete() { commitOps([{ type: "delete", path }]); },
       async create(data) { commitOps([{ type: "create", path, data }]); },
+      /** Direct child collections of this document (S3 I12c residue proof). */
+      async listCollections() {
+        const ids = new Set();
+        for (const p of docs.keys()) if (p.startsWith(`${path}/`)) { const rest = p.slice(path.length + 1).split("/"); if (rest.length >= 2) ids.add(rest[0]); }
+        return [...ids].sort(compareBytes).map((id) => collectionRef(`${path}/${id}`));
+      },
       isEqual: (other) => other && other.path === path
     };
     Object.defineProperty(ref, "parent", { get: () => collectionRef(segments.slice(0, -1).join("/")) });

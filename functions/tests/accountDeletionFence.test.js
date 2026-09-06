@@ -3164,3 +3164,283 @@ test("C9.4.4 Build A and the static module graph: the fence trust-anchor literal
   assert.equal(/require\(["']\.\/scripts\//.test(fs.readFileSync(path.join(functionsDir, "index.js"), "utf8")), false, "no script is in the deployed export graph");
 });
 
+// ---------------------------------------------------------------------------
+// S3 I12c — C9.4.1 purgeLegacyDeletedAccounts.js: registry and grammar, extractors, the pinned listDocuments tuple
+// discipline, audit, argv/environment guards, and the apply state machine over the fence's marker/cleanup core.
+// ---------------------------------------------------------------------------
+
+const legacyMigration = require("../scripts/purgeLegacyDeletedAccounts");
+const { gapicFields: rawFieldsOf } = require("./support/fakeV1Client");
+const PROD_DOCS = "projects/peezy-1ecrdl/databases/(default)/documents";
+
+/** A pinned-shaped listDocuments over the shared fake: [Document[], nextRequest, raw]; showMissing surfaces roots implied by descendants. */
+function fakeListDocuments(db) {
+  return async (request, options) => {
+    assert.deepEqual(options, { autoPaginate: false });
+    const collectionPath = `${request.parent.slice(PROD_DOCS.length + 1)}${request.parent === PROD_DOCS ? "" : "/"}${request.collectionId}`;
+    const ids = new Set();
+    for (const p of db.__docs.keys()) {
+      if (!p.startsWith(`${collectionPath}/`)) continue;
+      const rest = p.slice(collectionPath.length + 1).split("/");
+      if (rest.length === 1) ids.add(rest[0]); else if (request.showMissing) ids.add(rest[0]);
+    }
+    const sorted = [...ids].sort(compareBytes);
+    const start = request.pageToken ? Number(request.pageToken.slice(4)) : 0;
+    const page = sorted.slice(start, start + request.pageSize);
+    const documents = page.map((id) => { const data = db.__docs.get(`${collectionPath}/${id}`); return data ? { name: `${request.parent}/${request.collectionId}/${id}`, fields: rawFieldsOf(data, "peezy-1ecrdl") } : { name: `${request.parent}/${request.collectionId}/${id}` }; });
+    const raw = { documents: documents.map((d) => ({ name: d.name })) };
+    let nextRequest = null;
+    if (start + page.length < sorted.length) { raw.nextPageToken = `tok-${start + page.length}`; nextRequest = { ...request, pageToken: raw.nextPageToken }; }
+    return [documents, nextRequest, raw];
+  };
+}
+
+function migrationRepo() {
+  const files = new Map();
+  for (const relative of sealer.IMPLEMENTATION_PATHS_V1) files.set(relative, Buffer.from(`// ${relative}\n`));
+  files.set("functions/scripts/purgeLegacyDeletedAccounts.js", Buffer.from("// script\n"));
+  return { root: "/repo", readFile: (file) => { const rel = path.relative("/repo", file); if (!files.has(rel)) { const e = new Error(`ENOENT ${rel}`); e.code = "ENOENT"; throw e; } return files.get(rel); }, files };
+}
+
+function migrationDeps({ db, clock, auth = fakeAuth(), bucket = fakeBucket(), barrier, gate, overrides = {} } = {}) {
+  const repo = migrationRepo();
+  const fenceDeps = makeDeps({ db, clock, auth, bucket });
+  const observedBarrier = barrier || { activeConfigSha256: sha256("active"), priorConfigSha256: sha256("prior"), etag: "etag-active" };
+  return {
+    db, auth, bucket, fenceDeps, env: {}, timeouts: { getUserMs: 3000 },
+    evidence: () => testEvidence(),
+    firestore: { client: { listDocuments: fakeListDocuments(db) }, documentsRoot: PROD_DOCS },
+    readFile: repo.readFile, repositoryRoot: repo.root, files: repo.files,
+    generationId: () => "33333333-3333-4333-8333-333333333333",
+    acceptedPackageLockSha256: () => sha256Bytes(repo.files.get("functions/package-lock.json")),
+    resolveTarget: async () => ({ projectId: "peezy-1ecrdl", databaseId: "(default)", bucketName: "peezy-1ecrdl.firebasestorage.app" }),
+    observeBucketConfig: async () => ACCEPTED_BUCKET_CONFIG,
+    observeFirestoreConfig: async () => ACCEPTED_FIRESTORE_CONFIG,
+    observeBarrier: async () => observedBarrier,
+    observeGate: async () => (gate || { postCutoffMatchCount: 0, horizonSeconds: 604800, unboundedDestinations: 0 }),
+    globalZeroProof: async () => ({ matchCount: 0 }),
+    now: () => clock.now(),
+    ...overrides
+  };
+}
+
+const APPLY_ARGV = ["--apply", "--project-id", "peezy-1ecrdl", "--confirm-project", "peezy-1ecrdl", "--database", "(default)", "--bucket", "peezy-1ecrdl.firebasestorage.app", "--drain-evidence-sha256", "a".repeat(64), "--bucket-config-sha256", sha256(fence.TaskCanonicalV1(ACCEPTED_BUCKET_CONFIG)), "--firestore-config-sha256", sha256(fence.TaskCanonicalV1(ACCEPTED_FIRESTORE_CONFIG)), "--auth-freeze-evidence-sha256", "b".repeat(64)];
+const candidateDoc = (db, uid) => db.__docs.get(`accountDeletionLegacyCandidates/${legacyMigration.candidateId(uid)}`);
+const checkpointDoc = (db) => db.__docs.get(legacyMigration.CHECKPOINT_PATH);
+
+test("C9.4.1 registry, identity, and grammar: the 23-row source registry in execution order with its canonical digest; adlc1_ candidate ids; checkpoint and candidate maps reject every surplus/missing/malformed member and the byte caps; cursor grammar", () => {
+  const registry = legacyMigration.ACCOUNT_DELETION_LEGACY_SOURCES_V1;
+  assert.equal(registry.length, 23);
+  assert.deepEqual(registry.map((r) => r.id).slice(0, 3), ["users_missing_roots", "user_knowledge", "support_threads"]);
+  assert.deepEqual([registry[0].show_missing, registry[0].extract, registry[14].extract, registry[15].kind, registry[19].kind, registry[22].mode], [true, "document_id", "event_source_path_uid", "singleton", "storage", "soft_deleted"]);
+  assert.equal(legacyMigration.SOURCE_REGISTRY_SHA256, sha256(fence.TaskCanonicalV1({ domain: "account_deletion_legacy_sources.v1", rows: registry.map((r) => ({ ...r })) })));
+  assert.equal(legacyMigration.candidateId("uid-A"), `adlc1_${fence.first40(fence.sha256Hex(fence.TaskCanonicalV1({ account_uid: "uid-A" })))}`);
+  const now = ts("2026-09-06T00:00:00.000Z");
+  const checkpoint = { schema_version: 1, kind: "ACCOUNT_DELETION_LEGACY_MIGRATION", generation_id: "33333333-3333-4333-8333-333333333333", project_id: "peezy-1ecrdl", database_id: "(default)", bucket_name: "peezy-1ecrdl.firebasestorage.app", status: "discovering", pass_ordinal: 0, source_ordinal: 0, source_cursor: { kind: "start" }, pass_candidate_count: 0, reduction_round: 0, reduction_cursor_id: "", reduction_deferred_count: 0, confirmation_zero_passes: 0, authority_generation_id: "11111111-1111-4111-8111-111111111111", authority_sha256: sha256("a"), implementation_sha256: sha256("i"), source_registry_sha256: legacyMigration.SOURCE_REGISTRY_SHA256, package_lock_sha256: sha256("l"), script_sha256: sha256("s"), drain_evidence_sha256: sha256("d"), auth_freeze_evidence_sha256: sha256("f"), auth_blocker_config_sha256: sha256("c"), auth_blocker_prior_config_sha256: sha256("p"), created_at: now, updated_at: now };
+  assert.ok(legacyMigration.validateCheckpoint(checkpoint));
+  for (const [label, bad] of [["surplus", { ...checkpoint, mode: "apply" }], ["missing", (() => { const c = { ...checkpoint }; delete c.status; return c; })()], ["status", { ...checkpoint, status: "done" }], ["identity", { ...checkpoint, project_id: "demo" }], ["cursor", { ...checkpoint, source_cursor: { kind: "storage", page_token: "" } }], ["zero passes", { ...checkpoint, confirmation_zero_passes: 3 }], ["cursor id", { ...checkpoint, reduction_cursor_id: "x" }], ["times", { ...checkpoint, updated_at: ts("2026-09-05T00:00:00.000Z") }], ["digest", { ...checkpoint, script_sha256: "nope" }]]) {
+    assert.throws(() => legacyMigration.validateCheckpoint(bad), (e) => e.code === "ACCOUNT_DELETION_LEGACY_MIGRATION_INVARIANT", label);
+  }
+  const pending = { schema_version: 1, kind: "ACCOUNT_DELETION_LEGACY_CANDIDATE", candidate_id: legacyMigration.candidateId("uid-A"), account_uid: "uid-A", first_pass_ordinal: 0, created_at: now, updated_at: now, disposition: "pending", last_check_result: "unexamined", last_checked_at: null };
+  assert.ok(legacyMigration.validateCandidate(pending, pending.candidate_id));
+  const excludedRow = { ...pending, disposition: "excluded_live", exclusion_reason: "AUTH_PRESENT", last_checked_at: now }; delete excludedRow.last_check_result;
+  assert.ok(legacyMigration.validateCandidate(excludedRow, pending.candidate_id));
+  for (const [label, bad] of [["disposition", { ...pending, disposition: "done" }], ["unexamined with time", { ...pending, last_checked_at: now }], ["ambiguous without time", { ...pending, last_check_result: "ambiguous" }], ["id disagreement", { ...pending, candidate_id: "adlc1_" + "0".repeat(40) }], ["uid with slash", { ...pending, account_uid: "a/b" }], ["excluded reason", { ...pending, disposition: "excluded_live", exclusion_reason: "OTHER", last_checked_at: now }], ["adopted members", { ...pending, disposition: "adopted", last_checked_at: now, operation_id: "x", proof_sha256: "y", marker_started_at: now }]]) {
+    const value = { ...bad }; if (bad.disposition !== "pending") { delete value.last_check_result; }
+    assert.throws(() => legacyMigration.validateCandidate(value, pending.candidate_id), (e) => e.code === "ACCOUNT_DELETION_LEGACY_MIGRATION_INVARIANT", label);
+  }
+  for (const good of [{ kind: "start" }, { kind: "firestore_raw", page_token: "t" }, { kind: "storage", page_token: "t" }, { kind: "singleton", done: true }]) assert.ok(legacyMigration.validateCursor(good));
+  for (const bad of [{ kind: "start", extra: 1 }, { kind: "firestore_raw", page_token: "" }, { kind: "singleton", done: false }, { kind: "other" }]) assert.throws(() => legacyMigration.validateCursor(bad));
+});
+
+test("C9.4.1 extractors: document_id, optional string fields (absent yields none; present non-canonical blocks), quarantine source paths with the three id families, work rows with schema and deterministic-id agreement, singleton cursor and due-observation paths, and Storage object names", async () => {
+  const registry = legacyMigration.ACCOUNT_DELETION_LEGACY_SOURCES_V1;
+  const source = (id) => registry.find((r) => r.id === id);
+  const doc = (collection, id, data) => ({ name: `${PROD_DOCS}/${collection}/${id}`, fields: data ? rawFieldsOf(data, "peezy-1ecrdl") : undefined });
+  assert.deepEqual(legacyMigration.extractUids(source("user_knowledge"), doc("userKnowledge", "uid-A", { x: 1 })), ["uid-A"]);
+  assert.deepEqual(legacyMigration.extractUids(source("users_missing_roots"), { name: `${PROD_DOCS}/users/uid-missing` }), ["uid-missing"], "a missing root still yields its id");
+  assert.deepEqual(legacyMigration.extractUids(source("concierge_requests_user"), doc("conciergeRequests", "r1", { text: "x" })), [], "absent optional field yields none");
+  assert.deepEqual(legacyMigration.extractUids(source("concierge_requests_user"), doc("conciergeRequests", "r1", { userId: "uid-B" })), ["uid-B"]);
+  assert.throws(() => legacyMigration.extractUids(source("concierge_requests_user"), doc("conciergeRequests", "r1", { userId: 7 })), (e) => e.code === "ACCOUNT_DELETION_LEGACY_SOURCE_INVARIANT", "present non-string blocks");
+  assert.throws(() => legacyMigration.extractUids(source("concierge_requests_user"), doc("conciergeRequests", "r1", { userId: "a/b" })), (e) => e.code === "ACCOUNT_DELETION_LEGACY_SOURCE_INVARIANT", "slash blocks");
+  for (const family of ["qev1_", "qevu1_", "qev2_"]) assert.deepEqual(legacyMigration.extractUids(source("event_quarantine_source"), doc("phase1System/dispositionTriggerState/quarantinedEvents", `${family}${"a".repeat(40)}`, { sourcePath: "users/uid-C/events/e1" })), ["uid-C"], family);
+  assert.throws(() => legacyMigration.extractUids(source("event_quarantine_source"), doc("phase1System/dispositionTriggerState/quarantinedEvents", `other_${"a".repeat(40)}`, { sourcePath: "users/uid-C/events/e1" })), (e) => e.code === "ACCOUNT_DELETION_LEGACY_SOURCE_INVARIANT", "foreign id family");
+  assert.throws(() => legacyMigration.extractUids(source("event_quarantine_source"), doc("phase1System/dispositionTriggerState/quarantinedEvents", `qev1_${"a".repeat(40)}`, { sourcePath: "users/uid-C/events/" })), (e) => e.code === "ACCOUNT_DELETION_LEGACY_SOURCE_INVARIANT", "malformed source path");
+  const marker = sweepingMarker([capability("uid-W", freshOperationId(), freshProofNonce())]);
+  const work = { schema_version: 1, kind: "ACCOUNT_DELETION_STORAGE_WORK", work_id: fence.storageWorkId("uid-W"), account_uid: "uid-W", marker_started_at: marker.startedAt, storage_guard_after: marker.storageGuardAfter, failure_count: 0, next_eligible_run: 0, created_at: marker.startedAt, updated_at: marker.startedAt };
+  assert.deepEqual(legacyMigration.extractUids(source("deletion_storage_work"), doc("accountDeletionStorageWork", fence.storageWorkId("uid-W"), work)), ["uid-W"]);
+  assert.throws(() => legacyMigration.extractUids(source("deletion_storage_work"), doc("accountDeletionStorageWork", "adsw1_wrong", work)), (e) => e.code === "ACCOUNT_DELETION_LEGACY_SOURCE_INVARIANT", "id disagreement");
+  assert.throws(() => legacyMigration.extractUids(source("deletion_storage_work"), doc("accountDeletionStorageWork", fence.storageWorkId("uid-W"), { ...work, failure_count: -1 })), /INVARIANT/, "schema violation blocks");
+  assert.deepEqual(legacyMigration.singletonUids(source("disposition_trigger_state"), { schedulerHealth: { dueObservation: { oldestCandidatePath: "users/uid-Z/tasks/t1" } }, event_envelope_prepass: { path: "users/uid-Y/events/e1" }, date_snoozed_deferred: { path: "users/uid-X/tasks/t9", at: null } }), ["uid-X", "uid-Y", "uid-Z"]);
+  assert.deepEqual(legacyMigration.singletonUids(source("disposition_trigger_state"), undefined), []);
+  assert.throws(() => legacyMigration.singletonUids(source("disposition_trigger_state"), { event_envelope_prepass: { path: "orgs/o1/events/e1" } }), (e) => e.code === "ACCOUNT_DELETION_LEGACY_SOURCE_INVARIANT");
+  assert.deepEqual(legacyMigration.singletonUids(source("oldest_due_alert"), { candidatePath: "users/uid-Q/tasks/t1" }), ["uid-Q"]);
+  assert.deepEqual(legacyMigration.singletonUids(source("oldest_due_alert"), undefined), []);
+  const bucket = fakeBucket({ objects: [{ name: "inventory/uid-S/session/frame.jpg" }, { name: "inventory/uid-T/x" }], softDeleted: [{ name: "users/uid-U/avatar.png", timeDeleted: "2026-01-01T00:00:00Z" }] });
+  const deps = { bucket };
+  assert.deepEqual((await legacyMigration.storagePage(deps, source("inventory_storage_versions"), 100, undefined)).uids, ["uid-S", "uid-T"]);
+  assert.deepEqual((await legacyMigration.storagePage(deps, source("users_storage_soft_deleted"), 100, undefined)).uids, ["uid-U"]);
+  const malformed = fakeBucket({ objects: [{ name: "inventory/only-a-directory-marker" }] });
+  await assert.rejects(legacyMigration.storagePage({ bucket: malformed }, source("inventory_storage_versions"), 100, undefined), (e) => e.code === "ACCOUNT_DELETION_LEGACY_SOURCE_INVARIANT", "an object name without a tail blocks");
+});
+
+test("C9.4.1 pinned listDocuments tuple discipline and paging: exact three-tuple agreement in count, order, byte-exact names, request identity, and terminal token; pages of exactly 100 with showMissing roots; disagreement blocks", async () => {
+  const docs = { "users/uid-A": { name: "A" } };
+  for (let i = 0; i < 101; i += 1) docs[`userKnowledge/uk-${String(i).padStart(3, "0")}`] = { n: i };
+  docs["users/uid-missing/tasks/t1"] = { status: "Upcoming" };
+  const db = fakeFirestore({ docs, clock: new FakeClock() });
+  const deps = migrationDeps({ db, clock: new FakeClock() });
+  const registry = legacyMigration.ACCOUNT_DELETION_LEGACY_SOURCES_V1;
+  let page = await legacyMigration.listPage(deps, registry[1], 100, undefined);
+  assert.deepEqual([page.documents.length, page.token], [100, "tok-100"]);
+  page = await legacyMigration.listPage(deps, registry[1], 100, page.token);
+  assert.deepEqual([page.documents.length, page.token], [1, ""]);
+  const roots = await legacyMigration.listPage(deps, registry[0], 100, undefined);
+  assert.deepEqual(roots.documents.map((d) => d.name.slice(d.name.lastIndexOf("/") + 1)), ["uid-A", "uid-missing"], "showMissing surfaces the root implied by a descendant");
+  for (const [label, mutate] of [["count", (t) => { t[2].documents = t[2].documents.slice(1); }], ["name", (t) => { t[2].documents[0].name += "x"; }], ["order", (t) => { [t[0][0], t[0][1]] = [t[0][1], t[0][0]]; [t[2].documents[0], t[2].documents[1]] = [t[2].documents[1], t[2].documents[0]]; }], ["nextRequest identity", (t) => { t[1] = { ...t[1], pageSize: 50 }; }], ["terminal token", (t) => { t[2].nextPageToken = "tok-100"; t[1] = null; }], ["depth", (t) => { t[0][0].name = `${t[0][0].name}/deeper/x`; t[2].documents[0].name = t[0][0].name; }]]) {
+    const broken = { ...deps, firestore: { client: { listDocuments: async (request, options) => { const tuple = await fakeListDocuments(db)(request, options); mutate(tuple); return tuple; } } } };
+    await assert.rejects(legacyMigration.listPage(broken, registry[1], 100, undefined), (e) => e.code === "ACCOUNT_DELETION_LEGACY_SOURCE_INVARIANT", label);
+  }
+});
+
+test("C9.4.1 audit is read-only and streams one bounded page from source 0 (accepted --page-size or 100); an interrupted audit restarts at source 0 with byte-exact zero writes; strict audit argv; the apply arming set with every missing/malformed/unknown/duplicate member, project/target mismatch, emulator host, credential mismatch, config and package-lock drift refuse nonzero before any write; output is redacted", async () => {
+  const docs = { "users/uid-A": { name: "A" }, "users/uid-B/tasks/t": { x: 1 }, "userKnowledge/uid-A": { k: 1 } };
+  const clock = new FakeClock();
+  const db = fakeFirestore({ docs, clock });
+  const deps = migrationDeps({ db, clock });
+  const before = db.__writes.length;
+  let result = await legacyMigration.run(["--project-id", "peezy-1ecrdl", "--confirm-project", "peezy-1ecrdl", "--database", "(default)", "--bucket", "peezy-1ecrdl.firebasestorage.app"], deps);
+  assert.deepEqual([result.exitCode, result.report.mode, result.report.result.sourceOrdinal, result.report.result.count, result.report.result.pageSize, db.__writes.length], [0, "audit", 0, 2, 100, before]);
+  assert.ok(!JSON.stringify(result.report).includes("uid-A"), "no raw UID in output");
+  result = await legacyMigration.run(["--page-size", "1"], deps);
+  assert.deepEqual([result.exitCode, result.report.result.count, result.report.result.terminal], [0, 1, false]);
+  for (const [label, argv, code] of [["unknown", ["--force"], "UNKNOWN_ARGUMENT"], ["page size 0", ["--page-size", "0"], "MALFORMED_ARGUMENT"], ["page size 101", ["--page-size", "101"], "MALFORMED_ARGUMENT"], ["apply flag in audit", ["--drain-evidence-sha256", "a".repeat(64)], "UNKNOWN_ARGUMENT"], ["duplicate", ["--page-size", "1", "--page-size", "2"], "DUPLICATE_ARGUMENT"]]) {
+    result = await legacyMigration.run(argv, deps);
+    assert.deepEqual([result.exitCode, result.report.refusal], [2, code], label);
+  }
+  const drop = (flag) => { const i = APPLY_ARGV.indexOf(flag); return [...APPLY_ARGV.slice(0, i), ...APPLY_ARGV.slice(i + 2)]; };
+  const replace = (flag, value) => { const i = APPLY_ARGV.indexOf(flag); return [...APPLY_ARGV.slice(0, i + 1), value, ...APPLY_ARGV.slice(i + 2)]; };
+  const cases = [
+    ["missing drain digest", drop("--drain-evidence-sha256"), {}, "MISSING_ARGUMENT", 2],
+    ["missing bucket", drop("--bucket"), {}, "MISSING_ARGUMENT", 2],
+    ["malformed digest", replace("--auth-freeze-evidence-sha256", "zz"), {}, "MALFORMED_ARGUMENT", 2],
+    ["unknown", [...APPLY_ARGV, "--force"], {}, "UNKNOWN_ARGUMENT", 2],
+    ["duplicate", [...APPLY_ARGV, "--apply"], {}, "DUPLICATE_ARGUMENT", 2],
+    ["page size in apply", [...APPLY_ARGV, "--page-size", "1"], {}, "UNKNOWN_ARGUMENT", 2],
+    ["project mismatch", replace("--confirm-project", "demo"), {}, "PROJECT_MISMATCH", 2],
+    ["database mismatch", replace("--database", "other"), {}, "TARGET_MISMATCH", 2],
+    ["emulator host", APPLY_ARGV, { env: { FIRESTORE_EMULATOR_HOST: "127.0.0.1:8080" } }, "EMULATOR_HOST_PRESENT", 3],
+    ["credential mismatch", APPLY_ARGV, { resolveTarget: async () => ({ projectId: "other", databaseId: "(default)", bucketName: "peezy-1ecrdl.firebasestorage.app" }) }, "CREDENTIAL_PROJECT_MISMATCH", 3],
+    ["bucket config drift", APPLY_ARGV, { observeBucketConfig: async () => ({ ...ACCEPTED_BUCKET_CONFIG, metageneration: "4" }) }, "BUCKET_CONFIG_DRIFT", 3],
+    ["firestore config drift", APPLY_ARGV, { observeFirestoreConfig: async () => ({ ...ACCEPTED_FIRESTORE_CONFIG, etag: "other" }) }, "FIRESTORE_CONFIG_DRIFT", 3],
+    ["package-lock drift", APPLY_ARGV, { acceptedPackageLockSha256: () => sha256("other") }, "PACKAGE_LOCK_DRIFT", 3]
+  ];
+  for (const [label, argv, overrides, code, exitCode] of cases) {
+    const freshDb = fakeFirestore({ docs, clock });
+    result = await legacyMigration.run(argv, migrationDeps({ db: freshDb, clock, overrides }));
+    assert.deepEqual([result.exitCode, result.report.refusal, freshDb.__writes.length], [exitCode, code, 0], label);
+  }
+  // an inaccessible gate or an inactive evidence authority blocks apply before the checkpoint
+  const gated = fakeFirestore({ docs, clock });
+  result = await legacyMigration.run(APPLY_ARGV, migrationDeps({ db: gated, clock, gate: { postCutoffMatchCount: 1, horizonSeconds: 1, unboundedDestinations: 0 } }));
+  assert.deepEqual([result.exitCode, result.report.refusal, gated.__docs.has(legacyMigration.CHECKPOINT_PATH)], [1, "ACCOUNT_DELETION_LEGACY_GATE_FAILED", false]);
+  result = await legacyMigration.run(APPLY_ARGV, migrationDeps({ db: gated, clock, overrides: { evidence: () => ({ ok: false, code: "PROVIDER_EVIDENCE_NOT_ACTIVATED" }) } }));
+  assert.deepEqual([result.report.refusal, gated.__docs.has(legacyMigration.CHECKPOINT_PATH)], ["PROVIDER_EVIDENCE_NOT_ACTIVATED", false]);
+});
+
+test("C9.4.1 apply: discovery upserts deterministic candidates with page cursors; reducing classifies Auth-present/root-absent and root-present exclusions, defers ambiguity, adopts a not-found/root-absent orphan through the fence marker with all three Auth checks and drives cleanup to guarding; a tombstone passes the residue proof and the candidate is deleted; two zero confirmation passes clean the excluded rows and delete the checkpoint; the run is resumable and the report is redacted", async () => {
+  const clock = new FakeClock();
+  const orphanOp = freshOperationId();
+  const docs = {
+    "users/uid-live": { name: "Live root" },
+    "userKnowledge/uid-authonly": { k: 1 },
+    "userKnowledge/uid-orphan": { k: 2 },
+    "users/uid-orphan/tasks/t1": { status: "Upcoming" },
+    "supportThreads/uid-ambig": { s: 1 },
+    "userKnowledge/uid-ambig": { k: 3 }
+  };
+  void orphanOp;
+  const db = fakeFirestore({ docs, clock });
+  let ambiguousCalls = 0;
+  const auth = fakeAuth({ getUser: (uid) => { if (uid === "uid-authonly") return "present"; if (uid === "uid-ambig") { ambiguousCalls += 1; return ambiguousCalls <= 2 ? new Error("transport") : "present"; } return "absent"; } });
+  const bucket = fakeBucket({ objects: [{ name: "inventory/uid-orphan/session/frame.jpg" }] });
+  const deps = migrationDeps({ db, clock, auth, bucket });
+  // first run: discovery + reduction; the orphan is adopted and driven; the ambiguous row is deferred once
+  let result = await legacyMigration.runApply(deps, legacyMigration.parseArguments(APPLY_ARGV), { maxSteps: 60 });
+  const checkpoint = checkpointDoc(db);
+  assert.ok(checkpoint, "checkpoint exists");
+  assert.deepEqual([checkpoint.kind, checkpoint.generation_id, checkpoint.source_registry_sha256, checkpoint.drain_evidence_sha256], ["ACCOUNT_DELETION_LEGACY_MIGRATION", "33333333-3333-4333-8333-333333333333", legacyMigration.SOURCE_REGISTRY_SHA256, "a".repeat(64)]);
+  assert.deepEqual([candidateDoc(db, "uid-live").disposition, candidateDoc(db, "uid-live").exclusion_reason], ["excluded_live", "ROOT_PRESENT"]);
+  assert.deepEqual([candidateDoc(db, "uid-authonly").disposition, candidateDoc(db, "uid-authonly").exclusion_reason], ["excluded_live", "AUTH_PRESENT"]);
+  const orphan = candidateDoc(db, "uid-orphan");
+  assert.equal(orphan.disposition, "adopted");
+  const marker = markerOf(db, "uid-orphan");
+  assert.deepEqual([marker.capabilities.length, marker.capabilities[0].operationId, marker.capabilities[0].proofSHA256, marker.startedAt.toMillis()], [1, orphan.operation_id, orphan.proof_sha256, orphan.marker_started_at.toMillis()], "candidate binds the marker byte-for-byte");
+  assert.ok(["DELETING_GUARDING", "DELETING_SWEEPING"].includes(fence.validateAccountDeletionMarker(marker).phase));
+  assert.ok(db.__docs.has(`accountDeletionStorageWork/${fence.storageWorkId("uid-orphan")}`), "the fence created the storage work row");
+  assert.equal(auth.calls.filter(([m]) => m === "deleteUser").length, 0, "zero Auth deletions");
+  assert.ok(auth.calls.filter(([m, uid]) => m === "getUser" && uid === "uid-orphan").length >= 3, "all three Auth checks");
+  assert.ok(checkpointDoc(db).reduction_deferred_count >= 1, "ambiguity deferred at least once");
+  assert.ok(!JSON.stringify(result).includes("uid-orphan"), "no raw UID in the run result");
+  // simulate the reconcilers: the orphan reaches the exact ACCOUNT_DELETED tombstone and its residue is gone
+  const startedMs = marker.startedAt.toMillis();
+  const at = (ms) => Timestamp.fromMillis(startedMs + ms);
+  const H = 3600_000; const D = 24 * H;
+  db.__docs.set("users/uid-orphan", { accountDeletion: { ...marker, firestoreCleanupAt: at(H), storageGuardCompletedAt: at(7 * D + 5 * 60_000), firestoreVersionGuardCompletedAt: at(2 * H), state: "ACCOUNT_DELETED", dataDeletedAt: at(7 * D + 10 * 60_000), authAbsenceObservedAt: at(7 * D + 11 * 60_000), authGuardAfter: at(8 * D + 11 * 60_000), authGuardCompletedAt: at(8 * D + 12 * 60_000), accountDeletedAt: at(8 * D + 12 * 60_000) } });
+  assert.equal(fence.validateAccountDeletionMarker(db.__docs.get("users/uid-orphan").accountDeletion).phase, "ACCOUNT_DELETED", "the simulated tombstone is exact");
+  for (const p of [...db.__docs.keys()]) if (p.startsWith("users/uid-orphan/") || p === "userKnowledge/uid-orphan") db.__docs.delete(p);
+  db.__docs.delete(`accountDeletionStorageWork/${fence.storageWorkId("uid-orphan")}`);
+  bucket.live.length = 0;
+  // resume: the ambiguous candidate resolves, the orphan is proved and deleted, confirmation runs twice, excluded rows are cleaned, the checkpoint is deleted
+  result = await legacyMigration.runApply(deps, legacyMigration.parseArguments(APPLY_ARGV), { maxSteps: 400 });
+  assert.deepEqual([result.completed, result.status], [true, "completed"], JSON.stringify(result.outcomes));
+  assert.equal(checkpointDoc(db), undefined, "checkpoint deleted by the last cleanup transaction");
+  assert.equal([...db.__docs.keys()].filter((p) => p.startsWith("accountDeletionLegacyCandidates/")).length, 0, "every candidate row removed");
+  assert.equal(db.__docs.get("users/uid-orphan").accountDeletion.state, "ACCOUNT_DELETED", "the tombstone remains");
+  assert.ok(db.__docs.has("users/uid-live") && db.__docs.has("userKnowledge/uid-authonly") && db.__docs.has("userKnowledge/uid-ambig"), "excluded-live data untouched");
+  assert.ok(ambiguousCalls >= 3, "the ambiguous account was re-examined after its deferrals");
+  assert.ok(result.outcomes.confirmed.includes("ZERO_PASS") && result.outcomes.confirmed.at(-1) === "COMPLETED");
+});
+
+test("C9.4.1 stops and drift: a third Auth check that finds the user is LEGACY_ACCOUNT_AUTH_RACE with the marker and candidate retained and zero Auth deletion; an adopted candidate whose marker disagrees fails closed; a barrier drift before a nomination is a zero-write invariant; a candidate collision blocks; the script has no reachable Auth-delete or provider-send call site", async () => {
+  const clock = new FakeClock();
+  let calls = 0;
+  const auth = fakeAuth({ getUser: (uid) => { if (uid !== "uid-orphan") return "absent"; calls += 1; return calls === 3 ? "present" : "absent"; } });
+  const db = fakeFirestore({ docs: { "userKnowledge/uid-orphan": { k: 1 } }, clock });
+  const deps = migrationDeps({ db, clock, auth });
+  let result = await legacyMigration.run(APPLY_ARGV, deps);
+  assert.deepEqual([result.exitCode, result.report.refusal], [1, "LEGACY_ACCOUNT_AUTH_RACE"]);
+  assert.equal(candidateDoc(db, "uid-orphan").disposition, "adopted", "candidate retained");
+  assert.ok(markerOf(db, "uid-orphan"), "marker retained");
+  assert.equal(auth.calls.filter(([m]) => m === "deleteUser").length, 0);
+  // adopted relaunch with a mismatching proof fails closed with no cleanup
+  const clock2 = new FakeClock();
+  const op = freshOperationId(); const nonce = freshProofNonce();
+  const now = clock2.now();
+  const adopted = { schema_version: 1, kind: "ACCOUNT_DELETION_LEGACY_CANDIDATE", candidate_id: legacyMigration.candidateId("uid-R"), account_uid: "uid-R", first_pass_ordinal: 0, created_at: now, updated_at: now, disposition: "adopted", last_checked_at: now, operation_id: op, proof_sha256: "f".repeat(64), marker_started_at: ts(STARTED) };
+  const db2 = fakeFirestore({ docs: { "users/uid-R": { accountDeletion: sweepingMarker([capability("uid-R", op, nonce)]) }, [`accountDeletionLegacyCandidates/${adopted.candidate_id}`]: adopted }, clock: clock2 });
+  const deps2 = migrationDeps({ db: db2, clock: clock2 });
+  const checkpoint = await legacyMigration.createCheckpoint(deps2, legacyMigration.parseArguments(APPLY_ARGV), testEvidence().authority, await deps2.observeBarrier());
+  const reducing = await legacyMigration.run(APPLY_ARGV, deps2);
+  assert.ok(["ACCOUNT_DELETION_LEGACY_MIGRATION_INVARIANT"].includes(reducing.report.refusal), reducing.report.refusal);
+  assert.equal(db2.__docs.get("users/uid-R").accountDeletion.state, "DELETING", "no cleanup under a disagreeing proof");
+  void checkpoint;
+  // barrier drift before a nomination: zero writes
+  const clock3 = new FakeClock();
+  const db3 = fakeFirestore({ docs: { "userKnowledge/uid-X": { k: 1 } }, clock: clock3 });
+  let observations = 0;
+  const deps3 = migrationDeps({ db: db3, clock: clock3, overrides: { observeBarrier: async () => { observations += 1; return observations <= 2 ? { activeConfigSha256: sha256("active"), priorConfigSha256: sha256("prior"), etag: "e" } : { activeConfigSha256: sha256("changed"), priorConfigSha256: sha256("prior"), etag: "e2" }; } } });
+  result = await legacyMigration.run(APPLY_ARGV, deps3);
+  assert.equal(result.report.refusal, "ACCOUNT_DELETION_LEGACY_BARRIER_DRIFT");
+  assert.equal([...db3.__docs.keys()].filter((p) => p.startsWith("accountDeletionLegacyCandidates/")).length, 0, "no nomination under drift");
+  // candidate collision: a row at the deterministic path with another account's identity blocks discovery
+  const clock4 = new FakeClock();
+  const collidingId = legacyMigration.candidateId("uid-C");
+  const db4 = fakeFirestore({ docs: { "userKnowledge/uid-C": { k: 1 }, [`accountDeletionLegacyCandidates/${collidingId}`]: { schema_version: 1, kind: "ACCOUNT_DELETION_LEGACY_CANDIDATE", candidate_id: collidingId, account_uid: "uid-D", first_pass_ordinal: 0, created_at: clock4.now(), updated_at: clock4.now(), disposition: "pending", last_check_result: "unexamined", last_checked_at: null } }, clock: clock4 });
+  result = await legacyMigration.run(APPLY_ARGV, migrationDeps({ db: db4, clock: clock4 }));
+  assert.equal(result.report.refusal, "ACCOUNT_DELETION_LEGACY_MIGRATION_INVARIANT");
+  const source = fs.readFileSync(path.join(__dirname, "..", "scripts", "purgeLegacyDeletedAccounts.js"), "utf8");
+  assert.equal(/deleteUser|sendMail|messaging\(|httpsCallable|twilio|nodemailer/.test(source), false, "zero reachable Auth-delete or provider-send call sites");
+  assert.match(source, /if \(require\.main === module\) main\(\)/);
+});
+
