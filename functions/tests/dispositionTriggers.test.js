@@ -601,14 +601,22 @@ test("C9.1.6/C9.1.16 acquisition refuses the cross-fence, the ordinal floor, and
   assert.deepEqual(await scheduler.runDispositionScheduler({ scheduleTime: scheduleAt(-1) }, deps), { outcome: "refused", reason: "ORDINAL_NOT_ABOVE_FLOOR" });
   assert.equal(db.__writes.length, before);
   // held v2 lease (other owner, unexpired) → refused
-  const foreignLease = { schemaVersion: 1, runOrdinal: ORD0, ownerToken: "other", startedAt: clock.now(), expiresAt: Timestamp.fromMillis(clock.millis + 100_000) };
+  const foreignLease = { schemaVersion: 1, runOrdinal: ORD0, ownerToken: "7b3c2f1e-0d4a-4c8b-9e1f-2a3b4c5d6e7f", startedAt: clock.now(), expiresAt: Timestamp.fromMillis(clock.millis + 270_000) };
   await db.doc(scheduler.LEASE_PATH).set(foreignLease);
   before = db.__writes.length;
   assert.deepEqual(await scheduler.runDispositionScheduler({ scheduleTime: scheduleAt(0) }, deps), { outcome: "refused", reason: "LEASE_HELD" });
   assert.equal(db.__writes.length, before);
   assert.deepEqual(db.__docs.get(scheduler.LEASE_PATH), foreignLease);
+  // a v2-keyed lease with grammar defects is a non-v2 shape: blocked at the reading transaction with zero writes
+  for (const [label, bad] of [["empty owner token", { ...foreignLease, ownerToken: "" }], ["negative ordinal", { ...foreignLease, runOrdinal: -1 }], ["reversed timestamps", { ...foreignLease, startedAt: foreignLease.expiresAt, expiresAt: foreignLease.startedAt }]]) {
+    await db.doc(scheduler.LEASE_PATH).set(bad);
+    before = db.__writes.length;
+    assert.deepEqual(await scheduler.runDispositionScheduler({ scheduleTime: scheduleAt(0) }, deps), { outcome: "blocked", code: "SCHEDULER_LEASE_INVARIANT" }, `malformed v2: ${label}`);
+    assert.equal(db.__writes.length, before, `malformed v2 zero writes: ${label}`);
+  }
+  await db.doc(scheduler.LEASE_PATH).set(foreignLease);
   // expired v2 lease → replaced atomically with the running heartbeat
-  clock.millis += 200_000;
+  clock.millis += 300_000;
   const run = await scheduler.runDispositionScheduler({ scheduleTime: scheduleAt(0) }, deps);
   assert.equal(run.outcome, "completed");
   assert.equal(healthOf(db).lastStartedOrdinal, ORD0);
@@ -1381,6 +1389,11 @@ test("C9.1.23 production sizing (decoded data) and the independent oracle (raw v
     ["users/u1/tasks/t1", { status: "Snoozed", dispositionContract: { next_trigger: { kind: "date", fired: false, at: Timestamp.fromMillis(0), payload: { basis: "x" } }, disposition: "DEFERRED" }, task_generation_epoch: 3, notes: ["n1", "n2"], thresholdProjection: { state: "armed", threshold_at: Timestamp.fromMillis(0) } }],
     ["phase1System/dispositionTriggerState/quarantinedEvents/qev1_x", { schemaVersion: 1, sourcePath: "users/u1/events/e1", reason: { code: "EFFECT_INVALID", message: "effect must be fire or retract." }, failureCount: 3, quarantinedAt: Timestamp.fromMillis(0) }]
   ];
+  // C9.1.23: an unoverridden array leaf carries one array-contains entry per element instead of the ascending/descending pair
+  const oneElement = scheduler.storage.indexEntries("users/u1/eventState/x", { a: [1] });
+  assert.equal(oneElement.length, 1, "one-element array: exactly one contains entry, no ascending/descending pair");
+  assert.deepEqual(oneElement, oracle.indexEntries("users/u1/eventState/x", raw.toRawFields({ a: [1] })), "one-element array: oracle agrees");
+  assert.equal(scheduler.storage.indexEntries("users/u1/eventState/x", { a: [1, 2] }).length, 2, "two-element array: two contains entries");
   for (const [docPath, data] of fixtures) {
     const fields = raw.toRawFields(data);
     assert.equal(scheduler.storage.documentSize(docPath, data), oracle.documentSize(docPath, fields), `${docPath} document size`);
@@ -1453,12 +1466,12 @@ test("C9.1.27 fitsPhase0Transition admits equality at every bound and refuses +1
   assert.equal(entryOf(uidFor(7680)), 7680);
   assert.equal(S.transitionBudget([{ path: `users/${uidFor(7680)}/tasks/t1`, before: null, after: composite }]).fits, true);
   assert.equal(S.transitionBudget([{ path: `users/${uidFor(7681)}/tasks/t1`, before: null, after: composite }]).fits, false);
-  // entry count: eventState (no exemptions) 20,000 leaves = 40,000 entries; 19,999 leaves + one single-element array = 40,001
+  // entry count: eventState (no exemptions) 20,000 leaves = 40,000 entries; 20,000 leaves + one single-element array (one contains entry) = 40,001
   const leavesOf = (n) => Object.fromEntries(Array.from({ length: n }, (_, i) => [`f${i}`, 1]));
   const forty = leavesOf(20000);
   assert.equal(S.indexEntries("users/u1/eventState/x", forty).length, 40000);
   assert.equal(S.transitionBudget([{ path: "users/u1/eventState/x", before: null, after: forty }]).fits, true);
-  const fortyOne = { ...leavesOf(19999), arr: [1] };
+  const fortyOne = { ...leavesOf(20000), arr: [1] };
   assert.equal(S.indexEntries("users/u1/eventState/x", fortyOne).length, 40001);
   assert.equal(S.transitionBudget([{ path: "users/u1/eventState/x", before: null, after: fortyOne }]).fits, false);
   // entry-byte sum: 40,000 entries over a long document name (the name counts in every entry but once in the document) with values "x" (2) and "xx" (3) mixed to land exactly on 8,388,608
@@ -1912,17 +1925,30 @@ test("C9.2.3 lease acquisition: generation 1 when both leases are absent; an exa
   assert.deepEqual([result.acquired, result.migratedSchedulerLease, client.get(migration.SCHEDULER_LEASE_PATH), client.commits.at(-1).writes.length], [true, true, null, 2], "delete scheduler lease + create migration lease in one commit");
   for (const [label, schedulerLease] of [
     ["malformed non-v2", { weird: true }],
-    ["live v2", { schemaVersion: 1, runOrdinal: 5, ownerToken: "t", startedAt: { __ts: seconds(client, -10) }, expiresAt: { __ts: seconds(client, 200) } }],
-    ["expired v2 within grace", { schemaVersion: 1, runOrdinal: 5, ownerToken: "t", startedAt: { __ts: seconds(client, -400) }, expiresAt: { __ts: seconds(client, -30) } }]
+    ["live v2", { schemaVersion: 1, runOrdinal: 5, ownerToken: "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d", startedAt: { __ts: seconds(client, -10) }, expiresAt: { __ts: seconds(client, 260) } }],
+    ["expired v2 within grace", { schemaVersion: 1, runOrdinal: 5, ownerToken: "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d", startedAt: { __ts: seconds(client, -300) }, expiresAt: { __ts: seconds(client, -30) } }]
   ]) {
     const c = new FakeV1Client({ projectId: PROD_PROJECT });
     c.put(migration.SCHEDULER_LEASE_PATH, schedulerLease);
     const r = await migration.acquireMigrationLease(c, PROD_PROJECT, {}, "owner-3");
     assert.deepEqual([r.acquired, c.commits.length, leaseDoc(c)], [false, 0, null], label);
-    assert.match(r.refusal, /^SCHEDULER_LEASE_/, label);
+    assert.equal(r.refusal, { "malformed non-v2": "SCHEDULER_LEASE_SHAPE", "live v2": "SCHEDULER_LEASE_LIVE", "expired v2 within grace": "SCHEDULER_LEASE_DRAINING" }[label], label);
+  }
+  // C9.1.4/C9.2.3: a v2-keyed lease whose members break the grammar is a non-v2 shape → refuse with zero writes, even when expired past the grace
+  for (const [label, bad] of [
+    ["empty owner token", { schemaVersion: 1, runOrdinal: 5, ownerToken: "", startedAt: { __ts: seconds(client, -400) }, expiresAt: { __ts: seconds(client, -130) } }],
+    ["uppercase owner token", { schemaVersion: 1, runOrdinal: 5, ownerToken: "1A2B3C4D-5E6F-4A7B-8C9D-0E1F2A3B4C5D", startedAt: { __ts: seconds(client, -400) }, expiresAt: { __ts: seconds(client, -130) } }],
+    ["negative ordinal", { schemaVersion: 1, runOrdinal: -1, ownerToken: "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d", startedAt: { __ts: seconds(client, -400) }, expiresAt: { __ts: seconds(client, -130) } }],
+    ["reversed timestamps", { schemaVersion: 1, runOrdinal: 5, ownerToken: "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d", startedAt: { __ts: seconds(client, -130) }, expiresAt: { __ts: seconds(client, -400) } }],
+    ["wrong lease length", { schemaVersion: 1, runOrdinal: 5, ownerToken: "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d", startedAt: { __ts: seconds(client, -400) }, expiresAt: { __ts: seconds(client, -131) } }]
+  ]) {
+    const c = new FakeV1Client({ projectId: PROD_PROJECT });
+    c.put(migration.SCHEDULER_LEASE_PATH, bad);
+    const r = await migration.acquireMigrationLease(c, PROD_PROJECT, {}, "owner-3");
+    assert.deepEqual([r.acquired, r.refusal, c.commits.length, leaseDoc(c)], [false, "SCHEDULER_LEASE_SHAPE", 0, null], `malformed v2: ${label}`);
   }
   client = new FakeV1Client({ projectId: PROD_PROJECT });
-  client.put(migration.SCHEDULER_LEASE_PATH, { schemaVersion: 1, runOrdinal: 5, ownerToken: "t", startedAt: { __ts: seconds(client, -400) }, expiresAt: { __ts: seconds(client, -61) } });
+  client.put(migration.SCHEDULER_LEASE_PATH, { schemaVersion: 1, runOrdinal: 5, ownerToken: "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d", startedAt: { __ts: seconds(client, -331) }, expiresAt: { __ts: seconds(client, -61) } });
   result = await migration.acquireMigrationLease(client, PROD_PROJECT, {}, "owner-4");
   assert.deepEqual([result.acquired, client.get(migration.SCHEDULER_LEASE_PATH) !== null], [true, true], "expired v2 past the grace acquires and leaves the v2 lease alone");
   // live other owner refuses; expired migration lease takes generation + 1

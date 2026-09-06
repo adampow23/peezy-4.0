@@ -496,10 +496,17 @@ function isLegacySchedulerLease(fields) {
   return keys === "acquiredAt,expiresAt,runId" && fields.runId.valueType === "stringValue" && fields.acquiredAt.valueType === "timestampValue" && fields.expiresAt.valueType === "timestampValue";
 }
 
+const SCHEDULER_OWNER_TOKEN_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const SCHEDULER_LEASE_SECONDS = 270;
+
 function isV2SchedulerLease(fields) {
   const keys = Object.keys(fields || {}).sort().join(",");
-  return keys === "expiresAt,ownerToken,runOrdinal,schemaVersion,startedAt" && fields.schemaVersion.valueType === "integerValue" && fields.schemaVersion.integerValue === "1"
-    && fields.ownerToken.valueType === "stringValue" && fields.runOrdinal.valueType === "integerValue" && fields.startedAt.valueType === "timestampValue" && fields.expiresAt.valueType === "timestampValue";
+  if (keys !== "expiresAt,ownerToken,runOrdinal,schemaVersion,startedAt" || fields.schemaVersion.valueType !== "integerValue" || fields.schemaVersion.integerValue !== "1"
+    || fields.ownerToken.valueType !== "stringValue" || fields.runOrdinal.valueType !== "integerValue" || fields.startedAt.valueType !== "timestampValue" || fields.expiresAt.valueType !== "timestampValue") return false;
+  // C9.1.3/C9.1.4 grammar: lowercase UUID owner token, nonnegative safe ordinal, expiresAt exactly 270 s after startedAt
+  const ordinal = Number(fields.runOrdinal.integerValue);
+  return SCHEDULER_OWNER_TOKEN_RE.test(fields.ownerToken.stringValue) && Number.isSafeInteger(ordinal) && ordinal >= 0
+    && tsMillis(fields.expiresAt.timestampValue) === tsMillis(fields.startedAt.timestampValue) + SCHEDULER_LEASE_SECONDS * 1000;
 }
 
 function leaseRecord(ownerToken, generation, startedAt, leaseNow) {

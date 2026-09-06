@@ -21,6 +21,8 @@ const { GeoPoint, DocumentReference, VectorValue } = require("@google-cloud/fire
 
 const SCHEDULE_SECONDS = 300;
 const LEASE_SECONDS = 270;
+/** C9.1.4: the v2 lease owner token is a pregenerated lowercase UUID. */
+const LOWERCASE_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const LEASE_PATH = "phase1System/dispositionTriggerLease";
 const STATE_PATH = "phase1System/dispositionTriggerState";
 const CROSS_FENCE_PATH = "phase1System/dispositionTriggerState/migrationLeases/legacyOversizeMigrationV1";
@@ -694,10 +696,12 @@ function makeSizer(domain) {
           if (index.order) entries[entries.length] = single;
           else if (index.arrayConfig === "CONTAINS" && elements !== null) for (const e of elements) entries[entries.length] = name + cap(sizeOf(e)) + 32;
         }
+      } else if (elements !== null) {
+        // C9.1.23: an array leaf carries one array-contains entry per element instead of the ascending/descending pair
+        for (const e of elements) entries[entries.length] = name + cap(sizeOf(e)) + 32;
       } else {
         entries[entries.length] = single;
         entries[entries.length] = single;
-        if (elements !== null) for (const e of elements) entries[entries.length] = name + cap(sizeOf(e)) + 32;
       }
     }
     for (const index of composites) {
@@ -1280,8 +1284,10 @@ function isLegacyLease(lease) {
 function isV2Lease(lease) {
   return lease !== null && typeof lease === "object" && !Array.isArray(lease) &&
     Object.keys(lease).sort().join(",") === "expiresAt,ownerToken,runOrdinal,schemaVersion,startedAt" &&
-    lease.schemaVersion === 1 && Number.isSafeInteger(lease.runOrdinal) && typeof lease.ownerToken === "string" &&
-    isMillisTimestamp(lease.startedAt) && isMillisTimestamp(lease.expiresAt);
+    lease.schemaVersion === 1 && Number.isSafeInteger(lease.runOrdinal) && lease.runOrdinal >= 0 &&
+    typeof lease.ownerToken === "string" && LOWERCASE_UUID_RE.test(lease.ownerToken) &&
+    isMillisTimestamp(lease.startedAt) && isMillisTimestamp(lease.expiresAt) &&
+    lease.expiresAt.toMillis() === lease.startedAt.toMillis() + LEASE_SECONDS * 1000;
 }
 
 function sameLease(a, b) {

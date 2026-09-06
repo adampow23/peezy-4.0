@@ -115,9 +115,10 @@ function indexEntries(docPath, fields) {
         if (index.order) entries = [...entries, single];
         else if (index.arrayConfig === "CONTAINS" && elements) entries = [...entries, ...elements.map((e) => name + capped(valueSize(e)) + ENTRY_OVERHEAD)];
       }
+    } else if (elements) {
+      entries = [...entries, ...elements.map((e) => name + capped(valueSize(e)) + ENTRY_OVERHEAD)];
     } else {
       entries = [...entries, single, single];
-      if (elements) entries = [...entries, ...elements.map((e) => name + capped(valueSize(e)) + ENTRY_OVERHEAD)];
     }
   }
   const leafMap = new Map(leaves(fields));
