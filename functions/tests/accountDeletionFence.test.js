@@ -2783,3 +2783,35 @@ test("package.json pins @google-cloud/firestore 7.11.6 as an exact direct depend
 });
 
 module.exports = { fakeFirestore, FakeClock, capability, sweepingMarker, guardingMarker, dataDeletedMarker, authGuardingMarker, accountDeletedMarker, freshOperationId, freshProofNonce, ts, UID, STARTED, GUARD_AFTER };
+
+// ---------------------------------------------------------------------------
+// S3 — shared fake Firestore query semantics (retro rule: extend once, before the next Node RED)
+// ---------------------------------------------------------------------------
+
+test("fake Firestore query semantics: collection groups, range/in/array-contains operators, multi-field order with cursors, and count", async () => {
+  const db = fakeFirestore({ docs: {
+    "users/a/tasks/t1": { status: "Snoozed", at: Timestamp.fromMillis(1000), tags: ["x"], trigger: { kind: "date" } },
+    "users/a/tasks/t2": { status: "Snoozed", at: Timestamp.fromMillis(3000), tags: ["y"], trigger: { kind: "event" } },
+    "users/b/tasks/t3": { status: "Upcoming", at: Timestamp.fromMillis(2000), tags: ["x", "y"], trigger: { kind: "date" } },
+    "users/b/tasks/t4": { status: "Snoozed", tags: [], trigger: { kind: "date" } },
+    "users/a/events/e1": { processingState: "pending" }
+  } });
+  const snoozed = await db.collectionGroup("tasks").where("status", "==", "Snoozed").orderBy("at", "asc").get();
+  assert.deepEqual(snoozed.docs.map((d) => d.ref.path), ["users/a/tasks/t1", "users/a/tasks/t2"], "field order excludes rows lacking the field");
+  const nestedRange = await db.collectionGroup("tasks").where("trigger.kind", "==", "date").where("at", "<=", Timestamp.fromMillis(2000)).orderBy("at").get();
+  assert.deepEqual(nestedRange.docs.map((d) => d.id), ["t1", "t3"]);
+  const after = await db.collectionGroup("tasks").orderBy("at", "asc").startAfter(snoozed.docs[0]).limit(1).get();
+  assert.deepEqual(after.docs.map((d) => d.id), ["t3"], "snapshot cursor resumes by the row's order keys");
+  const desc = await db.collectionGroup("tasks").orderBy("at", "desc").orderBy(FieldPath.documentId(), "asc").get();
+  assert.deepEqual(desc.docs.map((d) => d.id), ["t2", "t3", "t1"]);
+  const inQuery = await db.collectionGroup("tasks").where("status", "in", ["Upcoming", "Missing"]).get();
+  assert.deepEqual(inQuery.docs.map((d) => d.id), ["t3"]);
+  const contains = await db.collectionGroup("tasks").where("tags", "array-contains", "y").orderBy(FieldPath.documentId()).get();
+  assert.deepEqual(contains.docs.map((d) => d.id), ["t2", "t3"]);
+  const count = await db.collection("users/a/tasks").where("status", "==", "Snoozed").count().get();
+  assert.equal(count.data().count, 2);
+  const inTransaction = await db.runTransaction(async (transaction) => (await transaction.get(db.collectionGroup("tasks").where("status", "==", "Snoozed").count())).data().count);
+  assert.equal(inTransaction, 3);
+  const scalarCursor = await db.collection("users/a/tasks").orderBy(FieldPath.documentId()).startAfter("t1").get();
+  assert.deepEqual(scalarCursor.docs.map((d) => d.id), ["t2"]);
+});

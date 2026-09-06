@@ -21,6 +21,24 @@ function isDirectChild(path, collectionPath) {
   return path.startsWith(`${collectionPath}/`) && !path.slice(collectionPath.length + 1).includes("/");
 }
 
+function nested(data, field) {
+  return String(field).split(".").reduce((value, key) => (value === null || value === undefined ? undefined : value[key]), data);
+}
+
+function comparable(value) {
+  if (value instanceof Timestamp) return value.toMillis();
+  if (value instanceof Date) return value.getTime();
+  if (value && typeof value === "object" && typeof value.toMillis === "function") return value.toMillis();
+  return value;
+}
+
+function compareValues(a, b) {
+  const x = comparable(a), y = comparable(b);
+  if (typeof x === "string" && typeof y === "string") return compareBytes(x, y);
+  if (x === y) return 0;
+  return x < y ? -1 : 1;
+}
+
 function compareBytes(a, b) {
   const left = Buffer.from(a, "utf8");
   const right = Buffer.from(b, "utf8");
@@ -64,8 +82,9 @@ function fakeFirestore({ docs: initial = {}, clock } = {}) {
       id: segments.at(-1),
       __query: spec,
       doc: (id) => docRef(`${path}/${id ?? randomUUID()}`),
-      orderBy: (field, direction) => collectionRef(path, { ...spec, orderBy: String(field), direction: direction || "asc" }),
-      startAfter: (value) => collectionRef(path, { ...spec, startAfter: value }),
+      orderBy: (field, direction) => collectionRef(path, { ...spec, orderBys: [...(spec.orderBys || []), { field: String(field), direction: direction || "asc" }] }),
+      startAfter: (value) => collectionRef(path, { ...spec, startAfter: value && typeof value === "object" && value.ref ? { __snapshot: true, ref: value.ref, __data: value.data ? value.data() : undefined } : value }),
+      count: () => ({ __count: true, __query: spec, path, async get() { const r = runQuery(q); return { data: () => ({ count: r.size }) }; } }),
       limit: (count) => collectionRef(path, { ...spec, limit: count }),
       where: (field, op, value) => collectionRef(path, { ...spec, where: [...(spec.where || []), [String(field), op, value]] }),
       async get() { reads.push(`${path}?`); return runQuery(q); },
@@ -89,27 +108,46 @@ function fakeFirestore({ docs: initial = {}, clock } = {}) {
 
   function runQuery(q) {
     const spec = q.__query;
-    let rows = [...docs.entries()].filter(([p]) => isDirectChild(p, q.path));
+    let rows = [...docs.entries()].filter(([p]) => (spec.group ? p.split("/").length % 2 === 0 && p.split("/").at(-2) === spec.group : isDirectChild(p, q.path)));
     for (const [field, op, value] of spec.where || []) {
-      rows = rows.filter(([, data]) => {
-        const actual = field === "__name__" ? undefined : data[field];
-        if (op === "==") return actual === value;
-        // S3: string range operators for the global-cleanup sourcePath window.
-        if (op === ">=") return typeof actual === "string" && compareBytes(actual, value) >= 0;
-        if (op === "<") return typeof actual === "string" && compareBytes(actual, value) < 0;
+      rows = rows.filter(([p, data]) => {
+        const actual = field === "__name__" ? p.split("/").at(-1) : nested(data, field);
+        if (op === "==") return comparable(actual) === comparable(value);
+        if (op === "!=") return actual !== undefined && comparable(actual) !== comparable(value);
+        if (op === "in") return Array.isArray(value) && value.some((v) => comparable(v) === comparable(actual));
+        if (op === "array-contains") return Array.isArray(actual) && actual.some((v) => comparable(v) === comparable(value));
+        // S3: range operators over strings (byte order), numbers, Timestamps, and Dates; absent fields never match.
+        if ([">", ">=", "<", "<="].includes(op)) {
+          if (actual === undefined || actual === null) return false;
+          const c = compareValues(actual, value);
+          return op === ">" ? c > 0 : op === ">=" ? c >= 0 : op === "<" ? c < 0 : c <= 0;
+        }
         throw new Error(`fake query operator unsupported: ${op}`);
       });
     }
-    if (spec.orderBy && spec.orderBy !== "__name__") {
-      // S3: field ordering (Timestamp/Date/number/string), ties by document id.
-      const key = (data) => { const v = data[spec.orderBy]; return v instanceof Timestamp ? v.toMillis() : v instanceof Date ? v.getTime() : v; };
-      rows.sort(([pa, a], [pb, b]) => { const ka = key(a), kb = key(b); if (ka < kb) return -1; if (ka > kb) return 1; return compareBytes(pa.split("/").at(-1), pb.split("/").at(-1)); });
-    } else {
-      rows.sort(([a], [b]) => compareBytes(a.split("/").at(-1), b.split("/").at(-1)));
-    }
-    if (spec.direction === "desc") rows.reverse();
-    if (spec.startAfter !== undefined && spec.startAfter !== "") {
-      rows = rows.filter(([p]) => compareBytes(p.split("/").at(-1), spec.startAfter) > 0);
+    const orders = spec.orderBys && spec.orderBys.length ? spec.orderBys : [{ field: "__name__", direction: "asc" }];
+    // Firestore orders by every orderBy in turn, then by document id; a field orderBy excludes rows lacking the field.
+    if (orders.some((o) => o.field !== "__name__")) rows = rows.filter(([, data]) => orders.every((o) => o.field === "__name__" || nested(data, o.field) !== undefined));
+    const keyOf = ([p, data], o) => (o.field === "__name__" ? p.split("/").at(-1) : nested(data, o.field));
+    rows.sort((ra, rb) => {
+      for (const o of orders) {
+        const c = compareValues(keyOf(ra, o), keyOf(rb, o));
+        if (c !== 0) return o.direction === "desc" ? -c : c;
+      }
+      return compareBytes(ra[0].split("/").at(-1), rb[0].split("/").at(-1));
+    });
+    if (spec.startAfter !== undefined) {
+      // A document snapshot cursor uses the row's own order keys; a scalar cursor applies to the first orderBy.
+      const cursorKeys = spec.startAfter && spec.startAfter.__snapshot ? orders.map((o) => keyOf([spec.startAfter.ref.path, spec.startAfter.__data || {}], o)) : [spec.startAfter];
+      rows = rows.filter((row) => {
+        for (let i = 0; i < cursorKeys.length; i += 1) {
+          const c = compareValues(keyOf(row, orders[i]), cursorKeys[i]);
+          const dir = orders[i].direction === "desc" ? -1 : 1;
+          if (c * dir > 0) return true;
+          if (c * dir < 0) return false;
+        }
+        return false;
+      });
     }
     if (spec.limit !== undefined) rows = rows.slice(0, spec.limit);
     const list = rows.map(([p, data]) => snapshot(docRef(p), data));
@@ -183,6 +221,7 @@ function fakeFirestore({ docs: initial = {}, clock } = {}) {
     __writes: writes,
     __reads: reads,
     collection: (path) => collectionRef(path),
+    collectionGroup: (id) => collectionRef(`__group__/x/${id}`, { group: id }),
     doc: (path) => docRef(path),
     async runTransaction(callback, { maxAttempts = 5 } = {}) {
       for (let attempt = 1; ; attempt += 1) {
@@ -190,6 +229,7 @@ function fakeFirestore({ docs: initial = {}, clock } = {}) {
         const readVersions = new Map();
         const transaction = {
           async get(target) {
+            if (target.__count) { const result = runQuery({ __query: target.__query, path: target.path }); reads.push(`${target.path}?count`); return { data: () => ({ count: result.size }) }; }
             if (target.__query) {
               const result = runQuery(target);
               for (const row of result.docs) readVersions.set(row.ref.path, versions.get(row.ref.path) || 0);
