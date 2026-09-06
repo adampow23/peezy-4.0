@@ -421,7 +421,7 @@ Diff gate (replaces the preimage hashes): at every checkpoint `git diff <base>..
 | Path | Named hunk |
 |---|---|
 | `Peezy 4.0/Menu/PeezySettingsView.swift` | `deleteAccount()` and the one runtime-provider line of `retakeAssessment()`'s Firestore acquisition; `retakeAssessment()` otherwise unchanged |
-| `Peezy 4.0/MainInterface/Models/RetakeAssessmentCoordinator.swift` | the closure slice `deleteAssessments: { … }` … `resetDose: { … },` through the line `postNotification: {` (S3), and `production()` |
+| `Peezy 4.0/MainInterface/Models/RetakeAssessmentCoordinator.swift` | S3 (Decision 10): the initializer (authority-taking `ResetCleanupCallbacks`, `ResetRemoteProviding`, no operation store), `retake()` (reserve → bind/operation → `drive` → notification on `notify`), `production()`, and the removal of `RetakeOperationStore`/`UserDefaultsRetakeOperationStore`; `Error` cases and messages unchanged |
 | `Peezy 4.0/Inventory/Models/InventorySessionManager.swift` | exactly six `Firestore.firestore()` substitutions plus `pendingNarration` |
 | `Peezy 4.0/Inventory/Views/InventoryCameraView.swift` | `pendingNarrationTranscript` |
 | `functions/processInventory.js` | process success, process error, `onInventoryRoomWritten`, the Anthropic call sites, and their logging sinks |

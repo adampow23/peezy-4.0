@@ -156,66 +156,60 @@ struct TaskSupersessionTests {
         }
     }
 
-    @Test func coordinatorRetainsOperationAcrossFailureAndPostsOnlyAfterFinalize() async throws {
-        let store = MemoryOperationStore()
-        let calls = RetakeCalls()
-        store.onClear = calls.noteClear
-        calls.failStep = .finalize
-        let registry = try testRegistry(uid: "user-1")
-        let coordinator = RetakeAssessmentCoordinator(
-            currentUser: { "user-1" },
-            taskPlan: calls.taskPlan,
-            registry: registry,
-            deleteAssessments: calls.assessment,
-            deleteUserKnowledge: calls.knowledge,
-            resetDose: calls.dose,
-            operationStore: store,
-            postNotification: calls.notify
-        )
-        await #expect(throws: RetakeTestError.failed) { try await coordinator.retake() }
-        let retained = await store.load(userId: "user-1")
-        #expect(retained != nil)
-        #expect(await calls.notifications == 0)
+    // S3 (Decision 10, 2026-09-06): the two pre-S3 coordinator cases pinned the operation store and the
+    // (String) closures. Their properties are asserted under the drive path here and in
+    // DurableStoreRecoveryTests: one identity across failure and resume, notification only after finalize.
 
-        calls.failStep = nil
-        let reconstructed = RetakeAssessmentCoordinator(
-            currentUser: { "user-1" }, taskPlan: calls.taskPlan, registry: registry,
-            deleteAssessments: calls.assessment, deleteUserKnowledge: calls.knowledge,
-            resetDose: calls.dose, operationStore: store, postNotification: calls.notify
+    @Test func coordinatorRetainsIdentityAcrossFinalizeFailureAndPostsOnlyAfterFinalize() async throws {
+        let wires = try frozenResetWires()
+        let (registry, handle) = try await preparedRegistry()
+        let remote = ScriptedResetRemote(wires: wires)
+        await remote.setFailFinalizeOnce()
+        let trace = DriveTrace()
+        await remote.attach(trace, registry: registry, handle: handle)
+        let notifications = NotificationCounter()
+        let coordinator = RetakeAssessmentCoordinator(
+            currentUser: { "A" }, remote: remote, registry: registry,
+            gestureId: { "rsg1_11111111-1111-4111-8111-111111111111" },
+            cleanup: await trace.callbacks(), postNotification: { await notifications.bump(); await trace.record("notification") }
         )
-        try await reconstructed.retake()
-        #expect(await store.load(userId: "user-1") == nil)
-        #expect(await calls.operationIds.count == 4)
-        #expect(Set(await calls.operationIds).count == 1)
-        #expect(await calls.notifications == 1)
-        #expect(await calls.order.suffix(3) == ["finalize", "clear", "notify"])
+        await #expect(throws: DriveTraceError.failed) { try await coordinator.retake() }
+        #expect(await registry.snapshot().records.count == 1)
+        #expect(await notifications.count == 0)
+        try await coordinator.retake()
+        let aliases = await remote.aliases
+        #expect(aliases.count == 3 && Set(aliases).count == 1)
+        #expect(await notifications.count == 1)
+        #expect(await trace.order.suffix(2) == ["finalize", "notification"])
+        #expect(await registry.snapshot().records.isEmpty)
     }
 
-    @Test func coordinatorPropagatesEachLocalFailureAndSafelyReplaysWithSameOperation() async throws {
-        for failedStep in [RetakeCalls.Step.assessment, .knowledge, .dose] {
-            let store = MemoryOperationStore()
-            let calls = RetakeCalls()
-            store.onClear = calls.noteClear
-            calls.failStep = failedStep
+    @Test func coordinatorPropagatesEachLocalFailureAndReplaysWithTheSameIdentity() async throws {
+        for failedStep in ["deleteAssessments", "deleteUserKnowledge", "resetDose"] {
+            let wires = try frozenResetWires()
+            let (registry, handle) = try await preparedRegistry()
+            let remote = ScriptedResetRemote(wires: wires)
+            let trace = DriveTrace()
+            await remote.attach(trace, registry: registry, handle: handle)
+            await trace.setFailing(failedStep)
+            let notifications = NotificationCounter()
             let coordinator = RetakeAssessmentCoordinator(
-                currentUser: { "user-\(failedStep.rawValue)" }, taskPlan: calls.taskPlan,
-                registry: try testRegistry(uid: "user-\(failedStep.rawValue)"),
-                deleteAssessments: calls.assessment, deleteUserKnowledge: calls.knowledge,
-                resetDose: calls.dose, operationStore: store, postNotification: calls.notify
+                currentUser: { "A" }, remote: remote, registry: registry,
+                gestureId: { "rsg1_11111111-1111-4111-8111-111111111111" },
+                cleanup: await trace.callbacks(), postNotification: { await notifications.bump(); await trace.record("notification") }
             )
-
-            await #expect(throws: RetakeTestError.failed) { try await coordinator.retake() }
-            let retained = await store.load(userId: "user-\(failedStep.rawValue)")
-            #expect(retained != nil)
-            #expect(await calls.notifications == 0)
-            #expect(await calls.order.last == failedStep.rawValue)
-
-            calls.failStep = nil
+            await #expect(throws: DriveTraceError.failed) { try await coordinator.retake() }
+            #expect(await trace.order.last == failedStep)
+            #expect(await notifications.count == 0)
+            let row = try #require(await registry.snapshot().records.first)
+            #expect(row.phase == .resetReceiptAwaitingLocalReset)
+            await trace.setFailing(nil)
             try await coordinator.retake()
-            #expect(Set(await calls.operationIds).count == 1)
-            #expect(await store.load(userId: "user-\(failedStep.rawValue)") == nil)
-            #expect(await calls.notifications == 1)
-            #expect(await calls.order.suffix(3) == ["finalize", "clear", "notify"])
+            let aliases = await remote.aliases
+            #expect(Set(aliases).count == 1)
+            #expect(await notifications.count == 1)
+            #expect(await trace.order.suffix(2) == ["finalize", "notification"])
+            #expect(await registry.snapshot().records.isEmpty)
         }
     }
 }
@@ -232,52 +226,3 @@ private final class CallableRecorder {
 }
 
 private enum RetakeTestError: Swift.Error { case failed }
-
-@MainActor
-private final class MemoryOperationStore: RetakeOperationStore {
-    var values: [String: String] = [:]
-    var onClear: (() -> Void)?
-    func load(userId: String) -> String? { values[userId] }
-    func save(_ operationId: String, userId: String) { values[userId] = operationId }
-    func clear(userId: String) { values[userId] = nil; onClear?() }
-}
-
-@MainActor
-private final class RetakeCalls {
-    enum Step: String { case assessment, knowledge, dose, finalize }
-
-    var operationIds: [String] = []
-    var order: [String] = []
-    var notifications = 0
-    var failStep: Step?
-
-    func taskPlan(_ action: RetakeAssessmentCoordinator.TaskPlanAction, _ operationId: String) async throws {
-        operationIds.append(operationId)
-        order.append(action == .reset ? "reset" : "finalize")
-        if action == .finalize && failStep == .finalize { throw RetakeTestError.failed }
-    }
-    func assessment(_ uid: String) async throws {
-        order.append("assessment")
-        if failStep == .assessment { throw RetakeTestError.failed }
-    }
-    func knowledge(_ uid: String) async throws {
-        order.append("knowledge")
-        if failStep == .knowledge { throw RetakeTestError.failed }
-    }
-    func dose(_ uid: String) async throws {
-        order.append("dose")
-        if failStep == .dose { throw RetakeTestError.failed }
-    }
-    func notify() async { notifications += 1; order.append("notify") }
-    func noteClear() { order.append("clear") }
-}
-
-/// S1: the coordinator reserves a registry gesture first; these tests keep their
-/// legacy assertions and inject an isolated registry (see DurableStoreRecoveryTests doubles).
-private func testRegistry(uid: String) throws -> ResetOperationRegistry {
-    ResetOperationRegistry(
-        directory: try temporaryDirectory(), clock: ResetClockStub(),
-        auth: SignedAuthStub(.signedIn(SignedAuthTuple(uid: uid, authEpochUUID: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", credentialRevision: 1))),
-        epochAuthority: EpochStub(epoch: 0)
-    )
-}

@@ -662,6 +662,9 @@ actor ResetOperationRegistry {
     private let clock: any LocalDurableClock
     private let auth: any AuthAuthorityProviding
     private let epochAuthority: any ResetEpochAuthorityProviding
+    /// S3: epoch-conflict recovery drives with this bundle; nil until the owner attaches it.
+    fileprivate var recoveryBundle: ResetRecoveryBundle?
+    fileprivate var recoveryInFlight: String?
 
     init(directory: URL, clock: any LocalDurableClock, auth: any AuthAuthorityProviding, epochAuthority: any ResetEpochAuthorityProviding) {
         self.directory = directory
@@ -1307,9 +1310,12 @@ extension TaskPlanService {
 struct ResetLocalCleanupAuthorityV1: Equatable, Sendable {
     let accountUid: String
     let operationId: String
+    let requestFingerprint: String
     let expectedTaskGenerationEpoch: Int
     let taskGenerationEpoch: Int
     let activeMoveEventId: String
+    let deletedCount: Int
+    let deletedCounts: ResetDeletedCountsV1
 
     init?(inspection: ResetInspectionV1, progress: ResetReceiptV1) {
         guard inspection.outcome == .pending, progress.kind == .progress, progress.state == .awaitingLocalReset,
@@ -1318,15 +1324,35 @@ struct ResetLocalCleanupAuthorityV1: Equatable, Sendable {
               inspection.identityDigest == TaskPlanService.ResetTransport.identityDigest(uid: progress.accountUid, expectedTaskGenerationEpoch: progress.expectedTaskGenerationEpoch) else { return nil }
         accountUid = progress.accountUid
         operationId = progress.operationId
+        requestFingerprint = inspection.requestFingerprint
         expectedTaskGenerationEpoch = progress.expectedTaskGenerationEpoch
         taskGenerationEpoch = progress.taskGenerationEpoch
         activeMoveEventId = progress.activeMoveEventId
+        deletedCount = progress.deletedCount
+        deletedCounts = progress.deletedCounts
     }
 }
 
 enum ResetCleanupError: Error, Equatable {
     /// The user root does not carry the exact awaiting marker for the authority; nothing was written.
     case markerMismatch
+    /// `RESET_LOCAL_GENERATION_INVALID`: a document carries no stamp outside the legacy 0→1 bridge; it is preserved and finalization is blocked.
+    case localGenerationInvalid(path: String)
+}
+
+/// Generation relation for one stamped document under the authority (C9.5.14): a stamp below the
+/// result epoch is deletable, a stamp at or above it is preserved, and a missing stamp is legacy
+/// zero only for the 0→1 bridge.
+enum ResetStampDisposition: Equatable {
+    case delete, preserve, invalid
+
+    static func of(_ data: [String: Any]?, authority: ResetLocalCleanupAuthorityV1) -> ResetStampDisposition {
+        guard let raw = data?[TaskGenerationEpochStamp.fieldName] else {
+            return authority.expectedTaskGenerationEpoch == 0 && authority.taskGenerationEpoch == 1 ? .delete : .invalid
+        }
+        guard let stamp = TaskGenerationEpochStamp.safeInteger(raw) else { return .invalid }
+        return stamp < authority.taskGenerationEpoch ? .delete : .preserve
+    }
 }
 
 /// The `taskReset` marker of `users/{uid}` in its terminal `awaiting_local_reset`
@@ -1341,14 +1367,14 @@ enum ResetMarkerV1 {
               TaskGenerationEpochStamp.safeInteger(root[TaskGenerationEpochStamp.rootFieldName]) == authority.taskGenerationEpoch,
               TaskGenerationEpochStamp.safeInteger(marker["schemaVersion"]) == 1, marker["kind"] as? String == "reset",
               marker["operationId"] as? String == authority.operationId,
-              marker["requestFingerprint"] as? String == TaskPlanService.ResetTransport.requestFingerprint(expectedTaskGenerationEpoch: authority.expectedTaskGenerationEpoch),
+              marker["requestFingerprint"] as? String == authority.requestFingerprint,
               marker["state"] as? String == ResetReceiptState.awaitingLocalReset.rawValue,
               TaskGenerationEpochStamp.safeInteger(marker["expectedTaskGenerationEpoch"]) == authority.expectedTaskGenerationEpoch,
               TaskGenerationEpochStamp.safeInteger(marker["taskGenerationEpoch"]) == authority.taskGenerationEpoch,
               marker["activeMoveEventId"] as? String == authority.activeMoveEventId,
               TaskGenerationEpochStamp.safeInteger(marker["targetIndex"]) == 4,
-              let counts = ResetDeletedCountsV1.decode(marker["deletedCounts"]),
-              let deletedCount = TaskGenerationEpochStamp.safeInteger(marker["deletedCount"]), counts.sum == deletedCount,
+              let counts = ResetDeletedCountsV1.decode(marker["deletedCounts"]), counts == authority.deletedCounts,
+              let deletedCount = TaskGenerationEpochStamp.safeInteger(marker["deletedCount"]), deletedCount == authority.deletedCount, counts.sum == deletedCount,
               let createdAt = marker["createdAt"] as? Timestamp, let updatedAt = marker["updatedAt"] as? Timestamp,
               let awaitingAt = marker["awaitingLocalResetAt"] as? Timestamp else { return false }
         return createdAt.compare(awaitingAt) != .orderedDescending && awaitingAt.compare(updatedAt) != .orderedDescending
@@ -1363,25 +1389,37 @@ enum ResetLocalCleanupV1 {
         let firestore = try await FirestoreRuntime.provider.acquire().firestore
         let rootRef = firestore.collection("users").document(authority.accountUid)
         let documents = try await rootRef.collection("user_assessments").getDocuments().documents
+        var invalid: String?
         for document in documents {
             let ref = document.reference
-            try await firestore.runTypedTransaction { transaction in
+            let disposition: ResetStampDisposition = try await firestore.runTypedTransaction { transaction in
                 let root = try transaction.getDocument(rootRef)
                 guard ResetMarkerV1.matchesAwaiting(root.data(), authority: authority) else { throw ResetCleanupError.markerMismatch }
-                transaction.deleteDocument(ref)
+                let current = try transaction.getDocument(ref)
+                guard current.exists else { return .preserve }
+                let disposition = ResetStampDisposition.of(current.data(), authority: authority)
+                if disposition == .delete { transaction.deleteDocument(ref) }
+                return disposition
             }
+            if disposition == .invalid, invalid == nil { invalid = ref.path }
         }
+        if let invalid { throw ResetCleanupError.localGenerationInvalid(path: invalid) }
     }
 
     static func deleteUserKnowledge(authority: ResetLocalCleanupAuthorityV1) async throws {
         let firestore = try await FirestoreRuntime.provider.acquire().firestore
         let rootRef = firestore.collection("users").document(authority.accountUid)
         let ref = firestore.collection("userKnowledge").document(authority.accountUid)
-        try await firestore.runTypedTransaction { transaction in
+        let disposition: ResetStampDisposition = try await firestore.runTypedTransaction { transaction in
             let root = try transaction.getDocument(rootRef)
             guard ResetMarkerV1.matchesAwaiting(root.data(), authority: authority) else { throw ResetCleanupError.markerMismatch }
-            transaction.deleteDocument(ref)
+            let current = try transaction.getDocument(ref)
+            guard current.exists else { return .preserve }
+            let disposition = ResetStampDisposition.of(current.data(), authority: authority)
+            if disposition == .delete { transaction.deleteDocument(ref) }
+            return disposition
         }
+        if disposition == .invalid { throw ResetCleanupError.localGenerationInvalid(path: ref.path) }
     }
 }
 
@@ -1397,8 +1435,12 @@ struct ResetCleanupCallbacks: Sendable {
 struct ResetDriveOutcome: Equatable, Sendable {
     let finalReceipt: ResetReceiptV1
     /// `true` when the final receipt was replayed (a committed inspection or a
-    /// replayed finalize): the caller posts no ephemeral notification.
+    /// replayed finalize).
     let replayed: Bool
+    /// `true` only for the invocation that itself stored the first `reset_final`
+    /// with `replayed:false` and committed `final_receipt → applying`; a row loaded
+    /// at `final_receipt` or `applying` never yields it (at-most-once notification).
+    let notify: Bool
 }
 
 enum ResetDriveError: Error, Equatable {
@@ -1422,6 +1464,7 @@ extension ResetOperationRegistry {
     func drive(handle: ResetOperationHandle, remote: any ResetRemoteProviding, cleanup: ResetCleanupCallbacks) async throws -> ResetDriveOutcome {
         let tuple = try await signedAuth()
         guard tuple.uid == handle.uid else { throw RegistryError.operationStale(uid: handle.uid, handleId: handle.handleId) }
+        var storedFreshFinal = false
         for _ in 0..<Self.driveStepBudget {
             var row = try currentRow(handle)
             switch row.phase {
@@ -1441,6 +1484,7 @@ extension ResetOperationRegistry {
                 case .final:
                     row.finalReceipt = receipt.canonicalData()
                     row.phase = .finalReceipt
+                    storedFreshFinal = !receipt.replayed
                 }
                 try store(row)
             case .resetReceiptAwaitingLocalReset:
@@ -1470,6 +1514,7 @@ extension ResetOperationRegistry {
                 row = try currentRow(handle)
                 row.finalReceipt = receipt.canonicalData()
                 row.phase = .finalReceipt
+                storedFreshFinal = !receipt.replayed
                 try store(row)
             case .finalReceipt:
                 row.phase = .applying
@@ -1477,7 +1522,7 @@ extension ResetOperationRegistry {
             case .applying:
                 guard let bytes = row.finalReceipt, let final = ResetReceiptV1.decode(data: bytes), final.kind == .final else { throw ResetDriveError.receiptMismatch(detail: "final") }
                 try remove(handle)
-                return ResetDriveOutcome(finalReceipt: final, replayed: final.replayed)
+                return ResetDriveOutcome(finalReceipt: final, replayed: final.replayed, notify: storedFreshFinal && !final.replayed)
             }
         }
         throw ResetDriveError.stepBudgetExceeded
@@ -1535,10 +1580,19 @@ extension ResetOperationRegistry {
 
 // MARK: - Epoch-conflict recovery (§5; BlockedSnapshot.resetEpochConflict → recover_epoch)
 
+/// The protected callback bundle a recovery action drives with; wired by the
+/// coordinator's owner and never by a view.
+struct ResetRecoveryBundle: Sendable {
+    let remote: any ResetRemoteProviding
+    let cleanup: ResetCleanupCallbacks
+}
+
 extension ResetOperationRegistry: ResetEpochConflictRecovering {
     /// Accepts only the current conflict digest, the actionable (lowest) epoch,
-    /// and that row's exact phase and recovery action; the actionable row is
-    /// retained and the other current-UID rows are removed so the store is ready.
+    /// and that row's exact phase and recovery action, then runs that row's own
+    /// reducer branch (`drive`) and never touches another occupant. Completion
+    /// reclassifies: the next-minimum conflict, `ready`, or the blocked snapshot.
+    /// An identical in-flight call coalesces; a different one is `busy`.
     func recoverEpoch(recoveryStateDigest: String, expectedTaskGenerationEpoch: Int, expectedPhase: ResetRowPhase, action: ResetRecoveryAction) async -> RecoveryResult {
         guard case let .blocked(snapshot) = await classification() else { return .ready }
         guard case let .resetEpochConflict(digest, actionable, occupants) = snapshot else { return .blocked(snapshot) }
@@ -1546,14 +1600,27 @@ extension ResetOperationRegistry: ResetEpochConflictRecovering {
         guard expectedTaskGenerationEpoch == actionable,
               let target = occupants.first(where: { $0.expectedTaskGenerationEpoch == actionable }),
               target.phase == expectedPhase, target.recoveryAction == action else { return .unavailable(store: .reset) }
-        guard case let .signedIn(tuple) = await auth.currentSignedAuth() else { return .unavailable(store: .reset) }
+        guard let bundle = recoveryBundle else { return .unavailable(store: .reset) }
+        let key = "\(digest)|\(expectedTaskGenerationEpoch)|\(expectedPhase.rawValue)|\(action.rawValue)"
+        if let inFlight = recoveryInFlight {
+            return inFlight == key ? .busy(store: .reset) : .busy(store: .reset)
+        }
+        guard case let .signedIn(tuple) = await auth.currentSignedAuth(),
+              let row = (try? read())?.records.first(where: { $0.uid == tuple.uid && $0.expectedTaskGenerationEpoch == actionable }),
+              row.phase == expectedPhase else { return .unavailable(store: .reset) }
+        recoveryInFlight = key
+        defer { recoveryInFlight = nil }
         do {
-            guard var envelope = try read() else { return .ready }
-            envelope.records.removeAll { $0.uid == tuple.uid && $0.expectedTaskGenerationEpoch != actionable }
-            try write(&envelope)
-            return .ready
+            _ = try await drive(handle: ResetOperationHandle(uid: row.uid, handleId: row.handleId), remote: bundle.remote, cleanup: bundle.cleanup)
         } catch {
-            return .busy(store: .reset)
+            // The row keeps its phase; the caller reclassifies and may retry the same action.
+        }
+        switch await classification() {
+        case .ready: return .ready
+        case let .blocked(next): return .blocked(next)
         }
     }
+
+    /// Owner wiring (S7): the bundle every recovery action drives with.
+    func attachRecovery(_ bundle: ResetRecoveryBundle) { recoveryBundle = bundle }
 }

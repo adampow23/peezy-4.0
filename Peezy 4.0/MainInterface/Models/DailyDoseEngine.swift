@@ -71,23 +71,6 @@ struct DailyDoseEngine {
         }
     }
 
-    /// Removes the old plan's frozen dose and its local progress counters so a
-    /// retake starts with the regenerated plan rather than same-day residue.
-    func resetForRetake(userId: String) async throws {
-        guard !userId.isEmpty else { return }
-
-        try await FirestoreRuntime.provider.acquire().firestore
-            .collection("users")
-            .document(userId)
-            .updateData(["dailyDose": FieldValue.delete()])
-
-        let defaults = UserDefaults.standard
-        let prefix = "peezy.\(userId).dailyDose."
-        defaults.removeObject(forKey: "\(prefix)completedCount")
-        defaults.removeObject(forKey: "\(prefix)lastDate")
-        defaults.removeObject(forKey: "\(prefix)firstLaunchDate")
-    }
-
     func bufferDays(daysUntilMove: Int) -> Int {
         if daysUntilMove <= 10 { return 0 }
         if daysUntilMove <= 14 { return 3 }
@@ -348,7 +331,12 @@ actor DailyDoseLocalStore {
 
 extension DailyDoseLocalStore {
     enum CleanupResult: Equatable, Sendable {
+        /// Older epoch replaced by the empty epoch-r state (revision + 1), or an absent store given the epoch-r floor.
         case cleaned(DailyDoseLocalStateV1)
+        /// The store already sits at the result epoch; preserved.
+        case preserved(DailyDoseLocalStateV1)
+        /// The store is at a newer epoch; preserved and reported.
+        case drift(current: DailyDoseLocalStateV1)
         case malformed
     }
 
@@ -372,9 +360,18 @@ extension DailyDoseLocalStore {
     /// `taskGenerationEpoch` with revision 0, so any writer holding the previous
     /// epoch drifts on its next CAS. Malformed bytes are preserved, never replaced.
     func cleanup(uid: String, taskGenerationEpoch: Int) -> CleanupResult {
-        if case .malformed = load(uid: uid) { return .malformed }
-        let floor = DailyDoseLocalStateV1(taskGenerationEpoch: taskGenerationEpoch, revision: 0, completedCount: 0, lastDate: nil, firstLaunchDate: nil)
-        return writeState(floor, uid: uid) ? .cleaned(floor) : .malformed
+        switch load(uid: uid) {
+        case .malformed:
+            return .malformed
+        case .absent:
+            let floor = DailyDoseLocalStateV1(taskGenerationEpoch: taskGenerationEpoch, revision: 0, completedCount: 0, lastDate: nil, firstLaunchDate: nil)
+            return writeState(floor, uid: uid) ? .cleaned(floor) : .malformed
+        case let .present(current):
+            if current.taskGenerationEpoch == taskGenerationEpoch { return .preserved(current) }
+            if current.taskGenerationEpoch > taskGenerationEpoch { return .drift(current: current) }
+            let next = DailyDoseLocalStateV1(taskGenerationEpoch: taskGenerationEpoch, revision: current.revision + 1, completedCount: 0, lastDate: nil, firstLaunchDate: nil)
+            return writeState(next, uid: uid) ? .cleaned(next) : .malformed
+        }
     }
 
     /// Exact 0→1 bridge order: read the legacy values, write v2 at epoch 0,
