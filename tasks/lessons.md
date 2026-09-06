@@ -36,3 +36,12 @@
 ## 2026-09-06 — S3 brief
 - Registry membership comes from the contract's C6 lists, not from ledger prose: the S2 close-out called `notifySupport.js` a fence writer and the S3 brief inherited it; C6.1 never lists it (it is a C6.2 provider with no Firestore write). Check each file against the registry before assigning it a call.
 - A fixture family goes to the file the contract names for it: §12.3 gives every client decoder to `DurableStoreRecoveryTests`, so decoder mirrors do not belong in `TaskPlanDispositionTests` just because earlier slices extended that file.
+
+## 2026-09-06 — S3 execution (contract-complete increments)
+- Read-only test files pin implementation shapes, not just behavior: `processInventoryMerge.test.js` pinned the literal `sessionRef.update({` form and `TaskSupersessionTests.swift` pins the pre-S3 coordinator initializer. Before briefing a slice, grep the read-only tests for every symbol the slice must change; each hit is an owner decision, not a surprise at implementation time.
+- Offline Firestore fakes in read-only suites implement different surfaces (`db.doc` only, `collection().doc()` only); a shared helper must resolve the owner root through whichever exists instead of assuming the Admin SDK.
+- A rules predicate that dereferences `resource.data` denies reads of absent documents (the D15 point-path read precedes creation); write `resource == null || …` and keep a rules case for the absent root.
+- `@firebase/rules-unit-testing`'s REST seeder matches `as Bool` before `as Int`, so NSNumbers from JSON fixtures are written as booleans; convert fixture numbers to Swift Ints before `adminSet`.
+- Swift Testing rejects a `#require` nested inside another `#require` (and `try` inside its argument) with "recursive expansion"; hoist the inner expression.
+- A background poller that greps for `xcodebuild` by command line matches itself; match the binary (`pgrep -x`) or run the build in the foreground.
+- Freeze cross-language wire fixtures through the real handler on the fake Firestore and assert byte-equality from the Node side; the Swift decoder mirrors then read one committed file instead of restating shapes.
