@@ -266,8 +266,6 @@ actor DailyDoseLocalStore {
     static let shared = DailyDoseLocalStore(defaults: .standard)
 
     private let defaults: UserDefaults
-    /// Same-file access for the S3 cleanup/bridge extension below.
-    fileprivate var defaultsStore: UserDefaults { defaults }
 
     init(defaults: UserDefaults) {
         self.defaults = defaults
@@ -324,7 +322,6 @@ actor DailyDoseLocalStore {
         return true
     }
 
-    fileprivate func writeState(_ state: DailyDoseLocalStateV1, uid: String) -> Bool { write(state, uid: uid) }
 }
 
 // MARK: - S3: epoch-r cleanup and the exact 0→1 bridge (§5:547; C6.6)
@@ -356,6 +353,11 @@ extension DailyDoseLocalStore {
         ["completedCount", "lastDate", "firstLaunchDate"].map { "peezy.\(uid).dailyDose.\($0)" }
     }
 
+    /// Removes the three legacy v0 keys; the v2 state is untouched.
+    func removeLegacyKeys(uid: String) {
+        Self.legacyKeys(uid: uid).forEach { defaults.removeObject(forKey: $0) }
+    }
+
     /// Cleanup at the result epoch: the state becomes the empty floor at
     /// `taskGenerationEpoch` with revision 0, so any writer holding the previous
     /// epoch drifts on its next CAS. Malformed bytes are preserved, never replaced.
@@ -365,12 +367,12 @@ extension DailyDoseLocalStore {
             return .malformed
         case .absent:
             let floor = DailyDoseLocalStateV1(taskGenerationEpoch: taskGenerationEpoch, revision: 0, completedCount: 0, lastDate: nil, firstLaunchDate: nil)
-            return writeState(floor, uid: uid) ? .cleaned(floor) : .malformed
+            return write(floor, uid: uid) ? .cleaned(floor) : .malformed
         case let .present(current):
             if current.taskGenerationEpoch == taskGenerationEpoch { return .preserved(current) }
             if current.taskGenerationEpoch > taskGenerationEpoch { return .drift(current: current) }
             let next = DailyDoseLocalStateV1(taskGenerationEpoch: taskGenerationEpoch, revision: current.revision + 1, completedCount: 0, lastDate: nil, firstLaunchDate: nil)
-            return writeState(next, uid: uid) ? .cleaned(next) : .malformed
+            return write(next, uid: uid) ? .cleaned(next) : .malformed
         }
     }
 
@@ -383,18 +385,18 @@ extension DailyDoseLocalStore {
         case .malformed:
             return .malformed
         case .present:
-            keys.forEach { defaultsStore.removeObject(forKey: $0) }
+            removeLegacyKeys(uid: uid)
             return .present
         case .absent:
-            guard keys.contains(where: { defaultsStore.object(forKey: $0) != nil }) else { return .none }
-            let completed = min(max(defaultsStore.integer(forKey: keys[0]), 0), DailyDoseLocalStateV1.maxCompletedCount)
+            guard keys.contains(where: { defaults.object(forKey: $0) != nil }) else { return .none }
+            let completed = min(max(defaults.integer(forKey: keys[0]), 0), DailyDoseLocalStateV1.maxCompletedCount)
             let state = DailyDoseLocalStateV1(
                 taskGenerationEpoch: 0, revision: 0, completedCount: completed,
-                lastDate: Self.legacyDate(defaultsStore.string(forKey: keys[1])),
-                firstLaunchDate: Self.legacyDate(defaultsStore.string(forKey: keys[2]))
+                lastDate: Self.legacyDate(defaults.string(forKey: keys[1])),
+                firstLaunchDate: Self.legacyDate(defaults.string(forKey: keys[2]))
             )
-            guard writeState(state, uid: uid) else { return .malformed }
-            keys.forEach { defaultsStore.removeObject(forKey: $0) }
+            guard write(state, uid: uid) else { return .malformed }
+            removeLegacyKeys(uid: uid)
             return .bridged(state)
         }
     }
@@ -410,7 +412,7 @@ extension DailyDoseEngine {
     /// Authority-taking dose reset (S3): one root transaction requires the exact
     /// awaiting marker for `authority` and removes the frozen dose; then the local
     /// store is cleaned at the result epoch and the legacy v0 keys are removed.
-    func resetForRetake(authority: ResetLocalCleanupAuthorityV1, localStore: DailyDoseLocalStore = .shared, defaults: UserDefaults = .standard) async throws {
+    func resetForRetake(authority: ResetLocalCleanupAuthorityV1, localStore: DailyDoseLocalStore = .shared) async throws {
         let firestore = try await FirestoreRuntime.provider.acquire().firestore
         let ref = firestore.collection("users").document(authority.accountUid)
         try await firestore.runTypedTransaction { transaction in
@@ -421,6 +423,6 @@ extension DailyDoseEngine {
             }
         }
         _ = await localStore.cleanup(uid: authority.accountUid, taskGenerationEpoch: authority.taskGenerationEpoch)
-        DailyDoseLocalStore.legacyKeys(uid: authority.accountUid).forEach { defaults.removeObject(forKey: $0) }
+        await localStore.removeLegacyKeys(uid: authority.accountUid)
     }
 }

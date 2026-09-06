@@ -1153,6 +1153,33 @@ struct DurableStoreRecoveryTests {
         #expect(await registry.recoverEpoch(recoveryStateDigest: digest, expectedTaskGenerationEpoch: 1, expectedPhase: .prepared, action: .retryReset) == .ready)
     }
 
+    /// Contract single slot: one shared `(key, Task)` per store owner; exact key equality coalesces;
+    /// a different key is `busy` before any callback, call, or write.
+    @Test func recoverEpochCoalescesAnIdenticalInFlightCallAndAnswersADifferentKeyBusyBeforeAnyCall() async throws {
+        let directory = try temporaryDirectory()
+        try writeEnvelopeRows(directory, rows: [(uid: "B", epoch: 0, createdAt: "2026-09-06T09:00:00.000Z"), (uid: "A", epoch: 3, createdAt: "2026-09-06T10:00:00.000Z"), (uid: "A", epoch: 1, createdAt: "2026-09-06T11:00:00.000Z")])
+        let registry = ResetOperationRegistry(directory: directory, clock: ResetClockStub(), auth: SignedAuthStub(.signedIn(tupleA)), epochAuthority: EpochStub(epoch: 0))
+        guard case let .blocked(.resetEpochConflict(digest, actionable, _)) = await registry.classification() else { Issue.record("expected conflict"); return }
+        let wires = try frozenResetWires()
+        let remote = ScriptedResetRemote(wires: wires)
+        let trace = DriveTrace()
+        let actionableRow = try #require(await registry.snapshot().records.first { $0.uid == "A" && $0.expectedTaskGenerationEpoch == actionable })
+        await remote.attach(trace, registry: registry, handle: ResetOperationHandle(uid: "A", handleId: actionableRow.handleId))
+        await registry.attachRecovery(ResetRecoveryBundle(remote: remote, cleanup: await trace.callbacks()))
+        await remote.setHoldDispatch()
+        let first = Task { await registry.recoverEpoch(recoveryStateDigest: digest, expectedTaskGenerationEpoch: actionable, expectedPhase: .prepared, action: .retryReset) }
+        while await remote.heldCount == 0 { await Task.yield() }
+        let same = Task { await registry.recoverEpoch(recoveryStateDigest: digest, expectedTaskGenerationEpoch: actionable, expectedPhase: .prepared, action: .retryReset) }
+        #expect(await registry.recoverEpoch(recoveryStateDigest: digest, expectedTaskGenerationEpoch: actionable, expectedPhase: .prepared, action: .applyFinal) == .busy(store: .reset), "a different key is busy while the slot is occupied")
+        #expect(await trace.order == ["resetDispatch"], "the busy answer performs no callback or call")
+        await remote.releaseHeld()
+        #expect(await first.value == .ready)
+        #expect(await same.value == .ready, "an identical call coalesces onto the in-flight attempt")
+        #expect(await trace.order == ["resetDispatch", "inspect", "deleteAssessments", "inspect", "deleteUserKnowledge", "inspect", "resetDose", "inspect", "finalize"], "exactly one drive ran")
+        #expect(await remote.finalizeCalls == 1)
+        #expect(await registry.classification() == .ready)
+    }
+
     @Test func dailyDoseCleanupWritesTheEmptyFloorAtTheResultEpochAndStaleWritersDrift() async throws {
         let defaults = try isolatedDefaults()
         let store = DailyDoseLocalStore(defaults: defaults)
@@ -1233,7 +1260,7 @@ struct DurableStoreRecoveryTests {
         let wrong = try #require(ResetLocalCleanupAuthorityV1(inspection: foreignPendingDecoded, progress: foreignDecoded))
         await #expect(throws: ResetCleanupError.markerMismatch) { try await ResetLocalCleanupV1.deleteAssessments(authority: wrong) }
         await #expect(throws: ResetCleanupError.markerMismatch) { try await ResetLocalCleanupV1.deleteUserKnowledge(authority: wrong) }
-        await #expect(throws: ResetCleanupError.markerMismatch) { try await DailyDoseEngine().resetForRetake(authority: wrong, localStore: DailyDoseLocalStore(defaults: try isolatedDefaults()), defaults: try isolatedDefaults()) }
+        await #expect(throws: ResetCleanupError.markerMismatch) { try await DailyDoseEngine().resetForRetake(authority: wrong, localStore: DailyDoseLocalStore(defaults: try isolatedDefaults())) }
         #expect(try await firestore.collection("users").document(uid).collection("user_assessments").getDocuments().documents.count == 4)
         #expect(try await firestore.collection("userKnowledge").document(uid).getDocument().exists)
 
@@ -1249,7 +1276,7 @@ struct DurableStoreRecoveryTests {
         defaults.set(5, forKey: "peezy.\(uid).dailyDose.completedCount")
         let localStore = DailyDoseLocalStore(defaults: defaults)
         _ = await localStore.ensure(uid: uid, taskGenerationEpoch: 1)
-        try await DailyDoseEngine().resetForRetake(authority: authority, localStore: localStore, defaults: defaults)
+        try await DailyDoseEngine().resetForRetake(authority: authority, localStore: localStore)
         #expect(try await firestore.collection("users").document(uid).collection("user_assessments").getDocuments().documents.map(\.documentID) == ["kept"])
         #expect(try await firestore.collection("userKnowledge").document(uid).getDocument().exists == false)
         let root = try await firestore.collection("users").document(uid).getDocument().data()
@@ -1417,6 +1444,10 @@ actor ScriptedResetRemote: ResetRemoteProviding {
     private(set) var aliases: [String] = []
     private var failFinalizeOnce = false
     private(set) var dispatchPhases: [ResetRowPhase] = []
+    private var holdDispatch = false
+    private var held: [CheckedContinuation<Void, Never>] = []
+    /// Number of reset dispatches currently parked by `setHoldDispatch`.
+    private(set) var heldCount = 0
     var registry: ResetOperationRegistry?
     var handle: ResetOperationHandle?
     var recorder: DriveTrace?
@@ -1426,6 +1457,9 @@ actor ScriptedResetRemote: ResetRemoteProviding {
     func setCommittedAtInspection(_ ordinal: Int) { committedAt = ordinal }
     func setAbsentAtInspection(_ ordinal: Int) { absentAt = ordinal }
     func setFailFinalizeOnce() { failFinalizeOnce = true }
+    /// The next reset dispatch parks until `releaseHeld()`, keeping one drive in flight.
+    func setHoldDispatch() { holdDispatch = true }
+    func releaseHeld() { let waiting = held; held = []; heldCount = 0; waiting.forEach { $0.resume() } }
     func attach(_ recorder: DriveTrace, registry: ResetOperationRegistry, handle: ResetOperationHandle) { self.recorder = recorder; self.registry = registry; self.handle = handle }
 
     private func rebased(_ map: [String: Any], replayed: Bool? = nil) -> [String: Any] {
@@ -1441,6 +1475,11 @@ actor ScriptedResetRemote: ResetRemoteProviding {
         switch action {
         case .resetAllTasks:
             await recorder?.record("resetDispatch")
+            if holdDispatch {
+                holdDispatch = false
+                heldCount += 1
+                await withCheckedContinuation { held.append($0) }
+            }
             if deletingFirst { deletingFirst = false; return try ResetReceiptV1.decode(rebased(wires.map("progressDeleting"))) }
             return try ResetReceiptV1.decode(rebased(wires.map("progressAwaiting")))
         case .finalizeTaskReset:

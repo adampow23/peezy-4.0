@@ -664,7 +664,9 @@ actor ResetOperationRegistry {
     private let epochAuthority: any ResetEpochAuthorityProviding
     /// S3: epoch-conflict recovery drives with this bundle; nil until the owner attaches it.
     fileprivate var recoveryBundle: ResetRecoveryBundle?
-    fileprivate var recoveryInFlight: String?
+    /// The store owner's single `(RecoveryAttemptKey, Task)` slot: an identical key
+    /// coalesces onto the task; a different key is `busy` before any callback, call, or write.
+    fileprivate var recoverySlot: (key: String, task: Task<RecoveryResult, Never>)?
 
     init(directory: URL, clock: any LocalDurableClock, auth: any AuthAuthorityProviding, epochAuthority: any ResetEpochAuthorityProviding) {
         self.directory = directory
@@ -1592,8 +1594,22 @@ extension ResetOperationRegistry: ResetEpochConflictRecovering {
     /// and that row's exact phase and recovery action, then runs that row's own
     /// reducer branch (`drive`) and never touches another occupant. Completion
     /// reclassifies: the next-minimum conflict, `ready`, or the blocked snapshot.
-    /// An identical in-flight call coalesces; a different one is `busy`.
+    /// An identical in-flight call coalesces; a different one is `busy`, decided
+    /// synchronously before any suspension so the slot cannot be claimed twice.
     func recoverEpoch(recoveryStateDigest: String, expectedTaskGenerationEpoch: Int, expectedPhase: ResetRowPhase, action: ResetRecoveryAction) async -> RecoveryResult {
+        let key = "\(recoveryStateDigest)|\(expectedTaskGenerationEpoch)|\(expectedPhase.rawValue)|\(action.rawValue)"
+        if let slot = recoverySlot {
+            return slot.key == key ? await slot.task.value : .busy(store: .reset)
+        }
+        let task = Task {
+            await self.performRecovery(recoveryStateDigest: recoveryStateDigest, expectedTaskGenerationEpoch: expectedTaskGenerationEpoch, expectedPhase: expectedPhase, action: action)
+        }
+        recoverySlot = (key: key, task: task)
+        defer { recoverySlot = nil }
+        return await task.value
+    }
+
+    private func performRecovery(recoveryStateDigest: String, expectedTaskGenerationEpoch: Int, expectedPhase: ResetRowPhase, action: ResetRecoveryAction) async -> RecoveryResult {
         guard case let .blocked(snapshot) = await classification() else { return .ready }
         guard case let .resetEpochConflict(digest, actionable, occupants) = snapshot else { return .blocked(snapshot) }
         guard digest == recoveryStateDigest else { return .blocked(snapshot) }
@@ -1601,15 +1617,9 @@ extension ResetOperationRegistry: ResetEpochConflictRecovering {
               let target = occupants.first(where: { $0.expectedTaskGenerationEpoch == actionable }),
               target.phase == expectedPhase, target.recoveryAction == action else { return .unavailable(store: .reset) }
         guard let bundle = recoveryBundle else { return .unavailable(store: .reset) }
-        let key = "\(digest)|\(expectedTaskGenerationEpoch)|\(expectedPhase.rawValue)|\(action.rawValue)"
-        if let inFlight = recoveryInFlight {
-            return inFlight == key ? .busy(store: .reset) : .busy(store: .reset)
-        }
         guard case let .signedIn(tuple) = await auth.currentSignedAuth(),
               let row = (try? read())?.records.first(where: { $0.uid == tuple.uid && $0.expectedTaskGenerationEpoch == actionable }),
               row.phase == expectedPhase else { return .unavailable(store: .reset) }
-        recoveryInFlight = key
-        defer { recoveryInFlight = nil }
         do {
             _ = try await drive(handle: ResetOperationHandle(uid: row.uid, handleId: row.handleId), remote: bundle.remote, cleanup: bundle.cleanup)
         } catch {
