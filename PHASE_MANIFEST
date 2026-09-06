@@ -83,4 +83,4 @@ functions/tests/support/*.js
 # S3 close-out (PHASE2_WORKFLOW_v2 session rule: each slice close writes STATUS.md and HANDOFF.md; Decision 9: the Sol diff review is committed at the root after the owner reads it)
 STATUS.md
 HANDOFF.md
-S3_DIFF_REVIEW.md
+docs/reviews/S3_DIFF_REVIEW.md
