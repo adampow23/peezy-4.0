@@ -49,3 +49,10 @@ scripts/test-emulator.sh
 PEEZY_STATE.md
 tasks/*
 .gitignore
+# S2 owned files (briefs/S2_BRIEF.md, 2026-09-06; pending Decisions 1–2 may widen)
+functions/accountDeletionFence.js
+functions/tests/accountDeletionFence.test.js
+functions/taskPlan.js
+functions/tests/taskPlan.test.js
+functions/resolveProvider.js
+functions/supportAdmin.js
