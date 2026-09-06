@@ -1096,3 +1096,257 @@ test("root fence: every committing branch of taskPlan.js reads the owner root an
     assert.equal(db.__writes.length, 0, data.action);
   }
 });
+
+// ===========================================================================
+// S2 I4b — raw legacy fence, reconcileLegacyTaskReset, inspectCommittedOperation (C2.8)
+// ===========================================================================
+
+const { migrationIdFor, migrationFingerprintFor, LEGACY_RESET_FINGERPRINT } = require("../taskPlan");
+
+const LEGACY_ID = "20000000-0000-4000-8000-000000000001";
+const RULE_OWNER = "phase2-rule-owner";
+
+function legacyOp(state, deletedCount, at = Timestamp.fromDate(P2_NOW)) {
+  const base = { kind: "reset", fingerprint: LEGACY_RESET_FINGERPRINT, deletedCount, state, at };
+  if (state === "tasks_deleted" || state === "finalized") base.tasks_deleted = { reset: true, deletedCount, replayed: false };
+  if (state === "finalized") { base.finalized = { reset: true, deletedCount, replayed: false }; base.finalizedAt = at; }
+  return base;
+}
+
+function legacyMarker(operationId, state, deletedCount, startedAt = Timestamp.fromDate(P2_NOW)) {
+  return { operationId, state, deletedCount, workerLease: null, startedAt };
+}
+
+function migrationPath(uid, legacyOperationId) { return `users/${uid}/legacyResetMigrations/${migrationIdFor(uid, legacyOperationId)}`; }
+
+test("legacy migration derivations equal the C7 parity fixture and the accepted legacy fingerprint literal", () => {
+  assert.equal(migrationIdFor(RULE_OWNER, LEGACY_ID), "rlm1_0a4d53a438873090f69e4255426310b0feb4cfd6");
+  assert.equal(migrationFingerprintFor(RULE_OWNER, LEGACY_ID), "rlmreq1_0a4d53a438873090f69e4255426310b0feb4cfd63eabd6ce68c851ce827ad8e1");
+  assert.equal(LEGACY_RESET_FINGERPRINT, "reset1_862fe3fc8a08ce3eced6f25dfd2a8765b408e8386fa28f081f393d36f04e94a1");
+  assert.equal(resetFingerprint({ reason: "retake_assessment" }), LEGACY_RESET_FINGERPRINT);
+});
+
+test("raw legacy fence: the permanent migration record is read before any root or legacy-operation write; finalized_compat replays the old wire; other outcomes require the Phase 2 client; malformed records are OPERATION_REUSED", async () => {
+  const legacyRequest = { action: "resetAllTasks", operationId: "legacy-op", reason: "retake_assessment" };
+  const finalizeRequest = { action: "finalizeTaskReset", operationId: " legacy-op ", reason: "retake_assessment" }; // ECMAScript-trimmed raw ID fences the normalized operation
+  const migrationId = migrationIdFor(P2_UID, "legacy-op");
+  const base = { schema_version: 1, kind: "LEGACY_RESET_MIGRATION", account_uid: P2_UID, migration_id: migrationId, legacy_operation_id: "legacy-op", migration_alias: alias(), request_fingerprint: migrationFingerprintFor(P2_UID, "legacy-op"), created_at: Timestamp.fromDate(P2_NOW) };
+  const compat = { ...base, outcome: "finalized_compat", source_state: "finalized", legacy_final_receipt: { schemaVersion: 1, kind: "legacy_reset_final", operationId: "legacy-op", replayed: false, accountUid: P2_UID, deletedCount: 2, state: "finalized" } };
+  const compatDb = sharedFirestore({ docs: { "users/u2": { taskGenerationEpoch: 0 }, [migrationPath(P2_UID, "legacy-op")]: compat, "users/u2/taskPlanOperations/legacy-op": legacyOp("finalized", 2), "users/u2/tasks/t": {} } });
+  assert.deepEqual(await p2Call(compatDb, legacyRequest), { reset: true, deletedCount: 2, replayed: true });
+  assert.deepEqual(await p2Call(compatDb, finalizeRequest), { reset: true, deletedCount: 2, replayed: true });
+  assert.equal(compatDb.__writes.length, 0);
+  assert.ok(compatDb.__docs.has("users/u2/tasks/t"), "no task was deleted behind the fence");
+  for (const outcome of ["not_dispatched", "upgraded", "phase2_active"]) {
+    const record = { ...base, outcome };
+    if (outcome !== "not_dispatched") Object.assign(record, { expected_task_generation_epoch: 0, task_generation_epoch: 1, canonical_operation_id: resetCanonicalId(P2_UID, 1), active_move_event_id: activeMoveEventIdFor(P2_UID, 1, resetCanonicalId(P2_UID, 1)), progress_receipt: { schemaVersion: 1, kind: "reset_progress", operationId: resetCanonicalId(P2_UID, 1), replayed: outcome === "phase2_active", accountUid: P2_UID, expectedTaskGenerationEpoch: 0, taskGenerationEpoch: 1, activeMoveEventId: activeMoveEventIdFor(P2_UID, 1, resetCanonicalId(P2_UID, 1)), deletedCount: 0, deletedCounts: { tasks: 0, notificationIntents: 0, taskDeadlineEvidence: 0, confirmationSnapshots: 0 }, state: "deleting" } });
+    if (outcome === "upgraded") record.source_state = "deleting";
+    const db = sharedFirestore({ docs: { "users/u2": { taskGenerationEpoch: 1 }, [migrationPath(P2_UID, "legacy-op")]: record, "users/u2/tasks/t": {} } });
+    await expectTaskPlanError(() => p2Call(db, legacyRequest), "failed-precondition", { schemaVersion: 1, reason: "CLIENT_UPGRADE_REQUIRED", requiredProtocol: "phase2" });
+    await expectTaskPlanError(() => p2Call(db, finalizeRequest), "failed-precondition", { schemaVersion: 1, reason: "CLIENT_UPGRADE_REQUIRED", requiredProtocol: "phase2" });
+    assert.equal(db.__writes.length, 0, outcome);
+  }
+  const malformedDb = sharedFirestore({ docs: { "users/u2": { taskGenerationEpoch: 0 }, [migrationPath(P2_UID, "legacy-op")]: { ...base, outcome: "finalized_compat", request_fingerprint: "rlmreq1_" + "0".repeat(64) } } });
+  await expectTaskPlanError(() => p2Call(malformedDb, legacyRequest), "failed-precondition", { schemaVersion: 1, reason: "OPERATION_REUSED", operationId: migrationId });
+  assert.equal(malformedDb.__writes.length, 0);
+  // absent record: the raw path proceeds exactly as before
+  const plain = sharedFirestore({ docs: { "users/u2": { taskGenerationEpoch: 0 }, "users/u2/tasks/t": {} } });
+  assert.deepEqual(await p2Call(plain, legacyRequest), { reset: true, deletedCount: 1, replayed: false });
+});
+
+test("reconcileLegacyTaskReset: request precedence, derivations, and every classification outcome with exact records, receipts, and errors", async () => {
+  const aliasA = alias();
+  const req = (legacyOperationId = "legacy-op", migrationAlias = aliasA) => ({ action: "reconcileLegacyTaskReset", legacyOperationId, migrationAlias });
+  const empty = () => sharedFirestore({ docs: { "users/u2": { taskGenerationEpoch: 2 } } });
+
+  // validation precedence and reserved legacyOperationId
+  const bad = [
+    [{ ...req(), extra: 1 }, "request"],
+    [{ action: "reconcileLegacyTaskReset", migrationAlias: aliasA }, "legacyOperationId"],
+    [req("a/b"), "legacyOperationId"],
+    [req(`rlm1_${"c".repeat(40)}`), "legacyOperationId"],
+    [req("legacy-op", "not-an-alias"), "migrationAlias"],
+    [req("legacy-op", `rsa1_${uuid().toUpperCase()}`), "migrationAlias"]
+  ];
+  for (const [data, field] of bad) {
+    await expectTaskPlanError(() => p2Call(empty(), data), "invalid-argument", { schemaVersion: 1, reason: "REQUEST_INVALID", field });
+  }
+  await expectTaskPlanError(() => handleTaskPlanRequest({ data: req() }, () => empty(), P2_NOW, { resetProtocolMode: "compat" }), "unauthenticated", { schemaVersion: 1, reason: "AUTH_REQUIRED" });
+
+  // not_dispatched
+  const nd = empty();
+  const migrationId = migrationIdFor(P2_UID, "legacy-op");
+  const ndResponse = await p2Call(nd, req());
+  assert.deepEqual(ndResponse, { schemaVersion: 1, kind: "legacy_reset_reconciliation", outcome: "not_dispatched", migrationId, legacyOperationId: "legacy-op", migrationAlias: aliasA, accountUid: P2_UID, replayed: false });
+  const ndRecord = nd.__docs.get(migrationPath(P2_UID, "legacy-op"));
+  assert.deepEqual({ ...ndRecord, created_at: null }, { schema_version: 1, kind: "LEGACY_RESET_MIGRATION", account_uid: P2_UID, migration_id: migrationId, legacy_operation_id: "legacy-op", migration_alias: aliasA, request_fingerprint: migrationFingerprintFor(P2_UID, "legacy-op"), outcome: "not_dispatched", created_at: null });
+  assert.equal(ndRecord.created_at.toMillis(), P2_NOW.getTime());
+  // replay returns the stored alias even when the candidate differs; only the outer replayed changes
+  const replay = await p2Call(nd, req("legacy-op", alias()));
+  assert.deepEqual(replay, { ...ndResponse, replayed: true });
+  // a present mismatching record is OPERATION_REUSED naming the migration id
+  nd.__docs.get(migrationPath(P2_UID, "legacy-op")).account_uid = "uid-other";
+  await expectTaskPlanError(() => p2Call(nd, req()), "failed-precondition", { schemaVersion: 1, reason: "OPERATION_REUSED", operationId: migrationId });
+
+  // finalized_compat
+  const fc = sharedFirestore({ docs: { "users/u2": { taskGenerationEpoch: 2 }, "users/u2/taskPlanOperations/legacy-op": legacyOp("finalized", 3) } });
+  const fcResponse = await p2Call(fc, req());
+  assert.deepEqual(fcResponse, { schemaVersion: 1, kind: "legacy_reset_reconciliation", outcome: "finalized_compat", migrationId, legacyOperationId: "legacy-op", migrationAlias: aliasA, accountUid: P2_UID, sourceState: "finalized", replayed: false, legacyFinalReceipt: { schemaVersion: 1, kind: "legacy_reset_final", operationId: "legacy-op", replayed: false, accountUid: P2_UID, deletedCount: 3, state: "finalized" } });
+  assert.equal(fc.__docs.get("users/u2").taskGenerationEpoch, 2, "finalized legacy never rotates the epoch");
+  assert.deepEqual(await p2Call(fc, req()), { ...fcResponse, replayed: true });
+
+  // alias occupied: zero write
+  const occ = sharedFirestore({ docs: { "users/u2": { taskGenerationEpoch: 2 }, [`users/u2/taskPlanOperations/${aliasA}`]: { kind: "operation" } } });
+  await expectTaskPlanError(() => p2Call(occ, req()), "failed-precondition", { schemaVersion: 1, reason: "LEGACY_RESET_ALIAS_OCCUPIED", legacyOperationId: "legacy-op", migrationAlias: aliasA });
+  assert.equal(occ.__writes.length, 0);
+
+  // upgraded (L-deleting / M-deleting): canonical record with the legacy count, marker replaced, epoch rotated, migration record with inner replayed:false
+  const at = Timestamp.fromMillis(P2_NOW.getTime() - 60_000);
+  const up = sharedFirestore({ docs: {
+    "users/u2": { taskGenerationEpoch: 2, taskReset: legacyMarker("legacy-op", "deleting", 7, at) },
+    "users/u2/taskPlanOperations/legacy-op": legacyOp("deleting", 7, at),
+    "users/u2/tasks/late": {}
+  } });
+  const canonical = resetCanonicalId(P2_UID, 3);
+  const upResponse = await p2Call(up, req());
+  const expectedProgress = { schemaVersion: 1, kind: "reset_progress", operationId: canonical, replayed: false, accountUid: P2_UID, expectedTaskGenerationEpoch: 2, taskGenerationEpoch: 3, activeMoveEventId: activeMoveEventIdFor(P2_UID, 3, canonical), deletedCount: 7, deletedCounts: { tasks: 7, notificationIntents: 0, taskDeadlineEvidence: 0, confirmationSnapshots: 0 }, state: "deleting" };
+  assert.deepEqual(upResponse, { schemaVersion: 1, kind: "legacy_reset_reconciliation", outcome: "upgraded", migrationId, legacyOperationId: "legacy-op", migrationAlias: aliasA, accountUid: P2_UID, sourceState: "deleting", replayed: false, progressReceipt: expectedProgress });
+  const upRoot = up.__docs.get("users/u2");
+  assert.equal(upRoot.taskGenerationEpoch, 3);
+  assert.equal(upRoot.activeMoveEventId, expectedProgress.activeMoveEventId);
+  const upRecord = up.__docs.get(`users/u2/taskPlanOperations/${canonical}`);
+  assert.deepEqual([upRecord.state, upRecord.target_index, upRecord.aliases, upRecord.deleted_count, upRecord.deleted_counts.tasks, upRecord.page_after_path, upRecord.lease, upRecord.awaiting_local_reset_at], ["deleting", 0, [aliasA], 7, 7, undefined, undefined, undefined]);
+  assert.ok(upRecord.created_at.isEqual(at) && upRecord.updated_at.toMillis() === P2_NOW.getTime());
+  assert.deepEqual(upRoot.taskReset, projectResetMarker(upRecord));
+  assert.deepEqual(up.__docs.get("users/u2/taskPlanOperations/legacy-op"), legacyOp("deleting", 7, at), "the original legacy operation stays byte-identical");
+  const upMigration = up.__docs.get(migrationPath(P2_UID, "legacy-op"));
+  assert.deepEqual(upMigration.progress_receipt, expectedProgress);
+  assert.equal(upMigration.source_state, "deleting");
+  assert.equal(upMigration.canonical_operation_id, canonical);
+  // replay of the upgrade keeps the inner replayed:false and flips only the outer
+  assert.deepEqual(await p2Call(up, req()), { ...upResponse, replayed: true });
+  // the imported reset then drives through the ordinary four-target reducer from target zero
+  const resumed = await p2Call(up, { action: "resetAllTasks", operationId: aliasA, reason: "retake_assessment", expectedTaskGenerationEpoch: 2 });
+  assert.equal(resumed.state, "awaiting_local_reset");
+  assert.equal(resumed.deletedCount, 8, "late task counted once on top of the imported legacy count");
+
+  // phase2_active (A absent beside an active Phase 2 marker C): record carries C's progress with inner replayed:true
+  const pa = phase2Seed();
+  const aliasC = alias();
+  await p2Call(pa, { action: "resetAllTasks", operationId: aliasC, reason: "retake_assessment", expectedTaskGenerationEpoch: 3 });
+  const paResponse = await p2Call(pa, req("some-legacy-id", alias()));
+  assert.equal(paResponse.outcome, "phase2_active");
+  assert.equal(paResponse.progressReceipt.replayed, true);
+  assert.equal(paResponse.progressReceipt.operationId, resetCanonicalId(P2_UID, 4));
+  assert.deepEqual(pa.__docs.get(`users/u2/taskPlanOperations/${resetCanonicalId(P2_UID, 4)}`).aliases, [aliasC], "C is untouched");
+
+  // LEGACY_RESET_MIGRATION_REQUIRED: the active legacy marker belongs to B
+  const bDb = sharedFirestore({ docs: { "users/u2": { taskGenerationEpoch: 2, taskReset: legacyMarker("op-B", "deleting", 1) }, "users/u2/taskPlanOperations/op-B": legacyOp("deleting", 1) } });
+  await expectTaskPlanError(() => p2Call(bDb, req("op-A")), "failed-precondition", { schemaVersion: 1, reason: "LEGACY_RESET_MIGRATION_REQUIRED", legacyOperationId: "op-B" });
+  assert.equal(bDb.__writes.length, 0);
+
+  // LEGACY_RESET_CORRUPT with recordClass/markerClass
+  const corrupt = [
+    ["deleting op without marker", { "users/u2": { taskGenerationEpoch: 2 }, "users/u2/taskPlanOperations/legacy-op": legacyOp("deleting", 1) }, { recordClass: "deleting", markerClass: "absent" }],
+    ["malformed marker", { "users/u2": { taskGenerationEpoch: 2, taskReset: { operationId: "legacy-op", state: "weird" } } }, { recordClass: "absent", markerClass: "malformed" }],
+    ["count mismatch", { "users/u2": { taskGenerationEpoch: 2, taskReset: legacyMarker("legacy-op", "deleting", 2) }, "users/u2/taskPlanOperations/legacy-op": legacyOp("deleting", 1) }, { recordClass: "deleting", markerClass: "deleting" }],
+    ["awaiting marker with deleting op", { "users/u2": { taskGenerationEpoch: 2, taskReset: legacyMarker("legacy-op", "awaiting_local_reset", 1) }, "users/u2/taskPlanOperations/legacy-op": legacyOp("deleting", 1) }, { recordClass: "deleting", markerClass: "awaiting_local_reset" }],
+    ["occupied canonical path", { "users/u2": { taskGenerationEpoch: 2, taskReset: legacyMarker("legacy-op", "deleting", 1) }, "users/u2/taskPlanOperations/legacy-op": legacyOp("deleting", 1), [`users/u2/taskPlanOperations/${resetCanonicalId(P2_UID, 3)}`]: { kind: "RESET_OPERATION" } }, { recordClass: "phase2", markerClass: "deleting" }]
+  ];
+  for (const [label, docs, classes] of corrupt) {
+    const db = sharedFirestore({ docs });
+    await expectTaskPlanError(() => p2Call(db, req()), "failed-precondition", { schemaVersion: 1, reason: "LEGACY_RESET_CORRUPT", context: "reconcile", legacyOperationId: "legacy-op", ...classes });
+    assert.equal(db.__writes.length, 0, label);
+  }
+});
+
+test("inspectCommittedOperation: request precedence, every family row, replay projections, RESET as the sole pending member, and OPERATION_REUSED for malformed or foreign authority with zero writes", async () => {
+  const inspect = (family, authority, requestAuthority, identityDigest) => ({ action: "inspectCommittedOperation", family, authority, requestAuthority, identityDigest });
+  const digestOf = (map) => fence.sha256Hex(fence.TaskCanonicalV1(map));
+  const db = phase2Seed();
+  // precedence
+  const good = inspect("RESET", { operationId: resetCanonicalId(P2_UID, 4) }, { requestFingerprint: resetRequestFingerprint(3) }, digestOf({ kind: "reset", uid: P2_UID, expectedTaskGenerationEpoch: 3 }));
+  const bad = [
+    [{ ...good, extra: 1 }, "request"],
+    [{ action: "inspectCommittedOperation", family: "RESET" }, "request"],
+    [{ ...good, family: "OTHER" }, "family"],
+    [{ ...good, authority: { migrationId: "x" } }, "authority"],
+    [{ ...good, authority: { operationId: "legacy" } }, "authority"],
+    [{ ...good, requestAuthority: { requestSHA256: "a".repeat(64) } }, "requestAuthority"],
+    [{ ...good, identityDigest: "zz" }, "identityDigest"]
+  ];
+  for (const [data, field] of bad) {
+    await expectTaskPlanError(() => p2Call(db, data), "invalid-argument", { schemaVersion: 1, reason: "REQUEST_INVALID", field });
+  }
+  await expectTaskPlanError(() => handleTaskPlanRequest({ data: good }, () => db, P2_NOW, { resetProtocolMode: "compat" }), "unauthenticated", { schemaVersion: 1, reason: "AUTH_REQUIRED" });
+
+  // RESET: absent → pending → committed
+  const canonical = resetCanonicalId(P2_UID, 4);
+  assert.deepEqual(await p2Call(db, good), { schemaVersion: 1, kind: "committed_operation_inspection", accountUid: P2_UID, family: "RESET", authority: { operationId: canonical }, requestAuthority: { requestFingerprint: resetRequestFingerprint(3) }, identityDigest: good.identityDigest, outcome: "absent" });
+  const a1 = alias();
+  await assert.rejects(handleTaskPlanRequest(p2Request({ action: "resetAllTasks", operationId: a1, reason: "retake_assessment", expectedTaskGenerationEpoch: 3 }), () => db, P2_NOW, { resetProtocolMode: "compat", resetDocumentBudget: 1 }));
+  const pending = await p2Call(db, good);
+  assert.equal(pending.outcome, "pending");
+  assert.equal("receipt" in pending, false);
+  await p2Call(db, { action: "resetAllTasks", operationId: a1, reason: "retake_assessment", expectedTaskGenerationEpoch: 3 }, { now: new Date(P2_NOW.getTime() + 11 * 60_000) });
+  const final = await p2Call(db, { action: "finalizeTaskReset", operationId: a1, reason: "retake_assessment", expectedTaskGenerationEpoch: 3 });
+  const committed = await p2Call(db, good);
+  assert.equal(committed.outcome, "committed");
+  assert.deepEqual(committed.receipt, { ...final, replayed: true });
+  const writesBefore = db.__writes.length;
+  await expectTaskPlanError(() => p2Call(db, { ...good, identityDigest: digestOf({ kind: "reset", uid: P2_UID, expectedTaskGenerationEpoch: 9 }) }), "failed-precondition", { schemaVersion: 1, reason: "OPERATION_REUSED", operationId: canonical });
+  await expectTaskPlanError(() => p2Call(db, { ...good, requestAuthority: { requestFingerprint: resetRequestFingerprint(9) } }), "failed-precondition", { schemaVersion: 1, reason: "OPERATION_REUSED", operationId: canonical });
+  assert.equal((await p2Call(db, good, { uid: "u9" })).outcome, "absent", "another UID reads only its own path");
+  assert.equal(db.__writes.length, writesBefore);
+
+  // LEGACY_RESET_MIGRATION: absent then committed with the reconstructed §6.2 response, outer replayed:true
+  const mid = migrationIdFor(P2_UID, "legacy-op");
+  const legacyInspect = inspect("LEGACY_RESET_MIGRATION", { migrationId: mid }, { requestFingerprint: migrationFingerprintFor(P2_UID, "legacy-op") }, digestOf({ kind: "legacy_reset_migration", uid: P2_UID }));
+  const ldb = sharedFirestore({ docs: { "users/u2": { taskGenerationEpoch: 2 } } });
+  assert.equal((await p2Call(ldb, legacyInspect)).outcome, "absent");
+  const reconciliation = await p2Call(ldb, { action: "reconcileLegacyTaskReset", legacyOperationId: "legacy-op", migrationAlias: alias() });
+  const lcommitted = await p2Call(ldb, legacyInspect);
+  assert.equal(lcommitted.outcome, "committed");
+  assert.deepEqual(lcommitted.receipt, { ...reconciliation, replayed: true });
+  await expectTaskPlanError(() => p2Call(ldb, { ...legacyInspect, identityDigest: digestOf({ kind: "legacy_reset_migration", uid: "other" }) }), "failed-precondition", { schemaVersion: 1, reason: "OPERATION_REUSED", operationId: mid });
+
+  // ROUTE_CLAIM / HANDOFF / HANDOFF_CANCEL: generic ordinary records with their documented identity members
+  const sha = "b".repeat(64);
+  const ordinary = (kind, action, response, taskInstanceId = "inst-1") => ({ schema_version: 1, kind, state: "COMMITTED", account_uid: P2_UID, operation_id: "op-x", action, request_fingerprint: `op1_${sha}`, request_sha256: sha, task_identities: kind === "INTENT_CLAIM" ? [] : [{ role: "TARGET", task_document_id: "t1", task_generation_epoch: 3, task_instance_id: taskInstanceId }], prior_snapshots: [], response, response_sha256: fence.sha256Hex(fence.TaskCanonicalV1(response)), created_at: Timestamp.fromDate(P2_NOW), committed_at: Timestamp.fromDate(P2_NOW) });
+  const rows = [
+    ["ROUTE_CLAIM", ordinary("INTENT_CLAIM", "claimTaskIntent", { intentId: "int-1", replayed: false }), { kind: "route", intentId: "int-1" }],
+    ["HANDOFF", ordinary("TASK_OPERATION", "beginHandoff", { installationId: "i-1", authEpochUUID: "e-1", sessionId: "s-1", replayed: false }), { kind: "handoff", action: "beginHandoff", uid: P2_UID, installationId: "i-1", authEpochUUID: "e-1", taskInstanceId: "inst-1", sessionId: "s-1" }],
+    ["HANDOFF_CANCEL", ordinary("TASK_OPERATION", "cancelHandoff", { sessionId: "s-1", reasonCode: "USER", requesterInstallationId: "i-2", requesterAuthEpochUUID: "e-2", replayed: false }), { kind: "handoff_cancel", uid: P2_UID, taskInstanceId: "inst-1", sessionId: "s-1", reasonCode: "USER", requesterInstallationId: "i-2", requesterAuthEpochUUID: "e-2" }]
+  ];
+  for (const [family, record, identity] of rows) {
+    const request = inspect(family, { operationId: "op-x" }, { requestSHA256: sha }, digestOf(identity));
+    const absentDb = sharedFirestore({ docs: { "users/u2": {} } });
+    assert.equal((await p2Call(absentDb, request)).outcome, "absent", family);
+    const presentDb = sharedFirestore({ docs: { "users/u2": {}, "users/u2/taskPlanOperations/op-x": record } });
+    const result = await p2Call(presentDb, request);
+    assert.equal(result.outcome, "committed", family);
+    assert.deepEqual(result.receipt, { ...record.response, replayed: true }, family);
+    assert.deepEqual(result.authority, { operationId: "op-x" });
+    await expectTaskPlanError(() => p2Call(presentDb, { ...request, requestAuthority: { requestSHA256: "c".repeat(64) } }), "failed-precondition", { schemaVersion: 1, reason: "OPERATION_REUSED", operationId: "op-x" });
+    const wrongAction = sharedFirestore({ docs: { "users/u2": {}, "users/u2/taskPlanOperations/op-x": { ...record, action: "somethingElse" } } });
+    await expectTaskPlanError(() => p2Call(wrongAction, request), "failed-precondition", { schemaVersion: 1, reason: "OPERATION_REUSED", operationId: "op-x" });
+    assert.equal(presentDb.__writes.length, 0);
+  }
+
+  // WORKFLOW: derived root path, request-form versus expanded authority, zero taskPlanOperations read
+  const token = `workflow-v2-${"d".repeat(64)}`;
+  const wsId = `ws2_${fence.first40(fence.sha256Hex(fence.TaskCanonicalV1({ owner: P2_UID, submissionToken: token })))}`;
+  const fingerprint = "e".repeat(64);
+  const submission = { schema_version: 1, kind: "WORKFLOW_SUBMISSION", owner: P2_UID, submission_token: token, request_fingerprint: fingerprint, task_document_id: "t1", task_instance_id: "inst-1", task_generation_epoch: 3, workflow_id: "wf-1", flow_attempt_id: "fa-1", flow_attempt_generation: 2, workflow_outcome: { outcome: "COMPLETE", replayed: false } };
+  const wIdentity = { kind: "workflow", uid: P2_UID, taskDocumentId: "t1", taskInstanceId: "inst-1", taskGenerationEpoch: 3, workflowId: "wf-1", flowAttemptId: "fa-1", flowAttemptGeneration: 2, submissionToken: token };
+  const wRequest = inspect("WORKFLOW", { submissionToken: token }, { requestFingerprint: fingerprint }, digestOf(wIdentity));
+  const wdb = sharedFirestore({ docs: { "users/u2": {}, [`workflowSubmissions/${wsId}`]: submission, "users/u2/taskPlanOperations/decoy": { kind: "TASK_OPERATION" } } });
+  const wResult = await p2Call(wdb, wRequest);
+  assert.equal(wResult.outcome, "committed");
+  assert.deepEqual(wResult.authority, { submissionToken: token, workflowSubmissionId: wsId });
+  assert.deepEqual(wResult.receipt, { outcome: "COMPLETE", replayed: true });
+  assert.ok(wdb.__reads.every((p) => !p.includes("/taskPlanOperations/")), "zero taskPlanOperations read for workflow");
+  const wrongOwner = sharedFirestore({ docs: { "users/u2": {}, [`workflowSubmissions/${wsId}`]: { ...submission, owner: "u9" } } });
+  await expectTaskPlanError(() => p2Call(wrongOwner, wRequest), "failed-precondition", { schemaVersion: 1, reason: "OPERATION_REUSED", submissionToken: token });
+  assert.equal((await p2Call(sharedFirestore({ docs: { "users/u2": {} } }), wRequest)).outcome, "absent");
+});
