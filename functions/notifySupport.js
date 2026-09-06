@@ -9,6 +9,8 @@ const logger = require('firebase-functions/logger');
 const { withOutboundLease } = require('./accountDeletionFence');
 
 const SUPPORT_FROM_EMAIL = 'adam@peezymove.com';
+const SMTP_TIMEOUT_MS = 8000;
+const SMS_TIMEOUT_MS = 8000;
 
 let transporter = null;
 
@@ -23,6 +25,7 @@ function getTransporter() {
       host: 'smtp.gmail.com',
       port: 465,
       secure: true,
+      connectionTimeout: SMTP_TIMEOUT_MS, greetingTimeout: SMTP_TIMEOUT_MS, socketTimeout: SMTP_TIMEOUT_MS, // C5: provider timeout ≤ 300 s
       auth: {
         user: SUPPORT_FROM_EMAIL,
         pass: appPassword
@@ -74,7 +77,7 @@ async function sendSms({ uid, textPreview, taskTitle }, deps) {
       body = `${body.slice(0, 1497)}...`;
     }
 
-    const client = twilio(accountSid, authToken);
+    const client = twilio(accountSid, authToken, { timeout: SMS_TIMEOUT_MS }); // C5: provider timeout ≤ 300 s
     // C6.2: the send runs under a support_sms outbound lease keyed by the sender's root.
     await withOutboundLease(deps, { uid, channel: 'support_sms' }, () => client.messages.create({
       body,

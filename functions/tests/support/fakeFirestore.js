@@ -83,7 +83,9 @@ function fakeFirestore({ docs: initial = {}, clock } = {}) {
       __query: spec,
       doc: (id) => docRef(`${path}/${id ?? randomUUID()}`),
       orderBy: (field, direction) => collectionRef(path, { ...spec, orderBys: [...(spec.orderBys || []), { field: String(field), direction: direction || "asc" }] }),
-      startAfter: (value) => collectionRef(path, { ...spec, startAfter: value && typeof value === "object" && value.ref ? { __snapshot: true, ref: value.ref, __data: value.data ? value.data() : undefined } : value }),
+      startAfter: (...values) => collectionRef(path, { ...spec, startAfter: values.length === 1 && values[0] && typeof values[0] === "object" && values[0].ref
+        ? { __snapshot: true, ref: values[0].ref, __data: values[0].data ? values[0].data() : undefined }
+        : { __values: values } }),
       count: () => ({ __count: true, __query: spec, path, async get() { const r = runQuery(q); return { data: () => ({ count: r.size }) }; } }),
       limit: (count) => collectionRef(path, { ...spec, limit: count }),
       where: (field, op, value) => collectionRef(path, { ...spec, where: [...(spec.where || []), [String(field), op, value]] }),
@@ -138,7 +140,9 @@ function fakeFirestore({ docs: initial = {}, clock } = {}) {
     });
     if (spec.startAfter !== undefined) {
       // A document snapshot cursor uses the row's own order keys; a scalar cursor applies to the first orderBy.
-      const cursorKeys = spec.startAfter && spec.startAfter.__snapshot ? orders.map((o) => keyOf([spec.startAfter.ref.path, spec.startAfter.__data || {}], o)) : [spec.startAfter];
+      const cursorKeys = spec.startAfter && spec.startAfter.__snapshot
+        ? orders.map((o) => keyOf([spec.startAfter.ref.path, spec.startAfter.__data || {}], o))
+        : (spec.startAfter && spec.startAfter.__values ? spec.startAfter.__values : [spec.startAfter]).map((v) => (v && typeof v === "object" && typeof v.path === "string" && !(v instanceof Timestamp) ? v.path.split("/").at(-1) : v));
       rows = rows.filter((row) => {
         for (let i = 0; i < cursorKeys.length; i += 1) {
           const c = compareValues(keyOf(row, orders[i]), cursorKeys[i]);

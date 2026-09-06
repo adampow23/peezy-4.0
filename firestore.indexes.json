@@ -4,17 +4,76 @@
       "collectionGroup": "tasks",
       "queryScope": "COLLECTION_GROUP",
       "fields": [
-        { "fieldPath": "status", "order": "ASCENDING" },
-        { "fieldPath": "dispositionContract.next_trigger.kind", "order": "ASCENDING" },
-        { "fieldPath": "dispositionContract.next_trigger.at", "order": "ASCENDING" }
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "dispositionContract.next_trigger.kind",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "dispositionContract.next_trigger.fired",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "dispositionContract.next_trigger.at",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "tasks",
       "queryScope": "COLLECTION_GROUP",
       "fields": [
-        { "fieldPath": "status", "order": "ASCENDING" },
-        { "fieldPath": "dispositionContract.next_trigger.kind", "order": "ASCENDING" }
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "dispositionContract.next_trigger.kind",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "dispositionContract.next_trigger.fired",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "tasks",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        {
+          "fieldPath": "thresholdProjection.state",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "thresholdProjection.threshold_at",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "schedulerRefusals",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        {
+          "fieldPath": "lane",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "nextEligibleOrdinal",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "firstRefusedOrdinal",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "lastAttemptOrdinal",
+          "order": "ASCENDING"
+        }
       ]
     }
   ],
@@ -23,8 +82,196 @@
       "collectionGroup": "events",
       "fieldPath": "processingState",
       "indexes": [
-        { "order": "ASCENDING", "queryScope": "COLLECTION_GROUP" }
+        {
+          "order": "ASCENDING",
+          "queryScope": "COLLECTION_GROUP"
+        }
       ]
+    },
+    {
+      "collectionGroup": "tasks",
+      "fieldPath": "activeHandoff",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "tasks",
+      "fieldPath": "conditions",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "tasks",
+      "fieldPath": "dispositionContract",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "tasks",
+      "fieldPath": "flowAnswerIdentities",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "tasks",
+      "fieldPath": "flowAnswers",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "tasks",
+      "fieldPath": "flowPath",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "tasks",
+      "fieldPath": "flowRows",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "tasks",
+      "fieldPath": "interactionHistory",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "tasks",
+      "fieldPath": "notes",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "tasks",
+      "fieldPath": "planChangeCycle",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "tasks",
+      "fieldPath": "planChangeHistory",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "tasks",
+      "fieldPath": "planChangeLink",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "tasks",
+      "fieldPath": "quotes",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "tasks",
+      "fieldPath": "resolution",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "tasks",
+      "fieldPath": "taskInteraction",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "tasks",
+      "fieldPath": "taskInteractionState",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "tasks",
+      "fieldPath": "thresholdProjection",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "tasks",
+      "fieldPath": "wakeEvidence",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "taskPlanOperations",
+      "fieldPath": "*",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "taskPlanOperations",
+      "fieldPath": "kind",
+      "indexes": [
+        {
+          "order": "ASCENDING",
+          "queryScope": "COLLECTION"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "notificationIntents",
+      "fieldPath": "*",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "packingPlan",
+      "fieldPath": "*",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "readiness",
+      "fieldPath": "*",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "spawnTokens",
+      "fieldPath": "*",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "taskDeadlineEvidence",
+      "fieldPath": "*",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "workflowResponses",
+      "fieldPath": "*",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "workflowSubmissions",
+      "fieldPath": "*",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "eventArchiveChunks",
+      "fieldPath": "payload",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "tasks",
+      "fieldPath": "foreignRoots",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "tasks",
+      "fieldPath": "evidence_reservation",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "workflowSubmissions",
+      "fieldPath": "userId",
+      "indexes": [
+        {
+          "order": "ASCENDING",
+          "queryScope": "COLLECTION"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "workflowSubmissions",
+      "fieldPath": "owner",
+      "indexes": [
+        {
+          "order": "ASCENDING",
+          "queryScope": "COLLECTION"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "legacyResetMigrations",
+      "fieldPath": "*",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "outboundLeases",
+      "fieldPath": "*",
+      "indexes": []
     }
   ]
 }

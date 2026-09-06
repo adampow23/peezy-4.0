@@ -21,6 +21,7 @@ const { assertDeletionAbsent, withOutboundLease } = require('./accountDeletionFe
 const { Timestamp } = require('firebase-admin/firestore');
 
 const ADMIN_EMAIL = 'adam@peezymove.com';
+const SMTP_TIMEOUT_MS = 30000;
 
 // Lazy-init transporter
 let transporter = null;
@@ -35,6 +36,7 @@ function getTransporter() {
       host: 'smtp.gmail.com',
       port: 465,
       secure: true,
+      connectionTimeout: SMTP_TIMEOUT_MS, greetingTimeout: SMTP_TIMEOUT_MS, socketTimeout: SMTP_TIMEOUT_MS, // C5: provider timeout ≤ 300 s
       auth: {
         user: ADMIN_EMAIL,
         pass: appPassword

@@ -1466,7 +1466,7 @@ production-connected transactions retain 8,388,608
 #### C9.2.10 Exact index/rules delta
 
 ```text
-base:   frozen index base parsed object ; 4,432 UTF-8 bytes ; SHA-256 a7a432ec8e0511176b890432c5e4cb4a07e59a6dba0c9d920948cc446f3a7bbb
+base:   the literal below ; 4,432 UTF-8 bytes with one trailing LF ; SHA-256 a7a432ec8e0511176b890432c5e4cb4a07e59a6dba0c9d920948cc446f3a7bbb
 append (preserve every existing entry and order):
 indexes[3] = {
   "collectionGroup": "schedulerRefusals",
@@ -1487,6 +1487,221 @@ fieldOverrides[33] = {"collectionGroup":"legacyResetMigrations","fieldPath":"*",
 fieldOverrides[34] = {"collectionGroup":"outboundLeases","fieldPath":"*","indexes":[]}
 serialization: JSON.stringify(value,null,2) + "\n"
 result: 4 indexes ; 35 fieldOverrides ; 5,872 UTF-8 bytes ; one trailing LF ; SHA-256 a6de8daf701a75ff3db025ca244dbf2218432c5c1a06b0992cd88358250d88e8
+```
+
+Frozen index base (byte-exact; the 4,432-byte file is this block plus one trailing LF):
+
+```json
+{
+  "indexes": [
+    {
+      "collectionGroup": "tasks",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "dispositionContract.next_trigger.kind",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "dispositionContract.next_trigger.fired",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "dispositionContract.next_trigger.at",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "tasks",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "dispositionContract.next_trigger.kind",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "dispositionContract.next_trigger.fired",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "tasks",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        {
+          "fieldPath": "thresholdProjection.state",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "thresholdProjection.threshold_at",
+          "order": "ASCENDING"
+        }
+      ]
+    }
+  ],
+  "fieldOverrides": [
+    {
+      "collectionGroup": "events",
+      "fieldPath": "processingState",
+      "indexes": [
+        {
+          "order": "ASCENDING",
+          "queryScope": "COLLECTION_GROUP"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "tasks",
+      "fieldPath": "activeHandoff",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "tasks",
+      "fieldPath": "conditions",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "tasks",
+      "fieldPath": "dispositionContract",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "tasks",
+      "fieldPath": "flowAnswerIdentities",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "tasks",
+      "fieldPath": "flowAnswers",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "tasks",
+      "fieldPath": "flowPath",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "tasks",
+      "fieldPath": "flowRows",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "tasks",
+      "fieldPath": "interactionHistory",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "tasks",
+      "fieldPath": "notes",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "tasks",
+      "fieldPath": "planChangeCycle",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "tasks",
+      "fieldPath": "planChangeHistory",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "tasks",
+      "fieldPath": "planChangeLink",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "tasks",
+      "fieldPath": "quotes",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "tasks",
+      "fieldPath": "resolution",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "tasks",
+      "fieldPath": "taskInteraction",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "tasks",
+      "fieldPath": "taskInteractionState",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "tasks",
+      "fieldPath": "thresholdProjection",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "tasks",
+      "fieldPath": "wakeEvidence",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "taskPlanOperations",
+      "fieldPath": "*",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "taskPlanOperations",
+      "fieldPath": "kind",
+      "indexes": [
+        {
+          "order": "ASCENDING",
+          "queryScope": "COLLECTION"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "notificationIntents",
+      "fieldPath": "*",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "packingPlan",
+      "fieldPath": "*",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "readiness",
+      "fieldPath": "*",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "spawnTokens",
+      "fieldPath": "*",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "taskDeadlineEvidence",
+      "fieldPath": "*",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "workflowResponses",
+      "fieldPath": "*",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "workflowSubmissions",
+      "fieldPath": "*",
+      "indexes": []
+    }
+  ]
+}
 ```
 
 | Rule | Exact statement |

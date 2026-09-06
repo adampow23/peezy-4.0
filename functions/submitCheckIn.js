@@ -4,6 +4,7 @@ const twilio = require("twilio");
 const logger = require('firebase-functions/logger');
 const { Timestamp } = require("firebase-admin/firestore");
 const { withOutboundLease } = require("./accountDeletionFence");
+const SMS_TIMEOUT_MS = 8000;
 const {
   buildFlags,
   calibrationRecord,
@@ -40,7 +41,7 @@ async function notifyFlags(db, userId, vendorName, flags) {
   }
 
   try {
-    const client = twilio(accountSid, authToken);
+    const client = twilio(accountSid, authToken, { timeout: SMS_TIMEOUT_MS }); // C5: provider timeout ≤ 300 s
     const leaseDeps = { db, now: () => Timestamp.fromMillis(Date.now()) };
     for (const flag of flags) {
       // C6.2: one check-in SMS per flag, each under its own checkin_sms outbound lease.

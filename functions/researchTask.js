@@ -113,7 +113,7 @@ function getAnthropicClient() {
     if (!apiKey) {
       throw new Error("ANTHROPIC_API_KEY environment variable is required");
     }
-    anthropicClient = new Anthropic({ apiKey });
+    anthropicClient = new Anthropic({ apiKey, timeout: GENERATION_TIMEOUT_MS }); // C5: provider timeout ≤ 300 s
   }
   return anthropicClient;
 }

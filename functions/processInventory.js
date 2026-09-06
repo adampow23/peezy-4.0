@@ -45,6 +45,7 @@ const RESERVED_FEEDBACK_SCHEMA = Object.freeze({
 });
 
 // Lazy-init Anthropic client (same pattern as peezyBrain.js)
+const ANTHROPIC_TIMEOUT_MS = 100000;
 let anthropic = null;
 
 function getAnthropicClient() {
@@ -53,7 +54,7 @@ function getAnthropicClient() {
     if (!apiKey) {
       throw new Error('ANTHROPIC_API_KEY environment variable is required');
     }
-    anthropic = new Anthropic({ apiKey });
+    anthropic = new Anthropic({ apiKey, timeout: ANTHROPIC_TIMEOUT_MS }); // C5: provider timeout ≤ 300 s
   }
   return anthropic;
 }

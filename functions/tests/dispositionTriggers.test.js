@@ -20,6 +20,9 @@ const {
   evaluateDispositionTriggers,
   __private
 } = require("../dispositionTriggers");
+const scheduler = require("../dispositionTriggers");
+const { fakeFirestore, FakeClock } = require("./support/fakeFirestore");
+const { Timestamp } = require("firebase-admin/firestore");
 
 const NOW = new Date("2026-08-27T17:00:00.000Z");
 
@@ -499,272 +502,6 @@ test("invalid pending event is quarantined and leaves no high-water row", async 
   assert.equal([...db.documents.keys()].filter((key) => key.includes("/eventState/")).length, 0);
 });
 
-test("lease excludes a live peer, permits expiry takeover, and stale release is harmless", async () => {
-  const db = fakeTransactionDb();
-  assert.equal(await acquireEvaluationLeaseInTransaction(db, "run-1", NOW), true);
-  assert.equal(await acquireEvaluationLeaseInTransaction(db, "run-2", new Date(NOW.getTime() + 1)), false);
-  const takeoverAt = new Date(NOW.getTime() + 10 * 60 * 1000 + 1);
-  assert.equal(await acquireEvaluationLeaseInTransaction(db, "run-2", takeoverAt), true);
-  assert.equal(await __private.releaseEvaluationLeaseInTransaction(db, "run-1"), false);
-  assert.equal(db.documents.get("phase1System/dispositionTriggerLease").runId, "run-2");
-  assert.equal(await __private.releaseEvaluationLeaseInTransaction(db, "run-2"), true);
-  assert.equal(db.documents.has("phase1System/dispositionTriggerLease"), false);
-});
-
-test("date scan executes the exact 201 query and reaches row 201 across a restart", async () => {
-  const dueAt = new Date("2026-08-27T16:00:00.000Z");
-  const documents = {
-    "phase1System/dispositionTriggerLease": {
-      runId: "run-date-1",
-      expiresAt: new Date(NOW.getTime() + 60_000)
-    }
-  };
-  for (let index = 0; index < 200; index += 1) {
-    const uid = `u${String(index).padStart(3, "0")}`;
-    documents[`users/${uid}/tasks/shared-leaf`] = deferredDate(dueAt, true);
-  }
-  const validPath = "users/z-user/tasks/shared-leaf";
-  documents[validPath] = deferredDate(dueAt, false);
-  const db = queryAwareDb(documents);
-
-  const first = await __private.processDateTasks(db, NOW, "run-date-1");
-  assert.deepEqual(first, { scanned: 200, woke: 0 });
-  assert.deepEqual(db.queryLog[0], {
-    group: "tasks",
-    wheres: [
-      ["status", "==", "Snoozed"],
-      ["dispositionContract.next_trigger.kind", "==", "date"],
-      ["dispositionContract.next_trigger.at", "<=", NOW]
-    ],
-    orders: [
-      ["dispositionContract.next_trigger.at", "asc"],
-      ["__name__", "asc"]
-    ],
-    limit: 201,
-    startAfter: []
-  });
-  const saved = db.documents.get("phase1System/dispositionTriggerState");
-  assert.equal(saved.dateAfterPath, "users/u199/tasks/shared-leaf");
-  assert.equal(saved.dateAfterAt, dueAt);
-
-  db.documents.set("phase1System/dispositionTriggerLease", {
-    runId: "run-date-2",
-    expiresAt: new Date(NOW.getTime() + 60_000)
-  });
-  const second = await __private.processDateTasks(db, NOW, "run-date-2");
-  assert.deepEqual(second, { scanned: 1, woke: 1 });
-  assert.deepEqual(db.queryLog[1].startAfter, [dueAt, "users/u199/tasks/shared-leaf"]);
-  assert.equal(db.documents.get(validPath).status, "Upcoming");
-  assert.equal("dateAfterPath" in db.documents.get("phase1System/dispositionTriggerState"), false);
-
-  db.documents.set("phase1System/dispositionTriggerLease", {
-    runId: "run-date-3",
-    expiresAt: new Date(NOW.getTime() + 60_000)
-  });
-  const wrapped = await __private.processDateTasks(db, NOW, "run-date-3");
-  assert.deepEqual(wrapped, { scanned: 200, woke: 0 });
-  assert.deepEqual(db.queryLog[2].startAfter, []);
-});
-
-test("event scan terminalizes 100 poison rows so row 101 advances next run", async () => {
-  const documents = {};
-  for (let index = 0; index < 100; index += 1) {
-    const uid = `u${String(index).padStart(3, "0")}`;
-    documents[`users/${uid}/events/shared-leaf`] = event({
-      event_id: "shared-leaf",
-      observed_at: undefined
-    });
-  }
-  const validPath = "users/z-user/events/valid-event";
-  documents[validPath] = event({ event_id: "valid-event" });
-  const db = queryAwareDb(documents);
-
-  const first = await __private.processEvents(db, NOW, "unused-run");
-  assert.equal(first.scanned, 100);
-  assert.deepEqual(new Set(first.outcomes), new Set(["quarantined"]));
-  assert.deepEqual(db.queryLog[0], {
-    group: "events",
-    wheres: [["processingState", "==", "pending"]],
-    orders: [["__name__", "asc"]],
-    limit: 101,
-    startAfter: []
-  });
-  assert.equal([...db.documents.values()].filter((data) => data.outcome === "quarantined").length, 100);
-  assert.equal(db.documents.get(validPath).processingState, "pending");
-
-  const second = await __private.processEvents(db, NOW, "unused-run");
-  assert.equal(second.scanned, 1);
-  assert.deepEqual(second.outcomes, ["advance"]);
-  assert.equal(db.documents.get(validPath).processingState, "terminal");
-  const stateId = canonicalEventStateId("institution.updated", "service/provider-1");
-  assert.equal(db.documents.get(`users/z-user/eventState/${stateId}`).event_id, "valid-event");
-});
-
-test("more than 100 mixed terminal outcomes leave the query before a following valid event", async () => {
-  const documents = {};
-  const expectedOutcomes = { stale: 0, duplicate: 0, version_conflict: 0 };
-  for (let index = 0; index < 120; index += 1) {
-    const uid = `u${String(index).padStart(3, "0")}`;
-    const eventId = `event-${String(index).padStart(3, "0")}`;
-    const canonicalKey = `service/provider-${index}`;
-    const mode = ["stale", "duplicate", "version_conflict"][index % 3];
-    const data = event({
-      event_id: eventId,
-      canonical_key: canonicalKey,
-      source_version: mode === "stale" ? 1 : 2
-    });
-    documents[`users/${uid}/events/${eventId}`] = data;
-    const stateId = canonicalEventStateId("institution.updated", canonicalKey);
-    documents[`users/${uid}/eventState/${stateId}`] = {
-      event_name: "institution.updated",
-      canonical_key: canonicalKey,
-      source_version: 2,
-      effect: "fire",
-      fingerprint: mode === "duplicate"
-        ? __private.fingerprintCanonicalEnvelope(canonicalEventEnvelope(data, eventId))
-        : "0".repeat(64)
-    };
-    expectedOutcomes[mode] += 1;
-  }
-  const validPath = "users/z-user/events/valid-after-terminal-pages";
-  documents[validPath] = event({
-    event_id: "valid-after-terminal-pages",
-    canonical_key: "service/final",
-    source_version: 7
-  });
-  const db = queryAwareDb(documents);
-
-  const first = await __private.processEvents(db, NOW, "unused-run");
-  assert.equal(first.scanned, 100);
-  assert.deepEqual(new Set(first.outcomes), new Set(["stale", "duplicate", "version_conflict"]));
-  assert.equal(db.documents.get(validPath).processingState, "pending");
-
-  const second = await __private.processEvents(db, NOW, "unused-run");
-  assert.equal(second.scanned, 21);
-  assert.equal(second.outcomes.at(-1), "advance");
-  assert.equal(db.documents.get(validPath).processingState, "terminal");
-  const actualOutcomes = { stale: 0, duplicate: 0, version_conflict: 0 };
-  for (const data of db.documents.values()) {
-    if (Object.hasOwn(actualOutcomes, data.outcome)) actualOutcomes[data.outcome] += 1;
-  }
-  assert.deepEqual(actualOutcomes, expectedOutcomes);
-  assert.equal(
-    [...db.documents.values()].filter((data) => data.processingState === "pending").length,
-    0
-  );
-  assert.deepEqual(db.queryLog.map((query) => query.limit), [101, 101]);
-});
-
-test("event-task scan uses full paths and reaches row 201 behind duplicate leaf poison", async () => {
-  const documents = {
-    "phase1System/dispositionTriggerLease": {
-      runId: "run-event-1",
-      expiresAt: new Date(NOW.getTime() + 60_000)
-    }
-  };
-  for (let index = 0; index < 200; index += 1) {
-    const uid = `u${String(index).padStart(3, "0")}`;
-    documents[`users/${uid}/tasks/shared-leaf`] = deferredEvent("never-matches");
-  }
-  const validPath = "users/z-user/tasks/shared-leaf";
-  documents[validPath] = deferredEvent();
-  const stateId = canonicalEventStateId("institution.updated", "service/provider-1");
-  documents[`users/z-user/eventState/${stateId}`] = {
-    event_name: "institution.updated",
-    canonical_key: "service/provider-1",
-    source_version: 2,
-    effect: "fire"
-  };
-  const db = queryAwareDb(documents);
-
-  const first = await __private.processEventTasks(db, NOW, "run-event-1");
-  assert.deepEqual(first, { scanned: 200, woke: 0 });
-  assert.deepEqual(db.queryLog[0], {
-    group: "tasks",
-    wheres: [
-      ["status", "==", "Snoozed"],
-      ["dispositionContract.next_trigger.kind", "==", "event"]
-    ],
-    orders: [["__name__", "asc"]],
-    limit: 201,
-    startAfter: []
-  });
-  assert.equal(
-    db.documents.get("phase1System/dispositionTriggerState").eventTaskAfterPath,
-    "users/u199/tasks/shared-leaf"
-  );
-
-  db.documents.set("phase1System/dispositionTriggerLease", {
-    runId: "run-event-2",
-    expiresAt: new Date(NOW.getTime() + 60_000)
-  });
-  const second = await __private.processEventTasks(db, NOW, "run-event-2");
-  assert.deepEqual(second, { scanned: 1, woke: 1 });
-  assert.deepEqual(db.queryLog[1].startAfter, ["users/u199/tasks/shared-leaf"]);
-  assert.equal(db.documents.get(validPath).status, "Upcoming");
-  assert.equal("eventTaskAfterPath" in db.documents.get("phase1System/dispositionTriggerState"), false);
-
-  const wrappedPath = "users/a-new/tasks/shared-leaf";
-  db.documents.set(wrappedPath, deferredEvent());
-  db.documents.set(`users/a-new/eventState/${stateId}`, {
-    event_name: "institution.updated",
-    canonical_key: "service/provider-1",
-    source_version: 2,
-    effect: "fire"
-  });
-  db.documents.set("phase1System/dispositionTriggerLease", {
-    runId: "run-event-3",
-    expiresAt: new Date(NOW.getTime() + 60_000)
-  });
-  const wrapped = await __private.processEventTasks(db, NOW, "run-event-3");
-  assert.deepEqual(wrapped, { scanned: 200, woke: 1 });
-  assert.deepEqual(db.queryLog[2].startAfter, []);
-  assert.equal(db.documents.get(wrappedPath).status, "Upcoming");
-});
-
-test("cursor writes reject a non-owner runId even when the query is empty", async () => {
-  const db = queryAwareDb({
-    "phase1System/dispositionTriggerLease": {
-      runId: "live-owner",
-      expiresAt: new Date(NOW.getTime() + 60_000)
-    }
-  });
-  await assert.rejects(
-    __private.processDateTasks(db, NOW, "stale-owner"),
-    /lease is no longer owned/
-  );
-  await assert.rejects(
-    __private.processEventTasks(db, NOW, "stale-owner"),
-    /lease is no longer owned/
-  );
-  assert.equal(db.documents.has("phase1System/dispositionTriggerState"), false);
-});
-
-test("full evaluator executes all scans, reconciles same-run events, and releases its lease", async () => {
-  const duePath = "users/a-user/tasks/date-task";
-  const eventTaskPath = "users/a-user/tasks/event-task";
-  const eventPath = "users/a-user/events/event-2";
-  const db = queryAwareDb({
-    [duePath]: deferredDate(new Date("2026-08-27T16:00:00.000Z")),
-    [eventTaskPath]: deferredEvent(),
-    [eventPath]: event()
-  });
-  const result = await runDispositionTriggerEvaluation(db, NOW);
-  assert.deepEqual(result.dates, { scanned: 1, woke: 1 });
-  assert.equal(result.events.scanned, 1);
-  assert.deepEqual(result.events.outcomes, ["advance"]);
-  assert.deepEqual(result.eventTasks, { scanned: 1, woke: 1 });
-  assert.equal(db.documents.get(duePath).status, "Upcoming");
-  assert.equal(db.documents.get(eventTaskPath).status, "Upcoming");
-  assert.equal(db.documents.get(eventPath).processingState, "terminal");
-  assert.equal(db.documents.has("phase1System/dispositionTriggerLease"), false);
-  assert.deepEqual(db.queryLog.map((query) => [query.group, query.limit]), [
-    ["tasks", 201],
-    ["events", 101],
-    ["tasks", 201]
-  ]);
-});
-
 test("bounded mapper never exceeds the requested work cap", async () => {
   let active = 0;
   let maximum = 0;
@@ -779,72 +516,272 @@ test("bounded mapper never exceeds the requested work cap", async () => {
   assert.deepEqual(output, Array.from({ length: 31 }, (_, index) => index * 2));
 });
 
-test("factory handler invokes only its injected evaluator", async () => {
-  const calls = [];
-  const db = { marker: "fake" };
-  const handler = makeDispositionTriggerHandler({
-    dbFactory: () => db,
-    nowFactory: () => NOW,
-    evaluator: async (actualDb, actualNow) => {
-      calls.push([actualDb, actualNow]);
-      return { processed: 1 };
-    }
-  });
-  assert.deepEqual(await handler(), { processed: 1 });
-  assert.deepEqual(calls, [[db, NOW]]);
+test("module has no notification dependency", () => {
+  const source = fs.readFileSync(path.resolve(__dirname, "../dispositionTriggers.js"), "utf8");
+  assert.doesNotMatch(source, /notify|messaging|push/i);
 });
 
-test("production export is a v2 scheduler endpoint with locked metadata", () => {
-  assert.equal(typeof evaluateDispositionTriggers, "function");
-  assert.equal(typeof evaluateDispositionTriggers.run, "function");
+// ---------------------------------------------------------------------------
+// S3 I9a — PHASE2_CONTRACT.md C9.1 scheduler mechanics. The ten Phase-1 cases this section
+// replaces (runId lease, 200-row pages, old export options, old index file) are superseded by
+// the contract; each property they proved has a C9.1 equivalent below.
+// ---------------------------------------------------------------------------
+
+const T0 = "2026-09-06T12:00:00Z"; // an exact 300 s boundary
+const ORD0 = Math.floor(Date.parse(T0) / 1000 / 300);
+const scheduleAt = (k) => new Date(Date.parse(T0) + k * 300_000).toISOString().replace(".000Z", "Z");
+function schedDeps(db, clock, extra = {}) {
+  const deps = { db, logs: [], metrics: [], now: () => clock.now(), log: (code, counts) => deps.logs.push([code, counts]), metric: (n, v) => deps.metrics.push([n, v]), elapsedSeconds: () => 0, ...extra };
+  return deps;
+}
+const healthOf = (db) => db.__docs.get(scheduler.STATE_PATH).schedulerHealth;
+const dateTask = (at) => ({ status: "Snoozed", snoozedUntil: at, dispositionContract: { profile_version: 3, disposition: "DEFERRED", owner: "user:u1", next_action: "Wait", next_trigger: { kind: "date", fired: false, at, payload: { basis: "institution_promised_date", source_evidence_id: "e1" } }, resume_destination: "flow:due", visible_status_copy: "Waiting" } });
+const pendingEvent = (id) => ({ event_id: id, event_name: "institution.updated", canonical_key: "service/provider-1", source_version: 2, observed_at: new Date("2026-08-27T16:59:00.000Z"), source_evidence_id: "evidence-2", effect: "fire", payload: {}, processingState: "pending", processed: false });
+
+async function initialized(docs = {}, clockIso = "2026-09-06T11:57:00.000Z") {
+  const clock = new FakeClock(clockIso); // initialization just before the boundary → activatedOrdinal = ORD0
+  const db = fakeFirestore({ docs, clock });
+  const deps = schedDeps(db, clock);
+  await scheduler.initializeScheduler(deps);
+  clock.millis = Date.parse(T0) + 1000;
+  return { db, clock, deps };
+}
+
+test("C9.1.1 scheduler configuration is exact", () => {
   const endpoint = evaluateDispositionTriggers.__endpoint;
-  assert.equal(endpoint.platform, "gcfv2");
-  assert.equal(endpoint.scheduleTrigger.schedule, "every 15 minutes");
   assert.deepEqual(endpoint.region, ["us-central1"]);
-  assert.equal(endpoint.timeoutSeconds, 540);
+  assert.equal(endpoint.scheduleTrigger.schedule, "*/5 * * * *");
+  assert.equal(endpoint.scheduleTrigger.timeZone, "Etc/UTC");
+  assert.equal(endpoint.timeoutSeconds, 270);
   assert.equal(endpoint.availableMemoryMb, 512);
   assert.equal(endpoint.maxInstances, 1);
   assert.equal(endpoint.concurrency, 1);
   assert.equal(endpoint.scheduleTrigger.retryConfig.retryCount, 0);
 });
 
-test("index and Firebase config exactly declare scheduler query indexes", () => {
-  const root = path.resolve(__dirname, "../..");
-  const indexes = JSON.parse(fs.readFileSync(path.join(root, "firestore.indexes.json"), "utf8"));
-  assert.deepEqual(indexes, {
-    indexes: [
-      {
-        collectionGroup: "tasks",
-        queryScope: "COLLECTION_GROUP",
-        fields: [
-          { fieldPath: "status", order: "ASCENDING" },
-          { fieldPath: "dispositionContract.next_trigger.kind", order: "ASCENDING" },
-          { fieldPath: "dispositionContract.next_trigger.at", order: "ASCENDING" }
-        ]
-      },
-      {
-        collectionGroup: "tasks",
-        queryScope: "COLLECTION_GROUP",
-        fields: [
-          { fieldPath: "status", order: "ASCENDING" },
-          { fieldPath: "dispositionContract.next_trigger.kind", order: "ASCENDING" }
-        ]
-      }
-    ],
-    fieldOverrides: [
-      {
-        collectionGroup: "events",
-        fieldPath: "processingState",
-        indexes: [{ order: "ASCENDING", queryScope: "COLLECTION_GROUP" }]
-      }
-    ]
-  });
-  const firebase = JSON.parse(fs.readFileSync(path.join(root, "firebase.json"), "utf8"));
-  assert.equal(firebase.firestore.rules, "firestore.rules");
-  assert.equal(firebase.firestore.indexes, "firestore.indexes.json");
+test("C9.1.3 scheduleTime alone selects the ordinal; a missing or malformed scheduleTime stops before any write", async () => {
+  assert.equal(scheduler.parseScheduleEvent({ scheduleTime: scheduleAt(0) }).runOrdinal, ORD0);
+  assert.equal(scheduler.parseScheduleEvent({ scheduleTime: "2026-09-06T12:00:00.123456789Z" }).runOrdinal, ORD0);
+  for (const bad of [undefined, {}, { scheduleTime: "" }, { scheduleTime: "2026-09-06 12:00:00" }, { scheduleTime: "2026-09-06T12:00:00+00:00" }, { scheduleTime: 1 }]) {
+    assert.equal(scheduler.parseScheduleEvent(bad), null, JSON.stringify(bad));
+  }
+  const { db, deps } = await initialized();
+  const before = db.__writes.length;
+  assert.deepEqual(await scheduler.runDispositionScheduler({ scheduleTime: "nope" }, deps), { outcome: "invalid_event" });
+  assert.equal(db.__writes.length, before);
+  assert.ok(deps.logs.some(([c]) => c === "SCHEDULER_EVENT_INVALID"));
 });
 
-test("module has no notification dependency", () => {
-  const source = fs.readFileSync(path.resolve(__dirname, "../dispositionTriggers.js"), "utf8");
-  assert.doesNotMatch(source, /notify|messaging|push/i);
+test("C9.1.5 initialization writes the exact health map, migrates an exact legacy lease in the same transaction, and blocks on any other lease shape or a present health map", async () => {
+  const clock = new FakeClock("2026-09-06T11:57:00.000Z");
+  const db = fakeFirestore({ docs: { [scheduler.LEASE_PATH]: { runId: "old", acquiredAt: new Date(), expiresAt: new Date() } }, clock });
+  const result = await scheduler.initializeScheduler(schedDeps(db, clock));
+  assert.equal(result.activatedOrdinal, ORD0);
+  assert.deepEqual(healthOf(db), { schemaVersion: 1, activatedOrdinal: ORD0, lastStartedOrdinal: ORD0 - 1, recentRuns: [] });
+  assert.equal(db.__docs.has(scheduler.LEASE_PATH), false, "legacy lease deleted in the initializing transaction");
+  await assert.rejects(scheduler.initializeScheduler(schedDeps(db, clock)), (e) => e.code === "SCHEDULER_ROLLOUT_BLOCKED");
+  const foreign = fakeFirestore({ docs: { [scheduler.LEASE_PATH]: { weird: true } }, clock });
+  await assert.rejects(scheduler.initializeScheduler(schedDeps(foreign, clock)), (e) => e.code === "SCHEDULER_ROLLOUT_BLOCKED");
+  assert.equal(foreign.__writes.length, 0);
+});
+
+test("C9.1.6/C9.1.16 acquisition refuses the cross-fence, the ordinal floor, and a held v2 lease with zero writes; replaces an expired lease; migrates the exact legacy lease and residue keys atomically; blocks foreign keys", async () => {
+  const { db, deps, clock } = await initialized();
+  // cross-fence present → refused, nothing written
+  await db.doc(scheduler.CROSS_FENCE_PATH).set({ any: 1 });
+  let before = db.__writes.length;
+  assert.deepEqual(await scheduler.runDispositionScheduler({ scheduleTime: scheduleAt(0) }, deps), { outcome: "refused", reason: "CROSS_FENCE_PRESENT" });
+  assert.equal(db.__writes.length, before);
+  await db.doc(scheduler.CROSS_FENCE_PATH).delete();
+  // ordinal at or below the floor (activatedOrdinal - 1) → refused
+  before = db.__writes.length;
+  assert.deepEqual(await scheduler.runDispositionScheduler({ scheduleTime: scheduleAt(-1) }, deps), { outcome: "refused", reason: "ORDINAL_NOT_ABOVE_FLOOR" });
+  assert.equal(db.__writes.length, before);
+  // held v2 lease (other owner, unexpired) → refused
+  const foreignLease = { schemaVersion: 1, runOrdinal: ORD0, ownerToken: "other", startedAt: clock.now(), expiresAt: Timestamp.fromMillis(clock.millis + 100_000) };
+  await db.doc(scheduler.LEASE_PATH).set(foreignLease);
+  before = db.__writes.length;
+  assert.deepEqual(await scheduler.runDispositionScheduler({ scheduleTime: scheduleAt(0) }, deps), { outcome: "refused", reason: "LEASE_HELD" });
+  assert.equal(db.__writes.length, before);
+  assert.deepEqual(db.__docs.get(scheduler.LEASE_PATH), foreignLease);
+  // expired v2 lease → replaced atomically with the running heartbeat
+  clock.millis += 200_000;
+  const run = await scheduler.runDispositionScheduler({ scheduleTime: scheduleAt(0) }, deps);
+  assert.equal(run.outcome, "completed");
+  assert.equal(healthOf(db).lastStartedOrdinal, ORD0);
+  assert.equal(healthOf(db).recentRuns.at(-1).state, "completed");
+  assert.equal(db.__docs.has(scheduler.LEASE_PATH), false, "owner released its lease");
+  // MIG-TRIGGER-V1: legacy lease + residue keys removed in the acquiring transaction
+  await db.doc(scheduler.LEASE_PATH).set({ runId: "legacy", acquiredAt: new Date(), expiresAt: new Date() });
+  await db.doc(scheduler.STATE_PATH).update({ dateAfterAt: new Date(), dateAfterPath: "users/u1/tasks/x", eventTaskAfterPath: "users/u1/tasks/y" });
+  const migratedRun = await scheduler.runDispositionScheduler({ scheduleTime: scheduleAt(1) }, deps);
+  assert.equal(migratedRun.migrated, true);
+  const state = db.__docs.get(scheduler.STATE_PATH);
+  assert.ok(!("dateAfterAt" in state) && !("dateAfterPath" in state) && !("eventTaskAfterPath" in state));
+  // foreign trigger-state key → blocked, zero write
+  await db.doc(scheduler.STATE_PATH).update({ threshold_attention: { path: "x" } });
+  before = db.__writes.length;
+  const blocked = await scheduler.runDispositionScheduler({ scheduleTime: scheduleAt(2) }, deps);
+  assert.equal(blocked.outcome, "blocked");
+  assert.equal(blocked.code, "SCHEDULER_STATE_INVARIANT");
+  assert.equal(db.__writes.length, before);
+});
+
+test("C9.1.7 every scheduler mutation is fenced: a takeover before a candidate commit writes nothing, and a lease read at or after expiry mutates nothing", async () => {
+  const taskPath = "users/u1/tasks/due";
+  const { db, deps, clock } = await initialized({ "users/u1": { name: "U" }, [taskPath]: dateTask(new Date("2026-09-06T11:00:00.000Z")) });
+  const acquired = await scheduler.acquireScheduler(deps, scheduler.parseScheduleEvent({ scheduleTime: scheduleAt(0) }));
+  const run = { ...acquired, deps };
+  // takeover: another owner replaces the lease before the candidate commits
+  await db.doc(scheduler.LEASE_PATH).set({ ...acquired.lease, ownerToken: "taker" });
+  const before = db.__writes.length;
+  await assert.rejects(wakeDateTaskInTransaction(db, db.doc(taskPath), run.runNow, run), (e) => e.code === "SCHEDULER_FENCE_LOST");
+  assert.equal(db.__writes.length, before);
+  assert.equal(db.__docs.get(taskPath).status, "Snoozed");
+  // restore the owner's tuple, expire it: a read at/after expiry mutates nothing
+  await db.doc(scheduler.LEASE_PATH).set(acquired.lease);
+  clock.millis = acquired.lease.expiresAt.toMillis();
+  await assert.rejects(wakeDateTaskInTransaction(db, db.doc(taskPath), run.runNow, run), (e) => e.code === "SCHEDULER_FENCE_LOST");
+  assert.equal(db.__docs.get(taskPath).status, "Snoozed");
+  // live tuple: the candidate commits
+  clock.millis = acquired.lease.startedAt.toMillis() + 1000;
+  assert.equal(await wakeDateTaskInTransaction(db, db.doc(taskPath), run.runNow, run), true);
+  assert.equal(db.__docs.get(taskPath).status, "Upcoming");
+});
+
+test("C9.1.14/C9.1.17 phase 0 pages exactly 100/101 with a persisted full-path cursor and ordinary lanes page exactly 50/51; a not-full page deletes the lane's cursor", async () => {
+  const docs = { "users/u1": { name: "U" } };
+  for (let i = 0; i < 101; i += 1) docs[`users/u1/events/e${String(i).padStart(3, "0")}`] = pendingEvent(`e${String(i).padStart(3, "0")}`);
+  for (let i = 0; i < 51; i += 1) docs[`users/u1/tasks/t${String(i).padStart(3, "0")}`] = dateTask(new Date(Date.parse("2026-09-06T11:00:00.000Z") + i * 1000));
+  const { db, deps } = await initialized(docs);
+  const first = await scheduler.runDispositionScheduler({ scheduleTime: scheduleAt(0) }, deps);
+  assert.equal(first.outcome, "completed");
+  const phase0 = first.lanes.find((l) => l.lane === "event_envelope_prepass");
+  assert.equal(phase0.examined, 100);
+  assert.equal(db.__docs.get(scheduler.STATE_PATH).event_envelope_prepass.path, "users/u1/events/e099", "the 100th examined path persists iff row 101 exists");
+  const dateLane = first.lanes.find((l) => l.lane === "date_snoozed_deferred");
+  assert.equal(dateLane.examined, 50);
+  assert.equal(db.__docs.get(scheduler.STATE_PATH).date_snoozed_deferred.path, "users/u1/tasks/t049");
+  assert.equal([...db.__docs.entries()].filter(([p, d]) => p.startsWith("users/u1/tasks/") && d.status === "Upcoming").length, 50);
+  const second = await scheduler.runDispositionScheduler({ scheduleTime: scheduleAt(1) }, deps);
+  assert.equal(second.outcome, "completed");
+  assert.equal(second.lanes.find((l) => l.lane === "event_envelope_prepass").examined, 1);
+  assert.equal(second.lanes.find((l) => l.lane === "date_snoozed_deferred").examined, 1);
+  const state = db.__docs.get(scheduler.STATE_PATH);
+  assert.equal("event_envelope_prepass" in state, false, "not-full page deletes the phase-0 cursor");
+  assert.equal("date_snoozed_deferred" in state, false, "not-full page deletes the lane cursor");
+  assert.equal([...db.__docs.entries()].filter(([p, d]) => p.startsWith("users/u1/tasks/") && d.status === "Upcoming").length, 51);
+  assert.equal([...db.__docs.entries()].filter(([p, d]) => p.startsWith("users/u1/events/") && d.processingState === "terminal").length, 101);
+  assert.equal(Object.keys(state).filter((k) => !["schedulerHealth"].includes(k)).length, 0, "exactly the seven cursor keys are ever present; none remain here");
+});
+
+test("C9.1.14 an unsettled page leaves the cursor untouched and the run incomplete; a missed admission deadline starts no wave and completes nothing", async () => {
+  const docs = { "users/u1": { name: "U" } };
+  for (let i = 0; i < 51; i += 1) docs[`users/u1/tasks/t${String(i).padStart(3, "0")}`] = dateTask(new Date(Date.parse("2026-09-06T11:00:00.000Z") + i * 1000));
+  // one selected row belongs to an account under deletion: its reducer refuses (ACCOUNT_DELETION_FENCED) → neither admitted nor classified
+  docs["users/u2"] = { accountDeletion: { schemaVersion: 1, state: "DELETING", capabilities: [{ operationId: "adel1_00000000-0000-4000-8000-000000000001", proofSHA256: "a".repeat(64) }], startedAt: Timestamp.fromMillis(0), storageGuardAfter: Timestamp.fromMillis(604800000) } };
+  docs["users/u2/tasks/t010"] = docs["users/u1/tasks/t010"]; delete docs["users/u1/tasks/t010"];
+  const { db, deps } = await initialized(docs);
+  const run = await scheduler.runDispositionScheduler({ scheduleTime: scheduleAt(0) }, deps);
+  assert.equal(run.outcome, "incomplete");
+  assert.equal("date_snoozed_deferred" in db.__docs.get(scheduler.STATE_PATH), false, "no cursor create for an unsettled page");
+  assert.equal(healthOf(db).recentRuns.at(-1).state, "running");
+  assert.equal(healthOf(db).lastCompletedOrdinal, undefined);
+  assert.equal(deps.metrics.length, 0, "incomplete evaluations emit no completion metric");
+  const late = schedDeps(db, deps.now === undefined ? null : { now: deps.now }, {});
+  const { db: db2, deps: deps2 } = await initialized({ "users/u1": { name: "U" }, "users/u1/tasks/a": dateTask(new Date("2026-09-06T11:00:00.000Z")) });
+  deps2.elapsedSeconds = () => 300;
+  const timedOut = await scheduler.runDispositionScheduler({ scheduleTime: scheduleAt(0) }, deps2);
+  assert.equal(timedOut.outcome, "incomplete");
+  assert.equal(db2.__docs.get("users/u1/tasks/a").status, "Snoozed", "no wave started after the deadline");
+  void late;
+});
+
+test("C9.1.8/C9.1.9 completion turns the running heartbeat into completed with count:0 latency and the exact observable and metric; recentRuns keeps the newest four; duplicate and out-of-order deliveries emit nothing", async () => {
+  const { db, deps } = await initialized({ "users/u1": { name: "U" } });
+  for (let k = 0; k < 5; k += 1) {
+    const run = await scheduler.runDispositionScheduler({ scheduleTime: scheduleAt(k) }, deps);
+    assert.equal(run.outcome, "completed", `ordinal +${k}`);
+  }
+  const health = scheduler.validateHealth(healthOf(db));
+  assert.deepEqual(health.recentRuns.map((r) => r.runOrdinal), [ORD0 + 1, ORD0 + 2, ORD0 + 3, ORD0 + 4]);
+  assert.ok(health.recentRuns.every((r) => r.state === "completed" && r.completedAt && JSON.stringify(r.thresholdWakeLatency) === '{"count":0}'));
+  assert.equal(health.lastCompletedOrdinal, ORD0 + 4);
+  assert.equal(deps.logs.filter(([c]) => c === "DISPOSITION_SCHEDULER_COMPLETED").length, 5);
+  assert.deepEqual(deps.logs.filter(([c]) => c === "DISPOSITION_SCHEDULER_COMPLETED").at(-1), ["DISPOSITION_SCHEDULER_COMPLETED", { runOrdinal: ORD0 + 4 }]);
+  assert.equal(deps.metrics.filter(([n]) => n === "phase2/disposition_scheduler_completed_count").length, 5);
+  const before = deps.metrics.length;
+  assert.equal((await scheduler.runDispositionScheduler({ scheduleTime: scheduleAt(4) }, deps)).outcome, "refused", "duplicate");
+  assert.equal((await scheduler.runDispositionScheduler({ scheduleTime: scheduleAt(2) }, deps)).outcome, "refused", "out of order");
+  assert.equal(deps.metrics.length, before);
+  assert.deepEqual(scheduler.__private.nearestRank([5, 1, 3, 2, 4], 0.5), 3);
+  assert.deepEqual(scheduler.__private.nearestRank([5, 1, 3, 2, 4], 0.95), 5);
+});
+
+test("C9.1.11 two missed completions create the condition slot before candidate work, a later ordinal advances it, 0/1 missing clears it, a same-ordinal replay is a no-op, and a same-ordinal disagreement is an invariant", async () => {
+  const { db, deps } = await initialized({ "users/u1": { name: "U" } });
+  const slot = `${scheduler.ALERTS_COLLECTION}/p2b1_two_missed_completions`;
+  assert.equal((await scheduler.runDispositionScheduler({ scheduleTime: scheduleAt(0) }, deps)).outcome, "completed");
+  assert.equal((await scheduler.runDispositionScheduler({ scheduleTime: scheduleAt(3) }, deps)).outcome, "completed"); // ordinals +1 and +2 missing
+  const first = db.__docs.get(slot);
+  assert.equal(first.condition, "TWO_MISSED_COMPLETIONS");
+  assert.deepEqual([first.occurrenceCount, first.firstObservedOrdinal, first.lastObservedOrdinal, first.effectiveLastCompletedOrdinal, first.requiredCompletedOrdinal], [1, ORD0 + 3, ORD0 + 3, ORD0, ORD0 + 1]);
+  assert.ok(deps.logs.some(([c]) => c === "PHASE2B_TWO_MISSED_COMPLETIONS"));
+  assert.equal((await scheduler.runDispositionScheduler({ scheduleTime: scheduleAt(6) }, deps)).outcome, "completed");
+  const second = db.__docs.get(slot);
+  assert.deepEqual([second.occurrenceCount, second.firstObservedOrdinal, second.lastObservedOrdinal, second.requiredCompletedOrdinal], [2, ORD0 + 3, ORD0 + 6, ORD0 + 4]);
+  assert.equal((await scheduler.runDispositionScheduler({ scheduleTime: scheduleAt(7) }, deps)).outcome, "completed");
+  assert.equal(db.__docs.has(slot), false, "a complete observation proving the condition absent deletes the slot");
+  // same-ordinal replay is a no-op; disagreement is an invariant with zero writes
+  const acquired = await scheduler.acquireScheduler(deps, scheduler.parseScheduleEvent({ scheduleTime: scheduleAt(10) }));
+  const run = { ...acquired, deps };
+  assert.equal(await scheduler.observeCondition(deps, run, "p2b1_two_missed_completions", "TWO_MISSED_COMPLETIONS", { effectiveLastCompletedOrdinal: 1, requiredCompletedOrdinal: 2 }), "created");
+  assert.equal(await scheduler.observeCondition(deps, run, "p2b1_two_missed_completions", "TWO_MISSED_COMPLETIONS", { effectiveLastCompletedOrdinal: 1, requiredCompletedOrdinal: 2 }), "unchanged");
+  const before = db.__writes.length;
+  await assert.rejects(scheduler.observeCondition(deps, run, "p2b1_two_missed_completions", "TWO_MISSED_COMPLETIONS", { effectiveLastCompletedOrdinal: 9, requiredCompletedOrdinal: 2 }), (e) => e.code === "SCHEDULER_ALERT_SLOT_INVARIANT");
+  assert.equal(db.__writes.length, before);
+});
+
+test("timeouts do not exceed 300 seconds", () => {
+  const root = path.resolve(__dirname, "..");
+  const read = (f) => fs.readFileSync(path.join(root, f), "utf8");
+  const participating = ["index.js", "dispositionTriggers.js", "getWorkflowQualifying.js", "spawnTasks.js", "processInventory.js", "researchTask.js", "peezyChat.js", "packageInventory.js", "submitCheckIn.js", "entitlement.js", "validateSubscription.js", "supportAdmin.js", "resolveProvider.js"];
+  for (const file of participating) {
+    for (const match of read(file).matchAll(/timeoutSeconds:\s*(\d+)/g)) assert.ok(Number(match[1]) <= 300, `${file} timeoutSeconds ${match[1]}`);
+  }
+  assert.match(read("taskPlan.js"), /timeoutSeconds: 540/, "changeTaskPlan is expressly non-participating and stays at 540");
+  for (const file of ["peezyChat.js", "researchTask.js", "processInventory.js"]) {
+    const source = read(file);
+    const construction = source.match(/new Anthropic\(\{[^}]*\}\)/);
+    assert.ok(construction && /timeout:\s*([A-Z_]+)/.test(construction[0]), `${file} Anthropic client carries a timeout`);
+    const constant = construction[0].match(/timeout:\s*([A-Z_]+)/)[1];
+    const value = Number(source.match(new RegExp(`const ${constant} = (\\d+)`))[1]);
+    assert.ok(value <= 300_000, `${file} ${constant} ${value}`);
+  }
+  for (const file of ["notifySupport.js", "packageInventory.js"]) {
+    const source = read(file);
+    assert.match(source, /socketTimeout: SMTP_TIMEOUT_MS/);
+    assert.ok(Number(source.match(/const SMTP_TIMEOUT_MS = (\d+)/)[1]) <= 300_000);
+  }
+  for (const file of ["notifySupport.js", "submitCheckIn.js"]) {
+    const source = read(file);
+    assert.match(source, /twilio\(accountSid, authToken, \{ timeout: SMS_TIMEOUT_MS \}\)/);
+    assert.ok(Number(source.match(/const SMS_TIMEOUT_MS = (\d+)/)[1]) <= 300_000);
+  }
+});
+
+test("C7 firestore.indexes.json equals the frozen base plus the eight appends", () => {
+  const { createHash } = require("node:crypto");
+  const root = path.resolve(__dirname, "../..");
+  const bytes = fs.readFileSync(path.join(root, "firestore.indexes.json"));
+  assert.equal(bytes.length, 5872);
+  assert.equal(createHash("sha256").update(bytes).digest("hex"), "a6de8daf701a75ff3db025ca244dbf2218432c5c1a06b0992cd88358250d88e8");
+  const parsed = JSON.parse(bytes.toString("utf8"));
+  assert.equal(parsed.indexes.length, 4);
+  assert.equal(parsed.fieldOverrides.length, 35);
+  assert.deepEqual(parsed.indexes[3].fields.map((f) => f.fieldPath), ["lane", "nextEligibleOrdinal", "firstRefusedOrdinal", "lastAttemptOrdinal"]);
+  const base = { indexes: parsed.indexes.slice(0, 3), fieldOverrides: parsed.fieldOverrides.slice(0, 28) };
+  const baseBytes = Buffer.from(JSON.stringify(base, null, 2) + "\n");
+  assert.equal(baseBytes.length, 4432);
+  assert.equal(createHash("sha256").update(baseBytes).digest("hex"), "a7a432ec8e0511176b890432c5e4cb4a07e59a6dba0c9d920948cc446f3a7bbb");
 });
