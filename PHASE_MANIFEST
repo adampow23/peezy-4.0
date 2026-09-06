@@ -84,3 +84,28 @@ functions/tests/support/*.js
 STATUS.md
 HANDOFF.md
 docs/reviews/S3_DIFF_REVIEW.md
+# S4 owned files (briefs/S4_BRIEF.md, 2026-09-06; Decisions 1–10 pending). Already listed above and reused by S4: Peezy 4.0/MainInterface/Models/TaskPlanService.swift (Decision 1), Peezy 4.0/Tasks/Durable/DurableStoreReadiness.swift (Decision 2), Peezy 4.0Tests/DurableStoreRecoveryTests.swift, Peezy 4.0/Inventory/Models/InventorySessionManager.swift, Peezy 4.0/MainInterface/Models/PeezyHomeViewModel.swift
+Peezy 4.0/Tasks/Durable/DurableStoreRecoveryCoordinator.swift
+Peezy 4.0/Tasks/Durable/DurableStoreRecoveryView.swift
+Peezy 4.0/Tasks/Durable/LocalPrivacyPurgeCoordinator.swift
+Peezy 4.0/Tasks/Disposition/TaskDispositionSurface.swift
+Peezy 4.0/MainInterface/Views/AppRootView.swift
+Peezy 4.0/Tasks/Store/TasksStore.swift
+Peezy 4.0/MainInterface/Views/PeezyMainContainer.swift
+Peezy 4.0/Tasks/Views/TasksTabView.swift
+Peezy 4.0/Tasks/Views/TasksList.swift
+Peezy 4.0/Tasks/Views/TaskRow.swift
+Peezy 4.0/Tasks/Views/TaskRowButtons.swift
+Peezy 4.0/MainInterface/Views/PeezyHomeView.swift
+Peezy 4.0/MainInterface/Models/AnalyticsEvents.swift
+Peezy 4.0/Assessment/AssessmentModels/AssessmentCoordinator.swift
+Peezy 4.0/Inventory/ViewModels/RoomCaptureViewModel.swift
+Peezy 4.0/Inventory/Views/InventoryItemConfirmView.swift
+Peezy 4.0/Inventory/Views/InventoryCameraView.swift
+Peezy 4.0/Inventory/Services/NarrationService.swift
+Peezy 4.0Tests/TaskDispositionSurfaceTests.swift
+Peezy 4.0Tests/TaskRowLegacySnapshotTests.swift
+Peezy 4.0Tests/TasksStoreNamespaceTests.swift
+Peezy 4.0Tests/AppRootAuthRaceTests.swift
+Peezy 4.0Tests/TaskGroupingTests.swift
+docs/reviews/S4_DIFF_REVIEW.md
