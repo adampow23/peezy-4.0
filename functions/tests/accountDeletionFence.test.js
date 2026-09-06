@@ -2897,3 +2897,126 @@ test("active exports contain no dynamic server log sink", () => {
   }
   assert.deepEqual(violations, [], violations.join("\n"));
 });
+
+// ---------------------------------------------------------------------------
+// S3 I12a — C9.4.3 purgeLegacyResolvedProviders.js: import/default, paging and continuation, arming guards, the pure core
+// against mixed rows, warm-cache restoration, static zero directory writers, and the settle window.
+// ---------------------------------------------------------------------------
+
+const providerPurge = require("../scripts/purgeLegacyResolvedProviders");
+
+const seededRow = (i) => ({ providerId: `seeded${i}`, name: `Seeded ${i}`, aliases: [], category: "internet", method: "link", source: "seeded" });
+const resolvedRow = (i) => ({ providerId: `resolved${i}`, name: `Resolved ${i}`, source: "resolved", confidence: 0.9 });
+const purgeArmed = ["--apply", "--project-id", "peezy-1ecrdl", "--confirm-project", "peezy-1ecrdl", "--drain-evidence-sha256", "a".repeat(64)];
+const purgeDeps = (db, overrides = {}) => ({ env: {}, emit: () => {}, resolveTarget: async () => ({ projectId: "peezy-1ecrdl", databaseId: "(default)" }), createDb: () => db, ...overrides });
+
+test("C9.4.3 provider purge: import has no effect; the default mode is a read-only audit; the core called directly with mixed seeded/resolved/malformed/absent rows deletes every non-seeded row after a transactional reread, preserves seeded rows byte-for-byte, and terminates only after two fresh complete zero-non-seeded passes", async () => {
+  const source = fs.readFileSync(path.join(__dirname, "..", "scripts", "purgeLegacyResolvedProviders.js"), "utf8");
+  assert.match(source, /if \(require\.main === module\) main\(\)/);
+  const docs = {};
+  for (let i = 0; i < 3; i += 1) docs[`providerDirectory/s${i}`] = seededRow(i);
+  for (let i = 0; i < 4; i += 1) docs[`providerDirectory/r${i}`] = resolvedRow(i);
+  docs["providerDirectory/m1"] = { providerId: "m1", name: "Malformed", source: "seeded", extra: 1 }; // complete seeded shape with a surplus member is still seeded (exact source + required members)
+  docs["providerDirectory/m2"] = { providerId: "", name: "Empty id", source: "seeded" };
+  docs["providerDirectory/m3"] = { source: "other", providerId: "x", name: "y" };
+  docs["providerDirectory/a1"] = { providerId: "a1", name: "No source" };
+  const clock = new FakeClock();
+  const db = fakeFirestore({ docs, clock });
+  const before = db.__writes.length;
+  const audit = await providerPurge.auditAndPurgeLegacyResolvedProviders({ db, apply: false });
+  assert.deepEqual([audit.mode, audit.passes.length, audit.nonSeededObserved, db.__writes.length], ["audit", 1, 7, before], "audit observes and writes nothing");
+  assert.deepEqual(audit.passes[0].counts, { seeded: 4, resolved: 4, malformed: 2, absent: 1, deleted: 0, preserved: 0 });
+  const seededBytes = JSON.stringify([...db.__docs.entries()].filter(([p, d]) => p.startsWith("providerDirectory/") && providerPurge.isSeededDirectoryRow(d)));
+  const result = await providerPurge.auditAndPurgeLegacyResolvedProviders({ db, apply: true });
+  assert.deepEqual([result.mode, result.twoPass, result.nonSeededObserved, result.passes.length], ["apply", true, 0, 3], "one deleting pass then two fresh zero passes");
+  assert.equal(result.passes[0].counts.deleted, 7);
+  assert.equal(JSON.stringify([...db.__docs.entries()].filter(([p]) => p.startsWith("providerDirectory/"))), seededBytes, "seeded rows preserved byte-for-byte; every non-seeded row gone");
+  assert.ok(result.passes[0].deletedDigests.every((d) => /^[0-9a-f]{64}$/.test(d)) && !JSON.stringify(result).includes("providerDirectory/r0"), "only path digests, never raw paths");
+  // a row that becomes seeded between nomination and the transactional reread is preserved
+  const racing = fakeFirestore({ docs: { "providerDirectory/late": resolvedRow(9), "providerDirectory/s0": seededRow(0) }, clock });
+  const originalRun = racing.runTransaction.bind(racing);
+  let first = true;
+  racing.runTransaction = async (fn) => { if (first) { first = false; racing.__docs.set("providerDirectory/late", seededRow(9)); } return originalRun(fn); };
+  const raced = await providerPurge.auditAndPurgeLegacyResolvedProviders({ db: racing, apply: true });
+  assert.deepEqual([raced.passes[0].counts.preserved, raced.passes[0].counts.deleted, racing.__docs.get("providerDirectory/late").source], [1, 0, "seeded"]);
+});
+
+test("C9.4.3 provider purge pages exactly 100 with a run-local full-path cursor and one resident page (100 and 101 rows, continuation across pages), and a failure before or after a nomination surfaces as a nonzero result with no further delete", async () => {
+  for (const total of [100, 101]) {
+    const docs = {};
+    for (let i = 0; i < total; i += 1) docs[`providerDirectory/r${String(i).padStart(3, "0")}`] = resolvedRow(i);
+    const db = fakeFirestore({ docs, clock: new FakeClock() });
+    const result = await providerPurge.auditAndPurgeLegacyResolvedProviders({ db, apply: true });
+    assert.equal(result.passes[0].counts.deleted, total, `deleted ${total}`);
+    const pageReads = db.__reads.filter((r) => r === "providerDirectory?").length;
+    assert.equal(pageReads, total === 100 ? 2 + 2 : 2 + 2, `page reads for ${total} across three passes`);
+    assert.equal([...db.__docs.keys()].filter((p) => p.startsWith("providerDirectory/")).length, 0);
+  }
+  // continuation: 150 rows, cursor after the 100th
+  const docs = {};
+  for (let i = 0; i < 150; i += 1) docs[`providerDirectory/r${String(i).padStart(3, "0")}`] = resolvedRow(i);
+  const db = fakeFirestore({ docs, clock: new FakeClock() });
+  const audit = await providerPurge.auditAndPurgeLegacyResolvedProviders({ db, apply: false });
+  assert.deepEqual([audit.passes[0].counts.resolved, db.__reads.filter((r) => r === "providerDirectory?").length], [150, 2], "two pages: 100 then 50");
+  // failure after a nomination: the transaction throws → nonzero exit, no further delete
+  const failing = fakeFirestore({ docs: { "providerDirectory/r1": resolvedRow(1), "providerDirectory/r2": resolvedRow(2) }, clock: new FakeClock() });
+  const original = failing.runTransaction.bind(failing);
+  let calls = 0;
+  failing.runTransaction = async (fn) => { calls += 1; if (calls === 2) throw new Error("transport"); return original(fn); };
+  const outcome = await providerPurge.run(purgeArmed, purgeDeps(failing));
+  assert.deepEqual([outcome.exitCode, outcome.report.refusal, [...failing.__docs.keys()].filter((p) => p.startsWith("providerDirectory/")).length], [1, "PROVIDER_PURGE_FAILED", 1], "one deleted before the failure, none after");
+});
+
+test("C9.4.3 provider purge CLI guards: each missing or malformed arming member, an unknown or duplicate argument, a wrong resolved project or database, and a present FIRESTORE_EMULATOR_HOST refuse before the core is invoked or any write; the complete literal set runs the core; the settle window equals the pinned Commit timeout", async () => {
+  const fresh = () => fakeFirestore({ docs: { "providerDirectory/r1": resolvedRow(1), "providerDirectory/s1": seededRow(1) }, clock: new FakeClock() });
+  const cases = [
+    ["missing apply", purgeArmed.slice(1), {}, null, 0],
+    ["unknown argument", [...purgeArmed, "--force"], {}, "UNKNOWN_ARGUMENT", 2],
+    ["duplicate argument", [...purgeArmed, "--apply"], {}, "DUPLICATE_ARGUMENT", 2],
+    ["wrong project id", ["--apply", "--project-id", "demo", "--confirm-project", "peezy-1ecrdl", "--drain-evidence-sha256", "a".repeat(64)], {}, "PROJECT_ID_MISMATCH", 2],
+    ["missing confirmation", ["--apply", "--project-id", "peezy-1ecrdl", "--drain-evidence-sha256", "a".repeat(64)], {}, "CONFIRM_PROJECT_MISMATCH", 2],
+    ["malformed drain digest", ["--apply", "--project-id", "peezy-1ecrdl", "--confirm-project", "peezy-1ecrdl", "--drain-evidence-sha256", "XYZ"], {}, "DRAIN_EVIDENCE_INVALID", 2],
+    ["missing drain digest", ["--apply", "--project-id", "peezy-1ecrdl", "--confirm-project", "peezy-1ecrdl"], {}, "DRAIN_EVIDENCE_INVALID", 2],
+    ["emulator host", purgeArmed, { env: { FIRESTORE_EMULATOR_HOST: "127.0.0.1:8080" } }, "EMULATOR_HOST_PRESENT", 2],
+    ["emulator host in audit", [], { env: { FIRESTORE_EMULATOR_HOST: "127.0.0.1:8080" } }, "EMULATOR_HOST_PRESENT", 2],
+    ["wrong resolved project", purgeArmed, { resolveTarget: async () => ({ projectId: "other", databaseId: "(default)" }) }, "RESOLVED_TARGET_MISMATCH", 3],
+    ["wrong resolved database", purgeArmed, { resolveTarget: async () => ({ projectId: "peezy-1ecrdl", databaseId: "other" }) }, "RESOLVED_TARGET_MISMATCH", 3]
+  ];
+  for (const [label, argv, overrides, refusal, exitCode] of cases) {
+    const db = fresh();
+    let coreInvoked = 0;
+    const result = await providerPurge.run(argv, purgeDeps(db, { ...overrides, createDb: () => { coreInvoked += 1; return db; } }));
+    assert.deepEqual([result.report.refusal, result.exitCode], [refusal, exitCode], label);
+    if (refusal !== null) { assert.equal(coreInvoked, 0, `${label}: core never invoked`); assert.equal(db.__writes.length, 0, `${label}: zero writes`); }
+    else { assert.equal(result.report.mode, "audit", label); assert.equal(db.__writes.length, 0, `${label}: audit writes nothing`); }
+  }
+  const db = fresh();
+  const applied = await providerPurge.run(purgeArmed, purgeDeps(db));
+  assert.deepEqual([applied.exitCode, applied.report.refusal, applied.report.result.twoPass, applied.report.drainEvidenceSha256, db.__docs.has("providerDirectory/r1"), db.__docs.has("providerDirectory/s1")], [0, null, true, "a".repeat(64), false, true]);
+  assert.equal(JSON.stringify(applied.report).includes("providerDirectory/"), false, "the report carries digests, never raw paths");
+  assert.equal(providerPurge.SETTLE_WINDOW_MS, 60000, "a .set() issued at Commit timeout-minus-epsilon settles by TproviderZero + 60,000 ms");
+  const config = JSON.parse(fs.readFileSync(path.join(path.dirname(require.resolve("@google-cloud/firestore")), "v1/firestore_client_config.json"), "utf8"));
+  assert.equal(config.interfaces["google.firestore.v1.Firestore"].methods.Commit.timeout_millis, providerPurge.SETTLE_WINDOW_MS);
+});
+
+test("C9.4.3 warm-cache restoration and static zero directory writers: after the purge a fresh directory load admits only the seeded rows (resolved, malformed, and missing-source rows are not retained) and seeded rows still qualify; no active module creates or updates providerDirectory rows", async () => {
+  const { loadDirectory, resetDirectoryCache } = resolveProviderModule._test;
+  const docs = { "providerDirectory/s1": { ...seededRow(1), providerId: "seeded1", name: "Comcast", aliases: ["xfinity"], category: "internet", method: "link", cancelUrl: "https://example.com" }, "providerDirectory/r1": resolvedRow(1), "providerDirectory/m1": { providerId: "", name: "", source: "seeded" }, "providerDirectory/a1": { providerId: "a1", name: "A" } };
+  const db = fakeFirestore({ docs, clock: new FakeClock() });
+  resetDirectoryCache();
+  const warm = await loadDirectory({ db, now: () => 0 });
+  assert.deepEqual(warm.map((p) => p.providerId), ["seeded1"], "only exact seeded rows enter the cache even before the purge");
+  await providerPurge.auditAndPurgeLegacyResolvedProviders({ db, apply: true });
+  resetDirectoryCache();
+  const restored = await loadDirectory({ db, now: () => 0 });
+  assert.deepEqual([restored.length, restored[0].providerId, restored[0].source], [1, "seeded1", "seeded"], "the fresh instance sees exactly the seeded rows");
+  resetDirectoryCache();
+  const graph = ["index.js", "resolveProvider.js", "supportAdmin.js", "seedProviderDirectory.js"].map((f) => [f, fs.readFileSync(path.join(__dirname, "..", f), "utf8")]);
+  for (const [file, text] of graph) {
+    if (file === "seedProviderDirectory.js") continue; // the seeding CLI is the only authorized writer and is not in the active export graph
+    const writers = text.split("\n").filter((l) => /providerDirectory/.test(l) && /\.(set|update|create|add)\(/.test(l));
+    assert.deepEqual(writers, [], `${file} carries no providerDirectory create/update call`);
+  }
+  assert.equal(/require\(["']\.\/seedProviderDirectory["']\)/.test(fs.readFileSync(path.join(__dirname, "..", "index.js"), "utf8")), false, "the seeding CLI is outside the active export graph");
+});
+
