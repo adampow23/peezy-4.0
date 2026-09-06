@@ -32,3 +32,7 @@
 - Bash heredocs cannot carry raw control bytes (the tool rejects them); spell control characters in regexes with backslash-u escapes or use the Write tool.
 - Real Firestore `set(..., {merge:true})` deep-merges nested maps, so a marker rewritten that way keeps every member the new projection dropped; replace whole fields with `update` (or a non-merge set) and make the in-memory fake deep-merge so the offline suite catches it.
 - A fresh-context verification pass caught a test that had encoded the reducer's behavior instead of the contract sentence (enrollment during DELETING-guarding); write each falsifier's expectation from the contract line first, then watch it fail.
+
+## 2026-09-06 — S3 brief
+- Registry membership comes from the contract's C6 lists, not from ledger prose: the S2 close-out called `notifySupport.js` a fence writer and the S3 brief inherited it; C6.1 never lists it (it is a C6.2 provider with no Firestore write). Check each file against the registry before assigning it a call.
+- A fixture family goes to the file the contract names for it: §12.3 gives every client decoder to `DurableStoreRecoveryTests`, so decoder mirrors do not belong in `TaskPlanDispositionTests` just because earlier slices extended that file.

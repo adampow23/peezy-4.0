@@ -57,3 +57,22 @@ functions/tests/taskPlan.test.js
 functions/resolveProvider.js
 functions/supportAdmin.js
 functions/tests/support/fakeFirestore.js
+# S3 owned files (briefs/S3_BRIEF.md, 2026-09-06; Decisions 1–9 pending). Already listed above and reused by S3: functions/index.js, functions/spawnTasks.js, functions/accountDeletionFence.js, functions/tests/accountDeletionFence.test.js, functions/taskPlan.js, functions/tests/taskPlan.test.js, functions/tests/support/fakeFirestore.js, firestore.rules, functions/rules-tests/firestoreRules.test.js, Peezy 4.0/MainInterface/Models/TaskPlanService.swift, Peezy 4.0/MainInterface/Models/RetakeAssessmentCoordinator.swift, Peezy 4.0/MainInterface/Models/DailyDoseEngine.swift, Peezy 4.0Tests/DurableStoreRecoveryTests.swift, Peezy 4.0Tests/TaskPlanDispositionTests.swift, scripts/test-emulator.sh
+functions/notifySupport.js
+functions/researchTask.js
+functions/peezyChat.js
+functions/packageInventory.js
+functions/submitCheckIn.js
+functions/submitCheckInCore.js
+functions/entitlement.js
+functions/validateSubscription.js
+functions/processInventory.js
+functions/dispositionTriggers.js
+functions/tests/dispositionTriggers.test.js
+functions/notificationIntents.js
+functions/tests/notificationIntents.test.js
+functions/scripts/*.js
+functions/package.json
+functions/package-lock.json
+storage.rules
+firestore.indexes.json
