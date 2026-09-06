@@ -1646,6 +1646,26 @@ test("emulator: productionDependencies().fetchRawDocument reads the pinned publi
   assert.deepEqual(await scheduler.productionDependencies().fetchRawDocument(`${docPath}-absent`), { found: false });
 });
 
+test("C9.1.30 (D11) PEEZY_STATE_REGEN_SPEC.md item 9 is the contract's exact replacement line, and neither retired phrase occurs in any active document outside that quoted replacement", () => {
+  const root = path.resolve(__dirname, "../..");
+  const contract = fs.readFileSync(path.join(root, "docs/plans/PHASE2_CONTRACT.md"), "utf8").split("\n");
+  const replacement = contract.find((l) => l.startsWith("9. **Next post-Phase-2 regeneration — H57 disposition operations"));
+  assert.ok(replacement && replacement.length > 3000, "the contract carries the full quoted replacement");
+  const spec = fs.readFileSync(path.join(root, "PEEZY_STATE_REGEN_SPEC.md"), "utf8").split("\n");
+  const item9 = spec.filter((l) => /^9\. \*\*Next post-Phase-2 regeneration/.test(l));
+  assert.equal(item9.length, 1, "exactly one item 9");
+  assert.equal(item9[0], replacement, "item 9 replaced in full, never merged with old wording");
+  const active = ["PEEZY_STATE.md", "PEEZY_STATE_REGEN_SPEC.md", "STATUS.md", "HANDOFF.md", "PHASE2_WORKFLOW_v2.md", ...fs.readdirSync(path.join(root, "briefs")).map((f) => `briefs/${f}`), ...fs.readdirSync(path.join(root, "tasks")).map((f) => `tasks/${f}`)].filter((f) => f.endsWith(".md") && fs.existsSync(path.join(root, f)));
+  const retired = ["after three identical deterministic validation failures", "H57 quarantine consumer"];
+  for (const file of active) {
+    const text = fs.readFileSync(path.join(root, file), "utf8").split("\n").filter((l) => l !== replacement).join("\n");
+    for (const phrase of retired) assert.equal(text.includes(phrase), false, `${file} contains "${phrase}"`);
+  }
+  // the contract itself names the phrases only inside the C9.1.30 rule table and the quoted replacement
+  const outsideRule = contract.filter((l) => l !== replacement && !l.startsWith("| Zero occurrences |")).join("\n");
+  for (const phrase of retired) assert.equal(outsideRule.includes(phrase), false, `contract contains "${phrase}" outside C9.1.30`);
+});
+
 test("timeouts do not exceed 300 seconds", () => {
   const root = path.resolve(__dirname, "..");
   const read = (f) => fs.readFileSync(path.join(root, f), "utf8");
