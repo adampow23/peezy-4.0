@@ -1471,8 +1471,9 @@ extension ResetOperationRegistry {
     /// discards its result, rereads auth, and restarts.
     func drive(handle: ResetOperationHandle, remote: any ResetRemoteProviding, cleanup: ResetCleanupCallbacks) async throws -> ResetDriveOutcome {
         let tuple = try await signedAuth()
-        guard tuple.uid == handle.uid else { throw RegistryError.operationStale(uid: handle.uid, handleId: handle.handleId) }
         if let slot = inflightResetOperation[handle] {
+            // an occupied slot is consulted before the handle is judged: a foreign caller (different account, epoch,
+            // or signed out) waits for slot retirement, discards the prior result, rereads auth, and restarts
             if slot.uid == tuple.uid && slot.authEpochUUID == tuple.authEpochUUID {
                 guard tuple.credentialRevision >= slot.credentialBaseline else { throw RegistryError.credentialRevisionRegressed }
                 // post-task reread: every joiner rereads signed auth after the task settles (outcome or error) and
@@ -1488,6 +1489,7 @@ extension ResetOperationRegistry {
             await Task.yield()
             return try await drive(handle: handle, remote: remote, cleanup: cleanup)
         }
+        guard tuple.uid == handle.uid else { throw RegistryError.operationStale(uid: handle.uid, handleId: handle.handleId) }
         let task = Task { try await self.runDrive(handle: handle, remote: remote, cleanup: cleanup, baseline: tuple) }
         inflightResetOperation[handle] = (uid: tuple.uid, authEpochUUID: tuple.authEpochUUID, credentialBaseline: tuple.credentialRevision, task: task)
         defer { inflightResetOperation[handle] = nil }

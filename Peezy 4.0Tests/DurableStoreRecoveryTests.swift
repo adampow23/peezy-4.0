@@ -1159,6 +1159,38 @@ struct DurableStoreRecoveryTests {
         #expect(await registry.snapshot().records.isEmpty)
     }
 
+    /// C9.5.8 foreign caller: while A's drive is in flight and the account is B, a call on A's handle waits for the slot,
+    /// discards A's result, rereads auth, and restarts (then A's handle is stale for B) instead of rejecting immediately.
+    @Test func foreignCallerWaitsForTheInFlightSlotBeforeItsHandleIsJudged() async throws {
+        let directory = try temporaryDirectory()
+        let auth = SignedAuthStub(.signedIn(tupleA))
+        let registry = ResetOperationRegistry(directory: directory, clock: ResetClockStub(), auth: auth, epochAuthority: EpochStub(epoch: 1))
+        guard case let .binding(reservation) = try await registry.reserve(gestureId: "rsg1_11111111-1111-4111-8111-111111111111") else { Issue.record("reserve"); return }
+        let handle = try await registry.bind(reservation: reservation)
+        let remote = ScriptedResetRemote(wires: try frozenResetWires())
+        let trace = DriveTrace()
+        await remote.attach(trace, registry: registry, handle: handle)
+        await remote.setHoldDispatch()
+        let winner = Task { try await registry.drive(handle: handle, remote: remote, cleanup: await trace.callbacks()) }
+        while await remote.heldCount == 0 { await Task.yield() }
+        auth.set(.signedIn(tupleB))
+        let readsBefore = auth.reads
+        let settled = NotificationCounter()
+        let foreign = Task { defer { Task { await settled.bump() } }; return try await registry.drive(handle: handle, remote: remote, cleanup: await DriveTrace().callbacks()) }
+        while auth.reads == readsBefore { await Task.yield() }
+        for _ in 0..<20 { await Task.yield() }
+        // the foreign caller is still waiting for the slot to retire; it is not answered while the slot is occupied
+        #expect(await settled.count == 0, "a foreign caller waits for slot retirement instead of being rejected immediately")
+        await remote.releaseHeld()
+        let winnerResult = await winner.result
+        let foreignResult = await foreign.result
+        guard case .failure = winnerResult else { Issue.record("the winner drifted to B and must return the auth branch"); return }
+        guard case let .failure(foreignError) = foreignResult, let registryError = foreignError as? ResetOperationRegistry.RegistryError, registryError == .operationStale(uid: "A", handleId: handle.handleId) else {
+            Issue.record("after the slot retires, the foreign caller restarts and finds A's handle stale for B"); return
+        }
+        #expect(await trace.order == ["resetDispatch"], "no call or callback ran for either caller after the switch")
+    }
+
     /// C9.5.8 post-task reread: a joiner rereads signed auth after the winner's task settles, even when the task threw;
     /// an account switch in that window returns the frozen auth branch instead of the winner's error.
     @Test func joinerRereadsAuthAfterAThrowingWinnerAndReturnsTheAuthBranchOnDrift() async throws {

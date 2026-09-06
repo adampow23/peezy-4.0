@@ -108,6 +108,22 @@ function validateIntentIdentity(uid, intentId, data) {
   if (expected !== intentId) throw new Error("intent id");
 }
 
+const WAKE_MEMBERS = "cause,fired_at,intent_id,resume_destination,schema_version,task_instance_id,wake_id";
+
+/** C9.3.1 wake evidence grammar: exact members, timestamp, urgency enum, and a basis exactly when urgent. */
+function validateWakeEvidence(wake) {
+  if (wake === null || typeof wake !== "object" || Array.isArray(wake)) throw new Error("wake shape");
+  const keys = Object.keys(wake).filter((k) => k !== "urgency" && k !== "urgency_basis").sort().join(",");
+  if (keys !== WAKE_MEMBERS) throw new Error("wake members");
+  if (wake.schema_version !== 1 || !WAKE_ID_RE.test(String(wake.wake_id)) || !INTENT_ID_RE.test(String(wake.intent_id))) throw new Error("wake identity");
+  if (!isNonBlankString(wake.task_instance_id) || !isNonBlankString(wake.resume_destination) || !isTimestamp(wake.fired_at)) throw new Error("wake values");
+  if (!["normal", "urgent_recovery"].includes(wake.urgency)) throw new Error("wake urgency");
+  const basis = wake.urgency_basis;
+  if (wake.urgency === "urgent_recovery" ? basis === null || typeof basis !== "object" || Array.isArray(basis) : basis !== undefined) throw new Error("wake urgency basis");
+  validateCause(wake.cause);
+  return wake;
+}
+
 /** C9.3.1 pointer validation: missing, dangling, crossed-task, crossed-instance, or unequal pointers reject. */
 function validateWakePointer(task, taskDocumentId, intent, intentId) {
   const wake = task && task.wakeEvidence;
@@ -162,6 +178,7 @@ async function produceWake(transaction, db, params) {
     try {
       validateIntent(existing);
       validateIntentIdentity(uid, intentId, existing);
+      validateWakeEvidence(wake);
       same = wake !== null && typeof wake === "object" && !Array.isArray(wake)
         && canonical(stable(wake)) === canonical(stable(wakeEvidence))
         && canonical(lifecycle(existing)) === canonical(lifecycle(intent));
@@ -259,6 +276,8 @@ function isClaimResponse(response, uid, request) {
   const routeKeys = Object.keys(route).sort().join(",");
   if (!((route.kind === "row" && routeKeys === "kind") || (route.kind === "outcome" && (routeKeys === "kind" || (routeKeys === "kind,sessionId" && isNonBlankString(route.sessionId)))))) return false;
   if (typeof response.expiresAt !== "string" || !WIRE_RE.test(response.expiresAt)) return false;
+  const parsed = Date.parse(response.expiresAt);
+  if (!Number.isFinite(parsed) || new Date(parsed).toISOString() !== response.expiresAt) return false;
   return Buffer.byteLength(canonical(response), "utf8") <= RESPONSE_CAP_BYTES;
 }
 
@@ -269,6 +288,8 @@ function claimStaleness(intent, task, taskDocumentId, intentId, uid) {
     const liveWakeId = wakeIdFor({ uid, taskDocumentId, taskInstanceId: intent.task_instance_id, interactionEpoch: intent.interaction_epoch, policyFingerprint: intent.policy_fingerprint, cause: validateCause(task.wakeEvidence.cause) });
     if (liveWakeId !== task.wakeEvidence.wake_id) return "INTENT_STALE";
   } catch (error) { return "INTENT_STALE"; }
+  // C9.3.2: a terminal task (Completed/Dismissed) no longer carries the live state any route was stored for
+  if (task.status === "Completed" || task.status === "Dismissed") return "INTENT_STALE";
   // C9.3.2: the live policy state must be present and match the intent's epoch and fingerprint (an intent exists only for a valid-policy wake)
   const state = task.taskInteractionState;
   if (!state || typeof state !== "object" || Array.isArray(state)) return "INTENT_STALE";

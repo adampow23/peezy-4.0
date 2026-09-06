@@ -8,18 +8,18 @@ Authority: `docs/plans/PHASE2_CONTRACT.md` (sha256 `fb6a8bf63da7d0388229bcc8525f
 |---|---|---|
 | S1 seams / reset stamps / runtime consumers / TaskPlanService transport | closed | `c967d59` (I6) + amendments `b2cf756`, `73dbd18` |
 | S2 workflow / server implementation | closed | `8f9cbdf` |
-| S3 scheduler / migration / deletion / outbound integration | code complete at `eb0cc81`; the close-out review (Swift pass + Sol diff review) fixed 14 findings through `4a86f0f`; the S3 head is tagged in `tasks/todo.md` under "S3 close-out" | see the ledger |
+| S3 scheduler / migration / deletion / outbound integration | code complete at `eb0cc81`; the close-out review (Swift pass, three Sol rounds) fixed 18 findings and refuted or gap-recorded the rest; the S3 head is tagged in `tasks/todo.md` under "S3 close-out" | see the ledger |
 | S4 recovery / privacy UI + deletion orchestration | not started; next deletion slice, diff-reviewed | — |
 | S5 identity, S6 (after S4), S7 close-out | not started | — |
 
-## Verification envelope at `4a86f0f` (after the close-out review fixes)
+## Verification envelope at the S3 head (after the close-out review fixes)
 
 | Suite | Result | Log |
 |---|---|---|
-| Offline Node (C10.9 list that exists + `accountDeletionFence.test.js`, node@24 by path) | 369 tests, 364 pass, 5 emulator-gated skips, 0 fail | `logs/S3-review-offline.log` |
-| Emulator Node subset (`scripts/test-emulator.sh node`) | 190 / 190 | `logs/S3-review-emulator-node.log` |
-| Rules (`scripts/test-emulator.sh rules`, Firestore + Storage) | 25 / 25 | `logs/S3-review-emulator-rules.log` |
-| Swift (`DurableStoreRecoveryTests`, `TaskPlanDispositionTests`, `TaskSupersessionTests` on the emulator) | 70 tests in 3 suites passed | `logs/S3-review-swift-F13-F15-green.log` |
+| Offline Node (C10.9 list that exists + `accountDeletionFence.test.js`, node@24 by path) | 369 tests, 364 pass, 5 emulator-gated skips, 0 fail | `logs/S3-review-r3-offline.log` |
+| Emulator Node subset (`scripts/test-emulator.sh node`) | 190 / 190 | `logs/S3-review-r4-emulator-node.log` |
+| Rules (`scripts/test-emulator.sh rules`, Firestore + Storage) | 25 / 25 | `logs/S3-review-r4-emulator-rules.log` |
+| Swift (`DurableStoreRecoveryTests`, `TaskPlanDispositionTests`, `TaskSupersessionTests` on the emulator) | 72 tests in 3 suites passed | `logs/S3-review-r3-swift-green.log` |
 | `xcodebuild build-for-testing` (project signing) | TEST BUILD SUCCEEDED | `logs/S3-swift-build-for-testing.log` |
 
 The pre-review envelope at `eb0cc81` (368/363/5, 189/189, 25/25, 67 tests) is in `logs/S3-close-*.log`.
@@ -48,7 +48,8 @@ Baseline failures (pre-existing, not Phase 2's): the whole unit target carries 1
 - C9.1.20: whether a deletion-fenced candidate settles the lane cursor (the code settles it without a write).
 - C9.2.1/C9.2.2: no audit-mode exit criterion for MIG-EVENT; L1256's second-pass sequencing wording.
 - C9.4.1: NEW_UID during confirmation is never nominated (candidate amendment: NEW_UID → discovering at row 0, `pass_ordinal + 1`).
-- C9.3: the live policy-state shape and the PC-linkage referent on the intent document are undefined; C10.1/C6.5 charge the C9.3.11 firing branches to `dispositionTriggers.js` (S3) while the ledger records them as S6's.
+- C9.3: the live policy-state shape and the PC-linkage referent on the intent document are undefined; C10.1/C6.5 charge the C9.3.11 firing branches to `dispositionTriggers.js` (S3) while the ledger records them as S6's (Sol accepted this as an owner scope decision in round 3).
+- Review budget: Sol's third and final round still listed four small items; all four are fixed with RED/GREEN tests after the cap. A fourth round is the owner's call.
 - C9.5.16: whether a later reset removes the legacy dose keys when v2 is malformed (the code now preserves them, matching the bridge).
 
 ## Owner inputs outstanding (input only the owner has)

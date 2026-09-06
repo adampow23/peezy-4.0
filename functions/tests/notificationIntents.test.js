@@ -89,7 +89,10 @@ test("C9.3.1 identities are instance-bound and deterministic: wake_id and intent
     ["intent fingerprint drift", (db, id) => { db.__docs.get(`users/${UID}/notificationIntents/${id}`).policy_fingerprint = "q".repeat(64); }],
     ["intent surplus member", (db, id) => { db.__docs.get(`users/${UID}/notificationIntents/${id}`).extra = 1; }],
     ["intent route drift", (db, id) => { db.__docs.get(`users/${UID}/notificationIntents/${id}`).route = { kind: "outcome" }; }],
-    ["wake resume destination drift", (db) => { db.__docs.get(`users/${UID}/tasks/t1`).wakeEvidence.resume_destination = "flow:other"; }]
+    ["wake resume destination drift", (db) => { db.__docs.get(`users/${UID}/tasks/t1`).wakeEvidence.resume_destination = "flow:other"; }],
+    ["wake fired_at malformed", (db) => { db.__docs.get(`users/${UID}/tasks/t1`).wakeEvidence.fired_at = "bad"; }],
+    ["wake urgency malformed", (db) => { db.__docs.get(`users/${UID}/tasks/t1`).wakeEvidence.urgency = "bogus"; }],
+    ["wake urgency basis without urgency", (db) => { db.__docs.get(`users/${UID}/tasks/t1`).wakeEvidence.urgency_basis = { deadline_evidence_id: "de1", threshold_id: "th1" }; }]
   ]) {
     const driftCtx = await seeded();
     mutate(driftCtx.db, driftCtx.intentId);
@@ -179,6 +182,8 @@ test("C9.3.2/C9.3.5 an absent intent is permission-denied/AUTH_FORBIDDEN with ze
     ["fingerprint drift", (db) => { db.__docs.get(`users/${UID}/tasks/t1`).taskInteractionState = { interaction_epoch: 2, policy_fingerprint: "q".repeat(64) }; }],
     ["cause drift under a retained wake_id", (db) => { db.__docs.get(`users/${UID}/tasks/t1`).wakeEvidence.cause = { kind: "THRESHOLD", threshold_id: "th9", deadline_evidence_id: "de9" }; }],
     ["absent live policy state", (db) => { delete db.__docs.get(`users/${UID}/tasks/t1`).taskInteractionState; }],
+    ["terminal task status (Completed)", (db) => { db.__docs.get(`users/${UID}/tasks/t1`).status = "Completed"; }],
+    ["terminal task status (Dismissed)", (db) => { db.__docs.get(`users/${UID}/tasks/t1`).status = "Dismissed"; }],
     ["policy state missing its fingerprint", (db) => { db.__docs.get(`users/${UID}/tasks/t1`).taskInteractionState = { interaction_epoch: 2 }; }]
   ];
   for (const [label, mutate] of staleCases) {
@@ -228,6 +233,7 @@ test("C9.3.2/C9.3.3 request validation and record reuse: surplus or missing memb
   const response = await claim(ctx.db, { intentId: ctx.intentId });
   const path = `users/${UID}/taskPlanOperations/${CLAIM_OP}`;
   const good = JSON.parse(JSON.stringify(ctx.db.__docs.get(path)));
+  const original = { ...ctx.db.__docs.get(path) };
   for (const [label, mutate] of [
     ["hash mismatch", (r) => { r.request_sha256 = "0".repeat(64); }],
     ["altered response", (r) => { r.response = { ...r.response, taskDocumentId: "t9" }; }],
@@ -235,15 +241,19 @@ test("C9.3.2/C9.3.3 request validation and record reuse: surplus or missing memb
     ["response surplus member with a recomputed digest", (r) => { r.response = { ...r.response, extra: 1 }; r.response_sha256 = fence.sha256Hex(fence.TaskCanonicalV1(r.response)); }],
     ["response route malformed with a recomputed digest", (r) => { r.response = { ...r.response, route: { kind: "row", sessionId: "s" } }; r.response_sha256 = fence.sha256Hex(fence.TaskCanonicalV1(r.response)); }],
     ["response expiry malformed with a recomputed digest", (r) => { r.response = { ...r.response, expiresAt: "2026-09-07" }; r.response_sha256 = fence.sha256Hex(fence.TaskCanonicalV1(r.response)); }],
+    ["response expiry non-calendar with a recomputed digest", (r) => { r.response = { ...r.response, expiresAt: "2026-99-99T99:99:99.999Z" }; r.response_sha256 = fence.sha256Hex(fence.TaskCanonicalV1(r.response)); }],
     ["surplus member", (r) => { r.extra = 1; }],
     ["missing member", (r) => { delete r.prior_snapshots; }],
     ["malformed timestamp", (r) => { r.committed_at = "yesterday"; }],
     ["wrong kind", (r) => { r.kind = "TASK_OPERATION"; }]
   ]) {
-    const record = { ...ctx.db.__docs.get(path) };
+    // each defect is applied to the committed record on its own (the previous case's defect must not carry over)
+    const record = { ...original };
     mutate(record);
     ctx.db.__docs.set(path, record);
     await assert.rejects(claim(ctx.db, { intentId: ctx.intentId }), (e) => e.details.reason === "OPERATION_REUSED", label);
+    ctx.db.__docs.set(path, { ...original });
+    assert.deepEqual(await claim(ctx.db, { intentId: ctx.intentId }), { ...response, replayed: true }, `${label}: the untouched record still replays`);
   }
   void good; void response;
   // a malformed intent document is INTENT_INVALID
