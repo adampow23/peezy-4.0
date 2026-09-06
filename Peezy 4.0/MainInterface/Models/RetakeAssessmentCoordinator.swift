@@ -21,13 +21,27 @@ struct RetakeAssessmentCoordinator {
     enum TaskPlanAction { case reset, finalize }
     enum Error: LocalizedError {
         case missingUser
-        var errorDescription: String? { "Please sign in again before resetting your assessment." }
+        case migrationPending(ResetMigrationPending)
+        case legacyRetryRequired(LegacyResetRetryRequired)
+
+        var errorDescription: String? {
+            switch self {
+            case .missingUser:
+                return "Please sign in again before resetting your assessment."
+            case .migrationPending:
+                return "Your reset is safely queued. Reopen Settings to continue when you're online."
+            case .legacyRetryRequired:
+                return "No prior reset was committed. Start Reset Assessment again to begin a new reset."
+            }
+        }
     }
 
     typealias TaskPlan = (_ action: TaskPlanAction, _ operationId: String) async throws -> Void
 
     private let currentUser: () -> String?
     private let taskPlan: TaskPlan
+    private let registry: ResetOperationRegistry
+    private let gestureId: @Sendable () -> String
     private let deleteAssessments: (String) async throws -> Void
     private let deleteUserKnowledge: (String) async throws -> Void
     private let resetDose: (String) async throws -> Void
@@ -37,6 +51,8 @@ struct RetakeAssessmentCoordinator {
     init(
         currentUser: @escaping () -> String?,
         taskPlan: @escaping TaskPlan,
+        registry: ResetOperationRegistry,
+        gestureId: @escaping @Sendable () -> String = { "rsg1_" + UUID().uuidString.lowercased() },
         deleteAssessments: @escaping (String) async throws -> Void,
         deleteUserKnowledge: @escaping (String) async throws -> Void,
         resetDose: @escaping (String) async throws -> Void,
@@ -45,6 +61,8 @@ struct RetakeAssessmentCoordinator {
     ) {
         self.currentUser = currentUser
         self.taskPlan = taskPlan
+        self.registry = registry
+        self.gestureId = gestureId
         self.deleteAssessments = deleteAssessments
         self.deleteUserKnowledge = deleteUserKnowledge
         self.resetDose = resetDose
@@ -54,6 +72,25 @@ struct RetakeAssessmentCoordinator {
 
     func retake() async throws {
         guard let userId = currentUser(), !userId.isEmpty else { throw Error.missingUser }
+
+        // S1: the gesture is durably reserved before the first reset await (D14).
+        // The row is the Phase 2 identity that S3's reducer takes over; until
+        // then today's sequence below runs unchanged and retires the row when
+        // it finalizes, so no reachable durable state is unowned.
+        let handle: ResetOperationHandle
+        switch try await registry.reserve(gestureId: gestureId()) {
+        case let .binding(reservation):
+            handle = try await registry.bind(reservation: reservation)
+        case let .operation(existing):
+            handle = existing
+        case .legacyCompleted:
+            return
+        case let .migrationPending(payload):
+            throw Error.migrationPending(payload)
+        case let .legacyRetryRequired(payload):
+            throw Error.legacyRetryRequired(payload)
+        }
+
         let operationId: String
         if let saved = await operationStore.load(userId: userId), !saved.isEmpty {
             operationId = saved
@@ -70,6 +107,7 @@ struct RetakeAssessmentCoordinator {
         try await resetDose(userId)
         try await taskPlan(.finalize, operationId)
         await operationStore.clear(userId: userId)
+        try await registry.retire(handle: handle)
         await postNotification()
     }
 
@@ -86,6 +124,7 @@ struct RetakeAssessmentCoordinator {
                     _ = try await service.finalizeTaskReset(operationId: operationId)
                 }
             },
+            registry: .production,
             deleteAssessments: { userId in
                 let documents = try await Firestore.firestore().collection("users").document(userId)
                     .collection("user_assessments").getDocuments().documents

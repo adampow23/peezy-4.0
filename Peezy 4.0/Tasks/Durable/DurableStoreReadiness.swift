@@ -1,3 +1,4 @@
+import CryptoKit
 import FirebaseFirestore
 import Foundation
 
@@ -725,5 +726,107 @@ extension Firestore {
         }
         guard let value = box.value else { throw TaskGenerationEpochError.malformedRootEpoch }
         return value
+    }
+}
+
+// MARK: - Local durable clock (§5:500)
+
+/// One injected clock; `now()` is a canonical UTC RFC 3339 millisecond instant.
+protocol LocalDurableClock: Sendable {
+    func now() -> String
+}
+
+struct SystemDurableClock: LocalDurableClock {
+    func now() -> String { CanonicalInstant.string(from: Date()) }
+}
+
+enum CanonicalInstant {
+    static let pattern = #"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$"#
+    private static let formatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        formatter.timeZone = TimeZone(identifier: "UTC")
+        return formatter
+    }()
+
+    static func string(from date: Date) -> String {
+        let millisecond = (date.timeIntervalSince1970 * 1000).rounded(.down) / 1000
+        return formatter.string(from: Date(timeIntervalSince1970: millisecond))
+    }
+
+    static func isCanonical(_ value: String) -> Bool {
+        value.range(of: pattern, options: .regularExpression) != nil
+    }
+}
+
+// MARK: - TaskCanonicalV1: sorted-key compact JSON and its SHA-256
+
+enum TaskCanonicalV1 {
+    static func data(_ object: [String: Any]) -> Data? {
+        guard JSONSerialization.isValidJSONObject(object) else { return nil }
+        return try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys, .withoutEscapingSlashes])
+    }
+
+    static func sha256Hex(_ object: [String: Any]) -> String {
+        sha256Hex(data: data(object) ?? Data())
+    }
+
+    static func sha256Hex(data: Data) -> String {
+        SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
+}
+
+// MARK: - DurableFileEnvelopeV1 codec (§7); file I/O lives with each owner
+
+enum DurableFileKind: String, Sendable {
+    case taskPlanResetV2 = "TASK_PLAN_RESET_V2"
+
+    var storeCap: Int {
+        switch self {
+        case .taskPlanResetV2: return 131_072
+        }
+    }
+}
+
+struct DecodedDurableEnvelope: Sendable {
+    let generationId: String
+    let sha256: String
+    let payload: [String: Any]
+    let recoveryReceipt: [String: Any]?
+}
+
+enum DurableEnvelopeCodec {
+    static let uuidPattern = #"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"#
+
+    /// Canonical envelope bytes with `sha256` over the complete canonical envelope
+    /// minus itself; nil when the payload is not canonical or exceeds the cap.
+    static func encode(fileKind: DurableFileKind, generationId: String, payload: [String: Any], recoveryReceipt: [String: Any]? = nil) -> Data? {
+        var envelope: [String: Any] = ["schemaVersion": 1, "fileKind": fileKind.rawValue, "generationId": generationId, "payload": payload]
+        if let recoveryReceipt { envelope["recoveryReceipt"] = recoveryReceipt }
+        guard let unsigned = TaskCanonicalV1.data(envelope) else { return nil }
+        envelope["sha256"] = TaskCanonicalV1.sha256Hex(data: unsigned)
+        guard let bytes = TaskCanonicalV1.data(envelope), bytes.count <= fileKind.storeCap else { return nil }
+        return bytes
+    }
+
+    /// Strict decode: exact member set, exact kind, canonical bytes, matching hash, cap.
+    static func decode(_ bytes: Data, fileKind: DurableFileKind) -> DecodedDurableEnvelope? {
+        guard bytes.count <= fileKind.storeCap,
+              let object = try? JSONSerialization.jsonObject(with: bytes) as? [String: Any] else { return nil }
+        let keys = Set(object.keys)
+        guard keys == ["schemaVersion", "fileKind", "generationId", "payload", "sha256"]
+                || keys == ["schemaVersion", "fileKind", "generationId", "payload", "recoveryReceipt", "sha256"],
+              TaskGenerationEpochStamp.safeInteger(object["schemaVersion"]) == 1,
+              object["fileKind"] as? String == fileKind.rawValue,
+              let generationId = object["generationId"] as? String,
+              generationId.range(of: uuidPattern, options: .regularExpression) != nil,
+              let payload = object["payload"] as? [String: Any],
+              let sha256 = object["sha256"] as? String else { return nil }
+        var unsigned = object
+        unsigned.removeValue(forKey: "sha256")
+        guard let unsignedBytes = TaskCanonicalV1.data(unsigned),
+              TaskCanonicalV1.sha256Hex(data: unsignedBytes) == sha256,
+              TaskCanonicalV1.data(object) == bytes else { return nil }
+        return DecodedDurableEnvelope(generationId: generationId, sha256: sha256, payload: payload, recoveryReceipt: object["recoveryReceipt"] as? [String: Any])
     }
 }

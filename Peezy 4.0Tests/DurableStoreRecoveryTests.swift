@@ -294,8 +294,8 @@ struct DurableStoreRecoveryTests {
     /// in S1-owned files outside the runtime provider itself.
     @Test func s1OwnedFilesAcquireFirestoreOnlyThroughTheRuntimeSeam() throws {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
-        // RetakeAssessmentCoordinator.swift joins this list in I6, when its pinned
-        // closure slice is replaced whole per §6.6 (the two acquisitions live inside it).
+        // RetakeAssessmentCoordinator.swift joins this list when S3 replaces its pinned
+        // closure slice whole per §6.6 (the two acquisitions live inside that slice).
         let owned = [
             "Peezy 4.0/Menu/PeezySettingsView.swift",
             "Peezy 4.0/Assessment/AssessmentModels/AssessmentDataManager.swift",
@@ -559,6 +559,275 @@ struct DurableStoreRecoveryTests {
         #expect(try await provider.perform(.resume(uid: "A", operationId: "adel1_op", proofNonce: "nonce")) == .absent(operationId: "adel1_op"))
     }
 
+    // MARK: - Reset envelope and registry (I6; §5, §7 envelope, D14/D24/B2)
+
+    @Test func taskCanonicalV1IsSortedCompactJSON() throws {
+        let data = try #require(TaskCanonicalV1.data(["b": 1, "a": "x"]))
+        #expect(String(decoding: data, as: UTF8.self) == #"{"a":"x","b":1}"#)
+        #expect(TaskCanonicalV1.sha256Hex(["b": 1, "a": "x"]) == "cdab067e9f3beb32d1252cfd63e492592fecbf591b0d08cadb24bb17f3864246")
+        #expect(TaskCanonicalV1.data(["path": "a/b"]).map { String(decoding: $0, as: UTF8.self) } == #"{"path":"a/b"}"#)
+    }
+
+    @Test func resetEnvelopeRoundTripsWithCanonicalHashAndFreshGeneration() async throws {
+        let directory = try temporaryDirectory()
+        let registry = ResetOperationRegistry(directory: directory, clock: ResetClockStub(), auth: SignedAuthStub(.signedIn(tupleA)), epochAuthority: EpochStub(epoch: 0))
+        _ = try await registry.reserve(gestureId: "rsg1_11111111-1111-4111-8111-111111111111")
+        let url = directory.appendingPathComponent(ResetOperationRegistry.fileName)
+        let bytes = try Data(contentsOf: url)
+        let object = try #require(JSONSerialization.jsonObject(with: bytes) as? [String: Any])
+        #expect(Set(object.keys) == ["schemaVersion", "fileKind", "generationId", "payload", "sha256"])
+        #expect(object["fileKind"] as? String == "TASK_PLAN_RESET_V2")
+        let generation = try #require(object["generationId"] as? String)
+        #expect(generation.range(of: #"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"#, options: .regularExpression) != nil)
+        var unsigned = object; unsigned.removeValue(forKey: "sha256")
+        #expect(object["sha256"] as? String == TaskCanonicalV1.sha256Hex(unsigned))
+        #expect(bytes == TaskCanonicalV1.data(object))
+        #if !targetEnvironment(simulator)
+        // The simulator's file system reports no data-protection class; the
+        // attribute is asserted on device builds only.
+        let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+        #expect(attributes[.protectionKey] as? FileProtectionType == .completeUntilFirstUserAuthentication)
+        #endif
+        let snapshot = await registry.snapshot()
+        #expect(snapshot.generationId == generation)
+        // A later write receives a fresh outer generation while the gesture keeps its own token.
+        let auth = SignedAuthStub(.signedIn(tupleA))
+        let reloaded = ResetOperationRegistry(directory: directory, clock: ResetClockStub(), auth: auth, epochAuthority: EpochStub(epoch: 0))
+        auth.set(.signedIn(tupleB))
+        _ = try await reloaded.reserve(gestureId: "rsg1_22222222-2222-4222-8222-222222222222")
+        let after = await reloaded.snapshot()
+        #expect(after.generationId != generation)
+        #expect(after.gesture?.uid == "B" && after.gesture?.gestureGeneration == after.generationId)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: directory.path) == [ResetOperationRegistry.fileName])
+    }
+
+    @Test func resetEnvelopeRejectsTamperingOverCapAndSurplusMembers() async throws {
+        let directory = try temporaryDirectory()
+        let url = directory.appendingPathComponent(ResetOperationRegistry.fileName)
+        func write(_ object: [String: Any]) throws { try TaskCanonicalV1.data(object)!.write(to: url) }
+        func valid() -> [String: Any] {
+            var envelope: [String: Any] = ["schemaVersion": 1, "fileKind": "TASK_PLAN_RESET_V2", "generationId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "payload": ["records": [], "legacyMigrations": []]]
+            envelope["sha256"] = TaskCanonicalV1.sha256Hex(envelope)
+            return envelope
+        }
+        let registry = { ResetOperationRegistry(directory: directory, clock: ResetClockStub(), auth: SignedAuthStub(.signedIn(tupleA)), epochAuthority: EpochStub(epoch: 0)) }
+        try write(valid())
+        #expect(await registry().load() == .present(records: 0, gesture: false))
+        var tampered = valid(); tampered["sha256"] = String(repeating: "0", count: 64); try write(tampered)
+        #expect(await registry().load() == .corrupt)
+        var surplus = valid(); surplus["extra"] = true; surplus["sha256"] = TaskCanonicalV1.sha256Hex(surplus.filter { $0.key != "sha256" }); try write(surplus)
+        #expect(await registry().load() == .corrupt)
+        var wrongKind = valid(); wrongKind["fileKind"] = "WORKFLOW_REQUESTS_V2"; wrongKind["sha256"] = TaskCanonicalV1.sha256Hex(wrongKind.filter { $0.key != "sha256" }); try write(wrongKind)
+        #expect(await registry().load() == .corrupt)
+        try Data(repeating: 0x20, count: 131_073).write(to: url)
+        #expect(await registry().load() == .corrupt)
+        let bytes = try Data(contentsOf: url)
+        await #expect(throws: ResetOperationRegistry.RegistryError.envelopeCorrupt) {
+            _ = try await registry().reserve(gestureId: "rsg1_11111111-1111-4111-8111-111111111111")
+        }
+        #expect(try Data(contentsOf: url) == bytes)
+    }
+
+    @Test func reserveStoresAReservedGestureBeforeReturningBinding() async throws {
+        let directory = try temporaryDirectory()
+        let clock = ResetClockStub("2026-09-06T10:00:00.000Z")
+        let registry = ResetOperationRegistry(directory: directory, clock: clock, auth: SignedAuthStub(.signedIn(tupleA)), epochAuthority: EpochStub(epoch: 0))
+        let outcome = try await registry.reserve(gestureId: "rsg1_11111111-1111-4111-8111-111111111111")
+        guard case let .binding(reservation) = outcome else { Issue.record("expected binding, got \(outcome)"); return }
+        #expect(reservation.gestureId == "rsg1_11111111-1111-4111-8111-111111111111")
+        let snapshot = await registry.snapshot()
+        let gesture = try #require(snapshot.gesture)
+        #expect(gesture.phase == .reserved && gesture.uid == "A" && gesture.authEpochUUID == tupleA.authEpochUUID && gesture.credentialRevision == tupleA.credentialRevision)
+        #expect(gesture.alias.range(of: #"^rsa1_[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"#, options: .regularExpression) != nil)
+        #expect(gesture.reservedAt == "2026-09-06T10:00:00.000Z" && gesture.boundAt == nil && gesture.expectedEpoch == nil)
+        #expect(gesture.gestureGeneration == reservation.gestureGeneration && gesture.gestureGeneration == snapshot.generationId)
+        #expect(snapshot.records.isEmpty)
+        // A second reserve while reserved adopts the exact current reservation and mints nothing.
+        let again = try await registry.reserve(gestureId: "rsg1_33333333-3333-4333-8333-333333333333")
+        #expect(again == .binding(reservation))
+        let adopted = await registry.snapshot().gesture?.alias
+        #expect(adopted == gesture.alias)
+    }
+
+    @Test func bindReadsTheEpochWritesBoundThenPreparedRowAndRemovesTheGesture() async throws {
+        let directory = try temporaryDirectory()
+        let clock = ResetClockStub("2026-09-06T10:00:00.000Z")
+        let epoch = EpochStub(epoch: 4)
+        let registry = ResetOperationRegistry(directory: directory, clock: clock, auth: SignedAuthStub(.signedIn(tupleA)), epochAuthority: epoch)
+        guard case let .binding(reservation) = try await registry.reserve(gestureId: "rsg1_11111111-1111-4111-8111-111111111111") else { Issue.record("expected binding"); return }
+        let alias = try #require(await registry.snapshot().gesture?.alias)
+        clock.set("2026-09-06T10:00:05.000Z")
+        let handle = try await registry.bind(reservation: reservation)
+        #expect(epoch.calls == [("A", tupleA)].map { "\($0.0)|\($0.1.uid)|\($0.1.authEpochUUID)|\($0.1.credentialRevision)" })
+        let snapshot = await registry.snapshot()
+        #expect(snapshot.gesture == nil)
+        let row = try #require(snapshot.records.first)
+        #expect(snapshot.records.count == 1)
+        #expect(row.uid == "A" && row.suggestedOperationId == alias && row.expectedTaskGenerationEpoch == 4 && row.phase == .prepared)
+        #expect(row.createdAt == "2026-09-06T10:00:00.000Z" && row.updatedAt == "2026-09-06T10:00:05.000Z")
+        #expect(row.canonicalOperationId == nil && row.progressReceipt == nil && row.finalReceipt == nil && row.applicationId == nil)
+        let expectedHandle = "rho1_" + TaskCanonicalV1.sha256Hex(["uid": "A", "suggested_operation_id": alias, "created_at": "2026-09-06T10:00:00.000Z"])
+        #expect(handle == ResetOperationHandle(uid: "A", handleId: expectedHandle))
+        #expect(await registry.row(uid: "A", expectedTaskGenerationEpoch: 4) == row)
+        #expect(await registry.row(uid: "A", expectedTaskGenerationEpoch: 3) == nil)
+        await #expect(throws: ResetOperationRegistry.RegistryError.gestureStale(gestureId: reservation.gestureId, gestureGeneration: reservation.gestureGeneration)) {
+            _ = try await registry.bind(reservation: reservation)
+        }
+        // The single current-UID row resumes as the same handle; no gesture is minted.
+        #expect(try await registry.reserve(gestureId: "rsg1_44444444-4444-4444-8444-444444444444") == .operation(handle))
+        #expect(await registry.snapshot().gesture == nil)
+        try await registry.retire(handle: handle)
+        #expect(await registry.snapshot().records.isEmpty)
+        try await registry.retire(handle: handle)
+    }
+
+    @Test func bindRefusesEpochReadFailureAndAuthDrift() async throws {
+        let directory = try temporaryDirectory()
+        let auth = SignedAuthStub(.signedIn(tupleA))
+        let epoch = EpochStub(epoch: 0)
+        let registry = ResetOperationRegistry(directory: directory, clock: ResetClockStub(), auth: auth, epochAuthority: epoch)
+        guard case let .binding(reservation) = try await registry.reserve(gestureId: "rsg1_11111111-1111-4111-8111-111111111111") else { Issue.record("expected binding"); return }
+        epoch.failure = TaskGenerationEpochError.malformedRootEpoch
+        await #expect(throws: TaskGenerationEpochError.malformedRootEpoch) { _ = try await registry.bind(reservation: reservation) }
+        #expect(await registry.snapshot().gesture?.phase == .reserved)
+        epoch.failure = nil
+        auth.set(.signedIn(tupleB))
+        await #expect(throws: ResetOperationRegistry.RegistryError.gestureStale(gestureId: reservation.gestureId, gestureGeneration: reservation.gestureGeneration)) {
+            _ = try await registry.bind(reservation: reservation)
+        }
+        #expect(await registry.snapshot().gesture == nil)
+        #expect(await registry.snapshot().records.isEmpty)
+        auth.set(.signedOut)
+        await #expect(throws: ResetOperationRegistry.RegistryError.authRequired) { _ = try await registry.reserve(gestureId: "rsg1_55555555-5555-4555-8555-555555555555") }
+    }
+
+    @Test func fourForeignRowsRefuseReserveWithoutWriting() async throws {
+        let directory = try temporaryDirectory()
+        let registry = ResetOperationRegistry(directory: directory, clock: ResetClockStub(), auth: SignedAuthStub(.signedIn(tupleA)), epochAuthority: EpochStub(epoch: 0))
+        for uid in ["B", "C", "D", "E"] { try await seedPreparedRow(registry, uid: uid, epoch: 1, createdAt: "2026-09-06T09:00:0\(uid.utf8.first! - 65).000Z") }
+        let before = try Data(contentsOf: directory.appendingPathComponent(ResetOperationRegistry.fileName))
+        await #expect(throws: ResetOperationRegistry.RegistryError.registryFull(capacity: 4, occupants: [
+            .init(uid: "B", expectedTaskGenerationEpoch: 1, phase: .prepared, recoveryAction: .retryReset),
+            .init(uid: "C", expectedTaskGenerationEpoch: 1, phase: .prepared, recoveryAction: .retryReset),
+            .init(uid: "D", expectedTaskGenerationEpoch: 1, phase: .prepared, recoveryAction: .retryReset),
+            .init(uid: "E", expectedTaskGenerationEpoch: 1, phase: .prepared, recoveryAction: .retryReset)
+        ])) {
+            _ = try await registry.reserve(gestureId: "rsg1_11111111-1111-4111-8111-111111111111")
+        }
+        #expect(try Data(contentsOf: directory.appendingPathComponent(ResetOperationRegistry.fileName)) == before)
+    }
+
+    @Test func twoCurrentUIDRowsAreAnEpochConflictAndForeignMultiplicityIsNot() async throws {
+        let directory = try temporaryDirectory()
+        let registry = ResetOperationRegistry(directory: directory, clock: ResetClockStub(), auth: SignedAuthStub(.signedIn(tupleA)), epochAuthority: EpochStub(epoch: 0))
+        // reserve never creates a second same-UID row, so the conflict is seeded as bytes.
+        try writeEnvelopeRows(directory, rows: [
+            ("A", 3, "2026-09-06T09:00:00.000Z"), ("A", 1, "2026-09-06T09:00:01.000Z"),
+            ("B", 1, "2026-09-06T09:00:02.000Z"), ("B", 2, "2026-09-06T09:00:03.000Z")
+        ])
+        await #expect(throws: ResetOperationRegistry.RegistryError.epochConflict(uid: "A", occupants: [
+            .init(expectedTaskGenerationEpoch: 3, phase: .prepared, recoveryAction: .retryReset),
+            .init(expectedTaskGenerationEpoch: 1, phase: .prepared, recoveryAction: .retryReset)
+        ])) {
+            _ = try await registry.reserve(gestureId: "rsg1_11111111-1111-4111-8111-111111111111")
+        }
+        let classification = await registry.classification()
+        guard case let .blocked(.resetEpochConflict(digest, actionable, occupants)) = classification else {
+            Issue.record("expected reset_epoch_conflict, got \(classification)"); return
+        }
+        #expect(actionable == 1 && occupants.map(\.expectedTaskGenerationEpoch) == [3, 1])
+        #expect(digest.range(of: #"^[0-9a-f]{64}$"#, options: .regularExpression) != nil)
+        // Foreign multiplicity (A's and B's pairs) never blocks a UID holding at most one row, nor signed-out state.
+        let tupleC = SignedAuthTuple(uid: "C", authEpochUUID: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", credentialRevision: 1)
+        let asC = ResetOperationRegistry(directory: directory, clock: ResetClockStub(), auth: SignedAuthStub(.signedIn(tupleC)), epochAuthority: EpochStub(epoch: 0))
+        #expect(await asC.classification() == .ready)
+        let signedOut = ResetOperationRegistry(directory: directory, clock: ResetClockStub(), auth: SignedAuthStub(.signedOut), epochAuthority: EpochStub(epoch: 0))
+        #expect(await signedOut.classification() == .ready)
+    }
+
+    @Test func authSwitchRemovesAStaleReservedGestureAndKeepsRows() async throws {
+        let directory = try temporaryDirectory()
+        let auth = SignedAuthStub(.signedIn(tupleA))
+        let registry = ResetOperationRegistry(directory: directory, clock: ResetClockStub(), auth: auth, epochAuthority: EpochStub(epoch: 0))
+        try await seedPreparedRow(registry, uid: "C", epoch: 2, createdAt: "2026-09-06T09:00:00.000Z")
+        _ = try await registry.reserve(gestureId: "rsg1_11111111-1111-4111-8111-111111111111")
+        auth.set(.signedIn(tupleB))
+        guard case let .binding(reservation) = try await registry.reserve(gestureId: "rsg1_22222222-2222-4222-8222-222222222222") else { Issue.record("expected binding for B"); return }
+        #expect(reservation.gestureId == "rsg1_22222222-2222-4222-8222-222222222222")
+        let snapshot = await registry.snapshot()
+        #expect(snapshot.gesture?.uid == "B" && snapshot.records.map(\.uid) == ["C"])
+    }
+
+    // MARK: - Coordinator reserve-first with today's retake path unchanged (S1 condition, 2026-09-06)
+
+    @Test func retakeReservesFirstThenRunsTodaysSequenceAndLeavesNothingUnowned() async throws {
+        let directory = try temporaryDirectory()
+        let registry = ResetOperationRegistry(directory: directory, clock: ResetClockStub(), auth: SignedAuthStub(.signedIn(tupleA)), epochAuthority: EpochStub(epoch: 0))
+        let store = InMemoryRetakeOperationStore()
+        let trace = RetakeTrace(registry: registry)
+        let coordinator = RetakeAssessmentCoordinator(
+            currentUser: { "A" }, taskPlan: trace.taskPlan, registry: registry,
+            gestureId: { "rsg1_11111111-1111-4111-8111-111111111111" },
+            deleteAssessments: trace.assessment, deleteUserKnowledge: trace.knowledge, resetDose: trace.dose,
+            operationStore: store, postNotification: trace.notify
+        )
+        try await coordinator.retake()
+        #expect(await trace.order == ["reset", "assessment", "knowledge", "dose", "finalize", "notify"])
+        let rowsAtFirstReset = await trace.rowsAtFirstReset
+        let gestureAtFirstReset = await trace.gestureAtFirstReset
+        #expect(rowsAtFirstReset == 1 && gestureAtFirstReset == false)
+        let operationIds = await trace.operationIds
+        #expect(Set(operationIds).count == 1 && operationIds.count == 2)
+        #expect(operationIds.first?.hasPrefix("rsa1_") == false)
+        #expect(await store.load(userId: "A") == nil)
+        let snapshot = await registry.snapshot()
+        #expect(snapshot.records.isEmpty && snapshot.gesture == nil)
+    }
+
+    @Test func retakeFailureLeavesARowTheNextRetakeResumesWithTheSameOperationId() async throws {
+        let directory = try temporaryDirectory()
+        let registry = ResetOperationRegistry(directory: directory, clock: ResetClockStub(), auth: SignedAuthStub(.signedIn(tupleA)), epochAuthority: EpochStub(epoch: 0))
+        let store = InMemoryRetakeOperationStore()
+        let trace = RetakeTrace(registry: registry)
+        await trace.setFailStep("finalize")
+        let coordinator = RetakeAssessmentCoordinator(
+            currentUser: { "A" }, taskPlan: trace.taskPlan, registry: registry,
+            gestureId: { "rsg1_11111111-1111-4111-8111-111111111111" },
+            deleteAssessments: trace.assessment, deleteUserKnowledge: trace.knowledge, resetDose: trace.dose,
+            operationStore: store, postNotification: trace.notify
+        )
+        await #expect(throws: RetakeTraceError.failed) { try await coordinator.retake() }
+        let afterFailure = await registry.snapshot()
+        #expect(afterFailure.records.count == 1 && afterFailure.gesture == nil)
+        #expect(await store.load(userId: "A") != nil)
+        #expect(await trace.notifications == 0)
+        await trace.setFailStep(nil)
+        try await coordinator.retake()
+        let operationIds = await trace.operationIds
+        #expect(Set(operationIds).count == 1 && operationIds.count == 4)
+        #expect(await trace.notifications == 1)
+        #expect(await registry.snapshot().records.isEmpty)
+        #expect(await store.load(userId: "A") == nil)
+    }
+
+    @Test func legacyOperationIdIsNeverImportedAsAnAlias() async throws {
+        let directory = try temporaryDirectory()
+        let registry = ResetOperationRegistry(directory: directory, clock: ResetClockStub(), auth: SignedAuthStub(.signedIn(tupleA)), epochAuthority: EpochStub(epoch: 0))
+        let store = InMemoryRetakeOperationStore()
+        await store.save("LEGACY-OP-1", userId: "A")
+        let trace = RetakeTrace(registry: registry)
+        let coordinator = RetakeAssessmentCoordinator(
+            currentUser: { "A" }, taskPlan: trace.taskPlan, registry: registry,
+            gestureId: { "rsg1_11111111-1111-4111-8111-111111111111" },
+            deleteAssessments: trace.assessment, deleteUserKnowledge: trace.knowledge, resetDose: trace.dose,
+            operationStore: store, postNotification: trace.notify
+        )
+        try await coordinator.retake()
+        #expect(await trace.operationIds == ["LEGACY-OP-1", "LEGACY-OP-1"])
+        let alias = await trace.aliasAtFirstReset
+        #expect(alias?.hasPrefix("rsa1_") == true && alias != "LEGACY-OP-1")
+    }
+
     // MARK: - Emulator (I1): the support type binds the default app to the emulator
 
     @Test(.enabled(if: FirebaseEmulator.isConfigured))
@@ -606,4 +875,115 @@ final class DeletionCallableRecorder: @unchecked Sendable {
         lock.withLock { recorded.append(Call(name: name, payload: payload)) }
         return try result.get()
     }
+}
+
+// MARK: - Reset registry test doubles
+
+let tupleA = SignedAuthTuple(uid: "A", authEpochUUID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", credentialRevision: 1)
+let tupleB = SignedAuthTuple(uid: "B", authEpochUUID: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", credentialRevision: 1)
+
+func temporaryDirectory() throws -> URL {
+    let url = FileManager.default.temporaryDirectory.appendingPathComponent("s1-reset-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+    return url
+}
+
+/// Seeds one prepared row through the registry's own reserve/bind path.
+func seedPreparedRow(_ registry: ResetOperationRegistry, uid: String, epoch: Int, createdAt: String) async throws {
+    let directory = await registry.directory
+    let tuple = SignedAuthTuple(uid: uid, authEpochUUID: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", credentialRevision: 1)
+    let seeded = ResetOperationRegistry(directory: directory, clock: ResetClockStub(createdAt), auth: SignedAuthStub(.signedIn(tuple)), epochAuthority: EpochStub(epoch: epoch))
+    guard case let .binding(reservation) = try await seeded.reserve(gestureId: "rsg1_" + UUID().uuidString.lowercased()) else { throw RetakeTraceError.failed }
+    _ = try await seeded.bind(reservation: reservation)
+}
+
+final class ResetClockStub: LocalDurableClock, @unchecked Sendable {
+    private let lock = NSLock()
+    private var instant: String
+    init(_ instant: String = "2026-09-06T12:00:00.000Z") { self.instant = instant }
+    func set(_ value: String) { lock.withLock { instant = value } }
+    func now() -> String { lock.withLock { instant } }
+}
+
+final class SignedAuthStub: AuthAuthorityProviding, @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: SignedAuthAuthority
+    init(_ value: SignedAuthAuthority) { self.value = value }
+    func set(_ newValue: SignedAuthAuthority) { lock.withLock { value = newValue } }
+    func currentSignedAuth() async -> SignedAuthAuthority { lock.withLock { value } }
+    func forceRefresh(expected: SignedAuthTuple) async -> AuthRefreshOutcome { .notCommitted }
+    func confirmAccountDeleted(expected: AuthIdentity) async -> AccountDeletionAuthObservation { .notProven }
+}
+
+final class EpochStub: ResetEpochAuthorityProviding, @unchecked Sendable {
+    private let lock = NSLock()
+    private var epoch: Int
+    private var recorded: [String] = []
+    private var failureValue: Error?
+    init(epoch: Int) { self.epoch = epoch }
+    var failure: Error? {
+        get { lock.withLock { failureValue } }
+        set { lock.withLock { failureValue = newValue } }
+    }
+    var calls: [String] { lock.withLock { recorded } }
+    func current(uid: String, expectedAuth: SignedAuthTuple) async throws -> ResetEpochAuthority {
+        lock.withLock { recorded.append("\(uid)|\(expectedAuth.uid)|\(expectedAuth.authEpochUUID)|\(expectedAuth.credentialRevision)") }
+        if let failureValue = lock.withLock({ failureValue }) { throw failureValue }
+        return ResetEpochAuthority(uid: uid, taskGenerationEpoch: lock.withLock { epoch })
+    }
+}
+
+actor InMemoryRetakeOperationStore: RetakeOperationStore {
+    private var values: [String: String] = [:]
+    func load(userId: String) async -> String? { values[userId] }
+    func save(_ operationId: String, userId: String) async { values[userId] = operationId }
+    func clear(userId: String) async { values[userId] = nil }
+}
+
+enum RetakeTraceError: Error { case failed }
+
+/// Records today's callback order and, at the first reset dispatch, what the
+/// registry already holds (the reserve-first proof).
+actor RetakeTrace {
+    private let registry: ResetOperationRegistry
+    var order: [String] = []
+    var operationIds: [String] = []
+    var notifications = 0
+    var rowsAtFirstReset = -1
+    var gestureAtFirstReset = true
+    var aliasAtFirstReset: String?
+    private var failStep: String?
+
+    init(registry: ResetOperationRegistry) { self.registry = registry }
+    func setFailStep(_ step: String?) { failStep = step }
+
+    func taskPlan(_ action: RetakeAssessmentCoordinator.TaskPlanAction, _ operationId: String) async throws {
+        operationIds.append(operationId)
+        let name = action == .reset ? "reset" : "finalize"
+        order.append(name)
+        if action == .reset, rowsAtFirstReset < 0 {
+            let snapshot = await registry.snapshot()
+            rowsAtFirstReset = snapshot.records.count
+            gestureAtFirstReset = snapshot.gesture != nil
+            aliasAtFirstReset = snapshot.records.first?.suggestedOperationId
+        }
+        if failStep == name { throw RetakeTraceError.failed }
+    }
+    func assessment(_ uid: String) async throws { order.append("assessment"); if failStep == "assessment" { throw RetakeTraceError.failed } }
+    func knowledge(_ uid: String) async throws { order.append("knowledge"); if failStep == "knowledge" { throw RetakeTraceError.failed } }
+    func dose(_ uid: String) async throws { order.append("dose"); if failStep == "dose" { throw RetakeTraceError.failed } }
+    func notify() async { order.append("notify"); notifications += 1 }
+}
+
+/// Writes a valid envelope holding prepared rows directly (conflict fixtures).
+func writeEnvelopeRows(_ directory: URL, rows: [(uid: String, epoch: Int, createdAt: String)]) throws {
+    let records: [[String: Any]] = rows.map { row in
+        ["uid": row.uid, "suggestedOperationId": "rsa1_" + UUID().uuidString.lowercased(), "expectedTaskGenerationEpoch": row.epoch,
+         "phase": "prepared", "createdAt": row.createdAt, "updatedAt": row.createdAt]
+    }
+    let bytes = try #require(DurableEnvelopeCodec.encode(
+        fileKind: .taskPlanResetV2, generationId: UUID().uuidString.lowercased(),
+        payload: ["records": records, "legacyMigrations": []]
+    ))
+    try bytes.write(to: directory.appendingPathComponent(ResetOperationRegistry.fileName))
 }

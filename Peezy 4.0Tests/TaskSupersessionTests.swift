@@ -161,9 +161,11 @@ struct TaskSupersessionTests {
         let calls = RetakeCalls()
         store.onClear = calls.noteClear
         calls.failStep = .finalize
+        let registry = try testRegistry(uid: "user-1")
         let coordinator = RetakeAssessmentCoordinator(
             currentUser: { "user-1" },
             taskPlan: calls.taskPlan,
+            registry: registry,
             deleteAssessments: calls.assessment,
             deleteUserKnowledge: calls.knowledge,
             resetDose: calls.dose,
@@ -177,7 +179,7 @@ struct TaskSupersessionTests {
 
         calls.failStep = nil
         let reconstructed = RetakeAssessmentCoordinator(
-            currentUser: { "user-1" }, taskPlan: calls.taskPlan,
+            currentUser: { "user-1" }, taskPlan: calls.taskPlan, registry: registry,
             deleteAssessments: calls.assessment, deleteUserKnowledge: calls.knowledge,
             resetDose: calls.dose, operationStore: store, postNotification: calls.notify
         )
@@ -197,6 +199,7 @@ struct TaskSupersessionTests {
             calls.failStep = failedStep
             let coordinator = RetakeAssessmentCoordinator(
                 currentUser: { "user-\(failedStep.rawValue)" }, taskPlan: calls.taskPlan,
+                registry: try testRegistry(uid: "user-\(failedStep.rawValue)"),
                 deleteAssessments: calls.assessment, deleteUserKnowledge: calls.knowledge,
                 resetDose: calls.dose, operationStore: store, postNotification: calls.notify
             )
@@ -267,4 +270,14 @@ private final class RetakeCalls {
     }
     func notify() async { notifications += 1; order.append("notify") }
     func noteClear() { order.append("clear") }
+}
+
+/// S1: the coordinator reserves a registry gesture first; these tests keep their
+/// legacy assertions and inject an isolated registry (see DurableStoreRecoveryTests doubles).
+private func testRegistry(uid: String) throws -> ResetOperationRegistry {
+    ResetOperationRegistry(
+        directory: try temporaryDirectory(), clock: ResetClockStub(),
+        auth: SignedAuthStub(.signedIn(SignedAuthTuple(uid: uid, authEpochUUID: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", credentialRevision: 1))),
+        epochAuthority: EpochStub(epoch: 0)
+    )
 }
