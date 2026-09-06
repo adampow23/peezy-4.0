@@ -2009,6 +2009,120 @@ struct DurableStoreRecoveryTests {
     }
 
 
+    // MARK: - S4 I7 — the recovery surface (`DurableStoreRecoveryView.swift`): presentation, C2.5 content, action wiring
+
+    @Test func recoverySurfacePresentsEverySnapshotMemberWithExactActionsAndEnablesOnlyTheActionableEpoch() {
+        let digest = String(repeating: "1", count: 64)
+        let occupants = [ResetEpochOccupant(expectedTaskGenerationEpoch: 1, phase: .resetReceiptDeleting, recoveryAction: .resumeServerDeletion), ResetEpochOccupant(expectedTaskGenerationEpoch: 2, phase: .prepared, recoveryAction: .retryReset)]
+        let foreign = ForeignInstallationObservation(targetPresent: true, targetEnumerable: true, targetPendingRecordCount: 2, quarantinePresent: false, quarantineEnumerable: false, quarantinePendingRecordCount: nil)
+        let groups = [ForeignDecisionGroup(decisionDigest: String(repeating: "2", count: 64), actionLabel: "Continue on iPad"), ForeignDecisionGroup(decisionDigest: String(repeating: "3", count: 64), actionLabel: "Continue on iPad")]
+        let snapshots: [BlockedSnapshot] = [
+            .quarantined(store: .route, recoveryStateDigest: digest, quarantineEnumerable: true, pendingRecordCount: 3),
+            .quarantined(store: .route, recoveryStateDigest: digest, quarantineEnumerable: false, pendingRecordCount: nil),
+            .collision(store: .workflow, recoveryStateDigest: digest, quarantineEnumerable: true, pendingRecordCount: 1),
+            .recoveredPendingCleanup(store: .reset, recoveryStateDigest: digest),
+            .quarantineConflict(store: .handoff, recoveryStateDigest: digest, quarantineEnumerable: true, pendingRecordCount: 4),
+            .receiptMismatch(store: .reset, recoveryStateDigest: digest, mismatchIdentityDigest: String(repeating: "9", count: 64)),
+            .resetEpochConflict(recoveryStateDigest: digest, actionableExpectedTaskGenerationEpoch: 1, occupants: occupants),
+            .foreignInstallation(recoveryStateDigest: digest, observation: foreign),
+            .foreignResolutionRequired(recoveryStateDigest: digest, resolutionDigest: String(repeating: "4", count: 64), observation: foreign, decisionGroups: groups),
+            .storageIOUnavailable(store: .workflow, errorCode: .fileFsyncFailed),
+            .installationAuthorityUnavailable(errorCode: KeychainUnavailableCode.allCases.first { $0.rawValue == "KEYCHAIN_ADD_FAILED" }!),
+            .installationAuthorityInvalid,
+            .doseMalformed(recoveryStateDigest: digest, bytesSHA256: String(repeating: "5", count: 64), byteLength: 12)
+        ]
+        for snapshot in snapshots {
+            let controls = RecoverySurfacePresentation.actions(for: snapshot)
+            let expectedNames = snapshot.availableActions.filter { $0 != "recover_epoch" }
+            #expect(controls.map(\.action.name) == expectedNames, Comment(rawValue: "\(snapshot.state): \(controls.map(\.action.name))"))
+            #expect(controls.allSatisfy { $0.store == snapshot.store }, Comment(rawValue: "\(snapshot.state) store"))
+            for control in controls {
+                switch control.expectation {
+                case let .digest(d): #expect(d == digest && snapshot.recoveryStateDigest == digest)
+                case let .unavailable(token): #expect(token.store == snapshot.store && token.state == snapshot.state && snapshot.recoveryStateDigest == nil)
+                }
+                #expect(control.action.attemptKey(expecting: control.expectation) != nil, Comment(rawValue: "\(snapshot.state)/\(control.action.name) derives its key"))
+            }
+        }
+        #expect(RecoverySurfacePresentation.actions(for: snapshots[0]).map(\.title) == ["Recover", "Discard quarantine"])
+        #expect(RecoverySurfacePresentation.actions(for: snapshots[4]).map(\.title) == ["Merge", "Discard quarantine"])
+        #expect(RecoverySurfacePresentation.actions(for: snapshots[5]).first?.action == .reconcile(mismatchIdentityDigest: String(repeating: "9", count: 64)))
+        #expect(RecoverySurfacePresentation.actions(for: snapshots[7]).first?.action == .foreignReconcile)
+        #expect(RecoverySurfacePresentation.actions(for: snapshots[9]).first?.expectation == .unavailable(UnavailableToken(store: .workflow, state: "storage_io_unavailable", errorCode: "FILE_FSYNC_FAILED")))
+        #expect(RecoverySurfacePresentation.actions(for: snapshots[11]).first?.title == "Repair installation identity")
+        #expect(RecoverySurfacePresentation.actions(for: snapshots[12]).first?.title == "Quarantine dose bytes")
+        // resolve is disabled until every group has a choice; then the choices ride in displayed order
+        let pending = RecoverySurfacePresentation.actions(for: snapshots[8])
+        #expect(pending.count == 1 && pending[0].enabled == false && pending[0].title == "Resolve")
+        let chosen = RecoverySurfacePresentation.actions(for: snapshots[8], foreignChoices: [groups[0].decisionDigest: "continue", groups[1].decisionDigest: "restart"])
+        guard case let .resolve(resolution, choices) = chosen[0].action else { Issue.record("resolve"); return }
+        #expect(chosen[0].enabled && resolution == String(repeating: "4", count: 64) && choices.count == 2 && choices[0].contains("\"choice\":\"continue\""))
+        // epoch options: only the actionable epoch is enabled; every occupant is displayed
+        let options = RecoverySurfacePresentation.epochOptions(for: snapshots[6])
+        #expect(options.map(\.expectedTaskGenerationEpoch) == [1, 2] && options.map(\.enabled) == [true, false] && options[0].recoveryAction == .resumeServerDeletion && options[0].recoveryStateDigest == digest)
+        #expect(RecoverySurfacePresentation.epochOptions(for: snapshots[0]).isEmpty)
+        #expect(RecoverySurfacePresentation.stateCopy(snapshots[6]) == "Reset store: reset epoch conflict" && RecoverySurfacePresentation.stateCopy(snapshots[12]) == "Daily dose store: malformed")
+        #expect(RecoverySurfacePresentation.deletionCopy(.queued) == (AccountDeletionCompletionCopy.queued, true))
+        #expect(RecoverySurfacePresentation.deletionCopy(.blocked(.localPrivacyPurgeFailed)) == (AccountDeletionCompletionCopy.telemetryRelaunch, true))
+        #expect(RecoverySurfacePresentation.deletionCopy(.guarding(authGuardAfter: DeletionWires.authGuardAfter)).retry == false)
+    }
+
+    @Test func completionSurfaceContentIsExactForEveryResultInAppleThenGoogleOrder() {
+        let none = CompletionSurfaceContent.content(for: .completed(appleRevocation: .notRequired, googleRevocation: .revoked))
+        #expect(none == CompletionSurfaceContent(title: "Account deleted", body: "Your Peezy account was deleted.", button: "Done", sections: []))
+        let both = CompletionSurfaceContent.content(for: .completed(appleRevocation: .manualRequired, googleRevocation: .manualRequired))
+        #expect(both.sections.map(\.provider) == [.apple, .google])
+        #expect(both.sections[0] == CompletionSurfaceContent.Section(provider: .apple, paragraph: AccountDeletionCompletionCopy.appleManual, linkTitle: "Apple instructions", url: URL(string: "https://support.apple.com/102571")!))
+        #expect(both.sections[1] == CompletionSurfaceContent.Section(provider: .google, paragraph: AccountDeletionCompletionCopy.googleManual, linkTitle: "Google instructions", url: URL(string: "https://support.google.com/accounts/answer/13533235?hl=en")!))
+        #expect(CompletionSurfaceContent.content(for: .completed(appleRevocation: .notRequired, googleRevocation: .manualRequired)).sections.map(\.provider) == [.google])
+        #expect(CompletionSurfaceContent.content(for: .localCleared) == CompletionSurfaceContent(title: "Account deleted", body: "This account was deleted from another device. This device has been cleared.", button: "Done", sections: []))
+        #expect(CompletionSurfaceContent.content(for: .remoteUnconfirmed) == CompletionSurfaceContent(title: "Deletion not verified", body: "Local data for this account was removed, but remote account deletion could not be verified. Sign in again to retry if the account still exists.", button: "Done", sections: []))
+    }
+
+    @MainActor @Test func recoveryModelWiresActionsThroughTheDriverCoordinatorAndPresenter() async throws {
+        let h = try makeDeletionHarness(auth: signedInA, dispositions: AccountDeletionProviderDispositions(appleRevocation: .manualRequired, googleRevocation: .notRequired, googleProviderUid: nil))
+        let defaults = try isolatedDefaults()
+        let dose = DailyDoseLocalStore(defaults: defaults)
+        defaults.set(Data("{".utf8), forKey: DailyDoseLocalStore.key(uid: "A"))
+        let workflow = ScriptedStoreOwner(store: .workflow, observation: .observed(.files(store: .workflow, baseState: "quarantined", target: .absent, quarantine: .malformed(byteLength: 3, bytesSHA256: String(repeating: "e", count: 64)), availableActions: ["discard_quarantine"])))
+        let (reset, _) = await ResetFixtures.registry(h.directory, auth: signedInA)
+        try ResetFixtures.envelope(records: [ResetFixtures.row(uid: "A", epoch: 1), ResetFixtures.row(uid: "A", epoch: 2, createdAt: "2026-09-06T12:00:01.000Z", suggested: "rsa1_33333333-3333-4333-8333-333333333333")]).write(to: ResetFixtures.target(h.directory))
+        let driver = DurableStoreRecoveryDriver(owners: DurableStoreOwners(route: ScriptedStoreOwner(store: .route), handoff: ScriptedStoreOwner(store: .handoff), reset: reset, workflow: workflow), dose: dose, currentUID: UIDProbe("A")) { _, _ in }
+        let model = DurableStoreRecoveryModel(driver: driver, epochRecovery: reset, coordinator: h.coordinator, presenter: h.completion)
+        h.remote.script("begin", .failure(.retryRequired))
+        #expect(await h.coordinator.startDeletion(uid: "A") == .settled(.queued))
+        await model.refresh()
+        #expect(model.deletion == .queued && model.completion == nil)
+        #expect(model.blocked.map(\.store) == [.reset, .workflow, .dose], "frozen order; the surface mounts with stores blocked")
+        // a blocked-store action reaches only its owner and reclassifies
+        let control = try #require(RecoverySurfacePresentation.actions(for: model.blocked[1].snapshot).first)
+        workflow.set(.observed(.files(store: .workflow, baseState: "ready", target: .absent, quarantine: .absent, availableActions: [])))
+        #expect(await model.perform(control) == .ready && workflow.performedActions == ["discard_quarantine"])
+        #expect(model.blocked.map(\.store) == [.reset, .dose] && model.lastResult == .ready)
+        // the dose action through DailyDoseLocalStore
+        let doseControl = try #require(RecoverySurfacePresentation.actions(for: model.blocked[1].snapshot).first)
+        #expect(await model.perform(doseControl) == .ready && defaults.data(forKey: DailyDoseLocalStore.key(uid: "A")) == nil)
+        // the epoch option: only the actionable epoch runs its own reducer branch; without S7's bundle the registry answers unavailable
+        let options = RecoverySurfacePresentation.epochOptions(for: model.blocked[0].snapshot)
+        #expect(options.map(\.enabled) == [true, false])
+        #expect(await model.recover(options[1]) == .unavailable(store: .reset), "a later epoch is displayed but disabled")
+        #expect(await model.recover(options[0]) == .unavailable(store: .reset) && model.lastResult == .unavailable(store: .reset))
+        // the deletion Retry through the coordinator, then the completion surface through the presenter: links never consume, Done consumes
+        h.remote.always("begin", .success(DeletionWires.dataFinal("x")))
+        h.remote.script("finalize", .success(DeletionWires.guarding("x")), .success(DeletionWires.deleted("x")))
+        #expect(await model.retryDeletion() == .settled(.guarding(authGuardAfter: DeletionWires.authGuardAfter)))
+        #expect(model.deletion == .guarding(authGuardAfter: DeletionWires.authGuardAfter) && RecoverySurfacePresentation.deletionCopy(model.deletion!).retry == false)
+        guard case .settled(.completion(let snapshot))? = await model.retryDeletion() else { Issue.record("completed"); return }
+        #expect(model.completion == snapshot && CompletionSurfaceContent.content(for: snapshot.result).sections.map(\.provider) == [.apple])
+        let appleOpen = await model.open(.apple)
+        let googleOpen = await model.open(.google)
+        #expect(appleOpen == .opened && googleOpen == .notOffered)
+        #expect(model.completion == snapshot && h.signOut.calls.isEmpty, "links never consume")
+        #expect(await model.acknowledgeCompletion() == .acknowledged)
+        #expect(model.completion == nil && model.deletion == nil && h.signOut.calls == ["A"] && h.gate.gates.last == .clear)
+        #expect(await model.acknowledgeCompletion() == nil)
+    }
+
     // MARK: - Epoch stamps (I4, stamps only; manifest §5:540-546). Cleanup belongs to S3.
 
     @Test func dailyDoseLocalStoreWritesAStampedV2EnvelopeAndCASesRevision() async throws {

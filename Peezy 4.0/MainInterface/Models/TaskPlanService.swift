@@ -910,15 +910,22 @@ actor ResetOperationRegistry {
         sorted(rows).map { ResetEpochOccupant(expectedTaskGenerationEpoch: $0.expectedTaskGenerationEpoch, phase: $0.phase, recoveryAction: $0.recoveryAction) }
     }
 
-    /// S4 (C9.7.12): the conflict digest is the `RecoveryObservedStateV1` digest over the observed target, so the
-    /// protocol path and `recoverEpoch` CAS the same value.
     private func conflictSnapshot(_ rows: [ResetOperationRegistryRecordV2], tuple: SignedAuthTuple, envelope: Envelope) -> BlockedSnapshot {
         let occupants = Self.epochOccupants(rows)
         let actionable = occupants.map(\.expectedTaskGenerationEpoch).min() ?? 0
-        let target = (try? targetRead())?.observation ?? .absent
-        let quarantine = (try? quarantineRead())?.observation ?? .absent
-        let observed = RecoveryObservedStateV1.files(store: .reset, baseState: "reset_epoch_conflict", target: target, quarantine: quarantine, availableActions: ["recover_epoch"], auth: tuple, epochOccupants: occupants)
-        return .resetEpochConflict(recoveryStateDigest: observed.recoveryStateDigest, actionableExpectedTaskGenerationEpoch: actionable, occupants: occupants)
+        let digest = Self.epochConflictDigest(uid: tuple.uid, authEpochUUID: tuple.authEpochUUID, credentialRevision: tuple.credentialRevision, envelopeGeneration: envelope.generationId, envelopeSHA256: envelope.sha256, actionable: actionable, occupants: occupants)
+        return .resetEpochConflict(recoveryStateDigest: digest, actionableExpectedTaskGenerationEpoch: actionable, occupants: occupants)
+    }
+
+    /// The C9.5.18 literal `recoveryStateDigest` of `reset_epoch_conflict` (S4 computes the same formula on the protocol path).
+    static func epochConflictDigest(uid: String, authEpochUUID: String, credentialRevision: Int, envelopeGeneration: String, envelopeSHA256: String, actionable: Int, occupants: [ResetEpochOccupant]) -> String {
+        TaskCanonicalV1.sha256Hex([
+            "schemaVersion": 1, "store": "reset", "baseState": "reset_epoch_conflict",
+            "uid": uid, "authEpochUUID": authEpochUUID, "credentialRevision": credentialRevision,
+            "envelopeGeneration": envelopeGeneration, "envelopeSHA256": envelopeSHA256,
+            "actionableExpectedTaskGenerationEpoch": actionable,
+            "occupants": occupants.map { ["expectedTaskGenerationEpoch": $0.expectedTaskGenerationEpoch, "phase": $0.phase.rawValue, "recoveryAction": $0.recoveryAction.rawValue] }
+        ])
     }
 
     // MARK: S4 file observation (S4-CD2: the `DurableStoreRecovering` conformance over the existing slot)
@@ -1980,8 +1987,13 @@ extension ResetOperationRegistry: DurableStoreRecovering {
             case "quarantine_conflict": return .blocked(.quarantineConflict(store: .reset, recoveryStateDigest: digest, quarantineEnumerable: recoverable, pendingRecordCount: recoverable ? count : nil))
             case "receipt_mismatch": return .blocked(.receiptMismatch(store: .reset, recoveryStateDigest: digest, mismatchIdentityDigest: mismatch ?? ""))
             case "reset_epoch_conflict":
+                // C9.5.18 outranks the generic C9.7.12 map here: the conflict digest is the literal S1 formula, computed purely
+                // from the observation (auth tuple, valid target generation/hash, ordered occupants).
                 let occupants = occupants ?? []
-                return .blocked(.resetEpochConflict(recoveryStateDigest: digest, actionableExpectedTaskGenerationEpoch: occupants.map(\.expectedTaskGenerationEpoch).min() ?? 0, occupants: occupants))
+                let actionable = occupants.map(\.expectedTaskGenerationEpoch).min() ?? 0
+                guard case let .files(_, _, target, _, _, _, _, auth, _, _, _, _) = state, let auth, case let .valid(_, _, generation, envelopeSHA) = target else { return .ready }
+                let conflictDigest = ResetOperationRegistry.epochConflictDigest(uid: auth.uid, authEpochUUID: auth.authEpochUUID, credentialRevision: auth.credentialRevision, envelopeGeneration: generation, envelopeSHA256: envelopeSHA, actionable: actionable, occupants: occupants)
+                return .blocked(.resetEpochConflict(recoveryStateDigest: conflictDigest, actionableExpectedTaskGenerationEpoch: actionable, occupants: occupants))
             default: return .ready
             }
         }
