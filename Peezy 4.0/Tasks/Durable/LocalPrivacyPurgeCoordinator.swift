@@ -832,15 +832,19 @@ actor LocalPrivacyPurgeCoordinator: LocalPrivacyPurgeCoordinating {
         await purge(Request(scope: scope, providerContext: nil, terminalDeletionLink: nil))
     }
 
-    func purge(_ request: Request) async -> LocalPrivacyPurgeResult {
+    /// Every owner ack is journaled, then offered to `onAck` (the deletion coordinator mirrors it into the intent, C2.2);
+    /// a `false` return stops the purge as `FILE_IO` with the journal retained. All-scope acks are never offered.
+    typealias AckMirror = @Sendable (PurgeOwner) async -> Bool
+
+    func purge(_ request: Request, onAck: AckMirror? = nil) async -> LocalPrivacyPurgeResult {
         if case .uid = request.scope, request.providerContext == nil { return .blocked(.localPrivacyPurgeFailed) }
         if case .uid = request.scope, request.terminalDeletionLink != nil { return .blocked(.localPrivacyPurgeFailed) }
         await acquireSlot(intentLinked: request.isIntentLinked)
         defer { releaseSlot() }
-        return await runPurge(request)
+        return await runPurge(request, onAck: onAck)
     }
 
-    private func runPurge(_ request: Request) async -> LocalPrivacyPurgeResult {
+    private func runPurge(_ request: Request, onAck: AckMirror? = nil) async -> LocalPrivacyPurgeResult {
         // resume a matching journal; a different journal is finished first (its scope), then this request starts fresh
         var journal: LocalPrivacyPurgeJournalV1
         switch observeJournal() {
@@ -867,6 +871,11 @@ actor LocalPrivacyPurgeCoordinator: LocalPrivacyPurgeCoordinating {
             let now = clock.now()
             journal = LocalPrivacyPurgeJournalV1(scope: journal.scope, providerContext: journal.providerContext, terminalDeletionLink: journal.terminalDeletionLink, acks: journal.acks + [owner], createdAt: journal.createdAt, updatedAt: now)
             guard writeJournal(journal) else { return .blocked(.fileIO) }
+            if let onAck, case .uid = request.scope, await onAck(owner) == false { return .blocked(.fileIO) }
+        }
+        // a resumed journal already past some owners re-offers them so the intent's prefix catches up
+        if let onAck, case .uid = request.scope {
+            for owner in journal.acks where await onAck(owner) == false { return .blocked(.fileIO) }
         }
         let preferences = PreferenceBarrier.run(scope: request.scope, defaults: defaults, currentFirebaseUID: currentUID.currentFirebaseUID())
         log.append("preferences:\(preferences.rawValue)")

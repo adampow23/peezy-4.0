@@ -745,6 +745,336 @@ struct DurableStoreRecoveryTests {
         _ = await coordinator.unlinkJournal()
     }
 
+    // MARK: - S4 I3 — account-deletion intent (C2.1), phase machine (C2.2), transport handling (C2.3), gate (C2.4), presentations (C2.5), capability-invalid exit (C2.6)
+
+    @Test func intentPhaseMemberCrossProductRejectsEveryMissingSurplusUnknownAndCrossBranchMember() throws {
+        let variants: [(AccountDeletionPhase, AccountDeletionStagedRoot?, AccountDeletionDetachReason?)] = [
+            (.prepared, nil, nil), (.dataConfirmed, nil, nil), (.purging, nil, nil), (.localDetaching, .dataDeleted, nil), (.localDetaching, .authGuarding, nil),
+            (.localDetaching, nil, .authDeleted), (.localDetaching, nil, .remoteUnverified), (.localDetaching, nil, .capabilityInvalid),
+            (.authFinalizeDispatched, nil, nil), (.guarding, nil, nil), (.completed, nil, nil), (.localCleared, nil, nil)
+        ]
+        let optionalMembers = ["purpose", "authorityKind", "detachReason", "stagedRoot", "startedAt", "dataDeletedAt", "authGuardAfter"]
+        let required = ["schemaVersion", "uid", "authEpochUUID", "credentialRevision", "operationId", "proofNonce", "appleRevocation", "googleRevocation", "phase", "acks", "createdAt", "updatedAt"]
+        let fill: [String: Any] = ["purpose": "confirmed_begin", "authorityKind": "member", "detachReason": "auth_deleted", "stagedRoot": "DATA_DELETED", "startedAt": DeletionWires.startedAt, "dataDeletedAt": DeletionWires.dataDeletedAt, "authGuardAfter": DeletionWires.authGuardAfter]
+        for (phase, staged, detach) in variants {
+            let intent = exactIntent(phase: phase, staged: staged, detach: detach)
+            let map = intent.canonical
+            #expect(intent.isValid, Comment(rawValue: "\(phase) \(String(describing: staged)) \(String(describing: detach)) exact"))
+            #expect(AccountDeletionIntentV1.decode(map) == intent, Comment(rawValue: "\(phase) round-trip"))
+            for key in required { var missing = map; missing[key] = nil; #expect(AccountDeletionIntentV1.decode(missing) == nil, Comment(rawValue: "\(phase) missing \(key)")) }
+            for key in optionalMembers {
+                var mutated = map
+                if map[key] == nil { mutated[key] = fill[key] } else { mutated[key] = nil }
+                #expect(AccountDeletionIntentV1.decode(mutated) == nil, Comment(rawValue: "\(phase) toggling \(key)"))
+            }
+            var surplus = map; surplus["extra"] = 1
+            #expect(AccountDeletionIntentV1.decode(surplus) == nil)
+            var unknownPhase = map; unknownPhase["phase"] = "deleting"
+            #expect(AccountDeletionIntentV1.decode(unknownPhase) == nil)
+            var badAcks = map; badAcks["acks"] = ["handoff"]
+            #expect(AccountDeletionIntentV1.decode(badAcks) == nil, "acks must be a displayed-order prefix")
+            var wrongType = map; wrongType["credentialRevision"] = "3"
+            #expect(AccountDeletionIntentV1.decode(wrongType) == nil)
+        }
+        // cross-branch: both stagedRoot and detachReason, or neither, in local_detaching; authGuardAfter iff AUTH_GUARDING
+        var both = exactIntent(phase: .localDetaching, staged: .dataDeleted).canonical; both["detachReason"] = "auth_deleted"
+        #expect(AccountDeletionIntentV1.decode(both) == nil)
+        var neither = exactIntent(phase: .localDetaching, staged: .dataDeleted).canonical; neither["stagedRoot"] = nil
+        #expect(AccountDeletionIntentV1.decode(neither) == nil)
+        var deadlineOnDataDeleted = exactIntent(phase: .localDetaching, staged: .dataDeleted).canonical; deadlineOnDataDeleted["authGuardAfter"] = DeletionWires.authGuardAfter
+        #expect(AccountDeletionIntentV1.decode(deadlineOnDataDeleted) == nil)
+        var noDeadline = exactIntent(phase: .localDetaching, staged: .authGuarding).canonical; noDeadline["authGuardAfter"] = nil
+        #expect(AccountDeletionIntentV1.decode(noDeadline) == nil)
+        var unknownPurpose = exactIntent(phase: .prepared).canonical; unknownPurpose["purpose"] = "startup"
+        #expect(AccountDeletionIntentV1.decode(unknownPurpose) == nil)
+        var unknownReason = exactIntent(phase: .localDetaching, detach: .authDeleted).canonical; unknownReason["detachReason"] = "signed_out"
+        #expect(AccountDeletionIntentV1.decode(unknownReason) == nil)
+        var partialAcks = exactIntent(phase: .purging).canonical; partialAcks["acks"] = ["route", "handoff"]
+        #expect(AccountDeletionIntentV1.decode(partialAcks) != nil, "purging carries an ack prefix")
+        var incompleteGuarding = exactIntent(phase: .guarding).canonical; incompleteGuarding["acks"] = ["route"]
+        #expect(AccountDeletionIntentV1.decode(incompleteGuarding) == nil, "guarding requires all eight acks")
+        var missingProviderUid = exactIntent(phase: .prepared).canonical; missingProviderUid["googleProviderUid"] = nil
+        #expect(AccountDeletionIntentV1.decode(missingProviderUid) == nil, "sdk_disconnect_required requires the provider UID")
+        var noncanonicalTime = exactIntent(phase: .guarding).canonical; noncanonicalTime["authGuardAfter"] = "2026-09-13T11:59:30Z"
+        #expect(AccountDeletionIntentV1.decode(noncanonicalTime) == nil)
+        // the envelope: exact fileKind and cap 16,384
+        let bytes = try #require(DurableEnvelopeCodec.encode(fileKind: .accountDeletionIntentV1, generationId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", payload: exactIntent(phase: .guarding).canonical))
+        #expect(DurableEnvelopeCodec.decode(bytes, fileKind: .accountDeletionIntentV1) != nil && bytes.count <= 16_384)
+        #expect(DurableEnvelopeCodec.decode(bytes, fileKind: .accountDeletionCompletionV1) == nil)
+    }
+
+    @Test func capabilityIsAdel1UUIDWithA32ByteNonceAndTheC21ProofDigest() {
+        let operationId = AccountDeletionCapability.newOperationId()
+        #expect(operationId.range(of: AccountDeletionIntentV1.operationIdPattern, options: .regularExpression) != nil)
+        let nonce = AccountDeletionCapability.newProofNonce()
+        #expect(nonce?.range(of: AccountDeletionIntentV1.proofNoncePattern, options: .regularExpression) != nil)
+        let decoded = Data(base64Encoded: (nonce ?? "").replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/") + "=")
+        #expect(decoded?.count == 32)
+        #expect(AccountDeletionCapability.newProofNonce() != nonce)
+        let expected = TaskCanonicalV1.sha256Hex(data: Data("{\"operation_id\":\"\(operationId)\",\"proof_nonce\":\"\(nonce ?? "")\",\"uid\":\"A\"}".utf8))
+        #expect(AccountDeletionCapability.proofSHA256(uid: "A", operationId: operationId, proofNonce: nonce ?? "") == expected)
+    }
+
+    @Test func confirmedBeginRoutesDataFinalThroughPurgingDetachAndFinalizeToGuardingThenCompleted() async throws {
+        let h = try makeDeletionHarness(auth: signedInA)
+        h.remote.always("begin", .success(DeletionWires.dataFinal("x")))
+        h.remote.script("finalize", .success(DeletionWires.guarding("x")), .success(DeletionWires.deleted("x")))
+        #expect(await h.coordinator.startDeletion(uid: "A") == .settled(.guarding(authGuardAfter: DeletionWires.authGuardAfter)))
+        let intent = try #require(await h.coordinator.currentIntent())
+        #expect(intent.phase == .guarding && intent.acks == PurgeOwner.order && intent.authorityKind == .member && intent.purpose == nil && intent.stagedRoot == nil)
+        #expect(intent.startedAt == DeletionWires.startedAt && intent.dataDeletedAt == DeletionWires.dataDeletedAt && intent.authGuardAfter == DeletionWires.authGuardAfter)
+        #expect(h.remote.actions == ["begin", "finalize"])
+        #expect(h.remote.requests.first == .begin(uid: "A", operationId: intent.operationId, proofNonce: intent.proofNonce))
+        #expect(h.owners.calls == ["route(A)", "handoff(A)", "reset(A)", "workflow(A)", "room_capture(A)", "firestore_cache(A)", "notifications(A)", "google.disconnect(g1)"])
+        let trace = await h.coordinator.trace
+        let phases = trace.filter { $0.hasPrefix("phase:") }
+        #expect(phases == ["phase:prepared:confirmed_begin", "phase:data_confirmed", "phase:purging", "phase:local_detaching:DATA_DELETED", "phase:auth_finalize_dispatched", "phase:guarding"])
+        #expect(trace.filter { $0.hasPrefix("ack:") } == PurgeOwner.order.map { "ack:\($0.rawValue)" }, "every owner ack is mirrored into the intent before the next owner")
+        #expect(h.telemetry.calls == 2, "purging proves the barriers; the staged detach proves them again")
+        #expect(h.gate.gates.last == .guarding(uid: "A", authGuardAfter: DeletionWires.authGuardAfter) && h.gate.gates.first == .active(uid: "A"))
+        guard case let .present(journal) = await h.purge.observeJournal() else { Issue.record("journal"); return }
+        #expect(journal.acks == PurgeOwner.order && journal.providerContext == intent.providerContext)
+        #expect(await h.coordinator.currentPresentation() == .guarding(authGuardAfter: DeletionWires.authGuardAfter))
+        // Retry in guarding: finalize returns the deleted wire → nonstaged auth_deleted detach → completed, presentation from the completion file
+        let count = h.owners.calls.count
+        let result = await h.coordinator.retry()
+        guard case let .settled(.completion(snapshot)) = result else { Issue.record("completion expected, got \(result)"); return }
+        #expect(snapshot.result == .completed(appleRevocation: .notRequired, googleRevocation: .revoked))
+        #expect(await h.completion.current() == snapshot)
+        let terminal = try #require(await h.coordinator.currentIntent())
+        #expect(terminal.phase == .completed && terminal.acks == PurgeOwner.order && terminal.authorityKind == nil && terminal.startedAt == nil && terminal.authGuardAfter == nil && terminal.detachReason == nil)
+        #expect(h.remote.actions == ["begin", "finalize", "finalize"])
+        #expect(h.owners.calls.count == count, "acknowledged owners are not run again; the barriers are re-proved")
+        #expect(h.telemetry.calls == 3)
+        #expect(h.gate.terminals.last == .completed && h.gate.gates.last == .active(uid: "A"), "the gate stays nonclear until the presentation is consumed")
+        let terminalTrace = await h.coordinator.trace
+        #expect(terminalTrace.filter { $0.hasPrefix("phase:") }.suffix(2) == ["phase:local_detaching:auth_deleted", "phase:completed"])
+    }
+
+    @Test func startupDiscoverAtEveryServerRootSkipsFinalizeAndAbsentWritesNothing() async throws {
+        // absent: zero write, clear
+        let absent = try makeDeletionHarness(auth: signedInA)
+        absent.remote.always("discover", .success(.absent(operationId: "x")))
+        #expect(await absent.coordinator.discoverAtStartup() == .clear)
+        #expect(absent.intentBytes() == nil && absent.remote.actions == ["discover"] && absent.gate.gates == [.clear])
+        // signed out: no discovery, clear
+        let signedOut = try makeDeletionHarness(auth: .signedOut)
+        #expect(await signedOut.coordinator.discoverAtStartup() == .clear && signedOut.remote.actions.isEmpty)
+        // AUTH_GUARDING root: prepared(startup_discover) → data_confirmed → purging → staged AUTH_GUARDING detach → guarding, no finalize
+        let guarding = try makeDeletionHarness(auth: signedInA)
+        guarding.remote.always("discover", .success(DeletionWires.guarding("x")))
+        #expect(await guarding.coordinator.discoverAtStartup() == .settled(.guarding(authGuardAfter: DeletionWires.authGuardAfter)))
+        #expect(guarding.remote.actions == ["discover"])
+        let guardingTrace = await guarding.coordinator.trace
+        #expect(guardingTrace.filter { $0.hasPrefix("phase:") } == ["phase:prepared:startup_discover", "phase:data_confirmed", "phase:purging", "phase:local_detaching:AUTH_GUARDING", "phase:guarding"])
+        #expect(guarding.owners.calls.count == 8)
+        // ACCOUNT_DELETED root: → nonstaged auth_deleted detach → completed, no finalize
+        let deleted = try makeDeletionHarness(auth: signedInA)
+        deleted.remote.always("discover", .success(DeletionWires.deleted("x")))
+        guard case .settled(.completion(let snapshot)) = await deleted.coordinator.discoverAtStartup() else { Issue.record("completion"); return }
+        #expect(snapshot.result == .completed(appleRevocation: .notRequired, googleRevocation: .revoked) && deleted.remote.actions == ["discover"])
+        let deletedTrace = await deleted.coordinator.trace
+        #expect(deletedTrace.filter { $0.hasPrefix("phase:") } == ["phase:prepared:startup_discover", "phase:data_confirmed", "phase:purging", "phase:local_detaching:auth_deleted", "phase:completed"])
+        // DATA_DELETED root: the finalize path
+        let dataFinal = try makeDeletionHarness(auth: signedInA)
+        dataFinal.remote.always("discover", .success(DeletionWires.dataFinal("x", replayed: true)))
+        dataFinal.remote.always("finalize", .success(DeletionWires.guarding("x")))
+        #expect(await dataFinal.coordinator.discoverAtStartup() == .settled(.guarding(authGuardAfter: DeletionWires.authGuardAfter)))
+        #expect(dataFinal.remote.actions == ["discover", "finalize"])
+        // DELETING-guarding at discovery: the capability is kept in a prepared intent projecting queued
+        let queued = try makeDeletionHarness(auth: signedInA)
+        queued.remote.always("discover", .failure(.retryRequired))
+        #expect(await queued.coordinator.discoverAtStartup() == .settled(.queued))
+        let kept = try #require(await queued.coordinator.currentIntent())
+        #expect(kept.phase == .prepared && kept.purpose == .startupDiscover && queued.gate.gates.last == .active(uid: "A"))
+        // relaunch with that intent: discovery reuses the same capability
+        queued.remote.always("discover", .success(DeletionWires.guarding("x")))
+        #expect(await queued.coordinator.discoverAtStartup() == .settled(.guarding(authGuardAfter: DeletionWires.authGuardAfter)))
+        #expect(queued.remote.requests.last == .discover(uid: "A", operationId: kept.operationId, proofNonce: kept.proofNonce))
+    }
+
+    @Test func transportOutcomesKeepPreparedQueuedOrBlockWithRetainedBytesAndReplayReusesTheCapability() async throws {
+        let h = try makeDeletionHarness(auth: signedInA)
+        // Build A retry: stays prepared, queued
+        h.remote.script("begin", .failure(.retryRequired))
+        #expect(await h.coordinator.startDeletion(uid: "A") == .settled(.queued))
+        let prepared = try #require(await h.coordinator.currentIntent())
+        #expect(prepared.phase == .prepared && prepared.purpose == .confirmedBegin && h.gate.gates.last == .active(uid: "A"))
+        let bytes = try #require(h.intentBytes())
+        // transport: REMOTE_UNAVAILABLE with retained bytes
+        h.remote.script("begin", .failure(.transport))
+        #expect(await h.coordinator.retry() == .settled(.blocked(.remoteUnavailable)))
+        #expect(h.intentBytes() == bytes)
+        // protocol ambiguity and REQUEST_INVALID: REMOTE_MALFORMED with retained bytes
+        h.remote.script("begin", .failure(.protocolAmbiguity))
+        #expect(await h.coordinator.retry() == .settled(.blocked(.remoteMalformed)))
+        h.remote.script("begin", .failure(.requestInvalid(field: "uid")))
+        #expect(await h.coordinator.retry() == .settled(.blocked(.remoteMalformed)))
+        h.remote.script("begin", .failure(.authRequired))
+        #expect(await h.coordinator.retry() == .settled(.blocked(.remoteUnavailable)))
+        #expect(h.intentBytes() == bytes && h.owners.calls.isEmpty)
+        // a begin whose response was lost is replayed by the next begin with the same capability
+        h.remote.script("begin", .success(DeletionWires.dataFinal(prepared.operationId, replayed: true)))
+        h.remote.always("finalize", .failure(.transport))
+        #expect(await h.coordinator.retry() == .settled(.blocked(.remoteUnavailable)))
+        #expect(h.remote.requests.allSatisfy { $0 == .begin(uid: "A", operationId: prepared.operationId, proofNonce: prepared.proofNonce) || $0.action == "finalize" })
+        let dispatched = try #require(await h.coordinator.currentIntent())
+        #expect(dispatched.phase == .authFinalizeDispatched && dispatched.operationId == prepared.operationId && dispatched.acks == PurgeOwner.order)
+        // finalize DELETING-guarding keeps the phase; the queued presentation
+        h.remote.always("finalize", .failure(.retryRequired))
+        #expect(await h.coordinator.retry() == .settled(.queued))
+        #expect(await h.coordinator.currentIntent()?.phase == .authFinalizeDispatched)
+        // a data-final wire from finalize is protocol ambiguity
+        h.remote.always("finalize", .success(DeletionWires.dataFinal(prepared.operationId)))
+        #expect(await h.coordinator.retry() == .settled(.blocked(.remoteMalformed)))
+        // signed out (the Auth user is deleted at DATA_DELETED): finalize continues on the capability alone
+        h.auth.set(.signedOut)
+        h.remote.always("finalize", .success(DeletionWires.guarding(prepared.operationId)))
+        #expect(await h.coordinator.retry() == .settled(.guarding(authGuardAfter: DeletionWires.authGuardAfter)))
+        let fresh = try makeDeletionHarness(auth: .signedOut)
+        try Data(contentsOf: h.intentURL).write(to: fresh.intentURL)
+        fresh.remote.always("finalize", .success(DeletionWires.guarding(prepared.operationId)))
+        #expect(await fresh.coordinator.retry() == .settled(.guarding(authGuardAfter: DeletionWires.authGuardAfter)))
+        // a signed-out relaunch in `prepared` dispatches resume for the exact member and never begins
+        let preparedOut = try makeDeletionHarness(auth: .signedOut)
+        guard case .success = AccountDeletionIntentStore(directory: preparedOut.directory).write(exactIntent(phase: .prepared), expecting: nil) else { Issue.record("seed"); return }
+        preparedOut.remote.always("resume", .success(DeletionWires.guarding("adel1_11111111-1111-4111-8111-111111111111")))
+        #expect(await preparedOut.coordinator.retry() == .settled(.guarding(authGuardAfter: DeletionWires.authGuardAfter)))
+        #expect(preparedOut.remote.actions == ["resume"])
+        // a begin returning the absent wire is protocol ambiguity
+        let absent = try makeDeletionHarness(auth: signedInA)
+        absent.remote.always("begin", .success(.absent(operationId: "x")))
+        #expect(await absent.coordinator.startDeletion(uid: "A") == .settled(.blocked(.remoteMalformed)))
+        #expect(await absent.coordinator.currentIntent()?.phase == .prepared)
+    }
+
+    @Test func capabilityInvalidExitRequiresDefinitivelyDeletedAndNeverFinalizes() async throws {
+        let h = try makeDeletionHarness(auth: signedInA)
+        h.remote.always("begin", .failure(.capabilityInvalid))
+        // the Auth user is still present: not the exit; bytes retained, no purge
+        #expect(await h.coordinator.startDeletion(uid: "A") == .settled(.blocked(.remoteMalformed)))
+        let prepared = try #require(await h.coordinator.currentIntent())
+        #expect(prepared.phase == .prepared && h.owners.calls.isEmpty && h.auth.deletionChecks == [AuthIdentity(uid: "A", authEpochUUID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")])
+        // definitively deleted: nonstaged capability_invalid detach persisted before any purge work → full purge → local_cleared
+        h.auth.setDeletionObservation(.definitivelyDeleted)
+        let result = await h.coordinator.retry()
+        guard case let .settled(.completion(snapshot)) = result else { Issue.record("local_cleared expected, got \(result)"); return }
+        #expect(snapshot.result == .localCleared)
+        let cleared = try #require(await h.coordinator.currentIntent())
+        #expect(cleared.phase == .localCleared && cleared.acks == PurgeOwner.order && cleared.detachReason == nil && cleared.authorityKind == nil)
+        #expect(h.remote.actions == ["begin", "begin"], "no finalize call")
+        #expect(h.owners.calls.count == 8 && h.gate.terminals.last == .localCleared)
+        let phases = await h.coordinator.trace.filter { $0.hasPrefix("phase:") }
+        #expect(phases == ["phase:prepared:confirmed_begin", "phase:local_detaching:capability_invalid", "phase:local_cleared"])
+        #expect(TaskCanonicalV1.data(snapshot.result.presentation) == TaskCanonicalV1.data(["schemaVersion": 1, "kind": "ACCOUNT_DELETION_LOCAL_CLEARED"]))
+        // capability-invalid after the data authority is known is not the exit either
+        let late = try makeDeletionHarness(auth: signedInA)
+        late.auth.setDeletionObservation(.definitivelyDeleted)
+        late.remote.always("begin", .success(DeletionWires.dataFinal("x")))
+        late.remote.always("finalize", .failure(.capabilityInvalid))
+        #expect(await late.coordinator.startDeletion(uid: "A") == .settled(.blocked(.remoteMalformed)))
+        #expect(await late.coordinator.currentIntent()?.phase == .authFinalizeDispatched)
+    }
+
+    @Test func differentUIDStartDeletionIsBusyAndTheSameUIDJoinsWithoutReplacingTheCapability() async throws {
+        let h = try makeDeletionHarness(auth: signedInA)
+        h.remote.hold("begin")
+        h.remote.always("begin", .failure(.retryRequired))
+        let first = Task { await h.coordinator.startDeletion(uid: "A") }
+        while !h.remote.isHolding { await Task.yield() }
+        #expect(await h.coordinator.startDeletion(uid: "B") == .busy)
+        let joiner = Task { await h.coordinator.startDeletion(uid: "A") }
+        for _ in 0..<20 { await Task.yield() }
+        h.remote.release()
+        #expect(await first.value == .settled(.queued))
+        #expect(await joiner.value == .settled(.queued))
+        #expect(h.remote.actions == ["begin"], "the joiner never dispatches or replaces the capability")
+        let intent = try #require(await h.coordinator.currentIntent())
+        // at rest in a nonguarding phase: still busy for another UID; the same UID resumes the same capability
+        #expect(await h.coordinator.startDeletion(uid: "B") == .busy)
+        h.remote.always("begin", .failure(.retryRequired))
+        #expect(await h.coordinator.startDeletion(uid: "A") == .settled(.queued))
+        #expect(h.remote.requests.last == .begin(uid: "A", operationId: intent.operationId, proofNonce: intent.proofNonce))
+        #expect(TaskCanonicalV1.data(AccountDeletionBusy.map) == Data("{\"reason\":\"ACCOUNT_DELETION_BUSY\",\"schemaVersion\":1}".utf8))
+    }
+
+    @Test func intentFileCASClocksAndMalformedBytesAreExact() async throws {
+        // malformed and over-cap intent files block the gate with retained bytes, never read as absence
+        let malformed = try makeDeletionHarness(auth: signedInA)
+        try Data("{".utf8).write(to: malformed.intentURL)
+        #expect(await malformed.coordinator.discoverAtStartup() == .settled(.blocked(.fileIO)))
+        #expect(malformed.gate.gates == [.blocked] && malformed.remote.actions.isEmpty && malformed.intentBytes() == Data("{".utf8))
+        #expect(await malformed.coordinator.startDeletion(uid: "A") == .settled(.blocked(.fileIO)))
+        let overCap = try makeDeletionHarness(auth: signedInA)
+        try Data(repeating: 0x20, count: 16_385).write(to: overCap.intentURL)
+        #expect(await overCap.coordinator.retry() == .settled(.blocked(.fileIO)))
+        #expect(overCap.intentBytes()?.count == 16_385)
+        // stale CAS: the file is replaced under a running purge; the next mirrored ack refuses and the foreign bytes survive
+        let stale = try makeDeletionHarness(auth: signedInA)
+        stale.remote.always("begin", .success(DeletionWires.dataFinal("x")))
+        stale.owners.setHoldRoute()
+        let running = Task { await stale.coordinator.startDeletion(uid: "A") }
+        while !stale.owners.isHoldingRoute { await Task.yield() }
+        let foreign = try #require(DurableEnvelopeCodec.encode(fileKind: .accountDeletionIntentV1, generationId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", payload: exactIntent(phase: .prepared).canonical))
+        try foreign.write(to: stale.intentURL)
+        stale.owners.releaseRoute()
+        #expect(await running.value == .settled(.blocked(.fileIO)))
+        #expect(stale.intentBytes() == foreign)
+        let staleTrace = await stale.coordinator.trace
+        #expect(staleTrace.contains("ack:route:write_failed"))
+        // clocks: forward advances updatedAt, equal repeats it, backward never regresses it, noncanonical writes nothing
+        let clocks = try makeDeletionHarness(auth: signedInA)
+        clocks.remote.always("begin", .failure(.retryRequired))
+        #expect(await clocks.coordinator.startDeletion(uid: "A") == .settled(.queued))
+        #expect(await clocks.coordinator.currentIntent()?.updatedAt == "2026-09-06T12:00:00.000Z")
+        clocks.remote.always("begin", .success(DeletionWires.dataFinal("x")))
+        clocks.remote.always("finalize", .failure(.retryRequired))
+        clocks.clock.set("2026-09-06T11:00:00.000Z")
+        #expect(await clocks.coordinator.retry() == .settled(.queued))
+        let backward = try #require(await clocks.coordinator.currentIntent())
+        #expect(backward.phase == .authFinalizeDispatched && backward.updatedAt == "2026-09-06T12:00:00.000Z" && backward.createdAt == "2026-09-06T12:00:00.000Z")
+        clocks.clock.set("2026-09-06T13:00:00.000Z")
+        clocks.remote.always("finalize", .success(DeletionWires.guarding("x")))
+        #expect(await clocks.coordinator.retry() == .settled(.guarding(authGuardAfter: DeletionWires.authGuardAfter)))
+        #expect(await clocks.coordinator.currentIntent()?.updatedAt == "2026-09-06T13:00:00.000Z")
+        let guardingBytes = clocks.intentBytes()
+        clocks.clock.set("not-a-time")
+        clocks.remote.always("finalize", .success(DeletionWires.deleted("x")))
+        #expect(await clocks.coordinator.retry() == .settled(.blocked(.fileIO)))
+        let clockTrace = await clocks.coordinator.trace
+        #expect(clocks.intentBytes() == guardingBytes && clockTrace.contains("clock:nonrepresentable"))
+        // the store's own CAS: create requires absence; replace requires the observed identity; unlink likewise
+        let store = AccountDeletionIntentStore(directory: try temporaryDirectory())
+        guard case let .success(identity) = store.write(exactIntent(phase: .prepared), expecting: nil) else { Issue.record("create"); return }
+        #expect(store.write(exactIntent(phase: .prepared), expecting: nil) == .failure(.stale))
+        let drifted = AccountDeletionIntentIdentity(generationId: identity.generationId, sha256: "0", device: identity.device, inode: identity.inode)
+        #expect(store.write(exactIntent(phase: .dataConfirmed), expecting: drifted) == .failure(.stale))
+        var invalid = exactIntent(phase: .prepared); invalid.acks = [.route]
+        #expect(store.write(invalid, expecting: identity) == .failure(.encodeFailed))
+        guard case .success = store.write(exactIntent(phase: .dataConfirmed), expecting: identity) else { Issue.record("replace"); return }
+        guard case .failure(.stale) = store.unlink(expecting: identity) else { Issue.record("stale unlink"); return }
+        guard case let .present(_, current) = store.observe(), case .success = store.unlink(expecting: current) else { Issue.record("unlink"); return }
+        #expect(store.observe() == .absent)
+    }
+
+    @Test func queuedBlockedAndGuardingPresentationMapsAreExact() throws {
+        #expect(TaskCanonicalV1.data(AccountDeletionPresentationV1.queued.map) == TaskCanonicalV1.data(["schemaVersion": 1, "state": "account_deletion_queued", "copy": "Deletion is queued while Peezy finishes clearing protected copies. You can close the app and try again later.", "availableActions": ["retry"]]))
+        for reason in LocalPrivacyPurgeBlockedReason.allCases {
+            #expect(TaskCanonicalV1.data(AccountDeletionPresentationV1.blocked(reason).map) == TaskCanonicalV1.data(["schemaVersion": 1, "state": "account_deletion_recovery_unavailable", "reason": reason.rawValue, "availableActions": ["retry"]]))
+        }
+        #expect(LocalPrivacyPurgeBlockedReason.allCases.map(\.rawValue) == ["FILE_IO", "REMOTE_UNAVAILABLE", "REMOTE_MALFORMED", "LOCAL_PRIVACY_PURGE_FAILED"])
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale.autoupdatingCurrent
+        formatter.timeZone = TimeZone.autoupdatingCurrent
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .none
+        let date = formatter.string(from: Date(timeIntervalSince1970: 1_789_300_770.0))
+        #expect(AccountDeletionDateFormatter.string(from: DeletionWires.authGuardAfter) == date)
+        #expect(TaskCanonicalV1.data(AccountDeletionPresentationV1.guarding(authGuardAfter: DeletionWires.authGuardAfter).map) == TaskCanonicalV1.data(["schemaVersion": 1, "kind": "ACCOUNT_DELETION_GUARDING", "authGuardAfter": DeletionWires.authGuardAfter, "copy": "Deletion is in progress. Protected copies clear by \(date)."]))
+        #expect(AccountDeletionDateFormatter.string(from: "2026-09-13") == nil)
+    }
+
     // MARK: - Epoch stamps (I4, stamps only; manifest §5:540-546). Cleanup belongs to S3.
 
     @Test func dailyDoseLocalStoreWritesAStampedV2EnvelopeAndCASesRevision() async throws {
@@ -1952,6 +2282,115 @@ func link(_ context: PurgeProviderContextV1) -> TerminalDeletionLinkV1 {
     TerminalDeletionLinkV1(deletionOperationId: context.deletionOperationId, deletionProofSHA256: context.deletionProofSHA256)
 }
 
+/// Scripted `AccountDeletionRemoteProviding`: per-action outcome queues, a per-action fallback, one holdable action.
+final class ScriptedDeletionRemote: AccountDeletionRemoteProviding, @unchecked Sendable {
+    typealias Outcome = Result<AccountDeletionRemoteResultV1, AccountDeletionRemoteError>
+    private let lock = NSLock()
+    private var queues: [String: [Outcome]] = [:]
+    private var fallbacks: [String: Outcome] = [:]
+    private var recorded: [AccountDeletionRequestV1] = []
+    private var heldAction: String?
+    private var continuation: CheckedContinuation<Void, Never>?
+    var requests: [AccountDeletionRequestV1] { lock.withLock { recorded } }
+    var actions: [String] { requests.map(\.action) }
+    func script(_ action: String, _ outcomes: Outcome...) { lock.withLock { queues[action, default: []].append(contentsOf: outcomes) } }
+    func always(_ action: String, _ outcome: Outcome) { lock.withLock { fallbacks[action] = outcome } }
+    func hold(_ action: String) { lock.withLock { heldAction = action } }
+    var isHolding: Bool { lock.withLock { continuation != nil } }
+    func release() {
+        let held: CheckedContinuation<Void, Never>? = lock.withLock { defer { continuation = nil; heldAction = nil }; return continuation }
+        held?.resume()
+    }
+    func perform(_ request: AccountDeletionRequestV1) async throws -> AccountDeletionRemoteResultV1 {
+        let shouldHold: Bool = lock.withLock { recorded.append(request); return heldAction == request.action }
+        if shouldHold { await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in lock.withLock { continuation = c } } }
+        let outcome: Outcome? = lock.withLock {
+            if var queue = queues[request.action], !queue.isEmpty { let next = queue.removeFirst(); queues[request.action] = queue; return next }
+            return fallbacks[request.action]
+        }
+        switch outcome {
+        case let .success(value)?: return value
+        case let .failure(error)?: throw error
+        case nil: throw AccountDeletionRemoteError.protocolAmbiguity
+        }
+    }
+}
+
+enum DeletionWires {
+    static let startedAt = "2026-09-06T11:59:00.000Z"
+    static let dataDeletedAt = "2026-09-06T11:59:30.000Z"
+    static let authGuardAfter = "2026-09-13T11:59:30.000Z"
+    static func dataFinal(_ operationId: String, replayed: Bool = false) -> AccountDeletionRemoteResultV1 {
+        .dataFinal(AccountDeletionDataFinalWireV1(operationId: operationId, authorityKind: .member, startedAt: startedAt, dataDeletedAt: dataDeletedAt, replayed: replayed))
+    }
+    static func guarding(_ operationId: String) -> AccountDeletionRemoteResultV1 {
+        .authGuarding(AccountDeletionAuthGuardingWireV1(operationId: operationId, authorityKind: .member, startedAt: startedAt, dataDeletedAt: dataDeletedAt, authAbsenceObservedAt: dataDeletedAt, authGuardAfter: authGuardAfter, replayed: false))
+    }
+    static func deleted(_ operationId: String) -> AccountDeletionRemoteResultV1 {
+        .accountDeleted(AccountDeletionAccountDeletedWireV1(operationId: operationId, authorityKind: .member, startedAt: startedAt, dataDeletedAt: dataDeletedAt, authAbsenceObservedAt: dataDeletedAt, authGuardAfter: authGuardAfter, authGuardCompletedAt: authGuardAfter, accountDeletedAt: authGuardAfter, replayed: true))
+    }
+}
+
+final class GateSpy: AccountDeletionGateControlling, @unchecked Sendable {
+    private let lock = NSLock()
+    private var gateLog: [AccountDeletionGate] = []
+    private var terminalLog: [TerminalPresentationKind?] = []
+    var gates: [AccountDeletionGate] { lock.withLock { gateLog } }
+    var terminals: [TerminalPresentationKind?] { lock.withLock { terminalLog } }
+    func setGate(_ gate: AccountDeletionGate) async { lock.withLock { gateLog.append(gate) } }
+    func setPendingTerminalPresentation(_ kind: TerminalPresentationKind?) async { lock.withLock { terminalLog.append(kind) } }
+}
+
+struct DispositionsStub: AccountDeletionProviderContextProviding {
+    let value: AccountDeletionProviderDispositions
+    func dispositions(expectedUID: String) async -> AccountDeletionProviderDispositions { value }
+}
+
+/// One coordinator over seam fakes: scripted remote, recording owners, gate spy, isolated defaults, temp directory.
+struct DeletionHarness {
+    let coordinator: DurableStoreRecoveryCoordinator
+    let remote: ScriptedDeletionRemote
+    let gate: GateSpy
+    let owners: RecordingPurgeOwners
+    let auth: SignedAuthStub
+    let clock: ResetClockStub
+    let telemetry: TelemetryStub
+    let purge: LocalPrivacyPurgeCoordinator
+    let completion: AccountDeletionCompletionPresentation
+    let directory: URL
+    var intentURL: URL { directory.appendingPathComponent(AccountDeletionIntentStore.fileName) }
+    func intentBytes() -> Data? { try? Data(contentsOf: intentURL) }
+}
+
+func makeDeletionHarness(auth: SignedAuthAuthority, dispositions: AccountDeletionProviderDispositions = AccountDeletionProviderDispositions(appleRevocation: .notRequired, googleRevocation: .sdkDisconnectRequired, googleProviderUid: "g1")) throws -> DeletionHarness {
+    let directory = try temporaryDirectory()
+    let remote = ScriptedDeletionRemote()
+    let gate = GateSpy()
+    let owners = RecordingPurgeOwners()
+    let authStub = SignedAuthStub(auth)
+    let clock = ResetClockStub()
+    let telemetry = TelemetryStub()
+    let purge = LocalPrivacyPurgeCoordinator(directory: directory, clock: clock, owners: owners.owners, defaults: try isolatedDefaults(), currentUID: UIDProbe(nil), telemetry: telemetry)
+    let completion = AccountDeletionCompletionPresentation(directory: directory, clock: clock, consume: { _ in true }, opener: { _ in true })
+    let coordinator = DurableStoreRecoveryCoordinator(DurableStoreRecoveryCoordinator.Dependencies(directory: directory, clock: clock, auth: authStub, remote: remote, providerContext: DispositionsStub(value: dispositions), purge: purge, completion: completion, gate: gate))
+    return DeletionHarness(coordinator: coordinator, remote: remote, gate: gate, owners: owners, auth: authStub, clock: clock, telemetry: telemetry, purge: purge, completion: completion, directory: directory)
+}
+
+let signedInA = SignedAuthAuthority.signedIn(SignedAuthTuple(uid: "A", authEpochUUID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", credentialRevision: 3))
+
+func exactIntent(phase: AccountDeletionPhase, staged: AccountDeletionStagedRoot? = nil, detach: AccountDeletionDetachReason? = nil) -> AccountDeletionIntentV1 {
+    let authority = [AccountDeletionPhase.dataConfirmed, .purging, .authFinalizeDispatched, .guarding].contains(phase) || (phase == .localDetaching && staged != nil)
+    let allAcks = [AccountDeletionPhase.authFinalizeDispatched, .guarding, .completed, .localCleared].contains(phase)
+    return AccountDeletionIntentV1(
+        uid: "A", authEpochUUID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", credentialRevision: 3,
+        operationId: "adel1_11111111-1111-4111-8111-111111111111", proofNonce: String(repeating: "x", count: 43),
+        dispositions: AccountDeletionProviderDispositions(appleRevocation: .notRequired, googleRevocation: .sdkDisconnectRequired, googleProviderUid: "g1"),
+        phase: phase, purpose: phase == .prepared ? .confirmedBegin : nil, authorityKind: authority ? .member : nil, detachReason: detach, stagedRoot: staged,
+        startedAt: authority ? DeletionWires.startedAt : nil, dataDeletedAt: authority ? DeletionWires.dataDeletedAt : nil,
+        authGuardAfter: phase == .guarding || staged == .authGuarding ? DeletionWires.authGuardAfter : nil,
+        acks: allAcks ? PurgeOwner.order : [], createdAt: "2026-09-06T12:00:00.000Z", updatedAt: "2026-09-06T12:00:00.000Z")
+}
+
 /// Synchronous UID snapshot double for `CurrentFirebaseUIDProviding`.
 final class UIDProbe: CurrentFirebaseUIDProviding, @unchecked Sendable {
     private let lock = NSLock()
@@ -2033,7 +2472,13 @@ final class SignedAuthStub: AuthAuthorityProviding, @unchecked Sendable {
         }
     }
     func forceRefresh(expected: SignedAuthTuple) async -> AuthRefreshOutcome { .notCommitted }
-    func confirmAccountDeleted(expected: AuthIdentity) async -> AccountDeletionAuthObservation { .notProven }
+    private var deletionObservation: AccountDeletionAuthObservation = .notProven
+    private(set) var deletionChecks: [AuthIdentity] = []
+    /// S4: what `confirmAccountDeleted` answers (default `.notProven`, the S1/S3 behavior).
+    func setDeletionObservation(_ value: AccountDeletionAuthObservation) { lock.withLock { deletionObservation = value } }
+    func confirmAccountDeleted(expected: AuthIdentity) async -> AccountDeletionAuthObservation {
+        lock.withLock { deletionChecks.append(expected); return deletionObservation }
+    }
 }
 
 final class EpochStub: ResetEpochAuthorityProviding, @unchecked Sendable {
