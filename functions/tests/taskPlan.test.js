@@ -4,6 +4,9 @@ const assert = require("node:assert/strict");
 const test = require("node:test");
 const { Timestamp } = require("firebase-admin/firestore");
 
+// The legacy reset families run under the compat protocol mode (v9 §6.4:697).
+process.env.PHASE2_RESET_PROTOCOL_MODE = "compat";
+
 const {
   canonicalAmendmentId,
   deleteResetPage,
@@ -806,4 +809,290 @@ test("operation fingerprints are stable and canonical amendment IDs separate rev
     operationFingerprint({ action: "x", at: NOW }),
     operationFingerprint({ action: "x", at: Timestamp.fromDate(NOW) })
   );
+});
+
+// ===========================================================================
+// S2 (briefs/S2_BRIEF.md) — Phase 2 reset protocol, closed discriminator, root fence.
+// These families use the shared in-memory Firestore; the legacy tests above keep their own.
+// ===========================================================================
+
+const { execFileSync } = require("node:child_process");
+const path = require("node:path");
+const { randomUUID: uuid } = require("node:crypto");
+const { fakeFirestore: sharedFirestore, FakeClock } = require("./support/fakeFirestore");
+const fence = require("../accountDeletionFence");
+
+const {
+  RESET_PROTOCOL_MODES,
+  resetCanonicalId,
+  resetRequestFingerprint,
+  activeMoveEventIdFor,
+  projectResetMarker,
+  reconstructFinalReceipt
+} = require("../taskPlan");
+
+const P2_UID = "u2";
+const P2_NOW = new Date("2026-09-06T12:00:00.000Z");
+
+function p2Request(data, uid = P2_UID) {
+  return { auth: { uid }, data };
+}
+
+function alias() { return `rsa1_${uuid()}`; }
+
+// `mode: null` means the deployment environment carries no PHASE2_RESET_PROTOCOL_MODE.
+async function p2Call(db, data, { now = P2_NOW, mode = "compat", uid = P2_UID } = {}) {
+  return handleTaskPlanRequest(p2Request(data, uid), () => db, now, { resetProtocolMode: mode === null ? undefined : mode });
+}
+
+function expectTaskPlanError(fn, code, details) {
+  return assert.rejects(fn, (error) => {
+    assert.equal(error.code, code, `${error.code}: ${error.message} ${JSON.stringify(error.details)}`);
+    if (details !== undefined) assert.deepEqual(error.details, details);
+    return true;
+  });
+}
+
+test("closed discriminator: reserved rsa1_/rso1_/rlm1_ IDs reject on every client surface, legacy raw validation is unchanged, and Phase 2 reset requests are exact", async () => {
+  const db = sharedFirestore({ docs: { "users/u2": { taskGenerationEpoch: 0 }, "users/u2/tasks/t": { status: "Upcoming" } } });
+  for (const action of ["supersede", "confirmAmendment", "undoConfirmation", "reopen"]) {
+    for (const reserved of [`rsa1_${uuid()}`, `rso1_${"a".repeat(40)}`, `rlm1_${"b".repeat(40)}`]) {
+      await expectTaskPlanError(() => p2Call(db, { action, taskId: "t", operationId: reserved, reason: "r" }), "invalid-argument", { schemaVersion: 1, reason: "REQUEST_INVALID", field: "operationId" });
+    }
+  }
+  for (const reserved of [` rlm1_${"b".repeat(40)} `, `rso1_${"a".repeat(40)}`]) {
+    await expectTaskPlanError(() => p2Call(db, { action: "resetAllTasks", operationId: reserved, reason: "retake_assessment" }), "invalid-argument", { schemaVersion: 1, reason: "REQUEST_INVALID", field: "operationId" });
+    await expectTaskPlanError(() => p2Call(db, { action: "finalizeTaskReset", operationId: reserved, reason: "retake_assessment" }), "invalid-argument", { schemaVersion: 1, reason: "REQUEST_INVALID", field: "operationId" });
+  }
+  // legacy raw validation behavior is retained: a message-only invalid-argument without the Phase 2 details map
+  await assert.rejects(p2Call(db, { action: "resetAllTasks", operationId: "legacy-op", reason: "other" }), (e) => e.code === "invalid-argument" && e.details === undefined);
+  // Phase 2 reset requests: exact members
+  const good = { action: "resetAllTasks", operationId: alias(), reason: "retake_assessment", expectedTaskGenerationEpoch: 0 };
+  const bad = [
+    [{ ...good, extra: 1 }, "request"],
+    [{ ...good, operationId: "legacy-op" }, "operationId"],
+    [{ ...good, reason: "other" }, "reason"],
+    [{ ...good, expectedTaskGenerationEpoch: -1 }, "expectedTaskGenerationEpoch"],
+    [{ ...good, expectedTaskGenerationEpoch: 1.5 }, "expectedTaskGenerationEpoch"],
+    [{ ...good, expectedTaskGenerationEpoch: Number.MAX_SAFE_INTEGER }, "expectedTaskGenerationEpoch"],
+    [{ ...good, taskId: "t" }, "request"]
+  ];
+  for (const [data, field] of bad) {
+    await expectTaskPlanError(() => p2Call(db, data), "invalid-argument", { schemaVersion: 1, reason: "REQUEST_INVALID", field });
+  }
+  assert.equal(db.__writes.length, 0);
+  assert.deepEqual(RESET_PROTOCOL_MODES, ["compat", "phase2_required"]);
+});
+
+test("PHASE2_RESET_PROTOCOL_MODE: absent makes every reset handler platform-unavailable, unknown fails module initialization, compat admits raw legacy resets, and required refuses fresh raw resets while an existing exact legacy operation may finish", async () => {
+  const node = process.execPath;
+  const modulePath = path.join(__dirname, "..", "taskPlan.js");
+  assert.throws(() => execFileSync(node, ["-e", `process.env.PHASE2_RESET_PROTOCOL_MODE='weird'; require(${JSON.stringify(modulePath)})`], { stdio: "pipe" }), /PHASE2_RESET_PROTOCOL_MODE/);
+  execFileSync(node, ["-e", `process.env.PHASE2_RESET_PROTOCOL_MODE='compat'; require(${JSON.stringify(modulePath)})`], { stdio: "pipe" });
+  execFileSync(node, ["-e", `delete process.env.PHASE2_RESET_PROTOCOL_MODE; require(${JSON.stringify(modulePath)})`], { stdio: "pipe" });
+
+  const legacyRequest = { action: "resetAllTasks", operationId: "legacy-op", reason: "retake_assessment" };
+  const fresh = () => sharedFirestore({ docs: { "users/u2": { taskGenerationEpoch: 0 }, "users/u2/tasks/t": { status: "Upcoming" } } });
+  const absent = fresh();
+  await assert.rejects(p2Call(absent, legacyRequest, { mode: null }), (e) => e.code === "unavailable" && e.details === undefined);
+  await assert.rejects(p2Call(absent, { action: "finalizeTaskReset", operationId: "legacy-op", reason: "retake_assessment" }, { mode: null }), (e) => e.code === "unavailable");
+  assert.equal(absent.__writes.length, 0);
+
+  const compat = fresh();
+  assert.deepEqual(await p2Call(compat, legacyRequest, { mode: "compat" }), { reset: true, deletedCount: 1, replayed: false });
+  assert.equal(compat.__docs.get("users/u2").taskReset.state, "awaiting_local_reset");
+
+  const required = fresh();
+  await expectTaskPlanError(() => p2Call(required, legacyRequest, { mode: "phase2_required" }), "failed-precondition", { schemaVersion: 1, reason: "CLIENT_UPGRADE_REQUIRED", requiredProtocol: "phase2" });
+  assert.equal(required.__writes.length, 0);
+  // an existing exact legacy pair may finish under required mode
+  const inFlight = sharedFirestore({ docs: {
+    "users/u2": { taskGenerationEpoch: 0, taskReset: { operationId: "legacy-op", state: "deleting", deletedCount: 0, workerLease: null, startedAt: Timestamp.fromDate(P2_NOW) } },
+    "users/u2/taskPlanOperations/legacy-op": { kind: "reset", fingerprint: resetFingerprint({ reason: "retake_assessment" }), deletedCount: 0, state: "deleting", at: Timestamp.fromDate(P2_NOW) },
+    "users/u2/tasks/t": { status: "Upcoming" }
+  } });
+  assert.deepEqual(await p2Call(inFlight, legacyRequest, { mode: "phase2_required" }), { reset: true, deletedCount: 1, replayed: false });
+  assert.deepEqual(await p2Call(inFlight, { action: "finalizeTaskReset", operationId: "legacy-op", reason: "retake_assessment" }, { mode: "phase2_required" }), { reset: true, deletedCount: 1, replayed: false });
+});
+
+function phase2Seed(extra = {}) {
+  return sharedFirestore({ docs: {
+    "users/u2": { name: "A", taskGenerationEpoch: 3 },
+    "users/u2/tasks/t1": { status: "Upcoming" },
+    "users/u2/tasks/t2": { status: "Done" },
+    "users/u2/notificationIntents/n1": { kind: "TASK_RESUME" },
+    "users/u2/taskDeadlineEvidence/d1": { at: 1 },
+    "users/u2/taskPlanOperations/pcs1_snapshot": { kind: "CONFIRMATION_SNAPSHOT", snapshot: {} },
+    "users/u2/taskPlanOperations/op1_ordinary": { kind: "TASK_OPERATION", state: "COMMITTED" },
+    "users/u2/taskPlanOperations/legacy-old": { kind: "operation", fingerprint: "x" },
+    "users/u2/taskPlanOperations/pcs1_lower": { kind: "confirmation_snapshot" },
+    "users/u2/user_assessments/a": { keep: true },
+    "users/u3/tasks/t": { keep: true },
+    ...extra
+  } });
+}
+
+test("Phase 2 resetAllTasks: deterministic rso1_ record and Reconciled 9 marker, four-target deletion with exact counts, epoch rotation, and reset_progress receipts", async () => {
+  const db = phase2Seed();
+  const first = alias();
+  const e = 3;
+  const canonical = resetCanonicalId(P2_UID, e + 1);
+  assert.equal(canonical, `rso1_${fence.first40(fence.sha256Hex(fence.TaskCanonicalV1({ account_uid: P2_UID, task_generation_epoch: 4 })))}`);
+  const fingerprint = resetRequestFingerprint(e);
+  assert.equal(fingerprint, `reset1_${fence.sha256Hex(fence.TaskCanonicalV1({ kind: "reset", reason: "retake_assessment", expected_task_generation_epoch: 3 }))}`);
+  assert.equal(activeMoveEventIdFor(P2_UID, 4, canonical), `me1_${fence.first40(fence.sha256Hex(fence.TaskCanonicalV1({ uid: P2_UID, new_task_generation_epoch: 4, reset_operation_id: canonical })))}`);
+
+  const progress = await p2Call(db, { action: "resetAllTasks", operationId: first, reason: "retake_assessment", expectedTaskGenerationEpoch: e });
+  assert.deepEqual(progress, {
+    schemaVersion: 1, kind: "reset_progress", operationId: canonical, replayed: false, accountUid: P2_UID,
+    expectedTaskGenerationEpoch: 3, taskGenerationEpoch: 4, activeMoveEventId: activeMoveEventIdFor(P2_UID, 4, canonical),
+    deletedCount: 5, deletedCounts: { tasks: 2, notificationIntents: 1, taskDeadlineEvidence: 1, confirmationSnapshots: 1 },
+    state: "awaiting_local_reset"
+  });
+  const root = db.__docs.get("users/u2");
+  assert.equal(root.taskGenerationEpoch, 4);
+  assert.equal(root.activeMoveEventId, progress.activeMoveEventId);
+  assert.equal(root.name, "A");
+  const record = db.__docs.get(`users/u2/taskPlanOperations/${canonical}`);
+  assert.deepEqual(Object.keys(record).sort(), ["account_uid", "active_move_event_id", "aliases", "awaiting_local_reset_at", "created_at", "deleted_count", "deleted_counts", "expected_task_generation_epoch", "kind", "operation_id", "reason", "request_fingerprint", "schema_version", "state", "target_index", "task_generation_epoch", "updated_at"]);
+  assert.deepEqual([record.schema_version, record.kind, record.state, record.account_uid, record.operation_id, record.aliases, record.reason, record.request_fingerprint, record.expected_task_generation_epoch, record.task_generation_epoch, record.target_index, record.deleted_count], [1, "RESET_OPERATION", "awaiting_local_reset", P2_UID, canonical, [first], "retake_assessment", fingerprint, 3, 4, 4, 5]);
+  assert.deepEqual(record.deleted_counts, { tasks: 2, notification_intents: 1, task_deadline_evidence: 1, confirmation_snapshots: 1 });
+  const marker = root.taskReset;
+  assert.deepEqual(marker, projectResetMarker(record));
+  assert.deepEqual(Object.keys(marker).sort(), ["activeMoveEventId", "awaitingLocalResetAt", "createdAt", "deletedCount", "deletedCounts", "expectedTaskGenerationEpoch", "kind", "operationId", "requestFingerprint", "schemaVersion", "state", "targetIndex", "taskGenerationEpoch", "updatedAt"]);
+  assert.equal(marker.kind, "reset");
+  assert.equal(marker.targetIndex, 4);
+  assert.ok(marker.createdAt.toMillis() <= marker.awaitingLocalResetAt.toMillis() && marker.awaitingLocalResetAt.toMillis() <= marker.updatedAt.toMillis());
+  // only the four targets are gone; ordinary/legacy/lowercase records, the reset record, assessments, and other users survive
+  const remaining = [...db.__docs.keys()].filter((p) => p.startsWith("users/u2/")).sort();
+  assert.deepEqual(remaining, [`users/u2/taskPlanOperations/${canonical}`, "users/u2/taskPlanOperations/legacy-old", "users/u2/taskPlanOperations/op1_ordinary", "users/u2/taskPlanOperations/pcs1_lower", "users/u2/user_assessments/a"].sort());
+  assert.ok(db.__docs.has("users/u3/tasks/t"));
+
+  // replay with the same alias: byte-identical progress with replayed:true; a second alias appends in first-seen order
+  assert.deepEqual(await p2Call(db, { action: "resetAllTasks", operationId: first, reason: "retake_assessment", expectedTaskGenerationEpoch: e }), { ...progress, replayed: true });
+  const second = alias();
+  assert.deepEqual(await p2Call(db, { action: "resetAllTasks", operationId: second, reason: "retake_assessment", expectedTaskGenerationEpoch: e }), { ...progress, replayed: true });
+  assert.deepEqual(db.__docs.get(`users/u2/taskPlanOperations/${canonical}`).aliases, [first, second]);
+  // aliases cap at 16; the 17th resolves without being persisted
+  for (let i = 0; i < 14; i += 1) await p2Call(db, { action: "resetAllTasks", operationId: alias(), reason: "retake_assessment", expectedTaskGenerationEpoch: e });
+  assert.equal(db.__docs.get(`users/u2/taskPlanOperations/${canonical}`).aliases.length, 16);
+  const seventeenth = alias();
+  assert.equal((await p2Call(db, { action: "resetAllTasks", operationId: seventeenth, reason: "retake_assessment", expectedTaskGenerationEpoch: e })).operationId, canonical);
+  assert.equal(db.__docs.get(`users/u2/taskPlanOperations/${canonical}`).aliases.length, 16);
+  // an occupied alias path fails closed
+  const occupied = alias();
+  db.__docs.set(`users/u2/taskPlanOperations/${occupied}`, { kind: "operation" });
+  await expectTaskPlanError(() => p2Call(db, { action: "resetAllTasks", operationId: occupied, reason: "retake_assessment", expectedTaskGenerationEpoch: e }), "failed-precondition", { schemaVersion: 1, reason: "OPERATION_REUSED", operationId: occupied });
+  // a losing scene retaining e addresses the same record even though the root is now 4; the next intentional reset addresses r+1
+  assert.equal((await p2Call(db, { action: "resetAllTasks", operationId: alias(), reason: "retake_assessment", expectedTaskGenerationEpoch: 3 })).operationId, canonical);
+});
+
+test("Phase 2 reset refusals: STALE_STATE for a root epoch other than e, RESET_ACTIVE for a live marker of another record, LEGACY_RESET_MIGRATION_REQUIRED beside a legacy marker, malformed canonical path fails closed", async () => {
+  const stale = phase2Seed();
+  await expectTaskPlanError(() => p2Call(stale, { action: "resetAllTasks", operationId: alias(), reason: "retake_assessment", expectedTaskGenerationEpoch: 2 }), "failed-precondition", { schemaVersion: 1, reason: "STALE_STATE" });
+  assert.equal(stale.__writes.length, 0);
+  await expectTaskPlanError(() => p2Call(stale, { action: "finalizeTaskReset", operationId: alias(), reason: "retake_assessment", expectedTaskGenerationEpoch: 3 }), "failed-precondition", { schemaVersion: 1, reason: "STALE_STATE" });
+
+  const active = phase2Seed();
+  const first = alias();
+  await p2Call(active, { action: "resetAllTasks", operationId: first, reason: "retake_assessment", expectedTaskGenerationEpoch: 3 });
+  const canonical = resetCanonicalId(P2_UID, 4);
+  await expectTaskPlanError(() => p2Call(active, { action: "resetAllTasks", operationId: alias(), reason: "retake_assessment", expectedTaskGenerationEpoch: 4 }), "failed-precondition", { schemaVersion: 1, reason: "RESET_ACTIVE", operationId: canonical, expectedTaskGenerationEpoch: 3 });
+
+  const legacy = phase2Seed({ "users/u2": { taskGenerationEpoch: 3, taskReset: { operationId: "legacy-op", state: "deleting", deletedCount: 0, workerLease: null, startedAt: Timestamp.fromDate(P2_NOW) } } });
+  await expectTaskPlanError(() => p2Call(legacy, { action: "resetAllTasks", operationId: alias(), reason: "retake_assessment", expectedTaskGenerationEpoch: 3 }), "failed-precondition", { schemaVersion: 1, reason: "LEGACY_RESET_MIGRATION_REQUIRED", legacyOperationId: "legacy-op" });
+  assert.equal(legacy.__writes.length, 0);
+
+  const malformed = phase2Seed({ [`users/u2/taskPlanOperations/${resetCanonicalId(P2_UID, 4)}`]: { kind: "RESET_OPERATION", state: "deleting" } });
+  await expectTaskPlanError(() => p2Call(malformed, { action: "resetAllTasks", operationId: alias(), reason: "retake_assessment", expectedTaskGenerationEpoch: 3 }), "failed-precondition", { schemaVersion: 1, reason: "OPERATION_REUSED", operationId: resetCanonicalId(P2_UID, 4) });
+  assert.equal(malformed.__writes.length, 0);
+  // marker absent beside an active record is malformed (fails closed with zero writes)
+  const orphan = phase2Seed();
+  await p2Call(orphan, { action: "resetAllTasks", operationId: alias(), reason: "retake_assessment", expectedTaskGenerationEpoch: 3 });
+  delete orphan.__docs.get("users/u2").taskReset;
+  const before = orphan.__writes.length;
+  await expectTaskPlanError(() => p2Call(orphan, { action: "resetAllTasks", operationId: alias(), reason: "retake_assessment", expectedTaskGenerationEpoch: 3 }), "failed-precondition", { schemaVersion: 1, reason: "OPERATION_REUSED", operationId: resetCanonicalId(P2_UID, 4) });
+  assert.equal(orphan.__writes.length, before);
+});
+
+test("Phase 2 finalizeTaskReset: tombstone replaces the active record and deletes the marker before the first final receipt; replays verify the digest; drift fails closed", async () => {
+  const db = phase2Seed();
+  const first = alias();
+  const canonical = resetCanonicalId(P2_UID, 4);
+  await expectTaskPlanError(() => p2Call(db, { action: "finalizeTaskReset", operationId: first, reason: "retake_assessment", expectedTaskGenerationEpoch: 3 }), "failed-precondition", { schemaVersion: 1, reason: "STALE_STATE" });
+  const progress = await p2Call(db, { action: "resetAllTasks", operationId: first, reason: "retake_assessment", expectedTaskGenerationEpoch: 3 });
+  const later = new Date(P2_NOW.getTime() + 60_000);
+  const final = await p2Call(db, { action: "finalizeTaskReset", operationId: first, reason: "retake_assessment", expectedTaskGenerationEpoch: 3 }, { now: later });
+  assert.deepEqual(final, {
+    schemaVersion: 1, kind: "reset_final", operationId: canonical, replayed: false, accountUid: P2_UID,
+    expectedTaskGenerationEpoch: 3, taskGenerationEpoch: 4, activeMoveEventId: progress.activeMoveEventId,
+    deletedCount: 5, deletedCounts: progress.deletedCounts, state: "finalized"
+  });
+  assert.equal("taskReset" in db.__docs.get("users/u2"), false);
+  const tombstone = db.__docs.get(`users/u2/taskPlanOperations/${canonical}`);
+  assert.deepEqual(Object.keys(tombstone).sort(), ["account_uid", "active_move_event_id", "aliases", "created_at", "deleted_count", "deleted_counts", "expected_task_generation_epoch", "final_receipt_digest", "finalized_at", "kind", "operation_id", "reason", "request_fingerprint", "schema_version", "state", "task_generation_epoch"]);
+  assert.equal(tombstone.state, "finalized");
+  assert.equal(tombstone.final_receipt_digest, fence.sha256Hex(fence.TaskCanonicalV1(final)));
+  assert.equal(tombstone.finalized_at.toMillis(), later.getTime());
+  assert.deepEqual(reconstructFinalReceipt(tombstone), final);
+  // replays through either action: same bytes with replayed:true; a new alias appends on the tombstone without touching other members
+  assert.deepEqual(await p2Call(db, { action: "finalizeTaskReset", operationId: first, reason: "retake_assessment", expectedTaskGenerationEpoch: 3 }), { ...final, replayed: true });
+  const other = alias();
+  assert.deepEqual(await p2Call(db, { action: "resetAllTasks", operationId: other, reason: "retake_assessment", expectedTaskGenerationEpoch: 3 }), { ...final, replayed: true });
+  const after = db.__docs.get(`users/u2/taskPlanOperations/${canonical}`);
+  assert.deepEqual(after.aliases, [first, other]);
+  assert.deepEqual({ ...after, aliases: null }, { ...tombstone, aliases: null });
+  // digest tamper fails closed
+  after.final_receipt_digest = fence.sha256Hex("tampered");
+  await expectTaskPlanError(() => p2Call(db, { action: "finalizeTaskReset", operationId: first, reason: "retake_assessment", expectedTaskGenerationEpoch: 3 }), "failed-precondition", { schemaVersion: 1, reason: "OPERATION_REUSED", operationId: canonical });
+  // finalize before ready: an active deleting record is STALE_STATE with zero destructive mutation
+  const deleting = phase2Seed();
+  const a2 = alias();
+  await p2Call(deleting, { action: "resetAllTasks", operationId: a2, reason: "retake_assessment", expectedTaskGenerationEpoch: 3 });
+  const rec = deleting.__docs.get(`users/u2/taskPlanOperations/${resetCanonicalId(P2_UID, 4)}`);
+  rec.state = "deleting"; rec.target_index = 2; delete rec.awaiting_local_reset_at;
+  deleting.__docs.get("users/u2").taskReset = projectResetMarker(rec);
+  const writes = deleting.__writes.length;
+  await expectTaskPlanError(() => p2Call(deleting, { action: "finalizeTaskReset", operationId: a2, reason: "retake_assessment", expectedTaskGenerationEpoch: 3 }), "failed-precondition", { schemaVersion: 1, reason: "STALE_STATE" });
+  assert.equal(deleting.__writes.length, writes);
+});
+
+test("Phase 2 reset resumes across a lost response: a deleting record with a cursor continues from the same target, counts never double, and a live foreign lease is unavailable", async () => {
+  const clock = new FakeClock("2026-09-06T12:00:00.000Z");
+  const db = phase2Seed();
+  const first = alias();
+  const canonical = resetCanonicalId(P2_UID, 4);
+  // crash after the first deleted document: simulate by driving with a budget of one document
+  await assert.rejects(handleTaskPlanRequest(p2Request({ action: "resetAllTasks", operationId: first, reason: "retake_assessment", expectedTaskGenerationEpoch: 3 }), () => db, P2_NOW, { resetProtocolMode: "compat", resetDocumentBudget: 1 }), (e) => e.code === "unavailable");
+  const partial = db.__docs.get(`users/u2/taskPlanOperations/${canonical}`);
+  assert.equal(partial.state, "deleting");
+  assert.equal(partial.deleted_count, 1);
+  assert.equal(partial.target_index, 0);
+  assert.ok(partial.lease && partial.lease.owner_token && partial.lease.expires_at);
+  assert.deepEqual(db.__docs.get("users/u2").taskReset, projectResetMarker(partial));
+  // a live foreign lease refuses; after expiry the resume proceeds and the total is exact
+  await assert.rejects(p2Call(db, { action: "resetAllTasks", operationId: first, reason: "retake_assessment", expectedTaskGenerationEpoch: 3 }), (e) => e.code === "unavailable");
+  const resumed = await p2Call(db, { action: "resetAllTasks", operationId: first, reason: "retake_assessment", expectedTaskGenerationEpoch: 3 }, { now: new Date(P2_NOW.getTime() + 10 * 60_000 + 1) });
+  assert.equal(resumed.state, "awaiting_local_reset");
+  assert.deepEqual(resumed.deletedCounts, { tasks: 2, notificationIntents: 1, taskDeadlineEvidence: 1, confirmationSnapshots: 1 });
+  assert.equal(resumed.deletedCount, 5);
+  void clock;
+});
+
+test("root fence: every committing branch of taskPlan.js reads the owner root and refuses when accountDeletion is present", async () => {
+  const marker = { schemaVersion: 1, state: "DELETING", capabilities: [{ operationId: `adel1_${uuid()}`, proofSHA256: "a".repeat(64) }], startedAt: Timestamp.fromDate(P2_NOW), storageGuardAfter: Timestamp.fromMillis(P2_NOW.getTime() + 604800_000) };
+  const fenced = () => sharedFirestore({ docs: { "users/u2": { taskGenerationEpoch: 3, accountDeletion: marker }, "users/u2/tasks/t": { status: "Upcoming" } } });
+  const requests = [
+    { action: "supersede", taskId: "t", operationId: "op-1", reason: "r" },
+    { action: "reopen", taskId: "t", operationId: "op-2", reason: "r" },
+    { action: "resetAllTasks", operationId: "legacy-op", reason: "retake_assessment" },
+    { action: "finalizeTaskReset", operationId: "legacy-op", reason: "retake_assessment" },
+    { action: "resetAllTasks", operationId: alias(), reason: "retake_assessment", expectedTaskGenerationEpoch: 3 },
+    { action: "finalizeTaskReset", operationId: alias(), reason: "retake_assessment", expectedTaskGenerationEpoch: 3 }
+  ];
+  for (const data of requests) {
+    const db = fenced();
+    await expectTaskPlanError(() => p2Call(db, data), "failed-precondition", { schemaVersion: 1, reason: "ACCOUNT_DELETION_FENCED" });
+    assert.equal(db.__writes.length, 0, data.action);
+  }
 });

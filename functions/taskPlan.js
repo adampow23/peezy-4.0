@@ -3,6 +3,8 @@
 const { randomUUID, createHash } = require("node:crypto");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const admin = require("firebase-admin");
+const { Timestamp } = require("firebase-admin/firestore");
+const fence = require("./accountDeletionFence");
 const {
   buildCompletedContract,
   buildTerminalContract,
@@ -32,7 +34,16 @@ const MAX_HISTORY = 50;
 const LEASE_MS = 10 * 60 * 1000;
 const PAGE_SIZE = 400;
 
-class TaskPlanValidationError extends Error {}
+class TaskPlanValidationError extends Error {
+  constructor(message, details) {
+    super(message);
+    this.details = details;
+  }
+}
+
+function failRequestInvalid(field) {
+  throw new TaskPlanValidationError(`${field} is invalid`, { schemaVersion: 1, reason: "REQUEST_INVALID", field });
+}
 
 function sha256(value) {
   return createHash("sha256").update(value, "utf8").digest("hex");
@@ -132,12 +143,26 @@ function cleanReplacement(value, now) {
   };
 }
 
+const PHASE2_RESET_REQUEST_KEYS = ["action", "operationId", "reason", "expectedTaskGenerationEpoch"];
+
+function validatePhase2ResetRequest(input) {
+  if (Object.keys(input).some((key) => !PHASE2_RESET_REQUEST_KEYS.includes(key))) failRequestInvalid("request");
+  if (typeof input.operationId !== "string" || !RESET_ALIAS_RE.test(input.operationId)) failRequestInvalid("operationId");
+  if (input.reason !== RESET_REASON) failRequestInvalid("reason");
+  const e = input.expectedTaskGenerationEpoch;
+  if (!Number.isSafeInteger(e) || e < 0 || !Number.isSafeInteger(e + 1)) failRequestInvalid("expectedTaskGenerationEpoch");
+  return { action: input.action, operationId: input.operationId, reason: input.reason, expectedTaskGenerationEpoch: e };
+}
+
 function validateTaskPlanRequest(data, now = new Date()) {
   const input = data || {};
   if (!ACTIONS.has(input.action)) failValidation("action is not supported");
-  const operationId = cleanDocId(input.operationId, "operationId");
-  const reason = cleanReason(input.reason);
   const reset = input.action === "resetAllTasks" || input.action === "finalizeTaskReset";
+  if (reset && input.expectedTaskGenerationEpoch !== undefined) return validatePhase2ResetRequest(input);
+  const operationId = cleanDocId(input.operationId, "operationId");
+  // Reserved Phase 2 namespaces are rejected on every client ID surface after normalization (v9 §6.2:622, spec v5 §693).
+  if (RESERVED_ID_RE.test(operationId)) failRequestInvalid("operationId");
+  const reason = cleanReason(input.reason);
   if (reset) {
     if (reason !== RESET_REASON) failValidation("Reset reason must be retake_assessment");
     if (input.taskId !== undefined || input.replacement !== undefined) {
@@ -268,6 +293,7 @@ async function executeLifecycle(db, uid, request, now) {
     if (opSnapshot.exists) return exactReplay(opSnapshot.data(), fingerprint);
 
     const rootSnapshot = await transaction.get(userRef);
+    assertRootNotFenced(rootSnapshot);
     const root = rootSnapshot.data() || {};
     if (resetIsActive(root)) failPrecondition("Task reset is active");
     const taskSnapshot = await transaction.get(taskRef);
@@ -625,14 +651,18 @@ async function listTaskRefs(db, userRef, transaction = null) {
   return snapshot.docs.map((doc) => doc.ref);
 }
 
-async function initializeOrReplayReset(db, uid, request, now) {
+async function initializeOrReplayReset(db, uid, request, now, mode = "compat") {
   const userRef = db.collection("users").doc(uid);
   const opRef = operationRef(userRef, request.operationId);
   const fingerprint = resetFingerprint(request);
   return db.runTransaction(async (transaction) => {
     const opSnapshot = await transaction.get(opRef);
     const rootSnapshot = await transaction.get(userRef);
+    assertRootNotFenced(rootSnapshot);
     const root = rootSnapshot.data() || {};
+    if (!opSnapshot.exists && mode === "phase2_required") {
+      throw failedPrecondition("CLIENT_UPGRADE_REQUIRED", { requiredProtocol: "phase2" });
+    }
     if (opSnapshot.exists) {
       const op = opSnapshot.data() || {};
       if (op.kind !== "reset" || op.fingerprint !== fingerprint) {
@@ -668,6 +698,7 @@ async function initializeOrReplayReset(db, uid, request, now) {
 async function acquireResetLease(db, userRef, opRef, operationId, workerId, now) {
   return db.runTransaction(async (transaction) => {
     const rootSnapshot = await transaction.get(userRef);
+    assertRootNotFenced(rootSnapshot);
     const opSnapshot = await transaction.get(opRef);
     const marker = rootSnapshot.data()?.taskReset;
     if (!marker || marker.operationId !== operationId || marker.state !== "deleting" || !opSnapshot.exists) {
@@ -686,6 +717,7 @@ async function acquireResetLease(db, userRef, opRef, operationId, workerId, now)
 async function deleteResetPage(db, userRef, opRef, operationId, workerId, refs, now) {
   return db.runTransaction(async (transaction) => {
     const rootSnapshot = await transaction.get(userRef);
+    assertRootNotFenced(rootSnapshot);
     const opSnapshot = await transaction.get(opRef);
     const marker = rootSnapshot.data()?.taskReset;
     const op = opSnapshot.data() || {};
@@ -717,6 +749,7 @@ async function deleteResetPage(db, userRef, opRef, operationId, workerId, refs, 
 async function finishResetDeletion(db, userRef, opRef, operationId, workerId, now) {
   return db.runTransaction(async (transaction) => {
     const rootSnapshot = await transaction.get(userRef);
+    assertRootNotFenced(rootSnapshot);
     const opSnapshot = await transaction.get(opRef);
     const marker = rootSnapshot.data()?.taskReset;
     if (!marker || marker.operationId !== operationId || marker.state !== "deleting" ||
@@ -745,8 +778,8 @@ async function finishResetDeletion(db, userRef, opRef, operationId, workerId, no
   });
 }
 
-async function executeResetAllTasks(db, uid, request, now) {
-  const initialized = await initializeOrReplayReset(db, uid, request, now);
+async function executeResetAllTasks(db, uid, request, now, mode = "compat") {
+  const initialized = await initializeOrReplayReset(db, uid, request, now, mode);
   if (initialized.done) return initialized.response;
   const { userRef, opRef } = initialized;
   const workerId = randomUUID();
@@ -766,6 +799,8 @@ async function executeFinalizeReset(db, uid, request, now) {
   const opRef = operationRef(userRef, request.operationId);
   const fingerprint = resetFingerprint(request);
   return db.runTransaction(async (transaction) => {
+    const rootSnapshot = await transaction.get(userRef);
+    assertRootNotFenced(rootSnapshot);
     const opSnapshot = await transaction.get(opRef);
     if (!opSnapshot.exists) failPrecondition("Reset operation was not found");
     const op = opSnapshot.data() || {};
@@ -773,7 +808,6 @@ async function executeFinalizeReset(db, uid, request, now) {
       failPrecondition("Operation ID was already used for a different request");
     }
     if (op.finalized) return responseReplay(op.finalized);
-    const rootSnapshot = await transaction.get(userRef);
     const marker = rootSnapshot.data()?.taskReset;
     if (!op.tasks_deleted || !marker || marker.operationId !== request.operationId ||
         marker.state !== "awaiting_local_reset") {
@@ -790,7 +824,422 @@ async function executeFinalizeReset(db, uid, request, now) {
   });
 }
 
-async function handleTaskPlanRequest(request, dbFactory = () => admin.firestore(), now = new Date()) {
+// ---------------------------------------------------------------------------
+// Phase 2 reset protocol (PHASE2_CONTRACT.md C2.8; Reconciled 9): deterministic
+// per-epoch rso1_ record, Reconciled 9 marker projection, receipts, four-target
+// leased reducer, digest-bound tombstone. The raw legacy path above is byte-preserved
+// under PHASE2_RESET_PROTOCOL_MODE=compat.
+// ---------------------------------------------------------------------------
+
+const RESET_PROTOCOL_MODES = Object.freeze(["compat", "phase2_required"]);
+
+function readResetProtocolMode() {
+  const value = process.env.PHASE2_RESET_PROTOCOL_MODE;
+  if (value === undefined) return undefined;
+  if (!RESET_PROTOCOL_MODES.includes(value)) {
+    throw new Error(`PHASE2_RESET_PROTOCOL_MODE must be one of ${RESET_PROTOCOL_MODES.join("|")}; got ${JSON.stringify(value)}`);
+  }
+  return value;
+}
+
+// Fails module initialization on an unknown value (v9 §6.4:697); absence refuses every reset handler.
+const ENV_RESET_PROTOCOL_MODE = readResetProtocolMode();
+
+const RESET_ALIAS_RE = /^rsa1_[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+const RESERVED_ID_RE = /^(rsa1_|rso1_|rlm1_)/;
+const RESET_ALIAS_CAP = 16;
+const RESET_TARGETS = Object.freeze([
+  { key: "tasks", collection: "tasks" },
+  { key: "notification_intents", collection: "notificationIntents" },
+  { key: "task_deadline_evidence", collection: "taskDeadlineEvidence" },
+  { key: "confirmation_snapshots", collection: "taskPlanOperations", kind: "CONFIRMATION_SNAPSHOT" }
+]);
+const COUNT_KEYS = Object.freeze({ tasks: "tasks", notification_intents: "notificationIntents", task_deadline_evidence: "taskDeadlineEvidence", confirmation_snapshots: "confirmationSnapshots" });
+const ACTIVE_RECORD_KEYS = ["schema_version", "kind", "state", "account_uid", "operation_id", "aliases", "reason", "request_fingerprint", "expected_task_generation_epoch", "task_generation_epoch", "active_move_event_id", "target_index", "deleted_counts", "deleted_count", "created_at", "updated_at"];
+const ACTIVE_OPTIONAL_KEYS = ["page_after_path", "lease", "awaiting_local_reset_at"];
+const TOMBSTONE_KEYS = ["schema_version", "kind", "state", "account_uid", "operation_id", "aliases", "reason", "request_fingerprint", "expected_task_generation_epoch", "task_generation_epoch", "active_move_event_id", "deleted_counts", "deleted_count", "final_receipt_digest", "created_at", "finalized_at"];
+
+function failedPrecondition(reason, extra) {
+  return new HttpsError("failed-precondition", reason, { schemaVersion: 1, reason, ...(extra || {}) });
+}
+
+function resetCanonicalId(uid, r) {
+  return `rso1_${fence.first40(fence.sha256Hex(fence.TaskCanonicalV1({ account_uid: uid, task_generation_epoch: r })))}`;
+}
+
+function resetRequestFingerprint(e) {
+  return `reset1_${fence.sha256Hex(fence.TaskCanonicalV1({ kind: "reset", reason: RESET_REASON, expected_task_generation_epoch: e }))}`;
+}
+
+function activeMoveEventIdFor(uid, r, canonicalId) {
+  return `me1_${fence.first40(fence.sha256Hex(fence.TaskCanonicalV1({ uid, new_task_generation_epoch: r, reset_operation_id: canonicalId })))}`;
+}
+
+function isSafeCount(value) {
+  return Number.isSafeInteger(value) && value >= 0;
+}
+
+/** Reconciled 9 marker: the total equality projection of the active record (spec v5 §697). */
+function projectResetMarker(record) {
+  const marker = {
+    schemaVersion: 1,
+    kind: "reset",
+    operationId: record.operation_id,
+    requestFingerprint: record.request_fingerprint,
+    state: record.state,
+    expectedTaskGenerationEpoch: record.expected_task_generation_epoch,
+    taskGenerationEpoch: record.task_generation_epoch,
+    activeMoveEventId: record.active_move_event_id,
+    targetIndex: record.target_index
+  };
+  if (record.page_after_path !== undefined) marker.pageAfterPath = record.page_after_path;
+  marker.deletedCounts = {
+    tasks: record.deleted_counts.tasks,
+    notificationIntents: record.deleted_counts.notification_intents,
+    taskDeadlineEvidence: record.deleted_counts.task_deadline_evidence,
+    confirmationSnapshots: record.deleted_counts.confirmation_snapshots
+  };
+  marker.deletedCount = record.deleted_count;
+  if (record.lease !== undefined) marker.lease = { ownerToken: record.lease.owner_token, expiresAt: record.lease.expires_at };
+  marker.createdAt = record.created_at;
+  marker.updatedAt = record.updated_at;
+  if (record.awaiting_local_reset_at !== undefined) marker.awaitingLocalResetAt = record.awaiting_local_reset_at;
+  return marker;
+}
+
+function isLegacyResetMarker(marker) {
+  return fence.isUID(String(marker?.operationId ?? "")) && ["deleting", "awaiting_local_reset"].includes(marker?.state) &&
+    marker.kind === undefined && "workerLease" in (marker || {}) && "startedAt" in marker;
+}
+
+function isPhase2ResetMarker(marker) {
+  return marker !== null && typeof marker === "object" && marker.schemaVersion === 1 && marker.kind === "reset";
+}
+
+function countsValid(counts) {
+  return counts !== null && typeof counts === "object" &&
+    Object.keys(counts).sort().join(",") === "confirmation_snapshots,notification_intents,task_deadline_evidence,tasks" &&
+    Object.values(counts).every(isSafeCount);
+}
+
+/** Validates the deterministic-path record; every defect fails closed as OPERATION_REUSED naming the canonical ID. */
+function validateResetRecord(record, { uid, canonicalId, fingerprint }) {
+  const reject = () => failedPrecondition("OPERATION_REUSED", { operationId: canonicalId });
+  if (record === null || typeof record !== "object" || Array.isArray(record)) throw reject();
+  const finalized = record.state === "finalized";
+  const keys = Object.keys(record);
+  const required = finalized ? TOMBSTONE_KEYS : ACTIVE_RECORD_KEYS;
+  const allowed = new Set(finalized ? TOMBSTONE_KEYS : [...ACTIVE_RECORD_KEYS, ...ACTIVE_OPTIONAL_KEYS]);
+  if (keys.some((key) => !allowed.has(key)) || required.some((key) => !(key in record))) throw reject();
+  if (record.schema_version !== 1 || record.kind !== "RESET_OPERATION" || record.account_uid !== uid ||
+      record.operation_id !== canonicalId || record.reason !== RESET_REASON || record.request_fingerprint !== fingerprint) throw reject();
+  if (!finalized && record.state !== "deleting" && record.state !== "awaiting_local_reset") throw reject();
+  if (!Array.isArray(record.aliases) || record.aliases.length < 1 || record.aliases.length > RESET_ALIAS_CAP ||
+      record.aliases.some((item) => !RESET_ALIAS_RE.test(item)) || new Set(record.aliases).size !== record.aliases.length) throw reject();
+  if (!Number.isSafeInteger(record.expected_task_generation_epoch) || record.task_generation_epoch !== record.expected_task_generation_epoch + 1 ||
+      !Number.isSafeInteger(record.task_generation_epoch)) throw reject();
+  if (record.active_move_event_id !== activeMoveEventIdFor(uid, record.task_generation_epoch, canonicalId)) throw reject();
+  if (!countsValid(record.deleted_counts) || !isSafeCount(record.deleted_count) ||
+      Object.values(record.deleted_counts).reduce((sum, value) => sum + value, 0) !== record.deleted_count) throw reject();
+  if (!fence.isMillisecondTimestamp(record.created_at)) throw reject();
+  if (finalized) {
+    if (!fence.isMillisecondTimestamp(record.finalized_at) || fence.millis(record.finalized_at) < fence.millis(record.created_at)) throw reject();
+    if (typeof record.final_receipt_digest !== "string" || !/^[0-9a-f]{64}$/.test(record.final_receipt_digest)) throw reject();
+    return record;
+  }
+  if (!fence.isMillisecondTimestamp(record.updated_at) || fence.millis(record.updated_at) < fence.millis(record.created_at)) throw reject();
+  if (record.state === "deleting") {
+    if (!Number.isInteger(record.target_index) || record.target_index < 0 || record.target_index > 3) throw reject();
+    if (record.awaiting_local_reset_at !== undefined) throw reject();
+    if (record.page_after_path !== undefined && (typeof record.page_after_path !== "string" || !record.page_after_path.startsWith(`users/${uid}/${RESET_TARGETS[record.target_index].collection}/`))) throw reject();
+    if (record.lease !== undefined) {
+      if (record.lease === null || typeof record.lease !== "object" || Object.keys(record.lease).sort().join(",") !== "expires_at,owner_token" ||
+          typeof record.lease.owner_token !== "string" || !/^[0-9a-f-]{36}$/.test(record.lease.owner_token) || !fence.isMillisecondTimestamp(record.lease.expires_at)) throw reject();
+    }
+  } else {
+    if (record.target_index !== 4 || record.page_after_path !== undefined || record.lease !== undefined) throw reject();
+    if (!fence.isMillisecondTimestamp(record.awaiting_local_reset_at) || fence.millis(record.awaiting_local_reset_at) < fence.millis(record.created_at) ||
+        fence.millis(record.updated_at) < fence.millis(record.awaiting_local_reset_at)) throw reject();
+  }
+  return record;
+}
+
+function requireMarkerEqualsRecord(marker, record, canonicalId) {
+  if (marker === undefined || fence.TaskCanonicalV1(marker) !== fence.TaskCanonicalV1(projectResetMarker(record))) {
+    throw failedPrecondition("OPERATION_REUSED", { operationId: canonicalId });
+  }
+}
+
+function progressReceipt(record, replayed) {
+  return {
+    schemaVersion: 1,
+    kind: "reset_progress",
+    operationId: record.operation_id,
+    replayed,
+    accountUid: record.account_uid,
+    expectedTaskGenerationEpoch: record.expected_task_generation_epoch,
+    taskGenerationEpoch: record.task_generation_epoch,
+    activeMoveEventId: record.active_move_event_id,
+    deletedCount: record.deleted_count,
+    deletedCounts: projectResetMarker(record).deletedCounts,
+    state: record.state
+  };
+}
+
+function finalReceiptOf(record) {
+  return {
+    schemaVersion: 1,
+    kind: "reset_final",
+    operationId: record.operation_id,
+    replayed: false,
+    accountUid: record.account_uid,
+    expectedTaskGenerationEpoch: record.expected_task_generation_epoch,
+    taskGenerationEpoch: record.task_generation_epoch,
+    activeMoveEventId: record.active_move_event_id,
+    deletedCount: record.deleted_count,
+    deletedCounts: projectResetMarker({ ...record, deleted_counts: record.deleted_counts }).deletedCounts,
+    state: "finalized"
+  };
+}
+
+/** Recomputes and verifies the tombstone's receipt digest; mismatch fails closed. */
+function reconstructFinalReceipt(tombstone) {
+  const receipt = finalReceiptOf(tombstone);
+  if (fence.sha256Hex(fence.TaskCanonicalV1(receipt)) !== tombstone.final_receipt_digest) {
+    throw failedPrecondition("OPERATION_REUSED", { operationId: tombstone.operation_id });
+  }
+  return receipt;
+}
+
+function effectiveRootEpoch(root) {
+  const value = root.taskGenerationEpoch;
+  if (value === undefined) return 0;
+  if (!Number.isSafeInteger(value) || value < 0) return null;
+  return value;
+}
+
+function assertRootNotFenced(rootSnapshot) {
+  const root = rootSnapshot && rootSnapshot.exists ? rootSnapshot.data() : undefined;
+  if (root && root.accountDeletion !== undefined) throw fence.deletionError("ACCOUNT_DELETION_FENCED");
+}
+
+function timestampNow(now) {
+  return Timestamp.fromMillis(now.getTime());
+}
+
+function writeRecordAndMarker(transaction, recordRef, userRef, record, { create = false } = {}) {
+  if (create) transaction.create(recordRef, record);
+  else transaction.set(recordRef, record);
+  transaction.set(userRef, { taskReset: projectResetMarker(record) }, { merge: true });
+}
+
+/** Appends a caller alias (first-seen, unique, cap 16); a later alias past capacity resolves without persisting. */
+async function adoptAlias(transaction, userRef, recordRef, record, alias, active) {
+  if (record.aliases.includes(alias)) return record;
+  const aliasSnapshot = await transaction.get(operationRef(userRef, alias));
+  if (aliasSnapshot.exists) throw failedPrecondition("OPERATION_REUSED", { operationId: alias });
+  if (record.aliases.length >= RESET_ALIAS_CAP) return record;
+  const next = { ...record, aliases: [...record.aliases, alias] };
+  if (active) writeRecordAndMarker(transaction, recordRef, userRef, next);
+  else transaction.set(recordRef, next);
+  return next;
+}
+
+async function classifyPhase2Reset(db, uid, request, now, { finalize }) {
+  const e = request.expectedTaskGenerationEpoch;
+  const r = e + 1;
+  const canonicalId = resetCanonicalId(uid, r);
+  const fingerprint = resetRequestFingerprint(e);
+  const userRef = db.collection("users").doc(uid);
+  const recordRef = operationRef(userRef, canonicalId);
+  const nowTs = timestampNow(now);
+  return db.runTransaction(async (transaction) => {
+    const recordSnapshot = await transaction.get(recordRef);
+    const rootSnapshot = await transaction.get(userRef);
+    assertRootNotFenced(rootSnapshot);
+    const root = rootSnapshot.exists ? rootSnapshot.data() : {};
+    if (recordSnapshot.exists) {
+      const record = validateResetRecord(recordSnapshot.data(), { uid, canonicalId, fingerprint });
+      if (record.state === "finalized") {
+        if (root.taskReset !== undefined) throw failedPrecondition("OPERATION_REUSED", { operationId: canonicalId });
+        const receipt = reconstructFinalReceipt(record);
+        await adoptAlias(transaction, userRef, recordRef, record, request.operationId, false);
+        return { kind: "final", receipt: { ...receipt, replayed: true } };
+      }
+      requireMarkerEqualsRecord(root.taskReset, record, canonicalId);
+      if (finalize && record.state !== "awaiting_local_reset") throw failedPrecondition("STALE_STATE");
+      const adopted = await adoptAlias(transaction, userRef, recordRef, record, request.operationId, true);
+      return { kind: "active", record: adopted, created: false, userRef, recordRef, canonicalId, fingerprint };
+    }
+    if (finalize) throw failedPrecondition("STALE_STATE");
+    const marker = root.taskReset;
+    if (marker !== undefined) {
+      if (isLegacyResetMarker(marker)) throw failedPrecondition("LEGACY_RESET_MIGRATION_REQUIRED", { legacyOperationId: marker.operationId });
+      if (isPhase2ResetMarker(marker) && Number.isSafeInteger(marker.expectedTaskGenerationEpoch) && typeof marker.operationId === "string") {
+        throw failedPrecondition("RESET_ACTIVE", { operationId: marker.operationId, expectedTaskGenerationEpoch: marker.expectedTaskGenerationEpoch });
+      }
+      throw failedPrecondition("OPERATION_REUSED", { operationId: canonicalId });
+    }
+    const rootEpoch = effectiveRootEpoch(root);
+    if (rootEpoch !== e) throw failedPrecondition("STALE_STATE");
+    const aliasSnapshot = await transaction.get(operationRef(userRef, request.operationId));
+    if (aliasSnapshot.exists) throw failedPrecondition("OPERATION_REUSED", { operationId: request.operationId });
+    const record = {
+      schema_version: 1,
+      kind: "RESET_OPERATION",
+      state: "deleting",
+      account_uid: uid,
+      operation_id: canonicalId,
+      aliases: [request.operationId],
+      reason: RESET_REASON,
+      request_fingerprint: fingerprint,
+      expected_task_generation_epoch: e,
+      task_generation_epoch: r,
+      active_move_event_id: activeMoveEventIdFor(uid, r, canonicalId),
+      target_index: 0,
+      deleted_counts: { tasks: 0, notification_intents: 0, task_deadline_evidence: 0, confirmation_snapshots: 0 },
+      deleted_count: 0,
+      created_at: nowTs,
+      updated_at: nowTs
+    };
+    transaction.create(recordRef, record);
+    transaction.set(userRef, { taskReset: projectResetMarker(record), taskGenerationEpoch: r, activeMoveEventId: record.active_move_event_id }, { merge: true });
+    return { kind: "active", record, created: true, userRef, recordRef, canonicalId, fingerprint };
+  });
+}
+
+function requireOwnedLease(record, ownerToken, now) {
+  const lease = record.lease;
+  if (!lease || lease.owner_token !== ownerToken || fence.millis(lease.expires_at) <= now.getTime()) {
+    throw new HttpsError("unavailable", "Reset worker no longer owns the lease");
+  }
+}
+
+async function leasedResetTransaction(db, ctx, ownerToken, now, body) {
+  return db.runTransaction(async (transaction) => {
+    const recordSnapshot = await transaction.get(ctx.recordRef);
+    const rootSnapshot = await transaction.get(ctx.userRef);
+    assertRootNotFenced(rootSnapshot);
+    if (!recordSnapshot.exists) throw failedPrecondition("STALE_STATE");
+    const record = validateResetRecord(recordSnapshot.data(), ctx);
+    if (record.state !== "deleting") throw failedPrecondition("STALE_STATE");
+    requireMarkerEqualsRecord(rootSnapshot.data()?.taskReset, record, ctx.canonicalId);
+    if (ownerToken !== null) requireOwnedLease(record, ownerToken, now);
+    return body(transaction, record);
+  });
+}
+
+async function acquirePhase2Lease(db, ctx, ownerToken, now) {
+  return leasedResetTransaction(db, ctx, null, now, async (transaction, record) => {
+    const lease = record.lease;
+    if (lease && lease.owner_token !== ownerToken && fence.millis(lease.expires_at) > now.getTime()) {
+      throw new HttpsError("unavailable", "Another reset worker owns the live lease");
+    }
+    const next = { ...record, lease: { owner_token: ownerToken, expires_at: Timestamp.fromMillis(now.getTime() + LEASE_MS) }, updated_at: timestampNow(now) };
+    writeRecordAndMarker(transaction, ctx.recordRef, ctx.userRef, next);
+    return next;
+  });
+}
+
+async function phase2TargetStep(db, ctx, ownerToken, now) {
+  return leasedResetTransaction(db, ctx, ownerToken, now, async (transaction, record) => {
+    const target = RESET_TARGETS[record.target_index];
+    let base = ctx.userRef.collection(target.collection);
+    if (target.kind) base = base.where("kind", "==", target.kind);
+    base = base.orderBy(admin.firestore.FieldPath.documentId());
+    let snapshot;
+    if (record.page_after_path !== undefined) {
+      snapshot = await transaction.get(base.startAfter(record.page_after_path.split("/").at(-1)).limit(1));
+      if (snapshot.empty) snapshot = await transaction.get(base.limit(1));
+    } else {
+      snapshot = await transaction.get(base.limit(1));
+    }
+    const nowTs = timestampNow(now);
+    if (snapshot.empty) {
+      const next = { ...record, target_index: record.target_index + 1, updated_at: nowTs };
+      delete next.page_after_path;
+      if (next.target_index === RESET_TARGETS.length) {
+        next.state = "awaiting_local_reset";
+        next.awaiting_local_reset_at = nowTs;
+        delete next.lease;
+      }
+      writeRecordAndMarker(transaction, ctx.recordRef, ctx.userRef, next);
+      return { record: next, deleted: false };
+    }
+    const doc = snapshot.docs[0];
+    transaction.delete(doc.ref);
+    const next = {
+      ...record,
+      page_after_path: doc.ref.path,
+      deleted_counts: { ...record.deleted_counts, [target.key]: record.deleted_counts[target.key] + 1 },
+      deleted_count: record.deleted_count + 1,
+      lease: { owner_token: ownerToken, expires_at: Timestamp.fromMillis(now.getTime() + LEASE_MS) },
+      updated_at: nowTs
+    };
+    writeRecordAndMarker(transaction, ctx.recordRef, ctx.userRef, next);
+    return { record: next, deleted: true };
+  });
+}
+
+async function executePhase2Reset(db, uid, request, now, options = {}) {
+  const outcome = await classifyPhase2Reset(db, uid, request, now, { finalize: false });
+  if (outcome.kind === "final") return outcome.receipt;
+  let record = outcome.record;
+  if (record.state === "awaiting_local_reset") return progressReceipt(record, !outcome.created);
+  const ctx = { uid, userRef: outcome.userRef, recordRef: outcome.recordRef, canonicalId: outcome.canonicalId, fingerprint: outcome.fingerprint };
+  const ownerToken = randomUUID();
+  record = await acquirePhase2Lease(db, ctx, ownerToken, now);
+  let budget = Number.isSafeInteger(options.resetDocumentBudget) ? options.resetDocumentBudget : Number.POSITIVE_INFINITY;
+  while (record.state === "deleting") {
+    const step = await phase2TargetStep(db, ctx, ownerToken, now);
+    record = step.record;
+    if (step.deleted) {
+      budget -= 1;
+      if (budget <= 0 && record.state === "deleting") throw new HttpsError("unavailable", "Reset document budget exhausted");
+    }
+  }
+  return progressReceipt(record, false);
+}
+
+async function executePhase2Finalize(db, uid, request, now) {
+  const outcome = await classifyPhase2Reset(db, uid, request, now, { finalize: true });
+  if (outcome.kind === "final") return outcome.receipt;
+  const ctx = { uid, userRef: outcome.userRef, recordRef: outcome.recordRef, canonicalId: outcome.canonicalId, fingerprint: outcome.fingerprint };
+  return db.runTransaction(async (transaction) => {
+    const recordSnapshot = await transaction.get(ctx.recordRef);
+    const rootSnapshot = await transaction.get(ctx.userRef);
+    assertRootNotFenced(rootSnapshot);
+    if (!recordSnapshot.exists) throw failedPrecondition("STALE_STATE");
+    const record = validateResetRecord(recordSnapshot.data(), ctx);
+    if (record.state === "finalized") return { ...reconstructFinalReceipt(record), replayed: true };
+    if (record.state !== "awaiting_local_reset") throw failedPrecondition("STALE_STATE");
+    requireMarkerEqualsRecord(rootSnapshot.data()?.taskReset, record, ctx.canonicalId);
+    const receipt = finalReceiptOf(record);
+    const tombstone = {
+      schema_version: 1,
+      kind: "RESET_OPERATION",
+      state: "finalized",
+      account_uid: record.account_uid,
+      operation_id: record.operation_id,
+      aliases: record.aliases,
+      reason: record.reason,
+      request_fingerprint: record.request_fingerprint,
+      expected_task_generation_epoch: record.expected_task_generation_epoch,
+      task_generation_epoch: record.task_generation_epoch,
+      active_move_event_id: record.active_move_event_id,
+      deleted_counts: record.deleted_counts,
+      deleted_count: record.deleted_count,
+      final_receipt_digest: fence.sha256Hex(fence.TaskCanonicalV1(receipt)),
+      created_at: record.created_at,
+      finalized_at: timestampNow(now)
+    };
+    transaction.set(ctx.recordRef, tombstone);
+    transaction.update(ctx.userRef, { taskReset: deleteValue() });
+    return receipt;
+  });
+}
+
+async function handleTaskPlanRequest(request, dbFactory = () => admin.firestore(), now = new Date(), options = {}) {
   const uid = request.auth?.uid;
   if (!uid) throw new HttpsError("unauthenticated", "Sign in before changing a task plan");
   let cleaned;
@@ -798,12 +1247,20 @@ async function handleTaskPlanRequest(request, dbFactory = () => admin.firestore(
     cleaned = validateTaskPlanRequest(request.data, now);
   } catch (error) {
     if (error instanceof TaskPlanValidationError) {
-      throw new HttpsError("invalid-argument", error.message);
+      throw new HttpsError("invalid-argument", error.message, error.details);
     }
     throw error;
   }
+  const reset = cleaned.action === "resetAllTasks" || cleaned.action === "finalizeTaskReset";
+  const mode = Object.prototype.hasOwnProperty.call(options, "resetProtocolMode") ? options.resetProtocolMode : ENV_RESET_PROTOCOL_MODE;
+  if (reset && mode === undefined) throw new HttpsError("unavailable", "Reset protocol mode is not configured");
   const db = dbFactory();
-  if (cleaned.action === "resetAllTasks") return executeResetAllTasks(db, uid, cleaned, now);
+  if (reset && cleaned.expectedTaskGenerationEpoch !== undefined) {
+    return cleaned.action === "resetAllTasks"
+      ? executePhase2Reset(db, uid, cleaned, now, options)
+      : executePhase2Finalize(db, uid, cleaned, now);
+  }
+  if (cleaned.action === "resetAllTasks") return executeResetAllTasks(db, uid, cleaned, now, mode);
   if (cleaned.action === "finalizeTaskReset") return executeFinalizeReset(db, uid, cleaned, now);
   return executeLifecycle(db, uid, cleaned, now);
 }
@@ -829,5 +1286,15 @@ module.exports = {
   normalizeFingerprintValue,
   operationFingerprint,
   resetFingerprint,
-  validateTaskPlanRequest
+  validateTaskPlanRequest,
+  // Phase 2 reset protocol (C2.8)
+  RESET_PROTOCOL_MODES,
+  resetCanonicalId,
+  resetRequestFingerprint,
+  activeMoveEventIdFor,
+  projectResetMarker,
+  validateResetRecord,
+  reconstructFinalReceipt,
+  executePhase2Reset,
+  executePhase2Finalize
 };
