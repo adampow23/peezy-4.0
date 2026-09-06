@@ -1075,6 +1075,292 @@ struct DurableStoreRecoveryTests {
         #expect(AccountDeletionDateFormatter.string(from: "2026-09-13") == nil)
     }
 
+    // MARK: - S4 I4 — terminal consumption (C2.2), crash/relaunch boundaries, Option B (C2.4), auth transitions, remote_unverified (C2.6)
+
+    /// Runs confirmed-begin A through `completed` (begin → data-final, finalize → guarding, Retry finalize → deleted).
+    func runToCompleted(_ h: DeletionHarness) async throws -> CompletionSnapshotV1 {
+        h.remote.always("begin", .success(DeletionWires.dataFinal("x")))
+        h.remote.script("finalize", .success(DeletionWires.guarding("x")), .success(DeletionWires.deleted("x")))
+        #expect(await h.coordinator.startDeletion(uid: "A") == .settled(.guarding(authGuardAfter: DeletionWires.authGuardAfter)))
+        guard case let .settled(.completion(snapshot)) = await h.coordinator.retry() else { throw DriveTraceError.failed }
+        return snapshot
+    }
+
+    @Test func terminalConsumptionSignsOutThenRunsTheLinkedAllScopeJournalUnlinksIntentThenJournalThenClears() async throws {
+        let h = try makeDeletionHarness(auth: signedInA)
+        let snapshot = try await runToCompleted(h)
+        let intent = try #require(await h.coordinator.currentIntent())
+        let before = h.owners.calls.count
+        // open never consumes; a drifted acknowledge is stale and consumes nothing
+        #expect(await h.completion.open(expectedGenerationId: snapshot.generationId, expectedSHA256: snapshot.sha256, provider: .google) == .notOffered)
+        #expect(await h.completion.acknowledge(expectedGenerationId: snapshot.generationId, expectedSHA256: "0") == .stale)
+        let stillPresent = await h.coordinator.currentIntent()
+        #expect(h.signOut.calls.isEmpty && stillPresent != nil)
+        // the exact-snapshot acknowledge: sign-out → linked all-scope journal → eight owners + barriers → intent unlink → journal unlink → clear
+        #expect(await h.completion.acknowledge(expectedGenerationId: snapshot.generationId, expectedSHA256: snapshot.sha256) == .acknowledged)
+        #expect(h.signOut.calls == ["A"])
+        #expect(Array(h.owners.calls.dropFirst(before)) == ["route(all)", "handoff(all)", "reset(all)", "workflow(all)", "room_capture(all)", "firestore_cache(all)", "notifications(all)", "google.signOutAll"])
+        #expect(await h.coordinator.currentIntent() == nil && h.intentBytes() == nil)
+        #expect(await h.purge.observeJournal() == .absent)
+        #expect(await h.completion.current() == nil)
+        #expect(h.gate.gates.last == .clear && h.gate.terminals.last! == nil)
+        let trace = await h.coordinator.trace
+        let consumption = trace.filter { $0.hasPrefix("consume:") }
+        #expect(consumption == ["consume:sign_out", "consume:purge:cleared", "consume:intent_unlinked", "consume:journal_unlinked"])
+        h.auth.set(.signedOut)
+        #expect(await h.coordinator.discoverAtStartup() == .clear)
+        // a sign-out that leaves a matching user blocks the consumption with everything retained
+        let refused = try makeDeletionHarness(auth: signedInA)
+        let kept = try await runToCompleted(refused)
+        refused.signOut.set(false)
+        #expect(await refused.completion.acknowledge(expectedGenerationId: kept.generationId, expectedSHA256: kept.sha256) == .failed)
+        #expect(await refused.coordinator.currentIntent()?.phase == .completed && refused.gate.gates.last == .blocked)
+        #expect(await refused.completion.current() == kept)
+        // a linked journal that does not byte-match the surviving intent is LOCAL_PRIVACY_PURGE_FAILED with retained bytes
+        let mismatch = try makeDeletionHarness(auth: signedInA)
+        _ = try await runToCompleted(mismatch)
+        let foreignLink = TerminalDeletionLinkV1(deletionOperationId: "adel1_22222222-2222-4222-8222-222222222222", deletionProofSHA256: String(repeating: "b", count: 64))
+        let journal = LocalPrivacyPurgeJournalV1(scope: .all, providerContext: nil, terminalDeletionLink: foreignLink, acks: [.route], createdAt: "2026-09-06T12:00:00.000Z", updatedAt: "2026-09-06T12:00:00.000Z")
+        try #require(DurableEnvelopeCodec.encode(fileKind: .localPrivacyPurgeV1, generationId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", payload: journal.canonical)).write(to: mismatch.directory.appendingPathComponent(LocalPrivacyPurgeCoordinator.journalFileName))
+        let relaunch = try makeDeletionHarness(auth: .signedOut, directory: mismatch.directory)
+        #expect(await relaunch.coordinator.discoverAtStartup() == .settled(.blocked(.localPrivacyPurgeFailed)))
+        let retainedIntent = await relaunch.coordinator.currentIntent()
+        #expect(retainedIntent?.phase == .completed, "the terminal intent is retained")
+        _ = intent
+        guard case .present = await relaunch.purge.observeJournal() else { Issue.record("journal retained"); return }
+    }
+
+    @Test func relaunchAtEveryPhaseAckBarrierDetachFinalizeGuardingTerminalAndConsumptionBoundaryResolvesFromBytesAlone() async throws {
+        // crash mid-purge at every owner: the failing owner blocks; a fresh process resumes past the acknowledged ones
+        for (index, failing) in ["route", "handoff", "reset", "workflow", "room_capture", "firestore_cache", "notifications", "google"].enumerated() {
+            let first = try makeDeletionHarness(auth: signedInA)
+            first.remote.always("begin", .success(DeletionWires.dataFinal("x")))
+            first.owners.fail(failing)
+            #expect(await first.coordinator.startDeletion(uid: "A") == .settled(.blocked(.localPrivacyPurgeFailed)), Comment(rawValue: "owner \(failing) fails"))
+            let crashed = try #require(await first.coordinator.currentIntent())
+            #expect(crashed.phase == .purging && crashed.acks.count == index, Comment(rawValue: "\(failing): \(crashed.acks.count) acks mirrored"))
+            let second = try makeDeletionHarness(auth: .signedOut, directory: first.directory)
+            second.remote.always("resume", .success(DeletionWires.dataFinal("x", replayed: true)))
+            second.remote.always("finalize", .success(DeletionWires.guarding("x")))
+            #expect(await second.coordinator.discoverAtStartup() == .settled(.guarding(authGuardAfter: DeletionWires.authGuardAfter)), Comment(rawValue: "relaunch after \(failing)"))
+            let ownerCalls = second.owners.calls.filter { !$0.hasPrefix("google.") }.count + (second.owners.calls.contains("google.disconnect(g1)") ? 1 : 0)
+            #expect(ownerCalls == 8 - index, Comment(rawValue: "\(failing): resumed owners \(ownerCalls)"))
+            #expect(second.remote.actions == ["resume", "finalize"], "the root is re-learned by resume, then finalize is dispatched once")
+            let resumed = try #require(await second.coordinator.currentIntent())
+            #expect(resumed.phase == .guarding && resumed.acks == PurgeOwner.order && resumed.operationId == crashed.operationId)
+        }
+        // relaunch at each persisted phase (seeded bytes, matching journal where the phase carries acks)
+        struct Seed { let intent: AccountDeletionIntentV1; let journalAcks: [PurgeOwner]?; let expectedOwners: Int; let actions: [String] }
+        let op = "adel1_11111111-1111-4111-8111-111111111111"
+        var staged = exactIntent(phase: .localDetaching, staged: .dataDeleted); staged.acks = [.route, .handoff, .reset]
+        var stagedGuarding = exactIntent(phase: .localDetaching, staged: .authGuarding); stagedGuarding.acks = PurgeOwner.order
+        var nonstaged = exactIntent(phase: .localDetaching, detach: .authDeleted); nonstaged.acks = [.route]
+        let seeds: [Seed] = [
+            Seed(intent: exactIntent(phase: .dataConfirmed), journalAcks: nil, expectedOwners: 8, actions: ["resume", "finalize"]),
+            Seed(intent: exactIntent(phase: .purging), journalAcks: nil, expectedOwners: 8, actions: ["resume", "finalize"]),
+            Seed(intent: staged, journalAcks: [.route, .handoff, .reset], expectedOwners: 5, actions: ["finalize"]),
+            Seed(intent: stagedGuarding, journalAcks: PurgeOwner.order, expectedOwners: 0, actions: []),
+            Seed(intent: nonstaged, journalAcks: [.route], expectedOwners: 7, actions: []),
+            Seed(intent: exactIntent(phase: .authFinalizeDispatched), journalAcks: PurgeOwner.order, expectedOwners: 0, actions: ["finalize"])
+        ]
+        for seed in seeds {
+            let h = try makeDeletionHarness(auth: .signedOut)
+            let context = seed.intent.providerContext
+            guard case .success = AccountDeletionIntentStore(directory: h.directory).write(seed.intent, expecting: nil) else { Issue.record("seed"); return }
+            if let acks = seed.journalAcks {
+                let journal = LocalPrivacyPurgeJournalV1(scope: .uid("A"), providerContext: context, terminalDeletionLink: nil, acks: acks, createdAt: "2026-09-06T12:00:00.000Z", updatedAt: "2026-09-06T12:00:00.000Z")
+                try #require(DurableEnvelopeCodec.encode(fileKind: .localPrivacyPurgeV1, generationId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", payload: journal.canonical)).write(to: h.directory.appendingPathComponent(LocalPrivacyPurgeCoordinator.journalFileName))
+            }
+            h.remote.always("resume", .success(DeletionWires.dataFinal(op, replayed: true)))
+            h.remote.always("finalize", .success(DeletionWires.guarding(op)))
+            let result = await h.coordinator.discoverAtStartup()
+            let phase = seed.intent.phase.rawValue + (seed.intent.stagedRoot.map { ":\($0.rawValue)" } ?? "") + (seed.intent.detachReason.map { ":\($0.rawValue)" } ?? "")
+            let ownerCalls = h.owners.calls.filter { !$0.hasPrefix("google.") }.count + (h.owners.calls.contains("google.disconnect(g1)") ? 1 : 0)
+            #expect(ownerCalls == seed.expectedOwners, Comment(rawValue: "\(phase): owners \(ownerCalls)"))
+            #expect(h.remote.actions == seed.actions, Comment(rawValue: "\(phase): actions \(h.remote.actions)"))
+            if seed.intent.detachReason == .authDeleted {
+                guard case .settled(.completion(let snapshot)) = result, snapshot.result == .completed(appleRevocation: .notRequired, googleRevocation: .revoked) else { Issue.record("\(phase): completed expected, got \(result)"); continue }
+                #expect(await h.coordinator.currentIntent()?.phase == .completed && h.gate.terminals.last == .completed)
+            } else {
+                #expect(result == .settled(.guarding(authGuardAfter: DeletionWires.authGuardAfter)), Comment(rawValue: "\(phase): \(result)"))
+                #expect(await h.coordinator.currentIntent()?.phase == .guarding)
+            }
+            let expectedBarriers: Int
+            switch seed.intent.phase {
+            case .authFinalizeDispatched: expectedBarriers = 0   // finalize alone never re-proves the barriers
+            case .dataConfirmed, .purging: expectedBarriers = 2   // the purging pass and the detach pass
+            default: expectedBarriers = 1                         // the detach pass
+            }
+            #expect(h.telemetry.calls == expectedBarriers, Comment(rawValue: "\(phase): barriers proved \(h.telemetry.calls) times"))
+        }
+        // guarding relaunch: the deleted UID stays forbidden; a terminal intent with no journal recreates its presentation
+        let guarding = try makeDeletionHarness(auth: .signedOut)
+        guard case .success = AccountDeletionIntentStore(directory: guarding.directory).write(exactIntent(phase: .guarding), expecting: nil) else { Issue.record("seed"); return }
+        guarding.remote.always("finalize", .failure(.retryRequired))
+        #expect(await guarding.coordinator.discoverAtStartup() == .settled(.guarding(authGuardAfter: DeletionWires.authGuardAfter)))
+        #expect(guarding.gate.gates.last == .guarding(uid: "A", authGuardAfter: DeletionWires.authGuardAfter))
+        let terminal = try makeDeletionHarness(auth: .signedOut)
+        guard case .success = AccountDeletionIntentStore(directory: terminal.directory).write(exactIntent(phase: .completed), expecting: nil) else { Issue.record("seed"); return }
+        guard case .settled(.completion(let recreated)) = await terminal.coordinator.discoverAtStartup() else { Issue.record("recreated"); return }
+        #expect(recreated.result == .completed(appleRevocation: .notRequired, googleRevocation: .revoked) && terminal.remote.actions.isEmpty && terminal.owners.calls.isEmpty)
+        #expect(terminal.gate.gates.last == .active(uid: "A") && terminal.gate.terminals.last == .completed)
+        let bytes = try Data(contentsOf: terminal.directory.appendingPathComponent(AccountDeletionCompletionPresentation.fileName))
+        let again = try makeDeletionHarness(auth: .signedOut, directory: terminal.directory)
+        guard case .settled(.completion(let replayed)) = await again.coordinator.discoverAtStartup() else { Issue.record("replayed"); return }
+        let replayedBytes = try Data(contentsOf: terminal.directory.appendingPathComponent(AccountDeletionCompletionPresentation.fileName))
+        #expect(replayed == recreated && replayedBytes == bytes, "exact replay preserves bytes")
+        // crash after the acknowledge at every consumption boundary: linked journal partial → intent present; intent unlinked → journal present; both gone → stray completion file
+        let partial = try makeDeletionHarness(auth: signedInA)
+        let snapshot = try await runToCompleted(partial)
+        let intent = try #require(await partial.coordinator.currentIntent())
+        let link = TerminalDeletionLinkV1(deletionOperationId: intent.operationId, deletionProofSHA256: intent.proofSHA256)
+        let linked = LocalPrivacyPurgeJournalV1(scope: .all, providerContext: nil, terminalDeletionLink: link, acks: [.route, .handoff, .reset, .workflow, .roomCapture], createdAt: "2026-09-06T12:00:00.000Z", updatedAt: "2026-09-06T12:00:00.000Z")
+        try #require(DurableEnvelopeCodec.encode(fileKind: .localPrivacyPurgeV1, generationId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", payload: linked.canonical)).write(to: partial.directory.appendingPathComponent(LocalPrivacyPurgeCoordinator.journalFileName))
+        let resumed = try makeDeletionHarness(auth: .signedOut, directory: partial.directory)
+        #expect(await resumed.coordinator.discoverAtStartup() == .clear)
+        #expect(resumed.owners.calls == ["firestore_cache(all)", "notifications(all)", "google.signOutAll"] && resumed.remote.actions.isEmpty)
+        let resumedJournal = await resumed.purge.observeJournal()
+        #expect(resumed.intentBytes() == nil && resumedJournal == .absent)
+        // the completion file survived that crash: its acknowledge finds nothing left to consume and unlinks it
+        #expect(await resumed.completion.current() == snapshot)
+        #expect(await resumed.completion.acknowledge(expectedGenerationId: snapshot.generationId, expectedSHA256: snapshot.sha256) == .acknowledged)
+        #expect(await resumed.completion.current() == nil)
+        let orphanJournal = try makeDeletionHarness(auth: .signedOut)
+        try #require(DurableEnvelopeCodec.encode(fileKind: .localPrivacyPurgeV1, generationId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", payload: linked.canonical)).write(to: orphanJournal.directory.appendingPathComponent(LocalPrivacyPurgeCoordinator.journalFileName))
+        #expect(await orphanJournal.coordinator.discoverAtStartup() == .clear && orphanJournal.owners.calls.count == 3)
+        #expect(await orphanJournal.purge.observeJournal() == .absent)
+        let stray = try makeDeletionHarness(auth: .signedOut)
+        guard case .written(let strayShot) = await stray.completion.derive(.localCleared) else { Issue.record("stray"); return }
+        #expect(await stray.coordinator.discoverAtStartup() == .settled(.completion(strayShot)))
+        #expect(stray.gate.terminals.last == .localCleared)
+        #expect(await stray.completion.acknowledge(expectedGenerationId: strayShot.generationId, expectedSHA256: strayShot.sha256) == .acknowledged)
+        #expect(stray.gate.gates.last == .clear)
+        // authenticatedOverflow authority is carried unchanged
+        let overflow = try makeDeletionHarness(auth: signedInA)
+        overflow.remote.always("begin", .success(.dataFinal(AccountDeletionDataFinalWireV1(operationId: "x", authorityKind: .authenticatedOverflow, startedAt: DeletionWires.startedAt, dataDeletedAt: DeletionWires.dataDeletedAt, replayed: false))))
+        overflow.remote.always("finalize", .failure(.retryRequired))
+        #expect(await overflow.coordinator.startDeletion(uid: "A") == .settled(.queued))
+        #expect(await overflow.coordinator.currentIntent()?.authorityKind == .authenticatedOverflow)
+    }
+
+    @Test func optionBHandsTheGuardingSlotToASecondUIDBeforeItsFirstAwaitAndRefusesOnAnyDrift() async throws {
+        let h = try makeDeletionHarness(auth: signedInA)
+        h.remote.always("begin", .success(DeletionWires.dataFinal("x")))
+        h.remote.always("finalize", .success(DeletionWires.guarding("x")))
+        #expect(await h.coordinator.startDeletion(uid: "A") == .settled(.guarding(authGuardAfter: DeletionWires.authGuardAfter)))
+        let guarding = try #require(await h.coordinator.currentIntent())
+        let guardingBytes = try #require(h.intentBytes())
+        let signedInB = SignedAuthAuthority.signedIn(SignedAuthTuple(uid: "B", authEpochUUID: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", credentialRevision: 1))
+        // refusals with retained bytes: a deleted root, a mismatched deadline, a data-final root, auth drift, an incomplete journal
+        h.auth.set(signedInB)
+        h.remote.script("resume", .success(DeletionWires.deleted("x")))
+        #expect(await h.coordinator.startDeletion(uid: "B") == .busy && h.intentBytes() == guardingBytes)
+        var drifted = AccountDeletionAuthGuardingWireV1(operationId: "x", authorityKind: .member, startedAt: DeletionWires.startedAt, dataDeletedAt: DeletionWires.dataDeletedAt, authAbsenceObservedAt: DeletionWires.dataDeletedAt, authGuardAfter: "2026-09-14T00:00:00.000Z", replayed: true)
+        h.remote.script("resume", .success(.authGuarding(drifted)))
+        #expect(await h.coordinator.startDeletion(uid: "B") == .busy && h.intentBytes() == guardingBytes)
+        h.remote.script("resume", .success(DeletionWires.dataFinal("x", replayed: true)))
+        #expect(await h.coordinator.startDeletion(uid: "B") == .busy)
+        h.remote.script("resume", .failure(.transport))
+        #expect(await h.coordinator.startDeletion(uid: "B") == .busy)
+        h.auth.set(.signedIn(SignedAuthTuple(uid: "C", authEpochUUID: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", credentialRevision: 1)))
+        #expect(await h.coordinator.startDeletion(uid: "B") == .busy && h.remote.actions.filter { $0 == "resume" }.count == 4, "auth drift refuses before any dispatch")
+        h.auth.set(signedInB)
+        drifted = AccountDeletionAuthGuardingWireV1(operationId: "x", authorityKind: .member, startedAt: DeletionWires.startedAt, dataDeletedAt: DeletionWires.dataDeletedAt, authAbsenceObservedAt: DeletionWires.dataDeletedAt, authGuardAfter: DeletionWires.authGuardAfter, replayed: true)
+        let incomplete = LocalPrivacyPurgeJournalV1(scope: .uid("A"), providerContext: guarding.providerContext, terminalDeletionLink: nil, acks: [.route], createdAt: "2026-09-06T12:00:00.000Z", updatedAt: "2026-09-06T12:00:00.000Z")
+        let journalURL = h.directory.appendingPathComponent(LocalPrivacyPurgeCoordinator.journalFileName)
+        let completeJournal = try Data(contentsOf: journalURL)
+        try #require(DurableEnvelopeCodec.encode(fileKind: .localPrivacyPurgeV1, generationId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", payload: incomplete.canonical)).write(to: journalURL)
+        h.remote.script("resume", .success(.authGuarding(drifted)))
+        #expect(await h.coordinator.startDeletion(uid: "B") == .busy && h.intentBytes() == guardingBytes)
+        try completeJournal.write(to: journalURL)
+        #expect(await h.coordinator.currentIntent() == guarding)
+        // the handoff: byte-matching authority, complete postconditions, CAS unlink then B's prepared intent with no await between
+        h.remote.always("resume", .success(.authGuarding(drifted)))
+        h.remote.always("begin", .failure(.retryRequired))
+        #expect(await h.coordinator.startDeletion(uid: "B") == .settled(.queued))
+        let prepared = try #require(await h.coordinator.currentIntent())
+        #expect(prepared.uid == "B" && prepared.phase == .prepared && prepared.purpose == .confirmedBegin && prepared.operationId != guarding.operationId)
+        #expect(h.remote.requests.last == .begin(uid: "B", operationId: prepared.operationId, proofNonce: prepared.proofNonce))
+        let trace = await h.coordinator.trace
+        let handoff = trace.drop(while: { $0 != "optionB:unlinked" })
+        #expect(Array(handoff.prefix(2)) == ["optionB:unlinked", "phase:prepared:confirmed_begin"])
+        #expect(h.gate.gates.last == .active(uid: "B"))
+        // the empty slot: a crash between unlink and persist leaves no intent; relaunch publishes clear and the next startDeletion restarts cleanly
+        let empty = try makeDeletionHarness(auth: signedInB)
+        empty.remote.always("discover", .success(.absent(operationId: "x")))
+        #expect(await empty.coordinator.discoverAtStartup() == .clear)
+        empty.remote.always("begin", .failure(.retryRequired))
+        #expect(await empty.coordinator.startDeletion(uid: "B") == .settled(.queued))
+        #expect(await empty.coordinator.currentIntent()?.uid == "B")
+    }
+
+    @Test func signedOutTransitionRunsTheIntentThenTheAllScopePurgeThenDiscoveryAndUserNotFoundTakesOnlyTheNamedExit() async throws {
+        // manual sign-out with no named deletion: loading → all-scope purge → discovery → clear; never an intent, never local_cleared
+        let manual = try makeDeletionHarness(auth: .signedOut)
+        #expect(await manual.coordinator.authTransition() == .clear)
+        #expect(manual.gate.gates == [.loading, .clear] && manual.remote.actions.isEmpty && manual.intentBytes() == nil)
+        #expect(manual.owners.calls == ["route(all)", "handoff(all)", "reset(all)", "workflow(all)", "room_capture(all)", "firestore_cache(all)", "notifications(all)", "google.signOutAll"])
+        let manualJournal = await manual.purge.observeJournal()
+        let manualCompletion = await manual.completion.current()
+        #expect(manualJournal == .absent && manualCompletion == nil)
+        // A→B with A guarding: A's reducer first, then the all-scope purge, then A's guarding stands (B may dispatch under it)
+        let switching = try makeDeletionHarness(auth: signedInA)
+        switching.remote.always("begin", .success(DeletionWires.dataFinal("x")))
+        switching.remote.always("finalize", .success(DeletionWires.guarding("x")))
+        #expect(await switching.coordinator.startDeletion(uid: "A") == .settled(.guarding(authGuardAfter: DeletionWires.authGuardAfter)))
+        switching.auth.set(.signedIn(SignedAuthTuple(uid: "B", authEpochUUID: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", credentialRevision: 1)))
+        let before = switching.owners.calls.count
+        #expect(await switching.coordinator.authTransition() == .settled(.guarding(authGuardAfter: DeletionWires.authGuardAfter)))
+        #expect(Array(switching.owners.calls.dropFirst(before)) == ["route(all)", "handoff(all)", "reset(all)", "workflow(all)", "room_capture(all)", "firestore_cache(all)", "notifications(all)", "google.signOutAll"])
+        #expect(switching.gate.gates.suffix(2).first == .loading && switching.gate.gates.last == .guarding(uid: "A", authGuardAfter: DeletionWires.authGuardAfter))
+        #expect(await switching.coordinator.currentIntent()?.uid == "A")
+        // an all-scope owner failure is blocked with Retry
+        let failing = try makeDeletionHarness(auth: .signedOut)
+        failing.owners.fail("reset")
+        #expect(await failing.coordinator.authTransition() == .settled(.blocked(.localPrivacyPurgeFailed)) && failing.gate.gates.last == .blocked)
+        failing.owners.fail("reset", false)
+        #expect(await failing.coordinator.authTransition() == .clear)
+        // mid-purge precedence: an all-scope transition queued behind the intent-linked purge waits for it
+        let mid = try makeDeletionHarness(auth: signedInA)
+        mid.remote.always("begin", .success(DeletionWires.dataFinal("x")))
+        mid.remote.always("finalize", .failure(.retryRequired))
+        mid.owners.setHoldRoute()
+        let deletion = Task { await mid.coordinator.startDeletion(uid: "A") }
+        while !mid.owners.isHoldingRoute { await Task.yield() }
+        let transition = Task { await mid.purge.purge(scope: .all) }
+        for _ in 0..<20 { await Task.yield() }
+        mid.owners.releaseRoute()
+        #expect(await deletion.value == .settled(.queued))
+        #expect(await transition.value == .cleared)
+        let routeCalls = mid.owners.calls.filter { $0.hasPrefix("route(") }
+        #expect(Array(routeCalls.prefix(2)) == ["route(A)", "route(all)"], "the UID purge pass completes before the queued all-scope purge starts; the detach pass then repeats the complete eight-owner work because the all-scope purge retired the UID journal")
+        #expect(await mid.coordinator.currentIntent()?.acks == PurgeOwner.order, "an all-scope ack is never mirrored into the UID intent; the UID prefix is its own")
+    }
+
+    @Test func remoteUnverifiedBranchPresentsRemoteUnconfirmedTakesTheLinkedHandoffAndEntersNeitherTerminalPhase() async throws {
+        let h = try makeDeletionHarness(auth: signedInA)
+        h.remote.script("begin", .failure(.retryRequired))
+        #expect(await h.coordinator.startDeletion(uid: "A") == .settled(.queued))
+        let prepared = try #require(await h.coordinator.currentIntent())
+        // signed out, capability invalid, deletion not proven: the honest branch
+        h.auth.set(.signedOut)
+        h.remote.always("resume", .failure(.capabilityInvalid))
+        let result = await h.coordinator.retry()
+        guard case let .settled(.completion(snapshot)) = result else { Issue.record("remote-unconfirmed expected, got \(result)"); return }
+        #expect(snapshot.result == .remoteUnconfirmed && h.gate.terminals.last == .remoteUnconfirmed)
+        let intent = try #require(await h.coordinator.currentIntent())
+        #expect(intent.phase == .localDetaching && intent.detachReason == .remoteUnverified && intent.acks == PurgeOwner.order && intent.operationId == prepared.operationId)
+        #expect(h.remote.actions == ["begin", "resume"] && h.owners.calls.count == 8)
+        #expect(TaskCanonicalV1.data(snapshot.result.presentation) == TaskCanonicalV1.data(["schemaVersion": 1, "kind": "ACCOUNT_DELETION_REMOTE_UNCONFIRMED"]))
+        // relaunch resolves the same terminal from bytes alone (no finalize, no completion claim)
+        let relaunch = try makeDeletionHarness(auth: .signedOut, directory: h.directory)
+        #expect(await relaunch.coordinator.discoverAtStartup() == .settled(.completion(snapshot)) && relaunch.remote.actions.isEmpty)
+        // the acknowledge takes the linked all-scope handoff and clears
+        #expect(await relaunch.completion.acknowledge(expectedGenerationId: snapshot.generationId, expectedSHA256: snapshot.sha256) == .acknowledged)
+        #expect(relaunch.intentBytes() == nil && relaunch.gate.gates.last == .clear && relaunch.signOut.calls == ["A"])
+        #expect(relaunch.owners.calls.contains("google.signOutAll"))
+    }
+
     // MARK: - Epoch stamps (I4, stamps only; manifest §5:540-546). Cleanup belongs to S3.
 
     @Test func dailyDoseLocalStoreWritesAStampedV2EnvelopeAndCASesRevision() async throws {
@@ -2346,9 +2632,29 @@ struct DispositionsStub: AccountDeletionProviderContextProviding {
     func dispositions(expectedUID: String) async -> AccountDeletionProviderDispositions { value }
 }
 
+/// Lets the completion presenter's `consume` reach the coordinator constructed after it (S7 wires production the same way).
+final class ConsumeBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var target: DurableStoreRecoveryCoordinator?
+    var coordinator: DurableStoreRecoveryCoordinator? {
+        get { lock.withLock { target } }
+        set { lock.withLock { target = newValue } }
+    }
+}
+
+final class SignOutRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var recorded: [String] = []
+    private var outcome = true
+    var calls: [String] { lock.withLock { recorded } }
+    func set(_ value: Bool) { lock.withLock { outcome = value } }
+    func signOut(_ uid: String) -> Bool { lock.withLock { recorded.append(uid); return outcome } }
+}
+
 /// One coordinator over seam fakes: scripted remote, recording owners, gate spy, isolated defaults, temp directory.
 struct DeletionHarness {
     let coordinator: DurableStoreRecoveryCoordinator
+    let signOut: SignOutRecorder
     let remote: ScriptedDeletionRemote
     let gate: GateSpy
     let owners: RecordingPurgeOwners
@@ -2362,18 +2668,21 @@ struct DeletionHarness {
     func intentBytes() -> Data? { try? Data(contentsOf: intentURL) }
 }
 
-func makeDeletionHarness(auth: SignedAuthAuthority, dispositions: AccountDeletionProviderDispositions = AccountDeletionProviderDispositions(appleRevocation: .notRequired, googleRevocation: .sdkDisconnectRequired, googleProviderUid: "g1")) throws -> DeletionHarness {
-    let directory = try temporaryDirectory()
+func makeDeletionHarness(auth: SignedAuthAuthority, dispositions: AccountDeletionProviderDispositions = AccountDeletionProviderDispositions(appleRevocation: .notRequired, googleRevocation: .sdkDisconnectRequired, googleProviderUid: "g1"), directory: URL? = nil) throws -> DeletionHarness {
+    let directory = try directory ?? temporaryDirectory()
     let remote = ScriptedDeletionRemote()
+    let box = ConsumeBox()
+    let signOut = SignOutRecorder()
     let gate = GateSpy()
     let owners = RecordingPurgeOwners()
     let authStub = SignedAuthStub(auth)
     let clock = ResetClockStub()
     let telemetry = TelemetryStub()
     let purge = LocalPrivacyPurgeCoordinator(directory: directory, clock: clock, owners: owners.owners, defaults: try isolatedDefaults(), currentUID: UIDProbe(nil), telemetry: telemetry)
-    let completion = AccountDeletionCompletionPresentation(directory: directory, clock: clock, consume: { _ in true }, opener: { _ in true })
-    let coordinator = DurableStoreRecoveryCoordinator(DurableStoreRecoveryCoordinator.Dependencies(directory: directory, clock: clock, auth: authStub, remote: remote, providerContext: DispositionsStub(value: dispositions), purge: purge, completion: completion, gate: gate))
-    return DeletionHarness(coordinator: coordinator, remote: remote, gate: gate, owners: owners, auth: authStub, clock: clock, telemetry: telemetry, purge: purge, completion: completion, directory: directory)
+    let completion = AccountDeletionCompletionPresentation(directory: directory, clock: clock, consume: { snapshot in await box.coordinator?.consumeTerminal(snapshot) ?? false }, opener: { _ in true })
+    let coordinator = DurableStoreRecoveryCoordinator(DurableStoreRecoveryCoordinator.Dependencies(directory: directory, clock: clock, auth: authStub, remote: remote, providerContext: DispositionsStub(value: dispositions), purge: purge, completion: completion, gate: gate, signOutMatchingUser: { uid in signOut.signOut(uid) }))
+    box.coordinator = coordinator
+    return DeletionHarness(coordinator: coordinator, signOut: signOut, remote: remote, gate: gate, owners: owners, auth: authStub, clock: clock, telemetry: telemetry, purge: purge, completion: completion, directory: directory)
 }
 
 let signedInA = SignedAuthAuthority.signedIn(SignedAuthTuple(uid: "A", authEpochUUID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", credentialRevision: 3))

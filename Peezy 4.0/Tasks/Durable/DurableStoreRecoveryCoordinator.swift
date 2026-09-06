@@ -321,7 +321,20 @@ actor DurableStoreRecoveryCoordinator {
         let purge: LocalPrivacyPurgeCoordinator
         let completion: AccountDeletionCompletionPresentation
         let gate: any AccountDeletionGateControlling
+        /// Signs out only a Firebase user whose UID matches (terminal consumption, Apple revocation); true when no
+        /// matching user remains afterwards. S7 wires the production closure; no other sign-out reaches the coordinator.
+        let signOutMatchingUser: @Sendable (String) async -> Bool
     }
+
+    /// The Apple credential-state rule (C2.5): revoked/notFound for still-matching authority signs out and resumes only an
+    /// already-named deletion; authorized is a no-op; every other state is the fixed `APPLE_CREDENTIAL_STATE_UNRESOLVED`.
+    enum AppleCredentialStateDisposition: Sendable, Equatable {
+        case resumed(AccountDeletionDispatchResult)
+        case signedOut
+        case noOp
+        case unresolved(String)
+    }
+    static let appleCredentialStateUnresolved = "APPLE_CREDENTIAL_STATE_UNRESOLVED"
 
     private let dependencies: Dependencies
     private let store: AccountDeletionIntentStore
@@ -346,9 +359,10 @@ actor DurableStoreRecoveryCoordinator {
             return await inflight.value
         }
         switch store.observe() {
-        case let .present(intent, _) where intent.uid != uid:
-            // Nonguarding phases: the exact local BUSY. The guarding Option-B handoff lands with the terminal-consumption increment.
+        case let .present(intent, _) where intent.uid != uid && intent.phase != .guarding:
             return .busy
+        case let .present(intent, identity) where intent.uid != uid:
+            return await runSingleflight(uid: uid) { await self.optionB(from: intent, identity, to: uid) }
         case .present:
             return await runSingleflight(uid: uid) { await self.resume() }
         case .absent:
@@ -368,6 +382,18 @@ actor DurableStoreRecoveryCoordinator {
         case let .present(intent, _):
             return await runSingleflight(uid: intent.uid) { await self.resume() }
         case .absent:
+            // a surviving linked all-scope journal is crash-recovery authority (the intent was already unlinked)
+            if case let .present(journal) = await dependencies.purge.observeJournal(), journal.scope == .all, let link = journal.terminalDeletionLink {
+                return await runSingleflight(uid: "") { await self.finishConsumption(link: link, intentIdentity: nil) }
+            }
+            // a stray completion file (crash between the journal unlink and the file unlink): re-present it for its acknowledge
+            if let snapshot = await dependencies.completion.current() {
+                trace.append("completion:stray")
+                presentation = .completion(snapshot)
+                await dependencies.gate.setGate(.blocked)
+                await dependencies.gate.setPendingTerminalPresentation(Self.terminalKind(of: snapshot.result))
+                return .settled(.completion(snapshot))
+            }
             guard case let .signedIn(tuple) = await dependencies.auth.currentSignedAuth() else { return await clearGate() }
             return await runSingleflight(uid: tuple.uid) { await self.discover(tuple: tuple) }
         case .malformed:
@@ -375,6 +401,63 @@ actor DurableStoreRecoveryCoordinator {
         case let .ioFailed(code):
             trace.append("intent:io:\(code.rawValue)")
             return await blockGate(.fileIO)
+        }
+    }
+
+    /// Every SIGNED_OUT transition and direct A→B switch (C2.4): `loading`, the intent-linked reducer first, then the
+    /// crash-durable all-scope purge, then startup discovery; `clear` or the next UID is published only after both finish.
+    func authTransition() async -> AccountDeletionDispatchResult {
+        if let inflight { _ = await inflight.value }
+        await dependencies.gate.setGate(.loading)
+        trace.append("auth_transition")
+        var intentResult: AccountDeletionDispatchResult?
+        if case .present = store.observe() {
+            intentResult = await runSingleflight(uid: "") { await self.resume() }
+        }
+        let purged = await dependencies.purge.purge(scope: .all)
+        trace.append("all_scope:\(purged)")
+        if case let .blocked(reason) = purged { return await blockGate(reason) }
+        if let intentResult, case .present = store.observe() { return intentResult }
+        return await discoverAtStartup()
+    }
+
+    /// C2.5 Apple credential state for `uid`'s still-matching authority.
+    func appleCredentialState(_ state: AppleCredentialStateOutcomeV1, uid: String) async -> AppleCredentialStateDisposition {
+        switch state {
+        case .authorized:
+            return .noOp
+        case .revoked, .notFound:
+            guard case let .signedIn(tuple) = await dependencies.auth.currentSignedAuth(), tuple.uid == uid else { return .noOp }
+            trace.append("apple:\(state.rawValue):sign_out")
+            _ = await dependencies.signOutMatchingUser(uid)
+            guard case let .present(intent, _) = store.observe(), intent.uid == uid else { return .signedOut }
+            return .resumed(await retry())
+        case .transferred, .unresolved:
+            trace.append(Self.appleCredentialStateUnresolved)
+            return .unresolved(Self.appleCredentialStateUnresolved)
+        }
+    }
+
+    /// The presenter's `consume`: the terminal consumption order of C2.2. True only when the intent and journal are gone.
+    func consumeTerminal(_ snapshot: CompletionSnapshotV1) async -> Bool {
+        if let inflight { _ = await inflight.value }
+        switch store.observe() {
+        case let .present(intent, identity):
+            guard Self.isTerminal(intent) else { trace.append("consume:not_terminal"); return false }
+            trace.append("consume:sign_out")
+            guard await dependencies.signOutMatchingUser(intent.uid) else { _ = await blockGate(.localPrivacyPurgeFailed); return false }
+            let link = TerminalDeletionLinkV1(deletionOperationId: intent.operationId, deletionProofSHA256: intent.proofSHA256)
+            return await runSingleflight(uid: intent.uid) { await self.finishConsumption(link: link, intentIdentity: identity) } == .clear
+        case .absent:
+            if case let .present(journal) = await dependencies.purge.observeJournal(), journal.scope == .all, let link = journal.terminalDeletionLink {
+                return await runSingleflight(uid: "") { await self.finishConsumption(link: link, intentIdentity: nil) } == .clear
+            }
+            // the consumption already completed; only the completion file remained
+            _ = snapshot
+            return await clearGate() == .clear
+        case .malformed, .ioFailed:
+            _ = await blockGate(.fileIO)
+            return false
         }
     }
 
@@ -493,6 +576,9 @@ actor DurableStoreRecoveryCoordinator {
 
     private func resume() async -> AccountDeletionDispatchResult {
         guard case let .present(intent, identity) = store.observe() else { return await retry() }
+        if Self.isTerminal(intent), case let .present(journal) = await dependencies.purge.observeJournal(), journal.scope == .all, let link = journal.terminalDeletionLink {
+            return await finishConsumption(link: link, intentIdentity: identity)
+        }
         await project(intent)
         return await reduce(intent, identity)
     }
@@ -589,14 +675,25 @@ actor DurableStoreRecoveryCoordinator {
     private func capabilityInvalidExit(_ intent: AccountDeletionIntentV1, _ identity: AccountDeletionIntentIdentity) async -> Step {
         let observation = await dependencies.auth.confirmAccountDeleted(expected: AuthIdentity(uid: intent.uid, authEpochUUID: intent.authEpochUUID))
         trace.append("confirmAccountDeleted:\(observation.rawValue)")
-        guard observation == .definitivelyDeleted, intent.phase == .prepared else {
+        guard intent.phase == .prepared else {
             presentation = .blocked(.remoteMalformed)
             return .rest(.settled(.blocked(.remoteMalformed)))
         }
-        return await transition(intent, identity) { next in
-            next.phase = .localDetaching; next.detachReason = .capabilityInvalid; next.purpose = nil
-            next.authorityKind = nil; next.startedAt = nil; next.dataDeletedAt = nil; next.stagedRoot = nil; next.authGuardAfter = nil
+        if observation == .definitivelyDeleted {
+            return await transition(intent, identity) { next in
+                next.phase = .localDetaching; next.detachReason = .capabilityInvalid; next.purpose = nil
+                next.authorityKind = nil; next.startedAt = nil; next.dataDeletedAt = nil; next.stagedRoot = nil; next.authGuardAfter = nil
+            }
         }
+        // The honest branch: no Auth user to re-enroll with and no proof of deletion — local data is removed, remote deletion unverified.
+        if case .signedOut = await dependencies.auth.currentSignedAuth() {
+            return await transition(intent, identity) { next in
+                next.phase = .localDetaching; next.detachReason = .remoteUnverified; next.purpose = nil
+                next.authorityKind = nil; next.startedAt = nil; next.dataDeletedAt = nil; next.stagedRoot = nil; next.authGuardAfter = nil
+            }
+        }
+        presentation = .blocked(.remoteMalformed)
+        return .rest(.settled(.blocked(.remoteMalformed)))
     }
 
     private func request(for intent: AccountDeletionIntentV1, preferred: (String, String, String) -> AccountDeletionRequestV1) async -> AccountDeletionRequestV1 {
@@ -737,8 +834,14 @@ actor DurableStoreRecoveryCoordinator {
         case (.dataDeleted, _):
             return await transition(detached, detachedIdentity) { $0.phase = .authFinalizeDispatched; $0.stagedRoot = nil }
         case (.authGuarding, _):
-            // The guarding wire in hand means no finalize call (C2.2); a relaunch here dispatches finalize once.
-            return await transition(detached, detachedIdentity, wire: wire) { $0.phase = .guarding; $0.stagedRoot = nil }
+            // Entering `guarding` from the staged root never calls finalize (C2.2); the reducer rests here, and a later
+            // launch or Retry in `guarding` dispatches finalize once.
+            _ = wire
+            let step = await transition(detached, detachedIdentity) { $0.phase = .guarding; $0.stagedRoot = nil }
+            guard case let .next(entered, _, _) = step else { return step }
+            let guarding: AccountDeletionPresentationV1 = .guarding(authGuardAfter: entered.authGuardAfter ?? "")
+            presentation = guarding
+            return .rest(.settled(guarding))
         case (_, .authDeleted):
             return await transition(detached, detachedIdentity) { $0.phase = .completed; $0.detachReason = nil }
         case (_, .capabilityInvalid):
@@ -801,11 +904,81 @@ actor DurableStoreRecoveryCoordinator {
         }
     }
 
-    // MARK: terminal publication (consumption is the next increment's)
+    // MARK: terminal consumption (C2.2) and the Option-B guarding handoff (C2.4)
+
+    private static func isTerminal(_ intent: AccountDeletionIntentV1) -> Bool {
+        intent.phase == .completed || intent.phase == .localCleared || (intent.phase == .localDetaching && intent.detachReason == .remoteUnverified)
+    }
+
+    private static func terminalKind(of result: CompletionResultV1) -> TerminalPresentationKind {
+        switch result {
+        case .completed: return .completed
+        case .localCleared: return .localCleared
+        case .remoteUnconfirmed: return .remoteUnconfirmed
+        }
+    }
+
+    /// After the matching sign-out: the linked all-scope journal (created before the intent is unlinked) drives the eight
+    /// owners and both barriers again, then the intent is unlinked, then the journal, then `clear` is published. A journal
+    /// whose link does not byte-match the surviving intent is `LOCAL_PRIVACY_PURGE_FAILED`.
+    private func finishConsumption(link: TerminalDeletionLinkV1, intentIdentity: AccountDeletionIntentIdentity?) async -> AccountDeletionDispatchResult {
+        if case let .present(intent, _) = store.observe() {
+            guard intent.operationId == link.deletionOperationId, intent.proofSHA256 == link.deletionProofSHA256 else {
+                trace.append("consume:link_mismatch")
+                return await blockGate(.localPrivacyPurgeFailed)
+            }
+        }
+        let result = await dependencies.purge.purge(LocalPrivacyPurgeCoordinator.Request(scope: .all, providerContext: nil, terminalDeletionLink: link))
+        trace.append("consume:purge:\(result)")
+        guard result == .cleared else {
+            if case let .blocked(reason) = result { return await blockGate(reason) }
+            return await blockGate(.localPrivacyPurgeFailed)
+        }
+        if case let .present(_, identity) = store.observe() {
+            guard case .success = store.unlink(expecting: intentIdentity ?? identity) else { trace.append("consume:unlink_stale"); return await blockGate(.fileIO) }
+            trace.append("consume:intent_unlinked")
+        }
+        guard await dependencies.purge.unlinkJournal() else { return await blockGate(.fileIO) }
+        trace.append("consume:journal_unlinked")
+        return await clearGate()
+    }
+
+    /// Option B: the guarding intent's server AUTH_GUARDING authority and every local postcondition are byte-matched, the
+    /// new UID's capability is prepared without an intervening await after the CAS unlink; any drift refuses with retained bytes.
+    private func optionB(from guarding: AccountDeletionIntentV1, _ identity: AccountDeletionIntentIdentity, to newUID: String) async -> AccountDeletionDispatchResult {
+        guard case let .signedIn(tuple) = await dependencies.auth.currentSignedAuth(), tuple.uid == newUID else { trace.append("optionB:auth_drift"); return .busy }
+        guard case let .success(.authGuarding(wire)) = await dispatch(.resume(uid: guarding.uid, operationId: guarding.operationId, proofNonce: guarding.proofNonce)),
+              wire.authorityKind == guarding.authorityKind, wire.startedAt == guarding.startedAt, wire.dataDeletedAt == guarding.dataDeletedAt,
+              wire.authGuardAfter == guarding.authGuardAfter else { trace.append("optionB:authority_mismatch"); return .busy }
+        switch await dependencies.purge.observeJournal() {
+        case .absent: break
+        case let .present(journal) where journal.scope == .uid(guarding.uid) && journal.acks == PurgeOwner.order: break
+        default: trace.append("optionB:journal_incomplete"); return .busy
+        }
+        let dispositions = await dependencies.providerContext.dispositions(expectedUID: newUID)
+        guard let proofNonce = AccountDeletionCapability.newProofNonce() else { return .busy }
+        let now = dependencies.clock.now()
+        guard CanonicalInstant.isCanonical(now) else { trace.append("clock:nonrepresentable"); return .busy }
+        guard case let .signedIn(current) = await dependencies.auth.currentSignedAuth(), current == tuple else { trace.append("optionB:auth_drift"); return .busy }
+        // no await between the unlink and the new intent's persistence
+        guard case .success = store.unlink(expecting: identity) else { trace.append("optionB:cas_drift"); return .busy }
+        trace.append("optionB:unlinked")
+        let intent = AccountDeletionIntentV1(
+            uid: newUID, authEpochUUID: tuple.authEpochUUID, credentialRevision: tuple.credentialRevision,
+            operationId: AccountDeletionCapability.newOperationId(), proofNonce: proofNonce, dispositions: dispositions,
+            phase: .prepared, purpose: .confirmedBegin, authorityKind: nil, detachReason: nil, stagedRoot: nil,
+            startedAt: nil, dataDeletedAt: nil, authGuardAfter: nil, acks: [], createdAt: now, updatedAt: now)
+        guard case let .success(newIdentity) = store.write(intent, expecting: nil) else { return await blockGate(.fileIO) }
+        trace.append("phase:prepared:confirmed_begin")
+        _ = await dependencies.purge.unlinkJournal()
+        await project(intent)
+        return await reduce(intent, newIdentity)
+    }
+
+    // MARK: terminal publication
 
     private func publishTerminal(_ intent: AccountDeletionIntentV1) async -> AccountDeletionDispatchResult {
         let result: CompletionResultV1
-        let kind: TerminalPresentationKind
         switch (intent.phase, intent.detachReason) {
         case (.completed, _):
             let google: GoogleCompletedRevocation
@@ -814,12 +987,13 @@ actor DurableStoreRecoveryCoordinator {
             case .sdkDisconnectRequired: google = .revoked
             case .manualRequired: google = .manualRequired
             }
-            result = .completed(appleRevocation: intent.dispositions.appleRevocation, googleRevocation: google); kind = .completed
+            result = .completed(appleRevocation: intent.dispositions.appleRevocation, googleRevocation: google)
         case (.localCleared, _):
-            result = .localCleared; kind = .localCleared
+            result = .localCleared
         default:
-            result = .remoteUnconfirmed; kind = .remoteUnconfirmed
+            result = .remoteUnconfirmed
         }
+        let kind = Self.terminalKind(of: result)
         switch await dependencies.completion.derive(result) {
         case let .written(snapshot), let .replayed(snapshot):
             trace.append("completion:\(intent.phase.rawValue)")
@@ -834,5 +1008,16 @@ actor DurableStoreRecoveryCoordinator {
             trace.append("completion:io:\(code.rawValue)")
             return await blockGate(.fileIO)
         }
+    }
+}
+
+extension CompletionResultV1 {
+    /// The manual-required providers whose instruction paragraphs and links the surface shows, Apple then Google (C2.5).
+    var manualProviders: [CompletionProvider] {
+        guard case let .completed(apple, google) = self else { return [] }
+        var providers: [CompletionProvider] = []
+        if apple == .manualRequired { providers.append(.apple) }
+        if google == .manualRequired { providers.append(.google) }
+        return providers
     }
 }
