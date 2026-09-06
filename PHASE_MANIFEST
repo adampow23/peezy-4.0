@@ -78,3 +78,5 @@ storage.rules
 firestore.indexes.json
 docs/archive/phase2/*
 logs/*
+# S3 test support (I9d/I11): independent oracles, fixture codecs, and the injected public-v1 client stand-in; two of these (phase0SizingOracle.js, rawDocument.js) were created before this line existed and are disclosed in tasks/todo.md
+functions/tests/support/*.js

@@ -1666,6 +1666,225 @@ test("C9.1.30 (D11) PEEZY_STATE_REGEN_SPEC.md item 9 is the contract's exact rep
   for (const phrase of retired) assert.equal(outsideRule.includes(phrase), false, `contract contains "${phrase}" outside C9.1.30`);
 });
 
+
+// ---------------------------------------------------------------------------
+// S3 I11a — PHASE2_CONTRACT.md C9.2 MIG-EVENT-V1: arming, exact query, stream classification, reread, the
+// FirestoreDocumentArchiveV1 codec and its oracle, the chunk gate, and the two-pass audit. The contract's inventory
+// keeps the migration fixtures in this file (C10: "no new Node test file is implied").
+// ---------------------------------------------------------------------------
+
+const migration = require("../scripts/migrateOversizeEvents");
+const archiveOracle = require("./support/archiveOracle");
+const { FakeV1Client, gapicFields, gapicValue, ts: gapicTs, ROOT: GAPIC_ROOT } = require("./support/fakeV1Client");
+const gapicProtos = require("@google-cloud/firestore/build/protos/firestore_v1_proto_api.js");
+
+const MIG_PROJECT = "demo-peezy-phase1";
+const MIG_NOW = Timestamp.fromMillis(Date.parse("2026-09-06T12:00:00.000Z"));
+const migPending = (id, extra = {}) => ({ event_id: id, event_name: "institution.updated", canonical_key: "service/provider-1", source_version: 2, observed_at: Timestamp.fromMillis(Date.parse("2026-08-27T16:59:00.000Z")), source_evidence_id: "ev", effect: "fire", payload: {}, processingState: "pending", processed: false, ...extra });
+const migOversize = (id) => migPending(id, { payload: { s: "x".repeat(1_047_600) } });
+function migDeps(client, overrides = {}) {
+  return {
+    env: {}, now: () => MIG_NOW, readFile: (file) => fs.readFileSync(file), repositoryRoot: path.resolve(__dirname, "../.."),
+    pinnedVersion: () => "7.11.6", pinnedConfigSha256: () => migration.PINNED_CLIENT_CONFIG_SHA256, protos: gapicProtos,
+    createClient: () => ({ client, callOptions: {} }), resolveTarget: async () => ({ projectId: MIG_PROJECT, databaseId: "(default)" }), ...overrides
+  };
+}
+
+test("C9.2.2 import has no effect; default mode is a read-only audit; every executable arming predicate fails closed before the write seam; only the complete literal arming set reaches it", async () => {
+  const source = fs.readFileSync(path.resolve(__dirname, "../scripts/migrateOversizeEvents.js"), "utf8");
+  assert.match(source, /if \(require\.main === module\) main\(\)/);
+  const client = new FakeV1Client({ projectId: MIG_PROJECT });
+  let result = await migration.run([], migDeps(client));
+  assert.deepEqual([result.exitCode, result.report.mode, result.report.refusal], [0, "audit", null]);
+  assert.equal(client.queries.length, 2, "two audit passes");
+  const production = (overrides = {}) => migDeps(new FakeV1Client({ projectId: "peezy-1ecrdl" }), { resolveTarget: async () => ({ projectId: "peezy-1ecrdl", databaseId: "(default)" }), ...overrides });
+  const armed = ["--apply", "--project-id", "peezy-1ecrdl", "--confirm-project", "peezy-1ecrdl"];
+  for (const [label, argv, d, refusal] of [
+    ["unknown argument", [...armed, "--force"], production(), "UNKNOWN_ARGUMENT"],
+    ["wrong project id", ["--apply", "--project-id", "demo", "--confirm-project", "peezy-1ecrdl"], production(), "PROJECT_ID_MISMATCH"],
+    ["missing confirmation", ["--apply", "--project-id", "peezy-1ecrdl"], production(), "CONFIRM_PROJECT_MISMATCH"],
+    ["emulator variable", armed, production({ env: { FIRESTORE_EMULATOR_HOST: "127.0.0.1:8080" } }), "EMULATOR_HOST_PRESENT"],
+    ["resolved target differs", armed, production({ resolveTarget: async () => ({ projectId: "other", databaseId: "(default)" }) }), "RESOLVED_TARGET_MISMATCH"],
+    ["rules hash drift", armed, production({ readFile: (file) => (file.endsWith("firestore.rules") ? Buffer.from("drift") : fs.readFileSync(file)) }), "ROLLOUT_TUPLE_MISMATCH"],
+    ["pin drift", armed, production({ pinnedVersion: () => "7.11.7" }), "PIN_MISMATCH"]
+  ]) {
+    result = await migration.run(argv, d);
+    assert.equal(result.report.refusal, refusal, label);
+    assert.notEqual(result.exitCode, 0, label);
+  }
+  result = await migration.run(armed.slice(1), production());
+  assert.deepEqual([result.report.mode, result.report.refusal], ["audit", null], "without --apply the run is the default read-only audit");
+  assert.equal(migration.armingRefusal(migration.parseArguments(armed.slice(1)), production(), { projectId: "peezy-1ecrdl", databaseId: "(default)" }), "NOT_ARMED");
+  result = await migration.run(armed, production());
+  assert.equal(result.report.refusal, "WRITE_SEAM_NOT_IMPLEMENTED", "the complete literal set reaches the write seam (I11b)");
+  assert.deepEqual(migration.rolloutTuple(migDeps(client)), migration.ROLLOUT_TUPLE_V1, "the accepted tuple equals the current rules/index bytes");
+});
+
+test("C9.2.1 the exact StructuredQuery reaches the injected runQuery with limit.value == 100 and a reference cursor only after a full page; absent, unwrapped, or out-of-range wrappers are fatal; enumeration at 0/1/100/101 documents pages correctly", async () => {
+  const q = migration.structuredQueryFor(gapicProtos, null);
+  assert.equal(q.limit.value, 100);
+  assert.equal(q.from[0].collectionId, "events"); assert.equal(q.from[0].allDescendants, true);
+  // the pinned proto stores enums as their numbers: FieldFilter.Operator.EQUAL == 5, Direction.ASCENDING == 1
+  assert.equal(q.where.fieldFilter.field.fieldPath, "processingState"); assert.equal(q.where.fieldFilter.op, 5); assert.equal(q.where.fieldFilter.value.stringValue, "pending");
+  assert.equal(q.orderBy[0].field.fieldPath, "__name__"); assert.equal(q.orderBy[0].direction, 1);
+  assert.equal(q.startAt, null);
+  const cursored = migration.structuredQueryFor(gapicProtos, `${GAPIC_ROOT(MIG_PROJECT)}/users/u1/events/e099`);
+  assert.equal(cursored.startAt.before, false); assert.equal(cursored.startAt.values[0].referenceValue, `${GAPIC_ROOT(MIG_PROJECT)}/users/u1/events/e099`);
+  for (const [label, limit] of [["absent", undefined], ["unwrapped", 100], ["zero", { value: 0 }], ["negative", { value: -1 }], ["int32 overflow", { value: 2147483648 }], ["not the page", { value: 50 }], ["nonsafe", { value: 1.5 }]]) assert.throws(() => migration.validateLimitWrapper(limit), (e) => e.code === "LIMIT_WRAPPER_INVALID", label);
+  for (const count of [0, 1, 100, 101]) {
+    const docs = {};
+    for (let i = 0; i < count; i += 1) docs[`users/u1/events/e${String(i).padStart(3, "0")}`] = migPending(`e${String(i).padStart(3, "0")}`);
+    const client = new FakeV1Client({ projectId: MIG_PROJECT, documents: docs });
+    const seen = [];
+    const total = await migration.enumeratePending(client, gapicProtos, MIG_PROJECT, {}, async (d) => { seen[seen.length] = d.name; });
+    assert.equal(total, count, `count ${count}`);
+    assert.equal(seen.length, count);
+    assert.equal(client.queries.length, count >= 100 ? 2 : 1, `queries for ${count}`);
+    if (count >= 100) assert.equal(client.queries[1].request.structuredQuery.startAt.values[0].referenceValue, `${GAPIC_ROOT(MIG_PROJECT)}/users/u1/events/e099`, "cursor after the 100th");
+    for (const { request } of client.queries) assert.equal(request.structuredQuery.limit.value, 100);
+  }
+});
+
+test("C9.2.1 stream classification by presence: document, progress, and done responses; fatal on a transaction, nonzero skippedResults, explainMetrics, unknown member, empty member, missing document readTime, non-ascending names, anything after the terminal marker, and an empty query without progress", async () => {
+  const client = new FakeV1Client({ projectId: MIG_PROJECT });
+  const doc = { name: `${GAPIC_ROOT(MIG_PROJECT)}/users/u1/events/e1`, fields: gapicFields(migPending("e1")), createTime: gapicTs(0), updateTime: gapicTs(0) };
+  assert.equal(migration.classifyResponse(client.response({ document: doc })).kind, "document");
+  assert.equal(migration.classifyResponse(client.response({ document: doc, done: true })).done, true);
+  assert.equal(migration.classifyResponse(client.response({})).kind, "progress");
+  assert.equal(migration.classifyResponse(client.response({ done: true, readTime: null })).kind, "done");
+  assert.equal(migration.classifyResponse(client.response({ done: true })).kind, "done", "done with a valid readTime");
+  for (const [label, overrides] of [["transaction", { transaction: Buffer.from([1]) }], ["skippedResults", { skippedResults: 1 }], ["negative skipped", { skippedResults: -1 }], ["explainMetrics", { explainMetrics: {} }], ["unknown member", { surprise: 1 }], ["empty member", { readTime: null }], ["document without readTime", { document: doc, readTime: null }], ["incomplete document", { document: { name: doc.name } }], ["invalid readTime", { readTime: { seconds: "x" } }]]) {
+    assert.throws(() => migration.classifyResponse(client.response(overrides)), (e) => e.code === "STREAM_SHAPE_INVALID", label);
+  }
+  const scripted = (responses) => new FakeV1Client({ projectId: MIG_PROJECT, scriptedResponses: () => responses.map((o) => client.response(o)) });
+  const named = (n) => ({ ...doc, name: `${GAPIC_ROOT(MIG_PROJECT)}/users/u1/events/${n}` });
+  const run = (c) => migration.enumeratePending(c, gapicProtos, MIG_PROJECT, {}, async () => {});
+  await assert.rejects(run(scripted([{ document: named("b") }, { document: named("a") }])), (e) => e.code === "STREAM_SHAPE_INVALID", "non-ascending");
+  await assert.rejects(run(scripted([{ document: named("a") }, { document: named("a") }])), (e) => e.code === "STREAM_SHAPE_INVALID", "duplicate");
+  await assert.rejects(run(scripted([{ document: named("a"), done: true }, { document: named("b") }])), (e) => e.code === "STREAM_SHAPE_INVALID", "after terminal");
+  await assert.rejects(run(scripted([{ done: true, readTime: null }, {}])), (e) => e.code === "STREAM_SHAPE_INVALID", "after done");
+  await assert.rejects(run(scripted([])), (e) => e.code === "STREAM_SHAPE_INVALID", "empty query without a progress response");
+  assert.equal(await run(scripted([{}])), 0, "empty query after one progress response");
+  assert.equal(await run(scripted([{}, { document: named("a") }, { done: true, readTime: null }])), 1);
+});
+
+test("C9.2.4 the archive codec encodes every raw Value oneof exactly (tags, big-endian doubles 1.0/-0.0/subnormal, NaN forms, infinities, int64 extrema, timestamp extremes, geopoint, unsigned-UTF-8 key order), round-trips byte-for-byte, and the digest and N <= S + 4K + 13V + F + 8,192 hold; the oracle recomputes F and N", () => {
+  const hex = (n) => { const b = Buffer.alloc(8); b.writeDoubleBE(n, 0); return b.toString("hex"); };
+  const fields = gapicFields({
+    z: null, f: false, t: true, i: 1, big: 9223372036854775807n, small: -9223372036854775808n, d: 1.0, negZero: -0.0, sub: Number.MIN_VALUE, nan: NaN, inf: Infinity, ninf: -Infinity,
+    ts: Timestamp.fromMillis(1_700_000_000_123), tmax: new Timestamp(253402300799, 999999999), tmin: new Timestamp(-62135596800, 0),
+    s: "héllo", bytes: Buffer.from([0, 255]), ref: { __ref: "users/u1/tasks/t1" }, geo: { __geo: [1.5, -2] }, arr: [1, "a", null, [true]], map: { b: 1, a: 2, "é": 3, "z": { nested: "x" } },
+    vec: { __type__: "__vector__", value: [1.5, 2.5] }
+  }, MIG_PROJECT);
+  const document = { name: `${GAPIC_ROOT(MIG_PROJECT)}/users/u1/events/e1`, fields, createTime: gapicTs(0), updateTime: { seconds: "1700000000", nanos: 5 } };
+  const encoded = migration.encodeArchive(document);
+  assert.equal(encoded.bytes.subarray(0, 5).toString("latin1"), "PZFDA");
+  assert.equal(encoded.bytes[5], 1);
+  const enc = (v) => migration.encodeValue(gapicValue(v, MIG_PROJECT), { K: 0, V: 0, F: 0 }).toString("hex");
+  const encDouble = (d) => migration.encodeValue({ valueType: "doubleValue", doubleValue: d }, { K: 0, V: 0, F: 0 }).toString("hex");
+  assert.equal(encDouble(1.0), `04${hex(1.0)}`); assert.equal(hex(1.0), "3ff0000000000000"); assert.equal(encDouble(-0.0), `04${hex(-0.0)}`); assert.equal(hex(-0.0), "8000000000000000"); assert.equal(encDouble(Number.MIN_VALUE), "040000000000000001");
+  assert.equal(enc(1), "030000000000000001", "an integral fixture number is an int64");
+  assert.equal(enc(NaN), "05"); assert.equal(enc(Infinity), "06"); assert.equal(enc(-Infinity), "07"); assert.equal(enc(null), "00"); assert.equal(enc(false), "01"); assert.equal(enc(true), "02");
+  assert.equal(enc(9223372036854775807n), "037fffffffffffffff"); assert.equal(enc(-9223372036854775808n), "038000000000000000");
+  assert.equal(enc("é"), "0900000002c3a9");
+  assert.equal(enc({ __geo: [1.5, -2] }), `0c${hex(1.5)}${hex(-2)}`);
+  const minSeconds = Buffer.alloc(8); minSeconds.writeBigInt64BE(-62135596800n, 0);
+  assert.equal(enc(new Timestamp(-62135596800, 0)), `08${minSeconds.toString("hex")}00000000`, "timestamp minimum as big-endian i64 seconds plus u32 nanos");
+  const maxSeconds = Buffer.alloc(8); maxSeconds.writeBigInt64BE(253402300799n, 0);
+  assert.equal(enc(new Timestamp(253402300799, 999999999)), `08${maxSeconds.toString("hex")}3b9ac9ff`, "timestamp maximum");
+  assert.equal(migration.encodeValue({ valueType: "doubleValue", doubleValue: -NaN }, { K: 0, V: 0, F: 0 }).toString("hex"), "05", "every NaN normalizes to tag 05");
+  const mapHex = enc({ b: 1, a: 2, "é": 3 });
+  assert.ok(mapHex.startsWith("0e00000003" + "0000000161" + "030000000000000002"), "keys in unsigned UTF-8 byte order: a, b, e-acute");
+  const decoded = migration.decodeArchive(encoded.bytes);
+  const again = migration.encodeArchive(decoded);
+  assert.ok(again.bytes.equals(encoded.bytes), "encode(decode(bytes)) == bytes");
+  assert.equal(encoded.archiveDigest, createHash("sha256").update(encoded.bytes).digest("hex"));
+  assert.deepEqual(decoded.updateTime, { seconds: "1700000000", nanos: 5 });
+  assert.equal(decoded.fields.big.integerValue, "9223372036854775807", "int64 precision preserved");
+  assert.ok(Number.isNaN(decoded.fields.nan.doubleValue));
+  const view = archiveOracle.archiveBytes(document);
+  assert.deepEqual([encoded.N, encoded.K, encoded.V, encoded.F], [view.N, view.K, view.V, view.F], "oracle agrees on N, K, V, F");
+  const S = scheduler.rawStorage.documentSize("users/u1/events/e1", migration.toJsonFields(fields));
+  assert.ok(encoded.N <= S + 4 * encoded.K + 13 * encoded.V + encoded.F + 8192);
+  const refs = Object.fromEntries(Array.from({ length: 1000 }, (_, i) => [`r${i}`, { __ref: "a/b" }]));
+  const refDoc = { name: `${GAPIC_ROOT(MIG_PROJECT)}/users/u1/events/refs`, fields: gapicFields(refs, MIG_PROJECT), createTime: gapicTs(0), updateTime: gapicTs(0) };
+  const refEncoded = migration.encodeArchive(refDoc);
+  const refS = scheduler.rawStorage.documentSize("users/u1/events/refs", migration.toJsonFields(refDoc.fields));
+  assert.ok(refEncoded.N > refS + 4 * refEncoded.K + 13 * refEncoded.V + 8192, "without F the bound fails");
+  assert.ok(refEncoded.N <= refS + 4 * refEncoded.K + 13 * refEncoded.V + refEncoded.F + 8192, "with F the bound passes");
+  assert.equal(archiveOracle.archiveBytes(refDoc).F, refEncoded.F);
+  for (const [label, bad] of [["unknown oneof", { valueType: "weirdValue" }], ["malformed timestamp", { valueType: "timestampValue", timestampValue: { seconds: "x", nanos: 0 } }], ["nanos out of range", { valueType: "timestampValue", timestampValue: { seconds: "1", nanos: 1e9 } }], ["empty reference", { valueType: "referenceValue", referenceValue: "" }]]) {
+    assert.throws(() => migration.encodeValue(bad, { K: 0, V: 0, F: 0 }), (e) => e.code === "ARCHIVE_CODEC_INVARIANT", label);
+  }
+  assert.throws(() => migration.decodeArchive(Buffer.concat([encoded.bytes, Buffer.from([0])])), (e) => e.code === "ARCHIVE_CODEC_INVARIANT", "decoder residue");
+  assert.throws(() => migration.decodeArchive(encoded.bytes.subarray(0, encoded.bytes.length - 1)), (e) => e.code === "ARCHIVE_CODEC_INVARIANT", "truncated");
+  const id = migration.archiveIdFor("users/u1/events/e1", document.updateTime, encoded.archiveDigest);
+  assert.match(id, /^qev2_[0-9a-f]{40}$/);
+  assert.equal(id, `qev2_${createHash("sha256").update(JSON.stringify({ archive_digest: encoded.archiveDigest, domain: "event_archive.v1", source_path: "users/u1/events/e1", source_update_time: { nanoseconds: 5, seconds: 1700000000 } })).digest("hex").slice(0, 40)}`);
+});
+
+test("C9.2.5 the chunk gate: N == MAX_ARCHIVE_BYTES admits 49 chunks; N == MAX_ARCHIVE_BYTES + 1 is ARCHIVE_CHUNK_CAP_EXCEEDED with only the code and measured N; chunk counts at P-1/P/P+1/2P; a reference-heavy source", () => {
+  const build = (targetN) => {
+    const probe = { name: `${GAPIC_ROOT(MIG_PROJECT)}/users/u1/events/big`, fields: gapicFields({ s: "" }), createTime: gapicTs(0), updateTime: gapicTs(0) };
+    const base = migration.encodeArchive(probe).N;
+    return { ...probe, fields: gapicFields({ s: "x".repeat(targetN - base) }) };
+  };
+  const at = (n) => { const d = build(n); return migration.archivePlan(d, "users/u1/events/big", scheduler.rawStorage.documentSize("users/u1/events/big", migration.toJsonFields(d.fields))); };
+  assert.deepEqual([at(migration.MAX_ARCHIVE_BYTES).N, at(migration.MAX_ARCHIVE_BYTES).chunkCount], [migration.MAX_ARCHIVE_BYTES, 49]);
+  assert.throws(() => at(migration.MAX_ARCHIVE_BYTES + 1), (e) => e.code === "ARCHIVE_CHUNK_CAP_EXCEEDED" && e.detail === String(migration.MAX_ARCHIVE_BYTES + 1) && !e.message.includes("xxxx"));
+  const P = migration.CHUNK_PAYLOAD_MAX;
+  assert.deepEqual([at(P - 1).chunkCount, at(P).chunkCount, at(P + 1).chunkCount, at(2 * P).chunkCount, at(2 * P + 1).chunkCount], [1, 1, 2, 2, 3]);
+  const heavy = { name: `${GAPIC_ROOT(MIG_PROJECT)}/users/u1/events/heavy`, fields: gapicFields(Object.fromEntries(Array.from({ length: 5000 }, (_, i) => [`r${i}`, { __ref: "a/b" }])), MIG_PROJECT), createTime: gapicTs(0), updateTime: gapicTs(0) };
+  const plan = migration.archivePlan(heavy, "users/u1/events/heavy", scheduler.rawStorage.documentSize("users/u1/events/heavy", migration.toJsonFields(heavy.fields)));
+  assert.ok(plan.N <= plan.bound && plan.chunkCount >= 1);
+});
+
+test("C9.2.1 classification: in-scope names only (one segment each), OUT_OF_SCOPE_SOURCE for any other matching path, mandatory reread before deriving identity, drift on a missing or no-longer-pending reread, admitted sources pass the raw envelope, oversize sources carry archive identity and chunk counts; the report never carries raw bytes", async () => {
+  const client = new FakeV1Client({ projectId: MIG_PROJECT, documents: {
+    "users/u1/events/ok": migPending("ok"),
+    "users/u1/events/big": migOversize("big"),
+    "orgs/o1/events/x": migPending("x"),
+    "users/u1/things/t1/events/nested": migPending("nested")
+  } });
+  const seen = [];
+  await migration.enumeratePending(client, gapicProtos, MIG_PROJECT, {}, async (d) => { seen[seen.length] = await migration.classifyDocument(client, {}, MIG_PROJECT, d, MIG_NOW); });
+  const byPath = Object.fromEntries(seen.map((s) => [s.sourcePath || s.pathDigest, s]));
+  assert.equal(byPath["users/u1/events/ok"].outcome, "ADMITTED");
+  const big = byPath["users/u1/events/big"];
+  assert.deepEqual([big.outcome, big.chunkCount >= 3, /^qev2_[0-9a-f]{40}$/.test(big.archiveId), big.baseBytes > 1047552], ["SOURCE_TOO_LARGE", true, true, true]);
+  assert.equal(seen.filter((s) => s.outcome === "OUT_OF_SCOPE_SOURCE").length, 2, "two out-of-scope matching paths");
+  assert.ok(client.reads.length >= 2 && client.reads.every((n) => n.includes("/users/u1/events/")), "every in-scope document is reread; out-of-scope never");
+  const drifting = new FakeV1Client({ projectId: MIG_PROJECT, documents: { "users/u1/events/gone": migPending("gone"), "users/u1/events/done": migPending("done") } });
+  const original = drifting.getDocument.bind(drifting);
+  drifting.getDocument = async ({ name }) => { if (name.endsWith("/gone")) { const e = new Error("NOT_FOUND"); e.code = 5; throw e; } if (name.endsWith("/done")) drifting.put("users/u1/events/done", migPending("done", { processingState: "terminal" })); return original({ name }); };
+  const outcomes = [];
+  await migration.enumeratePending(drifting, gapicProtos, MIG_PROJECT, {}, async (d) => { outcomes[outcomes.length] = (await migration.classifyDocument(drifting, {}, MIG_PROJECT, d, MIG_NOW)).outcome; });
+  assert.deepEqual(outcomes.sort(), ["DRIFT_MISSING", "DRIFT_NOT_PENDING"]);
+  const report = migration.reportOf(migration.parseArguments([]), migDeps(client), { projectId: MIG_PROJECT, databaseId: "(default)" }, await migration.runAudit(client, gapicProtos, MIG_PROJECT, {}, MIG_NOW), null);
+  assert.equal(JSON.stringify(report).includes("xxxxxxxx"), false, "no raw source bytes in the report");
+  assert.equal(report.audit.passes[0].failing[0].sourcePath, "users/u1/events/big");
+  assert.equal(report.firestoreVersion, "7.11.6");
+  assert.equal(report.clientConfigSha256, migration.PINNED_CLIENT_CONFIG_SHA256);
+});
+
+test("C9.2.1/C9.2.9 two-pass audit: stable when both complete passes agree on the pending count and the failing/out-of-scope sets with zero drift; an insertion between passes is unstable (restart); a systemic stream error leaves the first pass incomplete; the pre-ship criterion additionally needs zero failing and zero out-of-scope", async () => {
+  const client = new FakeV1Client({ projectId: MIG_PROJECT, documents: { "users/u1/events/ok": migPending("ok"), "users/u1/events/big": migOversize("big") } });
+  let audit = await migration.runAudit(client, gapicProtos, MIG_PROJECT, {}, MIG_NOW);
+  assert.deepEqual([audit.stable, audit.preShipCriterion, audit.passes.length, audit.passes[1].pendingCount, audit.passes[1].failing.length], [true, false, 2, 2, 1]);
+  const clean = new FakeV1Client({ projectId: MIG_PROJECT, documents: { "users/u1/events/ok": migPending("ok") } });
+  audit = await migration.runAudit(clean, gapicProtos, MIG_PROJECT, {}, MIG_NOW);
+  assert.deepEqual([audit.stable, audit.preShipCriterion], [true, true]);
+  const inserting = new FakeV1Client({ projectId: MIG_PROJECT, documents: { "users/u1/events/ok": migPending("ok") }, onQuery: (request, n) => { if (n === 2) inserting.put("users/u1/events/late", migPending("late")); } });
+  audit = await migration.runAudit(inserting, gapicProtos, MIG_PROJECT, {}, MIG_NOW);
+  assert.deepEqual([audit.stable, audit.passes[0].pendingCount, audit.passes[1].pendingCount], [false, 1, 2], "insertion caught by the uncursored confirmation pass");
+  const broken = new FakeV1Client({ projectId: MIG_PROJECT, scriptedResponses: () => [new FakeV1Client({ projectId: MIG_PROJECT }).response({ skippedResults: 3 })] });
+  audit = await migration.runAudit(broken, gapicProtos, MIG_PROJECT, {}, MIG_NOW);
+  assert.deepEqual([audit.stable, audit.passes.length, audit.passes[0].complete, audit.passes[0].systemic.code], [false, 1, false, "STREAM_SHAPE_INVALID"]);
+  const insertingAgain = new FakeV1Client({ projectId: MIG_PROJECT, documents: { "users/u1/events/ok": migPending("ok") }, onQuery: (request, n) => { if (n === 2) insertingAgain.put("users/u1/events/late", migPending("late")); } });
+  const result = await migration.run([], migDeps(insertingAgain));
+  assert.equal(result.exitCode, 1, "an unstable audit exits nonzero");
+});
+
 test("timeouts do not exceed 300 seconds", () => {
   const root = path.resolve(__dirname, "..");
   const read = (f) => fs.readFileSync(path.join(root, f), "utf8");

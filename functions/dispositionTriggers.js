@@ -824,6 +824,34 @@ function fitsPhase0TransitionRaw(rawFields, sourcePath, record, message, now) {
   return rawStorage.transitionBudget([{ path: sourcePath, before: rawFields, after }, { path: record.path, before: null, after: toRawScalarFields(record.data) }]);
 }
 
+/** C9.1.27 over the raw sidecar (MIG-EVENT-V1 admission): the same prospects as phase0Envelope, computed from raw Values only. */
+function phase0EnvelopeRaw(sourcePath, rawFields, now, sourceUpdateTime) {
+  const baseBytes = rawStorage.documentSize(sourcePath, rawFields);
+  let prospectiveMaxBytes = 0;
+  let admitted = baseBytes <= PHASE0_SOURCE_ENVELOPE_BYTES;
+  const consider = (budget) => { if (budget.charge > prospectiveMaxBytes) prospectiveMaxBytes = budget.charge; return budget.fits; };
+  const digest = "0".repeat(64);
+  const stamp = isMillisTimestamp(sourceUpdateTime) ? sourceUpdateTime : now;
+  const withoutRetry = {};
+  for (const key of Object.keys(rawFields || {})) if (key !== "phase0ValidationFailure") withoutRetry[key] = rawFields[key];
+  const terminal = (message) => ({ ...withoutRetry, ...toRawScalarFields({ processingState: "terminal", processed: true, processedAt: now, outcome: "quarantined", processingError: message }) });
+  for (const code of QEV1_CODES) {
+    for (const count of [1, 2]) {
+      const retry = { ...withoutRetry, ...toRawScalarFields({ phase0ValidationFailure: { schemaVersion: 1, originalBytesDigest: digest, reasonCode: code, failureCount: count, firstFailedAt: now, lastFailedAt: now } }) };
+      if (!consider(rawStorage.transitionBudget([{ path: sourcePath, before: rawFields, after: retry }]))) admitted = false;
+    }
+    const message = QEV1_MESSAGES[code];
+    const record = toRawScalarFields({ schemaVersion: 1, sourcePath, sourceUpdateTime: stamp, originalBytesDigest: digest, reason: { code, message }, failureCount: 3, firstFailedAt: now, lastFailedAt: now, quarantinedAt: now });
+    if (!consider(rawStorage.transitionBudget([{ path: sourcePath, before: rawFields, after: terminal(message) }, { path: `${QUARANTINE_COLLECTION}/qev1_${digest.slice(0, 40)}`, before: null, after: record }]))) admitted = false;
+  }
+  for (const token of Object.keys(UNENCODABLE_MESSAGES)) {
+    const message = UNENCODABLE_MESSAGES[token];
+    const record = toRawScalarFields({ schemaVersion: 1, sourcePath, sourceUpdateTime: stamp, unencodableSourceDigest: digest, reason: { code: "SOURCE_UNENCODABLE", token, message }, failureCount: 1, firstFailedAt: now, lastFailedAt: now, quarantinedAt: now });
+    if (!consider(rawStorage.transitionBudget([{ path: sourcePath, before: rawFields, after: terminal(message) }, { path: `${QUARANTINE_COLLECTION}/qevu1_${digest.slice(0, 40)}`, before: null, after: record }]))) admitted = false;
+  }
+  return { admitted, baseBytes, prospectiveMaxBytes };
+}
+
 function postCutoff(fields) {
   const error = new SchedulerInvariant("POST_CUTOFF_SOURCE_SIZE_INVARIANT");
   error.fields = fields;
@@ -2146,6 +2174,7 @@ module.exports = {
   fitsPhase0Transition,
   fitsPhase0TransitionRaw,
   phase0Envelope,
+  phase0EnvelopeRaw,
   parseRfc3339,
   validateRetryMember,
   QEV1_MESSAGES,
