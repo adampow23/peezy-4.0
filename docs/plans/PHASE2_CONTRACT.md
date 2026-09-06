@@ -906,6 +906,25 @@ predicate order:
 | Absent branches | No server `Bytes` constructor branch; no generic Uint8Array branch; `PROTOTYPE_MISMATCH` does not exist. |
 | Infrastructure | Malformed recognized instances and cycles are infrastructure invariants, not quarantine tokens. |
 
+```text
+encoding (UTF-8 text; originalBytesDigest = SHA-256 over the encoded bytes of the source's top-level field map
+          with the scheduler retry member phase0ValidationFailure removed):
+  null               -> n
+  boolean            -> t | f
+  string             -> s<UTF-8 byte length>:<UTF-8 bytes>
+  number             -> d<16 hex | nan | inf | -inf>
+  Date               -> D<16 hex of getTime()>
+  Timestamp          -> T<seconds>.<nanoseconds, nine digits>
+  GeoPoint           -> G<16 hex latitude>,<16 hex longitude>
+  DocumentReference  -> R<path UTF-8 byte length>:<path bytes>
+  VectorValue        -> V<count>[<16 hex per element, joined by ",">]
+  Buffer             -> B<byte length>:<raw bytes>
+  Array              -> A<count>[<element encodings joined by ",">]
+  plain map          -> M<count>{<entries "s<len>:<key>=<value encoding>", keys in unsigned UTF-8 byte order, joined by ",">}
+malformed recognized instance (non-integer or out-of-range Timestamp members, invalid Date, nonfinite GeoPoint or
+Vector element, non-string reference path) and any cycle -> ORIGINAL_BYTES_INVARIANT (no write)
+```
+
 #### C9.1.22 SOURCE_UNENCODABLE quarantine (D7)
 
 ```text
@@ -948,6 +967,31 @@ geospatial-special (inapplicable, recorded only) = collection-name size + docume
 |---|---|
 | Registry modes | Frozen spec-7.4 registry has no vector, text-search, or geospatial-special index mode; later special mode requires registry/hash/budget amendment. |
 | Dual implementation | Production and the independent oracle separately implement the copied equations. |
+
+```text
+base equations (Standard edition 2026-09-01):
+  string                 = UTF-8 bytes + 1
+  boolean | null         = 1
+  integer | double       = 8
+  Timestamp              = 8
+  map                    = Σ (field-name string size + value size)          (no map overhead)
+  array                  = Σ element sizes
+  document name          = Σ over every collection ID and document ID of (UTF-8 bytes + 1), plus 16
+  document               = document name size + top-level map size + 32
+  index entry            = document name size + Σ indexed value sizes (each capped at 1,500) + 32
+
+index policy (frozen registry = firestore.indexes.json C7 result):
+  every leaf field path of a document carries automatic COLLECTION-scope ascending and descending entries (two entries);
+  an array leaf carries one array-contains entry per element instead; a map contributes only its leaf paths;
+  a fieldOverrides row replaces the automatic set for that (collectionGroup, fieldPath) exactly (empty list = exempt);
+  each composite index whose collectionGroup matches and whose fields are all present yields one entry over those values.
+
+FirestoreWriteBudgetV1(transition) = Σ over touched documents of
+  (post document size when created or updated) + (pre document size when deleted)
+  + Σ sizes of index entries present after and absent before + Σ sizes of entries present before and absent after
+bounds: prospective document <= 1,048,576; every entry <= 7,680; entries per document <= 40,000;
+        entry-byte sum per document <= 8,388,608; FirestoreWriteBudgetV1(transition) <= 8,388,608; safe arithmetic
+```
 
 #### C9.1.24 Raw Vector discriminator (pinned public-v1 Document)
 
@@ -994,6 +1038,22 @@ PROCESSED_INVALID          -> Event must be pending and unprocessed.
 ```
 
 - every message below 1,000 UTF-8 bytes; no truncation choice
+
+```text
+retry member (source document, attempts 1 and 2):
+phase0ValidationFailure = {schemaVersion:1,originalBytesDigest,reasonCode,failureCount,firstFailedAt,lastFailedAt}
+  attempt n = 1 + (existing retry member with the same originalBytesDigest and reasonCode ? failureCount : 0)
+  different digest or code restarts at 1; a retry member of any other shape -> PHASE0_RETRY_MAP_INVARIANT (no write)
+
+quarantineId = "qev1_" + first40(originalBytesDigest)
+record (normal quarantine collection, attempt 3):
+{schemaVersion:1,sourcePath,sourceUpdateTime,originalBytesDigest,
+ reason:{code,message},failureCount:3,
+ firstFailedAt:<retained from the retry member>,lastFailedAt:runNow,quarantinedAt:runNow}
+record cap: 16,384 canonical bytes
+replay: an existing record with equal sourcePath, sourceUpdateTime, originalBytesDigest, and reason is replay
+        (its timestamps are retained); any other existing record fails closed
+```
 
 #### C9.1.27 fitsPhase0Transition and retry-or-terminal envelope
 
@@ -1080,6 +1140,13 @@ PAYLOAD_TOO_LARGE iff fitsPhase0Transition(currentSource,currentHighWater?,advan
 | Size vs unencodable | Size cannot precede an unencodable value. |
 | Non-reasons | Stale, duplicate, version-conflict are valid terminal outcomes, not validation reason codes. |
 | Boundary fixtures | Valid-oversize versus stale; never stale-and-invalid source. |
+
+```text
+spec-5.2 event-state map (users/{uid}/eventState/{canonicalEventStateId}):
+{event_name,canonical_key,source_version,effect,event_id,observed_at,source_evidence_id,payload,fingerprint,advancedAt}
+  observed_at = Timestamp of the canonical envelope's observed_at; fingerprint = SHA-256(TaskCanonicalV1(envelope));
+  advancedAt = runNow
+```
 
 #### C9.1.30 Regeneration (D11) — PEEZY_STATE_REGEN_SPEC.md item 9 exact replacement
 
@@ -4652,6 +4719,10 @@ phase2_no_index_diff() {
 
 | ID | Adopted authority | Normative resolution | Literal source/test closure |
 |---|---|---|---|
+| S3-CD1 | Reconciled 12 rule (missing shape is a contract defect fixed in the contract) | C9.1.21 gains the OriginalEventBytesV1 encoding grammar and digest scope; the predicate order and double rule were the only members present. | `functions/dispositionTriggers.js`; `functions/tests/dispositionTriggers.test.js` encoder family |
+| S3-CD2 | Reconciled 12 rule | C9.1.23 gains the Standard-edition base equations, the frozen-registry index policy, and the `FirestoreWriteBudgetV1(transition)` formula and bounds that C9.1.27 and C9.2.7 consume by name. | `functions/dispositionTriggers.js` production sizing and its independent oracle; `functions/tests/dispositionTriggers.test.js` |
+| S3-CD3 | Reconciled 12 rule | C9.1.26 gains the `phase0ValidationFailure` attempt rule, the `qev1_` quarantine id, and the exact schema-v1 record with its replay rule. | `functions/dispositionTriggers.js`; `functions/tests/dispositionTriggers.test.js` attempt `1→2→qev1` family |
+| S3-CD4 | Reconciled 12 rule | C9.1.29 gains the exact spec-5.2 event-state map that the size predicate and the advance write name. | `functions/dispositionTriggers.js`; retained high-water tests |
 | P1-A | Amendment §A | §4.5 freezes durable policy workflow request/receipt/application, conditional trigger, and policy-ineligible Supplies gate. | `WorkflowService.swift`, RentTruck/SetupInternet/Supplies and six §8.2 callers; `getWorkflowQualifying.test.js`, `callableAuth.test.js`, `ConversationFlowTests.swift`, `TaskDispositionSurfaceTests.swift`. |
 | P1-B | Amendment §A | §§4.2/5.5 replace H56 with instance+attempt-generation+write-revision callable CAS, atomic proof clear, and content revisions. | `FlowProgressSession.swift`, TaskAction/FlowEngine/FlowExit, Movers model pair; `taskDisposition.test.js`, rules, `ConversationFlowTests.swift`, `MoversChainCoordinatorTests.swift`. |
 | P1-C | Amendment §A | §§2.2/3.1/4.6/4.7/7 apply all-owner generation, root move-event authority, strict producer projection, server packing persistence/clear, and reset fencing. | TaskGeneration/TaskAction/Spawn/taskDisposition/rules; 53-task rules fixture plus legacy packing/reset fence matrices. |

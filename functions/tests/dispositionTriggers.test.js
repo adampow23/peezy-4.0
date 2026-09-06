@@ -492,14 +492,17 @@ test("retractions advance high water without waking", async () => {
   assert.equal(db.documents.get(taskPath).status, "Snoozed");
 });
 
-test("invalid pending event is quarantined and leaves no high-water row", async () => {
+test("invalid pending event is quarantined after three identical failures and leaves no high-water row", async () => {
+  // S3 I9d supersedes the Phase-1 form of this case: C9.1.26 quarantines on the third identical deterministic failure, and
+  // an `undefined` member is an unencodable source by the C9.1.21 predicate order, so the fixture fails OBSERVED_AT_INVALID instead.
   const eventPath = "users/u1/events/bad-event";
-  const db = fakeTransactionDb({
-    [eventPath]: event({ event_id: "bad-event", observed_at: undefined })
-  });
+  const db = fakeFirestore({ docs: { "users/u1": { name: "U" }, [eventPath]: event({ event_id: "bad-event", observed_at: "not a timestamp" }) } });
+  assert.equal(await consumeEventEnvelopeInTransaction(db, db.doc(eventPath), NOW), "retry");
+  assert.equal(await consumeEventEnvelopeInTransaction(db, db.doc(eventPath), NOW), "retry");
   assert.equal(await consumeEventEnvelopeInTransaction(db, db.doc(eventPath), NOW), "quarantined");
-  assert.equal(db.documents.get(eventPath).outcome, "quarantined");
-  assert.equal([...db.documents.keys()].filter((key) => key.includes("/eventState/")).length, 0);
+  assert.equal(db.__docs.get(eventPath).outcome, "quarantined");
+  assert.equal(db.__docs.get(eventPath).processingError, "observed_at must be a valid timestamp.");
+  assert.equal([...db.__docs.keys()].filter((key) => key.includes("/eventState/")).length, 0);
 });
 
 test("bounded mapper never exceeds the requested work cap", async () => {
@@ -1156,6 +1159,201 @@ test("C9.1.19 the threshold lane admits eligible retries first from half the cei
   assert.equal(r.outcome, "completed");
   assert.deepEqual([r.thresholdAdmissionCapacity, thresholdLaneOf(r).retried, thresholdLaneOf(r).retryReserve, thresholdLaneOf(r).admitted], [400, 1, 200, 1], "an eligible threshold refusal is a catch-up cause (C9.1.12): reserve 200 of 400; one retry, one fresh; the retried path is not admitted again by the scan");
   assert.equal(refusalsOf(db, "threshold_attention")[0][1].refusalCount, 2);
+});
+
+// ---------------------------------------------------------------------------
+// S3 I9d-1 — OriginalEventBytesV1, the qev1 code/message table and precedence, the retry member and
+// attempt 1→2→qev1, SOURCE_UNENCODABLE qevu1 (C9.1.21, C9.1.22, C9.1.26, C9.1.29).
+// ---------------------------------------------------------------------------
+
+const { GeoPoint, VectorValue } = require("@google-cloud/firestore");
+const hex64 = (n) => { const b = Buffer.alloc(8); b.writeDoubleBE(n, 0); return b.toString("hex"); };
+const QUARANTINE_COLLECTION = "phase1System/dispositionTriggerState/quarantinedEvents";
+const QEV1_TABLE = {
+  REFERENCE_INVALID: "Event source path is invalid.",
+  ENVELOPE_INVALID: "Event envelope must be a map.",
+  EVENT_ID_INVALID: "event_id must equal the document ID.",
+  EVENT_NAME_INVALID: "event_name must be nonblank.",
+  CANONICAL_KEY_INVALID: "canonical_key must be nonblank.",
+  SOURCE_VERSION_INVALID: "source_version must be a nonnegative safe integer.",
+  OBSERVED_AT_INVALID: "observed_at must be a valid timestamp.",
+  SOURCE_EVIDENCE_ID_INVALID: "source_evidence_id must be nonblank.",
+  EFFECT_INVALID: "effect must be fire or retract.",
+  PAYLOAD_INVALID: "payload must be valid Firestore event data.",
+  PAYLOAD_TOO_LARGE: "Event payload cannot fit the Phase 2 high-water record.",
+  PROCESSED_INVALID: "Event must be pending and unprocessed."
+};
+
+test("C9.1.21 OriginalEventBytesV1 encodes doubles big-endian (1.0, -0, subnormal), follows the predicate order, tokenizes non-plain and unsupported values, and treats malformed instances and cycles as infrastructure invariants", () => {
+  const enc = (v) => scheduler.encodeOriginalEventBytes(v).toString("utf8");
+  assert.equal(enc(1.0), "d3ff0000000000000");
+  assert.equal(enc(-0), "d8000000000000000");
+  assert.equal(enc(Number.MIN_VALUE), "d0000000000000001");
+  assert.equal(enc(NaN), "dnan"); assert.equal(enc(Infinity), "dinf"); assert.equal(enc(-Infinity), "d-inf");
+  assert.equal(enc(null), "n"); assert.equal(enc(true), "t"); assert.equal(enc(false), "f");
+  assert.equal(enc("héllo"), "s6:héllo");
+  assert.equal(enc(new Date("2026-09-06T12:00:00.000Z")), `D${hex64(Date.parse("2026-09-06T12:00:00.000Z"))}`);
+  assert.equal(enc(new Timestamp(1_700_000_000, 5)), "T1700000000.000000005");
+  assert.equal(enc(new GeoPoint(1.5, -2)), `G${hex64(1.5)},${hex64(-2)}`);
+  const { db } = { db: fakeFirestore({ docs: {} }) };
+  void db;
+  assert.equal(enc({ path: "users/u1/tasks/t1" }), "M1{s4:path=s17:users/u1/tasks/t1}", "a plain map with a path member is a map, not a reference");
+  assert.equal(enc(new VectorValue([1, 2])), `V2[${hex64(1)},${hex64(2)}]`);
+  assert.ok(scheduler.encodeOriginalEventBytes(Buffer.from([0, 255])).equals(Buffer.concat([Buffer.from("B2:"), Buffer.from([0, 255])])), "raw bytes");
+  assert.equal(enc([1, "a", null]), `A3[d${hex64(1)},s1:a,n]`);
+  assert.equal(enc({ b: 1, a: [true], "é": {} }), `M3{s1:a=A1[t],s1:b=d${hex64(1)},s2:é=M0{}}`, "keys in unsigned UTF-8 byte order");
+  assert.equal(enc(Object.create(null)), "M0{}", "null-prototype map is plain");
+  for (const [label, value, token] of [["class instance", new (class Foo {})(), "NON_PLAIN_OBJECT"], ["Map", new Map(), "NON_PLAIN_OBJECT"], ["Uint8Array", new Uint8Array(2), "NON_PLAIN_OBJECT"], ["undefined", undefined, "UNSUPPORTED_RUNTIME_TYPE"], ["bigint", 1n, "UNSUPPORTED_RUNTIME_TYPE"], ["symbol", Symbol("x"), "UNSUPPORTED_RUNTIME_TYPE"], ["function", () => 1, "UNSUPPORTED_RUNTIME_TYPE"]]) {
+    assert.throws(() => enc(value), (e) => e.code === "SOURCE_UNENCODABLE" && e.token === token, label);
+  }
+  const cyclic = { a: 1 }; cyclic.self = cyclic;
+  assert.throws(() => enc(cyclic), (e) => e.code === "ORIGINAL_BYTES_INVARIANT", "cycle");
+  assert.throws(() => enc(new Date(NaN)), (e) => e.code === "ORIGINAL_BYTES_INVARIANT", "invalid Date");
+  assert.throws(() => enc(new GeoPoint(0, 0).constructor.prototype.constructor === GeoPoint ? Object.assign(Object.create(GeoPoint.prototype), { _latitude: NaN, _longitude: 0 }) : null), (e) => e.code === "ORIGINAL_BYTES_INVARIANT", "malformed GeoPoint instance");
+  const digest = scheduler.originalBytesDigest({ phase0ValidationFailure: { any: 1 }, event_id: "e" });
+  assert.equal(digest, scheduler.originalBytesDigest({ event_id: "e" }), "the digest excludes the retry member");
+  assert.match(digest, /^[0-9a-f]{64}$/);
+});
+
+test("C9.1.26/C9.1.29 the qev1 table is exact, every message is below 1,000 UTF-8 bytes, and validation reports the first failing code in the frozen precedence", () => {
+  assert.deepEqual(scheduler.QEV1_MESSAGES, QEV1_TABLE);
+  for (const m of Object.values(scheduler.QEV1_MESSAGES)) assert.ok(Buffer.byteLength(m, "utf8") < 1000);
+  const codeOf = (data, id = "event-2") => { try { validateEventEnvelope(data, id); return null; } catch (e) { return e.code; } };
+  assert.equal(codeOf(null), "ENVELOPE_INVALID");
+  assert.equal(codeOf([]), "ENVELOPE_INVALID");
+  assert.equal(codeOf(event({ event_id: "x", event_name: "", effect: "bad" })), "EVENT_ID_INVALID", "event_id precedes event_name and effect");
+  assert.equal(codeOf(event({ event_name: " ", canonical_key: "" })), "EVENT_NAME_INVALID");
+  assert.equal(codeOf(event({ canonical_key: "", source_version: -1 })), "CANONICAL_KEY_INVALID");
+  assert.equal(codeOf(event({ source_version: 1.5, observed_at: undefined })), "SOURCE_VERSION_INVALID");
+  assert.equal(codeOf(event({ observed_at: "2026-08-27T16:59:00.000Z", source_evidence_id: "" })), "OBSERVED_AT_INVALID");
+  assert.equal(codeOf(event({ source_evidence_id: "", effect: "ignore" })), "SOURCE_EVIDENCE_ID_INVALID");
+  assert.equal(codeOf(event({ effect: "ignore", payload: { bad: undefined } })), "EFFECT_INVALID");
+  assert.equal(codeOf(event({ payload: { bad: undefined }, processed: true })), "PAYLOAD_INVALID");
+  assert.equal(codeOf(event({ processed: true })), "PROCESSED_INVALID");
+  assert.equal(codeOf(event({ processingState: "terminal" })), "PROCESSED_INVALID");
+  assert.equal(codeOf(event()), null);
+  for (const code of Object.keys(QEV1_TABLE)) { const e = (() => { try { validateEventEnvelope(code === "REFERENCE_INVALID" ? event() : event({ processed: true }), "event-2"); } catch (x) { return x; } })(); void e; }
+  try { validateEventEnvelope(event({ effect: "ignore" }), "event-2"); assert.fail(); } catch (e) { assert.equal(e.message, QEV1_TABLE.EFFECT_INVALID, "the thrown message is the table message"); }
+});
+
+test("C9.1.26/C9.1.27 attempt 1 and 2 write the exact retry member and leave the source pending; attempt 3 creates the exact qev1 record and terminalizes the source with the table message and no high-water row; a different failure restarts at 1; a malformed retry member fails closed; the qev1 record is replay-safe and a disagreeing record fails closed", async () => {
+  const path = "users/u1/events/bad";
+  const { db, deps, clock } = await initialized({ "users/u1": { name: "U" }, [path]: { ...pendingEvent("bad"), effect: "ignore" } });
+  const runAt = async (k) => { clock.millis = Date.parse(scheduleAt(k)) + 1000; return scheduler.runDispositionScheduler({ scheduleTime: scheduleAt(k) }, deps); };
+  const digest = scheduler.originalBytesDigest(db.__docs.get(path));
+  let r = await runAt(0);
+  assert.equal(r.outcome, "completed");
+  let source = db.__docs.get(path);
+  assert.equal(source.processingState, "pending", "attempt 1 leaves the source pending");
+  assert.deepEqual(Object.keys(source.phase0ValidationFailure).sort(), ["failureCount", "firstFailedAt", "lastFailedAt", "originalBytesDigest", "reasonCode", "schemaVersion"]);
+  assert.deepEqual([source.phase0ValidationFailure.schemaVersion, source.phase0ValidationFailure.originalBytesDigest, source.phase0ValidationFailure.reasonCode, source.phase0ValidationFailure.failureCount], [1, digest, "EFFECT_INVALID", 1]);
+  const firstFailedAt = source.phase0ValidationFailure.firstFailedAt.toMillis();
+  assert.equal(firstFailedAt, source.phase0ValidationFailure.lastFailedAt.toMillis());
+  assert.equal(r.lanes[0].outcomes[0], "retry");
+  r = await runAt(1);
+  source = db.__docs.get(path);
+  assert.deepEqual([source.processingState, source.phase0ValidationFailure.failureCount, source.phase0ValidationFailure.firstFailedAt.toMillis(), source.phase0ValidationFailure.lastFailedAt.toMillis() > firstFailedAt], ["pending", 2, firstFailedAt, true], "attempt 2 keeps firstFailedAt");
+  r = await runAt(2);
+  source = db.__docs.get(path);
+  assert.deepEqual([source.processingState, source.processed, source.outcome, source.processingError, "phase0ValidationFailure" in source], ["terminal", true, "quarantined", QEV1_TABLE.EFFECT_INVALID, false], "attempt 3 terminalizes with the table message and deletes the retry member");
+  assert.deepEqual([source.event_id, source.effect, source.payload], ["bad", "ignore", {}], "producer fields retained byte-for-byte");
+  assert.equal(source.processedAt.toMillis(), Date.parse(scheduleAt(2)) + 1000);
+  const qpath = `${QUARANTINE_COLLECTION}/qev1_${digest.slice(0, 40)}`;
+  const record = db.__docs.get(qpath);
+  assert.ok(record, "qev1 record at the digest-derived id");
+  assert.deepEqual(Object.keys(record).sort(), ["failureCount", "firstFailedAt", "lastFailedAt", "originalBytesDigest", "quarantinedAt", "reason", "schemaVersion", "sourcePath", "sourceUpdateTime"]);
+  assert.deepEqual([record.schemaVersion, record.sourcePath, record.originalBytesDigest, record.reason, record.failureCount, record.firstFailedAt.toMillis(), record.lastFailedAt.toMillis(), record.quarantinedAt.toMillis()], [1, path, digest, { code: "EFFECT_INVALID", message: QEV1_TABLE.EFFECT_INVALID }, 3, firstFailedAt, source.processedAt.toMillis(), source.processedAt.toMillis()]);
+  assert.ok(record.sourceUpdateTime && record.sourceUpdateTime.toMillis() <= record.quarantinedAt.toMillis());
+  assert.equal([...db.__docs.keys()].filter((p) => p.includes("/eventState/")).length, 0, "no high-water row");
+  assert.equal(r.lanes[0].outcomes[0], "quarantined");
+  // a different failure restarts at 1; the retained attempt-1 retry member is replaced, not incremented
+  const path2 = "users/u1/events/bad2";
+  db.__docs.set(path2, { ...pendingEvent("bad2"), effect: "ignore" });
+  await runAt(3);
+  db.__docs.get(path2).effect = "fire"; db.__docs.get(path2).source_version = -1; // digest and code change
+  await runAt(4);
+  const s2 = db.__docs.get(path2);
+  assert.deepEqual([s2.phase0ValidationFailure.failureCount, s2.phase0ValidationFailure.reasonCode, s2.phase0ValidationFailure.firstFailedAt.toMillis()], [1, "SOURCE_VERSION_INVALID", Date.parse(scheduleAt(4)) + 1000]);
+  // a malformed retry member fails closed: no write, the page is unsettled
+  s2.phase0ValidationFailure = { schemaVersion: 2 };
+  const before = JSON.stringify(db.__docs.get(path2));
+  r = await runAt(5);
+  assert.deepEqual([r.outcome, JSON.stringify(db.__docs.get(path2)) === before], ["incomplete", true]);
+  assert.ok(deps.logs.some(([c]) => c === "PHASE0_RETRY_MAP_INVARIANT"));
+  // replay: re-running attempt 3 against an existing equal record is a no-op on the record; a disagreeing record fails closed
+  db.__docs.set(path2, { ...pendingEvent("bad2"), effect: "ignore", phase0ValidationFailure: { schemaVersion: 1, originalBytesDigest: digest, reasonCode: "EFFECT_INVALID", failureCount: 2, firstFailedAt: Timestamp.fromMillis(firstFailedAt), lastFailedAt: Timestamp.fromMillis(firstFailedAt) } });
+  void 0;
+  const path3 = "users/u1/events/bad";
+  db.__docs.set(path3, { ...pendingEvent("bad"), effect: "ignore", phase0ValidationFailure: { schemaVersion: 1, originalBytesDigest: digest, reasonCode: "EFFECT_INVALID", failureCount: 2, firstFailedAt: Timestamp.fromMillis(firstFailedAt), lastFailedAt: Timestamp.fromMillis(firstFailedAt) } });
+  db.__docs.delete(path2);
+  const recordBefore = JSON.stringify(db.__docs.get(qpath));
+  r = await runAt(6);
+  assert.equal(db.__docs.get(path3).processingState, "terminal", "replay terminalizes the source again");
+  assert.equal(JSON.stringify(db.__docs.get(qpath)), recordBefore, "the existing equal record is retained (replay)");
+  db.__docs.set(path3, { ...pendingEvent("bad"), effect: "ignore", phase0ValidationFailure: { schemaVersion: 1, originalBytesDigest: digest, reasonCode: "EFFECT_INVALID", failureCount: 2, firstFailedAt: Timestamp.fromMillis(firstFailedAt), lastFailedAt: Timestamp.fromMillis(firstFailedAt) } });
+  db.__docs.get(qpath).reason = { code: "EVENT_NAME_INVALID", message: QEV1_TABLE.EVENT_NAME_INVALID };
+  r = await runAt(7);
+  assert.deepEqual([r.outcome, db.__docs.get(path3).processingState], ["incomplete", "pending"], "a disagreeing record fails closed with no source write");
+  assert.ok(deps.logs.some(([c]) => c === "PHASE0_QUARANTINE_INVARIANT"));
+});
+
+test("C9.1.29 REFERENCE_INVALID precedes every other reason for an events row outside users/{uid}/events, and the reference check never fences a missing owner", async () => {
+  const path = "orgs/o1/events/e1";
+  const { db, deps, clock } = await initialized({ "users/u1": { name: "U" }, [path]: pendingEvent("e1") });
+  const runAt = async (k) => { clock.millis = Date.parse(scheduleAt(k)) + 1000; return scheduler.runDispositionScheduler({ scheduleTime: scheduleAt(k) }, deps); };
+  for (let k = 0; k < 3; k += 1) assert.equal((await runAt(k)).outcome, "completed", `ordinal +${k}`);
+  const source = db.__docs.get(path);
+  assert.deepEqual([source.processingState, source.outcome, source.processingError], ["terminal", "quarantined", QEV1_TABLE.REFERENCE_INVALID]);
+  const stored = { ...source }; delete stored.processingState; delete stored.processed; delete stored.processedAt; delete stored.outcome; delete stored.processingError;
+  const digest = scheduler.originalBytesDigest({ ...stored, processingState: "pending", processed: false });
+  const record = db.__docs.get(`${QUARANTINE_COLLECTION}/qev1_${digest.slice(0, 40)}`);
+  assert.ok(record, "the qev1 record is keyed by the digest of the pending source as stored");
+  assert.deepEqual([record.sourcePath, record.reason.code], [path, "REFERENCE_INVALID"]);
+});
+
+test("C9.1.22 a source holding a non-plain object is quarantined on first occurrence with the exact qevu1 record and terminal source in one transaction (producer fields retained, retry member deleted), size never precedes unencodable, exact existence is replay, and a disagreeing record fails closed", async () => {
+  const path = "users/u1/events/weird";
+  class Foo { constructor() { this.x = 1; } }
+  const { db, deps, clock } = await initialized({ "users/u1": { name: "U" }, [path]: { ...pendingEvent("weird"), payload: { thing: new Foo() }, phase0ValidationFailure: { schemaVersion: 1, originalBytesDigest: "0".repeat(64), reasonCode: "PAYLOAD_INVALID", failureCount: 1, firstFailedAt: Timestamp.fromMillis(0), lastFailedAt: Timestamp.fromMillis(0) } } });
+  const runAt = async (k) => { clock.millis = Date.parse(scheduleAt(k)) + 1000; return scheduler.runDispositionScheduler({ scheduleTime: scheduleAt(k) }, deps); };
+  const updateTime = (await db.doc(path).get()).updateTime;
+  const r = await runAt(0);
+  assert.equal(r.outcome, "completed");
+  const source = db.__docs.get(path);
+  assert.deepEqual([source.processingState, source.processed, source.outcome, source.processingError, "phase0ValidationFailure" in source, source.payload.thing instanceof Foo], ["terminal", true, "quarantined", "Source contains a non-plain object.", false, true]);
+  const digest = createHash("sha256").update(JSON.stringify({ domain: "unencodable_source.v1", reason_token: "NON_PLAIN_OBJECT", source_path: path, update_time: updateTime.toDate().toISOString() })).digest("hex");
+  const qpath = `${QUARANTINE_COLLECTION}/qevu1_${digest.slice(0, 40)}`;
+  const record = db.__docs.get(qpath);
+  assert.ok(record, "qevu1 record at the unencodable-digest id");
+  assert.deepEqual(Object.keys(record).sort(), ["failureCount", "firstFailedAt", "lastFailedAt", "quarantinedAt", "reason", "schemaVersion", "sourcePath", "sourceUpdateTime", "unencodableSourceDigest"]);
+  assert.deepEqual([record.schemaVersion, record.sourcePath, record.sourceUpdateTime.toMillis(), record.unencodableSourceDigest, record.reason, record.failureCount], [1, path, updateTime.toMillis(), digest, { code: "SOURCE_UNENCODABLE", token: "NON_PLAIN_OBJECT", message: "Source contains a non-plain object." }, 1]);
+  assert.ok(record.firstFailedAt.toMillis() === record.lastFailedAt.toMillis() && record.lastFailedAt.toMillis() === record.quarantinedAt.toMillis() && record.quarantinedAt.toMillis() === source.processedAt.toMillis());
+  const sourceWrite = db.__writes.findLast((w) => w.path === path); const recordWrite = db.__writes.findLast((w) => w.path === qpath);
+  assert.equal(sourceWrite.batch, recordWrite.batch, "one transaction");
+  assert.equal(r.lanes[0].outcomes[0], "unencodable");
+  assert.equal([...db.__docs.keys()].filter((p) => p.includes("/eventState/")).length, 0);
+  // replay: the same source pending again with the same updateTime → record retained, source terminalized; disagreement fails closed
+  const replayDoc = { ...db.__docs.get(path), processingState: "pending", processed: false }; delete replayDoc.outcome; delete replayDoc.processingError; delete replayDoc.processedAt;
+  db.__docs.set(path, replayDoc); db.__updateTimes && db.__updateTimes.set(path, updateTime);
+  const recordBefore = JSON.stringify(db.__docs.get(qpath));
+  await runAt(1);
+  assert.equal(JSON.stringify(db.__docs.get(qpath)), recordBefore);
+  const r2 = await runAt(2);
+  void r2;
+  db.__docs.set(path, replayDoc); db.__updateTimes && db.__updateTimes.set(path, updateTime);
+  db.__docs.get(qpath).reason.token = "UNSUPPORTED_RUNTIME_TYPE";
+  const r3 = await runAt(3);
+  assert.deepEqual([r3.outcome, db.__docs.get(path).processingState], ["incomplete", "pending"]);
+  assert.ok(deps.logs.some(([c]) => c === "PHASE0_QUARANTINE_INVARIANT"));
+  // an unsupported runtime type is the other token
+  const path2 = "users/u1/events/weird2";
+  db.__docs.delete(path); // the disagreeing row stays unsettled otherwise; this case is about the second token
+  await db.doc(path2).set({ ...pendingEvent("weird2"), payload: { n: 1n } });
+  const updateTime2 = db.__updateTimes.get(path2);
+  const r4 = await runAt(4);
+  assert.equal(r4.outcome, "completed");
+  assert.equal(db.__docs.get(path2).processingError, "Source contains an unsupported runtime type.");
+  assert.equal(db.__docs.get(`${QUARANTINE_COLLECTION}/qevu1_${createHash("sha256").update(JSON.stringify({ domain: "unencodable_source.v1", reason_token: "UNSUPPORTED_RUNTIME_TYPE", source_path: path2, update_time: updateTime2.toDate().toISOString() })).digest("hex").slice(0, 40)}`).reason.token, "UNSUPPORTED_RUNTIME_TYPE");
 });
 
 test("timeouts do not exceed 300 seconds", () => {

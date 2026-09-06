@@ -12,6 +12,8 @@ const {
 } = require("./dispositionContract");
 
 const { Timestamp, FieldPath, FieldValue } = require("firebase-admin/firestore");
+// C9.1.21 pinned @google-cloud/firestore constructor identities (the same module instance firebase-admin re-exports)
+const { GeoPoint, DocumentReference, VectorValue } = require("@google-cloud/firestore");
 
 // ---------------------------------------------------------------------------
 // PHASE2_CONTRACT.md C9.1 — scheduler contract (D1–D9, B1, D11). S3.
@@ -67,6 +69,119 @@ const THRESHOLD_LANE_SPEC = Object.freeze({ lane: THRESHOLD_LANE, kind: "thresho
 
 class SchedulerInvariant extends Error {
   constructor(code, detail) { super(detail ? `${code}: ${detail}` : code); this.code = code; }
+}
+
+// ---------------------------------------------------------------------------
+// C9.1.21 / C9.1.22 / C9.1.26 — OriginalEventBytesV1, unencodable tokens, the qev1 code/message table
+// ---------------------------------------------------------------------------
+
+const QUARANTINE_COLLECTION = "phase1System/dispositionTriggerState/quarantinedEvents";
+const QUARANTINE_RECORD_CAP = 16384;
+const QEV1_MESSAGES = Object.freeze({
+  REFERENCE_INVALID: "Event source path is invalid.",
+  ENVELOPE_INVALID: "Event envelope must be a map.",
+  EVENT_ID_INVALID: "event_id must equal the document ID.",
+  EVENT_NAME_INVALID: "event_name must be nonblank.",
+  CANONICAL_KEY_INVALID: "canonical_key must be nonblank.",
+  SOURCE_VERSION_INVALID: "source_version must be a nonnegative safe integer.",
+  OBSERVED_AT_INVALID: "observed_at must be a valid timestamp.",
+  SOURCE_EVIDENCE_ID_INVALID: "source_evidence_id must be nonblank.",
+  EFFECT_INVALID: "effect must be fire or retract.",
+  PAYLOAD_INVALID: "payload must be valid Firestore event data.",
+  PAYLOAD_TOO_LARGE: "Event payload cannot fit the Phase 2 high-water record.",
+  PROCESSED_INVALID: "Event must be pending and unprocessed."
+});
+const QEV1_CODES = Object.freeze(Object.keys(QEV1_MESSAGES));
+const UNENCODABLE_MESSAGES = Object.freeze({
+  NON_PLAIN_OBJECT: "Source contains a non-plain object.",
+  UNSUPPORTED_RUNTIME_TYPE: "Source contains an unsupported runtime type."
+});
+
+/** A qev1 validation failure: `code` is a table code and the message is the table message. */
+class EnvelopeError extends Error {
+  constructor(code) { super(QEV1_MESSAGES[code]); this.code = code; }
+}
+
+/** C9.1.22 token: the source cannot be encoded by OriginalEventBytesV1. */
+class UnencodableSource extends Error {
+  constructor(token) { super(UNENCODABLE_MESSAGES[token]); this.code = "SOURCE_UNENCODABLE"; this.token = token; }
+}
+
+function bytesInvariant(detail) { return new SchedulerInvariant("ORIGINAL_BYTES_INVARIANT", detail); }
+
+function hexDouble(value) {
+  if (Number.isNaN(value)) return "nan";
+  if (value === Infinity) return "inf";
+  if (value === -Infinity) return "-inf";
+  const buffer = Buffer.alloc(8);
+  buffer.writeDoubleBE(value, 0);
+  return buffer.toString("hex");
+}
+
+function finiteHex(value, detail) {
+  if (typeof value !== "number" || !Number.isFinite(value)) throw bytesInvariant(detail);
+  return hexDouble(value);
+}
+
+function isPlainMap(value) {
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
+/** C9.1.21 — OriginalEventBytesV1: returns the encoded bytes; predicate order 1..8 exactly. */
+function encodeOriginalEventBytes(value, seen = new Set()) {
+  const text = (s) => Buffer.from(s, "utf8");
+  const join = (buffers) => Buffer.concat(buffers);
+  if (value === null) return text("n");
+  if (typeof value === "boolean") return text(value ? "t" : "f");
+  if (typeof value === "string") { const bytes = text(value); return join([text(`s${bytes.length}:`), bytes]); }
+  if (typeof value === "number") return text(`d${hexDouble(value)}`);
+  if (value instanceof Date) return text(`D${finiteHex(value.getTime(), "Date")}`);
+  if (value instanceof Timestamp) {
+    const { seconds, nanoseconds } = value;
+    if (!Number.isSafeInteger(seconds) || !Number.isInteger(nanoseconds) || nanoseconds < 0 || nanoseconds > 999999999) throw bytesInvariant("Timestamp");
+    return text(`T${seconds}.${String(nanoseconds).padStart(9, "0")}`);
+  }
+  if (value instanceof GeoPoint) return text(`G${finiteHex(value.latitude, "GeoPoint")},${finiteHex(value.longitude, "GeoPoint")}`);
+  if (value instanceof DocumentReference) {
+    if (typeof value.path !== "string" || !value.path) throw bytesInvariant("DocumentReference");
+    const bytes = text(value.path);
+    return join([text(`R${bytes.length}:`), bytes]);
+  }
+  if (value instanceof VectorValue) {
+    const elements = value.toArray();
+    if (!Array.isArray(elements)) throw bytesInvariant("VectorValue");
+    return text(`V${elements.length}[${elements.map((e) => finiteHex(e, "VectorValue")).join(",")}]`);
+  }
+  if (Buffer.isBuffer(value)) return join([text(`B${value.length}:`), value]);
+  if (typeof value === "object") {
+    if (seen.has(value)) throw bytesInvariant("cycle");
+    if (Array.isArray(value)) {
+      seen.add(value);
+      const elements = value.map((item) => encodeOriginalEventBytes(item, seen));
+      seen.delete(value);
+      return join([text(`A${elements.length}[`), ...elements.flatMap((e, i) => (i === 0 ? [e] : [text(","), e])), text("]")]);
+    }
+    if (isPlainMap(value)) {
+      seen.add(value);
+      const keys = Object.keys(value).map((k) => ({ k, bytes: text(k) })).sort((a, b) => Buffer.compare(a.bytes, b.bytes));
+      const entries = keys.map(({ k, bytes }) => join([text(`s${bytes.length}:`), bytes, text("="), encodeOriginalEventBytes(value[k], seen)]));
+      seen.delete(value);
+      return join([text(`M${entries.length}{`), ...entries.flatMap((e, i) => (i === 0 ? [e] : [text(","), e])), text("}")]);
+    }
+    throw new UnencodableSource("NON_PLAIN_OBJECT");
+  }
+  throw new UnencodableSource("UNSUPPORTED_RUNTIME_TYPE");
+}
+
+/** originalBytesDigest = SHA-256 over the source's top-level map with the retry member removed. */
+function originalBytesDigest(data) {
+  let subject = data;
+  if (data !== null && typeof data === "object" && !Array.isArray(data) && isPlainMap(data) && "phase0ValidationFailure" in data) {
+    subject = {};
+    for (const key of Object.keys(data)) if (key !== "phase0ValidationFailure") subject[key] = data[key];
+  }
+  return createHash("sha256").update(encodeOriginalEventBytes(subject)).digest("hex");
 }
 
 function trimmed(value) {
@@ -142,30 +257,24 @@ function canonicalEventStateId(eventName, canonicalKey) {
     .digest("hex");
 }
 
+/** C9.1.29 — validators in the frozen precedence, each failing with its qev1 table code and message. */
 function validateEventEnvelope(data, documentId) {
-  if (!data || typeof data !== "object" || Array.isArray(data)) {
-    throw new Error("Event envelope must be a map");
-  }
+  if (!data || typeof data !== "object" || Array.isArray(data)) throw new EnvelopeError("ENVELOPE_INVALID");
   const eventId = trimmed(data.event_id);
   const eventName = trimmed(data.event_name);
   const canonicalKey = trimmed(data.canonical_key);
   const evidenceId = trimmed(data.source_evidence_id);
-  if (!eventId || eventId !== documentId) throw new Error("event_id must equal the document ID");
-  if (!eventName || !canonicalKey) throw new Error("Event name and canonical key are required");
-  if (!Number.isSafeInteger(data.source_version) || data.source_version < 0) {
-    throw new Error("source_version must be a nonnegative safe integer");
-  }
+  if (!eventId || eventId !== documentId) throw new EnvelopeError("EVENT_ID_INVALID");
+  if (!eventName) throw new EnvelopeError("EVENT_NAME_INVALID");
+  if (!canonicalKey) throw new EnvelopeError("CANONICAL_KEY_INVALID");
+  if (!Number.isSafeInteger(data.source_version) || data.source_version < 0) throw new EnvelopeError("SOURCE_VERSION_INVALID");
   const observedAt = strictDate(data.observed_at);
-  if (!observedAt) throw new Error("observed_at is required");
-  if (!evidenceId) throw new Error("source_evidence_id is required");
-  if (data.effect !== "fire" && data.effect !== "retract") {
-    throw new Error("effect must be fire or retract");
-  }
+  if (!observedAt) throw new EnvelopeError("OBSERVED_AT_INVALID");
+  if (!evidenceId) throw new EnvelopeError("SOURCE_EVIDENCE_ID_INVALID");
+  if (data.effect !== "fire" && data.effect !== "retract") throw new EnvelopeError("EFFECT_INVALID");
   const payload = data.payload === undefined ? {} : data.payload;
-  if (!isSafeEnvelopeValue(payload)) throw new Error("payload must be Firestore-safe");
-  if (data.processingState !== "pending" || data.processed !== false) {
-    throw new Error("Event must be pending and unprocessed");
-  }
+  if (!isSafeEnvelopeValue(payload)) throw new EnvelopeError("PAYLOAD_INVALID");
+  if (data.processingState !== "pending" || data.processed !== false) throw new EnvelopeError("PROCESSED_INVALID");
 
   return canonicalize({
     event_id: eventId,
@@ -287,29 +396,111 @@ function taskUserId(ref) {
   return parts[1];
 }
 
+function toTimestamp(now) {
+  return now instanceof Timestamp ? now : Timestamp.fromDate(toDate(now));
+}
+
+function quarantineRef(db, id) { return db.doc(`${QUARANTINE_COLLECTION}/${id}`); }
+
+function assertRecordCap(record) {
+  if (Buffer.byteLength(canonicalJSON(record), "utf8") > QUARANTINE_RECORD_CAP) throw new SchedulerInvariant("PHASE0_QUARANTINE_INVARIANT", "record cap");
+}
+
+/** Members compared for replay (the runNow-stamped timestamps are retained from the existing record). */
+function sameQuarantineIdentity(existing, prospective, members) {
+  return members.every((m) => canonicalJSON(existing[m] === undefined ? null : existing[m]) === canonicalJSON(prospective[m]));
+}
+
+/** C9.1.26 — the retry member is either absent or exactly R(code,count) with count in {1,2}; anything else fails closed. */
+function validateRetryMember(value) {
+  if (value === undefined) return null;
+  const invariant = new SchedulerInvariant("PHASE0_RETRY_MAP_INVARIANT");
+  if (value === null || typeof value !== "object" || Array.isArray(value)) throw invariant;
+  if (Object.keys(value).sort().join(",") !== "failureCount,firstFailedAt,lastFailedAt,originalBytesDigest,reasonCode,schemaVersion") throw invariant;
+  if (value.schemaVersion !== 1 || typeof value.originalBytesDigest !== "string" || !/^[0-9a-f]{64}$/.test(value.originalBytesDigest)) throw invariant;
+  if (!QEV1_CODES.includes(value.reasonCode) || ![1, 2].includes(value.failureCount)) throw invariant;
+  if (!isMillisTimestamp(value.firstFailedAt) || !isMillisTimestamp(value.lastFailedAt) || value.firstFailedAt.toMillis() > value.lastFailedAt.toMillis()) throw invariant;
+  return value;
+}
+
+const TERMINAL_QUARANTINE = (now, message) => ({ processingState: "terminal", processed: true, processedAt: now, outcome: "quarantined", processingError: message, phase0ValidationFailure: FieldValue.delete() });
+
+/** C9.1.26/C9.1.27 — attempts 1 and 2 write R(code,count); attempt 3 writes the qev1 record and Q(message). */
+async function phase0Failure(transaction, db, ref, snapshot, retry, digest, code, now) {
+  const same = retry !== null && retry.originalBytesDigest === digest && retry.reasonCode === code;
+  const attempt = same ? retry.failureCount + 1 : 1;
+  const firstFailedAt = same ? retry.firstFailedAt : now;
+  if (attempt <= 2) {
+    transaction.update(ref, { phase0ValidationFailure: { schemaVersion: 1, originalBytesDigest: digest, reasonCode: code, failureCount: attempt, firstFailedAt, lastFailedAt: now } });
+    return "retry";
+  }
+  const message = QEV1_MESSAGES[code];
+  const record = { schemaVersion: 1, sourcePath: ref.path, sourceUpdateTime: isMillisTimestamp(snapshot.updateTime) ? snapshot.updateTime : now, originalBytesDigest: digest, reason: { code, message }, failureCount: 3, firstFailedAt, lastFailedAt: now, quarantinedAt: now };
+  const qref = quarantineRef(db, `qev1_${digest.slice(0, 40)}`);
+  const existing = await transaction.get(qref);
+  if (existing.exists) {
+    if (!sameQuarantineIdentity(existing.data(), record, ["schemaVersion", "sourcePath", "originalBytesDigest", "reason", "failureCount"])) throw new SchedulerInvariant("PHASE0_QUARANTINE_INVARIANT", "qev1 disagreement");
+  } else {
+    assertRecordCap(record);
+    transaction.create(qref, record);
+  }
+  transaction.update(ref, TERMINAL_QUARANTINE(now, message));
+  return "quarantined";
+}
+
+/** C9.1.22 — first-occurrence SOURCE_UNENCODABLE: qevu1 record and terminal source in the same transaction; producer fields untouched. */
+async function quarantineUnencodable(transaction, db, ref, snapshot, error, now) {
+  const updateTime = snapshot.updateTime;
+  if (!isMillisTimestamp(updateTime)) throw bytesInvariant("updateTime");
+  const digest = createHash("sha256").update(canonicalJSON({ domain: "unencodable_source.v1", source_path: ref.path, reason_token: error.token, update_time: updateTime })).digest("hex");
+  const record = { schemaVersion: 1, sourcePath: ref.path, sourceUpdateTime: updateTime, unencodableSourceDigest: digest, reason: { code: "SOURCE_UNENCODABLE", token: error.token, message: error.message }, failureCount: 1, firstFailedAt: now, lastFailedAt: now, quarantinedAt: now };
+  const qref = quarantineRef(db, `qevu1_${digest.slice(0, 40)}`);
+  const existing = await transaction.get(qref);
+  if (existing.exists) {
+    if (!sameQuarantineIdentity(existing.data(), record, ["schemaVersion", "sourcePath", "sourceUpdateTime", "unencodableSourceDigest", "reason", "failureCount"])) throw new SchedulerInvariant("PHASE0_QUARANTINE_INVARIANT", "qevu1 disagreement");
+  } else {
+    assertRecordCap(record);
+    transaction.create(qref, record);
+  }
+  transaction.update(ref, TERMINAL_QUARANTINE(now, error.message));
+  return "unencodable";
+}
+
+/**
+ * Phase 0 candidate transaction in the C9.1.29 precedence: REFERENCE_INVALID → SOURCE_UNENCODABLE → (size, I9d-2) →
+ * envelope validators → classification → PAYLOAD_TOO_LARGE (I9d-2) → PROCESSED_INVALID; every committing branch is
+ * root-fenced; a retry member of any other shape and a disagreeing quarantine record fail closed with no write.
+ */
 async function consumeEventEnvelopeInTransaction(db, eventRef, rawNow, run = null) {
-  const now = toDate(rawNow);
+  const now = toTimestamp(rawNow);
   return db.runTransaction(async (transaction) => {
     if (run) await requireSchedulerFence(transaction, db, run);
     const eventSnapshot = await transaction.get(eventRef);
     if (!eventSnapshot.exists || eventSnapshot.data()?.processingState !== "pending") return "noop";
-    await assertDeletionAbsent(transaction, db, [eventUserId(eventRef)]); // C6.1 root fence (every committing branch)
+    const data = eventSnapshot.data();
+    let userId = null;
+    try { userId = eventUserId(eventRef); } catch (error) { userId = null; }
+    if (userId !== null) await assertDeletionAbsent(transaction, db, [userId]); // C6.1 root fence (every committing branch)
+
+    let digest;
+    try {
+      digest = originalBytesDigest(data);
+    } catch (error) {
+      if (error instanceof UnencodableSource) return quarantineUnencodable(transaction, db, eventRef, eventSnapshot, error, now);
+      throw error;
+    }
+    const retry = validateRetryMember(data.phase0ValidationFailure);
+    const fail = (code) => phase0Failure(transaction, db, eventRef, eventSnapshot, retry, digest, code, now);
+    if (userId === null) return fail("REFERENCE_INVALID");
 
     let envelope;
     try {
-      envelope = validateEventEnvelope(eventSnapshot.data(), eventRef.id);
+      envelope = validateEventEnvelope(data, eventRef.id);
     } catch (error) {
-      transaction.update(eventRef, {
-        processingState: "terminal",
-        processed: true,
-        processedAt: now,
-        outcome: "quarantined",
-        processingError: String(error?.message || error).slice(0, 1000)
-      });
-      return "quarantined";
+      if (error instanceof EnvelopeError) return fail(error.code);
+      throw error;
     }
 
-    const userId = eventUserId(eventRef);
     const stateId = canonicalEventStateId(envelope.event_name, envelope.canonical_key);
     const stateRef = db.doc(`users/${userId}/eventState/${stateId}`);
     const stateSnapshot = await transaction.get(stateRef);
@@ -324,7 +515,7 @@ async function consumeEventEnvelopeInTransaction(db, eventRef, rawNow, run = nul
         source_version: envelope.source_version,
         effect: envelope.effect,
         event_id: envelope.event_id,
-        observed_at: new Date(envelope.observed_at),
+        observed_at: Timestamp.fromDate(new Date(envelope.observed_at)),
         source_evidence_id: envelope.source_evidence_id,
         payload: envelope.payload,
         fingerprint,
@@ -335,7 +526,8 @@ async function consumeEventEnvelopeInTransaction(db, eventRef, rawNow, run = nul
       processingState: "terminal",
       processed: true,
       processedAt: now,
-      outcome
+      outcome,
+      ...(retry !== null ? { phase0ValidationFailure: FieldValue.delete() } : {})
     });
     return outcome;
   });
@@ -684,6 +876,7 @@ async function runPhase0(deps, run) {
   const selected = snapshot.docs.slice(0, PHASE0_SELECT);
   const outcomes = await runWaves(run, selected, PHASE0_DEADLINE, (candidate) => consumeEventEnvelopeInTransaction(db, candidate.ref, run.runNow, run));
   if (outcomes.some((o) => o !== undefined && !o.ok && o.code === "SCHEDULER_FENCE_LOST")) throw new SchedulerInvariant("SCHEDULER_FENCE_LOST");
+  for (const code of new Set(outcomes.filter((o) => o !== undefined && !o.ok && typeof o.code === "string").map((o) => o.code))) emit(deps, code);
   const settled = outcomes.every((o) => o !== undefined && o.ok);
   if (!settled) return { lane: PHASE0_CURSOR_KEY, examined: selected.length, settled: false };
   if (snapshot.docs.length > PHASE0_SELECT) await writeCursor(deps, run, PHASE0_CURSOR_KEY, { path: selected.at(-1).ref.path });
@@ -1282,6 +1475,12 @@ module.exports = {
   recordRefusal,
   collectRetries,
   laneMask,
+  encodeOriginalEventBytes,
+  originalBytesDigest,
+  validateRetryMember,
+  QEV1_MESSAGES,
+  UNENCODABLE_MESSAGES,
+  QUARANTINE_COLLECTION,
   ORDINARY_LANES,
   THRESHOLD_LANE_SPEC,
   THRESHOLD_LANE,

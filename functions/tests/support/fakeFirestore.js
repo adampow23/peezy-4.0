@@ -14,6 +14,9 @@ function clone(value) {
   if (value instanceof Date) return Timestamp.fromDate(value);
   if (value.methodName === "FieldValue.delete") return value;
   if (Array.isArray(value)) return value.map(clone);
+  // S3 I9d: recognized SDK instances (GeoPoint, DocumentReference, VectorValue, Buffer) and any other non-plain object are carried by reference, as a fixture, never flattened.
+  const prototype = Object.getPrototypeOf(value);
+  if (prototype !== Object.prototype && prototype !== null) return value;
   return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, clone(v)]));
 }
 
@@ -238,6 +241,7 @@ function fakeFirestore({ docs: initial = {}, clock } = {}) {
     __docs: docs,
     __writes: writes,
     __reads: reads,
+    __updateTimes: updateTimes,
     collection: (path) => collectionRef(path),
     collectionGroup: (id) => collectionRef(`__group__/x/${id}`, { group: id }),
     doc: (path) => docRef(path),

@@ -2337,6 +2337,9 @@ test("dispositionTriggers committing transactions are root-fenced: date wake, ev
   const openDocs = { ...docs, "users/u1": { name: "U" } };
   const open = fakeFirestore({ docs: openDocs });
   assert.equal(await dispositionTriggers.wakeDateTaskInTransaction(open, open.doc("users/u1/tasks/due"), NOW), true);
+  // S3 I9d: C9.1.26 quarantines on the third identical deterministic failure; the first two attempts write the retry member (source pending)
+  assert.equal(await dispositionTriggers.consumeEventEnvelopeInTransaction(open, open.doc("users/u1/events/bad"), NOW), "retry");
+  assert.equal(await dispositionTriggers.consumeEventEnvelopeInTransaction(open, open.doc("users/u1/events/bad"), NOW), "retry");
   assert.equal(await dispositionTriggers.consumeEventEnvelopeInTransaction(open, open.doc("users/u1/events/bad"), NOW), "quarantined");
   assert.equal(await dispositionTriggers.reconcileEventTaskInTransaction(open, open.doc("users/u1/tasks/event-task"), NOW), true);
   assert.equal(open.__docs.get("users/u1/tasks/due").status, "Upcoming");
