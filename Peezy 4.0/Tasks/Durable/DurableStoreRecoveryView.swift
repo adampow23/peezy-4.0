@@ -159,6 +159,8 @@ final class DurableStoreRecoveryModel: ObservableObject {
     @Published private(set) var isBusy = false
     @Published private(set) var lastResult: RecoveryResult?
     @Published var foreignChoices: [String: String] = [:]
+    /// Bumped by every action so a slow `refresh` finishing afterwards never overwrites the post-action state.
+    private var refreshGeneration = 0
 
     private let driver: DurableStoreRecoveryDriver
     private let epochRecovery: (any ResetEpochConflictRecovering)?
@@ -181,16 +183,22 @@ final class DurableStoreRecoveryModel: ObservableObject {
     }
 
     func refresh() async {
-        classifications = await driver.classifyAll()
-        deletion = await coordinator?.currentPresentation()
-        completion = await presenter?.current()
-        if case let .completion(snapshot)? = deletion { completion = snapshot }
+        let generation = refreshGeneration
+        let classified = await driver.classifyAll()
+        let presentation = await coordinator?.currentPresentation()
+        var snapshot = await presenter?.current()
+        if case let .completion(pending)? = presentation { snapshot = pending }
+        guard !Task.isCancelled, generation == refreshGeneration else { return }
+        classifications = classified
+        deletion = presentation
+        completion = snapshot
     }
 
     @discardableResult
     func perform(_ control: RecoverySurfaceAction) async -> RecoveryResult {
         guard !isBusy else { return .busy(store: control.store) }
         isBusy = true
+        refreshGeneration += 1
         defer { isBusy = false }
         let result = await driver.perform(store: control.store, action: control.action, expecting: control.expectation)
         lastResult = result
@@ -203,6 +211,7 @@ final class DurableStoreRecoveryModel: ObservableObject {
     func recover(_ option: RecoveryEpochOption) async -> RecoveryResult {
         guard option.enabled, let epochRecovery, !isBusy else { return .unavailable(store: .reset) }
         isBusy = true
+        refreshGeneration += 1
         defer { isBusy = false }
         let result = await epochRecovery.recoverEpoch(recoveryStateDigest: option.recoveryStateDigest, expectedTaskGenerationEpoch: option.expectedTaskGenerationEpoch, expectedPhase: option.phase, action: option.recoveryAction)
         lastResult = result
@@ -215,6 +224,7 @@ final class DurableStoreRecoveryModel: ObservableObject {
     func retryDeletion() async -> AccountDeletionDispatchResult? {
         guard let coordinator, !isBusy else { return nil }
         isBusy = true
+        refreshGeneration += 1
         defer { isBusy = false }
         let result = await coordinator.retry()
         deletion = await coordinator.currentPresentation()
@@ -224,7 +234,10 @@ final class DurableStoreRecoveryModel: ObservableObject {
 
     @discardableResult
     func acknowledgeCompletion() async -> CompletionAcknowledgeResult? {
-        guard let presenter, let completion else { return nil }
+        guard let presenter, let completion, !isBusy else { return nil }
+        isBusy = true
+        refreshGeneration += 1
+        defer { isBusy = false }
         let result = await presenter.acknowledge(expectedGenerationId: completion.generationId, expectedSHA256: completion.sha256)
         if result == .acknowledged {
             self.completion = nil
@@ -235,7 +248,9 @@ final class DurableStoreRecoveryModel: ObservableObject {
 
     @discardableResult
     func open(_ provider: CompletionProvider) async -> CompletionOpenResult? {
-        guard let presenter, let completion else { return nil }
+        guard let presenter, let completion, !isBusy else { return nil }
+        isBusy = true
+        defer { isBusy = false }
         return await presenter.open(expectedGenerationId: completion.generationId, expectedSHA256: completion.sha256, provider: provider)
     }
 }
@@ -249,12 +264,12 @@ struct DurableStoreRecoveryView: View {
         List {
             if let completion = model.completion {
                 AccountDeletionCompletionSurface(content: CompletionSurfaceContent.content(for: completion.result), open: { provider in _ = await model.open(provider) }, done: { _ = await model.acknowledgeCompletion() })
-            } else if let deletion = model.deletion {
+            } else if let deletion = model.deletion, !deletion.isCompletion {
                 Section("Account deletion") {
                     let copy = RecoverySurfacePresentation.deletionCopy(deletion)
                     Text(copy.copy)
                     if copy.retry {
-                        Button("Retry") { Task { await model.retryDeletion() } }.disabled(model.isBusy)
+                        Button("Retry") { Task { await model.retryDeletion() } }.disabled(model.isBusy).accessibilityIdentifier("deletion.retry")
                     }
                 }
             }
@@ -266,8 +281,8 @@ struct DurableStoreRecoveryView: View {
                     }
                     if case let .foreignResolutionRequired(_, _, _, groups) = entry.snapshot {
                         let labels = ForeignResolutionChoices.displayLabels(groups)
-                        ForEach(Array(groups.enumerated()), id: \.offset) { index, group in
-                            Picker(labels[index], selection: Binding(get: { model.foreignChoices[group.decisionDigest] ?? "" }, set: { model.foreignChoices[group.decisionDigest] = $0 })) {
+                        ForEach(Array(zip(labels, groups)), id: \.1.decisionDigest) { label, group in
+                            Picker(label, selection: Binding(get: { model.foreignChoices[group.decisionDigest] ?? "" }, set: { model.foreignChoices[group.decisionDigest] = $0 })) {
                                 Text("Choose").tag("")
                                 Text("Continue").tag("continue")
                                 Text("Restart").tag("restart")
@@ -275,7 +290,7 @@ struct DurableStoreRecoveryView: View {
                         }
                     }
                     ForEach(RecoverySurfacePresentation.actions(for: entry.snapshot, foreignChoices: model.foreignChoices)) { control in
-                        Button(control.title) { Task { await model.perform(control) } }.disabled(!control.enabled || model.isBusy)
+                        Button(control.title) { Task { await model.perform(control) } }.disabled(!control.enabled || model.isBusy).accessibilityIdentifier("recovery.\(control.id)")
                     }
                 }
             }
@@ -298,7 +313,7 @@ struct AccountDeletionCompletionSurface: View {
                 Text(section.paragraph)
                 Button(section.linkTitle) { Task { await open(section.provider) } }
             }
-            Button(content.button) { Task { await done() } }
+            Button(content.button) { Task { await done() } }.accessibilityIdentifier("completion.done")
         }
     }
 }

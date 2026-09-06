@@ -50,7 +50,11 @@ final class FirestoreRuntimeOwner: FirestoreRuntimeProviding, FirestoreLocalCach
     private let lock = NSLock()
     private let controller: any FirestoreInstanceControlling
     private var lease: FirestoreRuntimeLease
+    /// A purge is running: nothing is acquirable until it settles.
     private var purging = false
+    /// The last purge failed after the old instance was terminated: the old generation is dead and acquisition refuses
+    /// until a later purge acks; a later purge may run.
+    private var dead = false
 
     init(controller: any FirestoreInstanceControlling) {
         self.controller = controller
@@ -58,7 +62,7 @@ final class FirestoreRuntimeOwner: FirestoreRuntimeProviding, FirestoreLocalCach
     }
 
     func acquire() async throws -> FirestoreRuntimeLease {
-        let current: FirestoreRuntimeLease? = lock.withLock { purging ? nil : lease }
+        let current: FirestoreRuntimeLease? = lock.withLock { (purging || dead) ? nil : lease }
         guard let current else { throw FirestoreRuntimeError.purging }
         return current
     }
@@ -66,7 +70,7 @@ final class FirestoreRuntimeOwner: FirestoreRuntimeProviding, FirestoreLocalCach
     func published() -> FirestoreRuntimeLease { lock.withLock { lease } }
 
     func isCurrent(_ generation: FirestoreRuntimeGeneration) -> Bool {
-        lock.withLock { !purging && generation == lease.generation }
+        lock.withLock { !purging && !dead && generation == lease.generation }
     }
 
     /// The scope is irrelevant to the cache: both scopes clear the whole local persistence.
@@ -84,10 +88,13 @@ final class FirestoreRuntimeOwner: FirestoreRuntimeProviding, FirestoreLocalCach
             lock.withLock {
                 lease = FirestoreRuntimeLease(firestore: fresh, generation: FirestoreRuntimeGeneration(rawValue: stale.generation.rawValue &+ 1))
                 purging = false
+                dead = false
             }
             return .acknowledged
         } catch {
-            // The old generation is dead and no new one exists: acquisition keeps refusing until a later purge acks.
+            // The old generation is dead and no new one exists: acquisition keeps refusing until a later purge acks,
+            // and a later purge may run (Retry, the next auth transition).
+            lock.withLock { purging = false; dead = true }
             return .failed
         }
     }

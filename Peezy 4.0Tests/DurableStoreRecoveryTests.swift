@@ -506,7 +506,10 @@ struct DurableStoreRecoveryTests {
         #expect(broken.isCurrent(before.generation) == false)
         await #expect(throws: FirestoreRuntimeError.purging) { _ = try await broken.acquire() }
         failing.failProbe = false
-        #expect(await broken.purgeForAccountDeletion(scope: .all) == .failed, "a purge already in flight or unacknowledged is not restarted concurrently")
+        // a later purge (Retry, the next auth transition) may run and ack; only then does acquisition resume on the fresh generation
+        #expect(await broken.purgeForAccountDeletion(scope: .all) == .acknowledged)
+        let recovered = try await broken.acquire()
+        #expect(recovered.generation.rawValue == before.generation.rawValue + 1 && broken.isCurrent(recovered.generation))
     }
 
     @Test func telemetryBarrierRunsTheFiveCallsThenOneCheckAndSettlesStickyOutcomes() async {
@@ -2342,6 +2345,42 @@ struct DurableStoreRecoveryTests {
             }
         }
         #expect(hits.isEmpty, Comment(rawValue: "production Firestore.firestore() in S4-owned files: \(hits)"))
+    }
+
+    // MARK: - S4 close-out review fixes (Swift concurrency pass)
+
+    @Test func everyCoordinatorEntryReservesTheSingleflightSlotBeforeItsFirstSuspension() async throws {
+        let h = try makeDeletionHarness(auth: signedInA)
+        h.remote.always("begin", .success(DeletionWires.dataFinal("x")))
+        h.remote.always("finalize", .failure(.retryRequired))
+        h.owners.setHoldRoute()
+        // an auth transition parks on its first await (the gate hop, then the held route owner); a concurrent startDeletion joins the slot
+        let transition = Task { await h.coordinator.authTransition() }
+        for _ in 0..<20 { await Task.yield() }
+        let deletion = Task { await h.coordinator.startDeletion(uid: "A") }
+        for _ in 0..<20 { await Task.yield() }
+        h.owners.releaseRoute()
+        let transitionResult = await transition.value
+        let deletionResult = await deletion.value
+        #expect(h.remote.actions.filter { $0 == "begin" }.count <= 1, "one reducer at most dispatched begin; the joiner never installed a second task over the slot")
+        #expect(transitionResult == deletionResult || deletionResult == .busy || transitionResult == .clear)
+        let intent = await h.coordinator.currentIntent()
+        #expect(intent == nil || intent?.uid == "A")
+        // consumption reserves the slot before the sign-out await: a concurrent retry joins it and the intent is consumed exactly once
+        let c = try makeDeletionHarness(auth: signedInA)
+        c.remote.always("begin", .success(DeletionWires.dataFinal("x")))
+        c.remote.script("finalize", .success(DeletionWires.guarding("x")), .success(DeletionWires.deleted("x")))
+        _ = await c.coordinator.startDeletion(uid: "A")
+        guard case .settled(.completion(let snapshot)) = await c.coordinator.retry() else { Issue.record("completed"); return }
+        c.owners.setHoldRoute()
+        let acknowledge = Task { await c.completion.acknowledge(expectedGenerationId: snapshot.generationId, expectedSHA256: snapshot.sha256) }
+        while !c.owners.isHoldingRoute { await Task.yield() }
+        let retry = Task { await c.coordinator.retry() }
+        for _ in 0..<20 { await Task.yield() }
+        c.owners.releaseRoute()
+        #expect(await acknowledge.value == .acknowledged)
+        #expect(await retry.value == .clear, "the retry joined the consumption and saw its result")
+        #expect(c.signOut.calls == ["A"] && c.gate.gates.last == .clear && c.gate.terminals.last! == nil)
     }
 
     // MARK: - Epoch stamps (I4, stamps only; manifest §5:540-546). Cleanup belongs to S3.

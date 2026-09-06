@@ -178,6 +178,15 @@ final class TasksStore {
     private(set) var namespace: TasksStoreNamespace?
     /// Increments on every applied snapshot of the current namespace; resets to zero on `start`.
     private(set) var revision: Int = 0
+    /// The listener stamps each callback; an out-of-order older snapshot is dropped, so `tasks` never regresses.
+    private var lastAppliedSequence = 0
+
+    /// A monotonically increasing stamp handed out on the listener's thread.
+    private final class SnapshotSequence: @unchecked Sendable {
+        private let lock = NSLock()
+        private var value = 0
+        func next() -> Int { lock.withLock { value += 1; return value } }
+    }
     /// C9.3.14 evidence for the current namespace (injected by the listener's owner; empty in production until S6).
     private(set) var urgentRecoveryEvidence: [UrgentRecoveryEvidence] = []
     private(set) var urgentRecoveryRegistry: UrgentRecoveryRegistry = .production
@@ -213,16 +222,21 @@ final class TasksStore {
         let fresh = TasksStoreNamespace(uid: userId, listenerToken: UUID())
         namespace = fresh
         revision = 0
+        lastAppliedSequence = 0
         loadState = .loading
+        let sequence = SnapshotSequence()
         listener = source.listen(uid: userId) { [weak self] result in
+            let stamp = sequence.next()
             Task { @MainActor [weak self] in
-                self?.apply(result, for: fresh)
+                self?.apply(result, for: fresh, sequence: stamp)
             }
         }
     }
 
-    private func apply(_ result: Result<TasksSnapshot, Error>, for token: TasksStoreNamespace) {
+    private func apply(_ result: Result<TasksSnapshot, Error>, for token: TasksStoreNamespace, sequence: Int) {
         guard namespace == token else { return } // a late callback of a retired listener changes nothing
+        guard sequence > lastAppliedSequence else { return } // an older snapshot never regresses the store
+        lastAppliedSequence = sequence
         switch result {
         case let .failure(error):
             loadState = .failed(error.localizedDescription)

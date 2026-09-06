@@ -32,12 +32,18 @@ struct AccountDeletionCompletionHost: View {
     @ObservedObject var model: DurableStoreRecoveryModel
 
     var body: some View {
-        if let completion = model.completion {
-            List {
-                AccountDeletionCompletionSurface(content: CompletionSurfaceContent.content(for: completion.result), open: { provider in _ = await model.open(provider) }, done: { _ = await model.acknowledgeCompletion() })
-            }
+        // the load hangs on an always-present view; the surface is a non-dismissable cover above every modal
+        Color.clear
+            .frame(width: 0, height: 0)
             .task { await model.refresh() }
-        }
+            .fullScreenCover(isPresented: Binding(get: { model.completion != nil }, set: { _ in })) {
+                if let completion = model.completion {
+                    List {
+                        AccountDeletionCompletionSurface(content: CompletionSurfaceContent.content(for: completion.result), open: { provider in _ = await model.open(provider) }, done: { _ = await model.acknowledgeCompletion() })
+                    }
+                    .interactiveDismissDisabled()
+                }
+            }
     }
 }
 

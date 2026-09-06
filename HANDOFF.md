@@ -1,34 +1,36 @@
-# HANDOFF — from the S3 close to the next session (2026-09-06)
+# HANDOFF — from the S4 close to the next session (2026-09-06)
 
 Read first, in this order and by section only: `PEEZY_STATE.md` §4, the last entry of `tasks/todo.md`, the current brief under `briefs/`, then `STATUS.md`. The contract (`docs/plans/PHASE2_CONTRACT.md`, sha256 `f675caaf…`) is the sole executable authority; the manifest v9 and spec v5 are archived under `docs/archive/phase2/` and are never read again (Reconciled 12: a missing shape is a contract defect to fix in the contract).
 
 ## Next work
 
-1. S3 is closed: the diff review is at `docs/reviews/S3_DIFF_REVIEW.md` (four Sol rounds and the Swift pass, every finding fixed or dispositioned in `tasks/todo.md`); the close-out amendments S3-CD5..CD9 are in the contract (sha256 `f675caaf…`).
-2. S4 brief (recovery / privacy UI + durable deletion orchestration), written per the `PHASE2_WORKFLOW_v2.md` template with a Codex gate at the brief. S4 inherits from S3: the C9.4.5 client legacy-migration rows, the Settings `deleteAccount()` hunk (needs `Phase2ProductionRuntime.accountDeletionCoordinator`), `FirestoreRuntimeOwner` replacing `TransitionalFirestoreRuntime`, and the client halves of the C2 residual rows the S3 brief lists as "client halves remain S4's". S4 is a deletion slice: diff-reviewed at close.
-3. Owner actions at the S7 pre-ship gate (see `STATUS.md`): the owner-run sealer (Build B artifact), the observer wiring, the deploys.
+1. S4 is closed once the rule-4 diff review recorded under "S4 close-out" in `tasks/todo.md` has every finding fixed or dispositioned and the final reviewed commit is tagged there as the S4 head; the review report lands at `docs/reviews/S4_DIFF_REVIEW.md` after the owner's read. The review packet is in `~/Downloads/peezy-reports/S4_GATE/` (packet, brief, diff `49d21c3..d1bf095`, inventory, ledger section, log index, Sol rounds under `run/`).
+2. S5 brief (identity/provider conformance), per the `PHASE2_WORKFLOW_v2.md` template with a Codex gate at the brief. S5 inherits from S4: the four `DurableStoreRecovering` conformers it owns (`HandoffSessionStore`, `WorkflowService`) and the purge conformances (`GoogleIdentityAuthority`, `NotificationIdentityAuthority`, `HandoffSessionStore`, `WorkflowService`), real auth epochs replacing `TransitionalFirebaseAuthAuthority`, the C10.3 row re-running the C2.7 two-device/A→B families on the real conformers, and its `AppRootAuthRaceTests` contributions (S4-CD4 order).
+3. Owner decisions carried in the ledger's S4 entries: the Home dose pin (S5's `PeezyNudgeAnswerTests` pins the raw v0 keys, so Home cannot move onto the C9.5.16 v2 store without moving that pin); the client mappings and interpretations listed in `STATUS.md` are register candidates.
+4. Owner actions at the S7 pre-ship gate (unchanged): the owner-run sealer (Build B artifact), the observer wiring, the deploys.
 
 ## Commands and environment
 
 - Node is node@24 by explicit path: `/opt/homebrew/opt/node@24/bin/node`; never PATH node. Java for the emulators: `/opt/homebrew/opt/openjdk@21/bin` (the emulator script exports both).
-- Offline Node envelope: the C10.9 command in the contract, restricted to the files that exist today, plus `functions/tests/accountDeletionFence.test.js`. There is no `npm test` script.
-- Emulator runs (`demo-peezy-phase1` only; never production): `scripts/test-emulator.sh node | rules | swift`. Runs share the emulator ports, so chain them in one background script with a `.done` marker and wait once; do not run two at a time.
-- Swift: one `xcodebuild build-for-testing` per session with project signing (simulator `DC0CC10C-6DB0-496A-8B0E-51E60D958A27`, iPhone 17 Pro); the test script's summary line is `Test run with N tests in M suites passed`. Disk is chronically low: one DerivedData at a time.
-- `PHASE_MANIFEST` is enforced by `.claude/hooks/pre_tool_use.py`: a new file must be listed before it is written. `STATUS.md`, `HANDOFF.md`, `docs/reviews/S3_DIFF_REVIEW.md`, `functions/tests/support/*.js`, `functions/scripts/*.js`, and `logs/*` are listed.
-- Logs live under `logs/` (gitignored); the S3 RED, deliberate-break, GREEN, offline, and emulator logs are indexed in `~/Downloads/peezy-reports/S3_GATE/S3_LOG_INDEX.txt`.
+- Offline Node envelope: the C10.9 command in the contract, restricted to the files that exist today, plus `functions/tests/accountDeletionFence.test.js` (the exact list is in `scratchpad`-free form inside `tasks/todo.md`'s S4 close-out entry). There is no `npm test` script.
+- Emulator runs (`demo-peezy-phase1` only; never production): `scripts/test-emulator.sh node | rules | swift [Suite ...]`. The Swift default set is three suites; S4 added ten more positions — pass them explicitly (the thirteen are listed in `STATUS.md`). Runs share the emulator ports: chain them in one background script with a `.done` marker and wait once.
+- Swift: one `xcodebuild build-for-testing` per session with project signing (simulator `DC0CC10C-6DB0-496A-8B0E-51E60D958A27`, iPhone 17 Pro); the summary line is `Test run with N tests in M suites passed`; XCTest suites print `Executed N tests`. Disk is chronically low: one DerivedData at a time.
+- `PHASE_MANIFEST` is enforced by `.claude/hooks/pre_tool_use.py`: a new file must be listed before it is written. The project uses synchronized root groups, so a new Swift file is compiled without a `project.pbxproj` edit (SourceKit diagnostics lag behind; trust the build).
+- Codex (Sol): `codex exec --skip-git-repo-check -m gpt-5.6-sol -s read-only --json -o <verdict> - <prompt`; resume with `codex exec resume <thread> -m gpt-5.6-sol -c sandbox_mode="read-only"` (always pass `-m`; check the first jsonl lines for `turn.failed`); ~25 min a round, run in the background with a `.done` marker.
+- The `/swiftui-pro` and `/swift-concurrency-pro` skills do not exist in this environment; the equivalent close-out passes ran as read-only subagents (their findings are in the ledger's S4 close-out entry).
 
-## Rules that decided S3 boundary questions (apply the same way)
+## Rules that decided S4 boundary questions (apply the same way)
 
-- Contract outranks brief. A brief-versus-contract conflict where the contract wins, or a disclosed boundary exception, is a ledger line and continue. Stop only for a destructive action, a real scope change, input only the owner has, or being blocked.
-- Ownership resolves from the contract's C10 rows (file and test-family ownership), not from code comments or earlier ledger prose. Example: an S1 comment assigned legacy-migration transitions to S3, but C10.4 gives that test family to S4.
-- RED means one named assertion fails; build and compile failures are not RED. Every increment: RED, deliberate-break confirmation, GREEN, offline envelope, emulator subsets, commit, push, ledger line.
-- Read-only test files pin implementation shapes; grep them for every symbol a slice must change before the brief is written.
-- Mirror, don't invent: registries, wires, IDs, and tables are copied from the contract verbatim; where the contract carries only a pointer row, code nothing until the contract states the behavior.
+- Contract outranks brief; a disclosed boundary exception or a contract-versus-brief conflict where the contract wins is a ledger line and continue. Stop only for a destructive action, a real scope change, input only the owner has, or being blocked.
+- Where two contract rows disagree the more specific literal wins and the correction is a ledger line: C9.5.18's exact `reset_epoch_conflict` digest formula outranked the generic C9.7.12 map (I7 corrected I5).
+- Read-only test files pin implementation shapes: grep them for every symbol before writing (the three inventory initializers, the six-argument `PeezyHomeViewModel` init, the raw dose keys, `TaskRowButtons.layout(for:section:)`, `AppRootView()`); add overloads or seams, never move a pin without an owner decision.
+- RED means one named assertion fails; a deliberate break must be caught by a named test — when a break is not observable (the dose removal order, the same-UID retired token), add the case that observes it before declaring RED.
+- Mirror, don't invent: registries, wires, IDs, copy, and tables are copied from the contract; where the contract is silent on a client mapping, choose the most conservative behavior (retain bytes, block with Retry) and record it as a register candidate.
 
 ## Seams and traps worth knowing
 
-- The emulator's REST and gapic surfaces need `Authorization: Bearer owner`; a raw public-v1 client needs `servicePath`/`port`/insecure `sslCreds`, and probe scripts must live under `functions/` to resolve modules.
-- `fakeFirestore.js` (shared test support) is extended once per slice before the slice's first Node RED; `fakeV1Client.js` is the binding-shaped stand-in for the pinned public-v1 client (transactions, preconditions, commit-time bumping).
-- Fixture facts that bit S3: enum values are numeric in binding shapes; integral doubles and `-0`/subnormals must be raw `doubleValue`; vector elements are doubles; a Date inside a fake sentinel resolver must not be flattened; tombstones derive from a real marker; deliberate breaks must be syntactically valid and caught by a named assertion.
-- `ROLLOUT_TUPLE_V1` in `migrateOversizeEvents.js` must be refrozen whenever `firestore.rules` or `firestore.indexes.json` changes; the arming gate fails closed on a mismatch.
-- The whole unit target has 19 pre-existing failures (test host without a FirebaseApp); the named S1–S3 suites are the envelope.
+- Swift Testing: no `await` right of `&&`/`||` inside `#expect` (hoist to a `let`); `Comment(rawValue:)` for dynamic messages; a three-value enum pattern written with two placeholders makes the compiler give up; `id` is not a usable parameter name in a nested helper; a `Result` failure type must conform to `Error`; a test that constructs a `@MainActor` model must itself be `@MainActor`.
+- `UserDefaults` subclasses (`VerificationFailingDefaults`) prove copy-before-remove sequences; UID-interpolated keys are caught by the registry scan only when they are string literals.
+- The simulator keychain carries the real app's persisted Firebase Auth user under the production app ID; a plain `signOut()` leaves it, which is why the consumption scrubs every `firebase_auth_*` item (the installation item is untouched).
+- `RecordingTelemetrySDK.complete` can race the double's continuation store; retry the completion after yields.
+- Until S7 installs the runtime, every S4-owned Firestore acquisition traps by design; do not "fix" that by reintroducing `Firestore.firestore()` (the named gate test fails).

@@ -278,6 +278,8 @@ enum AccountDeletionPresentationV1: Sendable, Equatable {
     /// The completed, local-cleared, or remote-unconfirmed file snapshot published by the completion presenter.
     case completion(CompletionSnapshotV1)
 
+    var isCompletion: Bool { if case .completion = self { return true }; return false }
+
     var map: [String: Any] {
         switch self {
         case .queued:
@@ -340,6 +342,7 @@ actor DurableStoreRecoveryCoordinator {
     private let store: AccountDeletionIntentStore
     private var inflight: Task<AccountDeletionDispatchResult, Never>?
     private var inflightUID: String?
+    private var inflightToken: UUID?
     private var presentation: AccountDeletionPresentationV1?
     /// Phase transitions, dispatches, and outcomes in order (tests read it; never user-facing).
     private(set) var trace: [String] = []
@@ -378,13 +381,18 @@ actor DurableStoreRecoveryCoordinator {
     /// Launch: resumes a valid intent, else discovers a server root for the signed-in UID (zero write on absence).
     func discoverAtStartup() async -> AccountDeletionDispatchResult {
         if let inflight { return await inflight.value }
+        // the slot is reserved before the first suspension; the body never re-enters a public entry point
+        return await runSingleflight(uid: "") { await self.discoverBody() }
+    }
+
+    private func discoverBody() async -> AccountDeletionDispatchResult {
         switch store.observe() {
-        case let .present(intent, _):
-            return await runSingleflight(uid: intent.uid) { await self.resume() }
+        case .present:
+            return await resume()
         case .absent:
             // a surviving linked all-scope journal is crash-recovery authority (the intent was already unlinked)
             if case let .present(journal) = await dependencies.purge.observeJournal(), journal.scope == .all, let link = journal.terminalDeletionLink {
-                return await runSingleflight(uid: "") { await self.finishConsumption(link: link, intentIdentity: nil) }
+                return await finishConsumption(link: link, intentIdentity: nil)
             }
             // a stray completion file (crash between the journal unlink and the file unlink): re-present it for its acknowledge
             if let snapshot = await dependencies.completion.current() {
@@ -395,7 +403,8 @@ actor DurableStoreRecoveryCoordinator {
                 return .settled(.completion(snapshot))
             }
             guard case let .signedIn(tuple) = await dependencies.auth.currentSignedAuth() else { return await clearGate() }
-            return await runSingleflight(uid: tuple.uid) { await self.discover(tuple: tuple) }
+            inflightUID = tuple.uid
+            return await discover(tuple: tuple)
         case .malformed:
             return await blockGate(.fileIO)
         case let .ioFailed(code):
@@ -408,17 +417,21 @@ actor DurableStoreRecoveryCoordinator {
     /// crash-durable all-scope purge, then startup discovery; `clear` or the next UID is published only after both finish.
     func authTransition() async -> AccountDeletionDispatchResult {
         if let inflight { _ = await inflight.value }
+        return await runSingleflight(uid: "") { await self.authTransitionBody() }
+    }
+
+    private func authTransitionBody() async -> AccountDeletionDispatchResult {
         await dependencies.gate.setGate(.loading)
         trace.append("auth_transition")
         var intentResult: AccountDeletionDispatchResult?
         if case .present = store.observe() {
-            intentResult = await runSingleflight(uid: "") { await self.resume() }
+            intentResult = await resume()
         }
         let purged = await dependencies.purge.purge(scope: .all)
         trace.append("all_scope:\(purged)")
         if case let .blocked(reason) = purged { return await blockGate(reason) }
         if let intentResult, case .present = store.observe() { return intentResult }
-        return await discoverAtStartup()
+        return await discoverBody()
     }
 
     /// C2.5 Apple credential state for `uid`'s still-matching authority.
@@ -441,25 +454,30 @@ actor DurableStoreRecoveryCoordinator {
     /// The presenter's `consume`: the terminal consumption order of C2.2. True only when the intent and journal are gone.
     func consumeTerminal(_ snapshot: CompletionSnapshotV1) async -> Bool {
         if let inflight { _ = await inflight.value }
+        _ = snapshot
+        return await runSingleflight(uid: "") { await self.consumeBody() } == .clear
+    }
+
+    /// `.clear` only when the intent and journal are gone; every other rest state answers the presenter `false`.
+    private func consumeBody() async -> AccountDeletionDispatchResult {
         switch store.observe() {
         case let .present(intent, identity):
-            guard Self.isTerminal(intent) else { trace.append("consume:not_terminal"); return false }
+            guard Self.isTerminal(intent) else { trace.append("consume:not_terminal"); return .settled(.blocked(.localPrivacyPurgeFailed)) }
+            inflightUID = intent.uid
             trace.append("consume:sign_out")
-            guard await dependencies.signOutMatchingUser(intent.uid) else { _ = await blockGate(.localPrivacyPurgeFailed); return false }
+            guard await dependencies.signOutMatchingUser(intent.uid) else { return await blockGate(.localPrivacyPurgeFailed) }
             // no Firebase Auth user item of any app configuration outlives the account (the installation item is untouched)
             trace.append("consume:keychain_scrub:\(FirebaseAuthKeychainScrub.removeUserItems())")
             let link = TerminalDeletionLinkV1(deletionOperationId: intent.operationId, deletionProofSHA256: intent.proofSHA256)
-            return await runSingleflight(uid: intent.uid) { await self.finishConsumption(link: link, intentIdentity: identity) } == .clear
+            return await finishConsumption(link: link, intentIdentity: identity)
         case .absent:
             if case let .present(journal) = await dependencies.purge.observeJournal(), journal.scope == .all, let link = journal.terminalDeletionLink {
-                return await runSingleflight(uid: "") { await self.finishConsumption(link: link, intentIdentity: nil) } == .clear
+                return await finishConsumption(link: link, intentIdentity: nil)
             }
             // the consumption already completed; only the completion file remained
-            _ = snapshot
-            return await clearGate() == .clear
+            return await clearGate()
         case .malformed, .ioFailed:
-            _ = await blockGate(.fileIO)
-            return false
+            return await blockGate(.fileIO)
         }
     }
 
@@ -489,10 +507,12 @@ actor DurableStoreRecoveryCoordinator {
     // MARK: singleflight
 
     private func runSingleflight(uid: String, _ body: @escaping @Sendable () async -> AccountDeletionDispatchResult) async -> AccountDeletionDispatchResult {
+        let token = UUID()
         let task = Task { await body() }
         inflight = task
         inflightUID = uid
-        defer { inflight = nil; inflightUID = nil }
+        inflightToken = token
+        defer { if inflightToken == token { inflight = nil; inflightUID = nil; inflightToken = nil } }
         return await task.value
     }
 
@@ -577,7 +597,14 @@ actor DurableStoreRecoveryCoordinator {
     }
 
     private func resume() async -> AccountDeletionDispatchResult {
-        guard case let .present(intent, identity) = store.observe() else { return await retry() }
+        let observed = store.observe()
+        guard case let .present(intent, identity) = observed else {
+            // never re-enter a public entry point from inside the singleflight body
+            switch observed {
+            case .absent: return await clearGate()
+            default: return await blockGate(.fileIO)
+            }
+        }
         if Self.isTerminal(intent), case let .present(journal) = await dependencies.purge.observeJournal(), journal.scope == .all, let link = journal.terminalDeletionLink {
             return await finishConsumption(link: link, intentIdentity: identity)
         }
@@ -1154,6 +1181,8 @@ actor DurableStoreRecoveryDriver {
     private let publish: Publish
     private(set) var classifications: [RecoveryStore: RecoveryClassification] = [:]
     private(set) var trace: [String] = []
+    /// Bumped at every `perform` entry: a classification observed before the action never overwrites the one after it.
+    private var generations: [RecoveryStore: Int] = [:]
 
     init(owners: DurableStoreOwners, dose: DailyDoseLocalStore, currentUID: any CurrentFirebaseUIDProviding, publish: @escaping Publish) {
         self.owners = owners
@@ -1171,8 +1200,10 @@ actor DurableStoreRecoveryDriver {
 
     func classify(_ store: DurableStore) async -> RecoveryClassification {
         let owner = owners.owner(of: store)
+        let generation = generations[RecoveryStore(store), default: 0]
         let observation = await owner.observe()
         let classification = owner.classify(observation)
+        guard generations[RecoveryStore(store), default: 0] == generation else { return classification } // stale: an action ran meanwhile
         classifications[RecoveryStore(store)] = classification
         trace.append("classify:\(store.rawValue):\(Self.label(classification))")
         switch classification {
@@ -1183,12 +1214,14 @@ actor DurableStoreRecoveryDriver {
     }
 
     func classifyDose() async -> RecoveryClassification {
+        let generation = generations[.dose, default: 0]
         let classification: RecoveryClassification
         if let uid = currentUID.currentFirebaseUID(), let observed = await dose.observeMalformed(uid: uid), case let .dose(sha, length, _) = observed {
             classification = .blocked(.doseMalformed(recoveryStateDigest: observed.recoveryStateDigest, bytesSHA256: sha, byteLength: length))
         } else {
             classification = .ready
         }
+        guard generations[.dose, default: 0] == generation else { return classification }
         classifications[.dose] = classification
         trace.append("classify:dose:\(Self.label(classification))")
         return classification
@@ -1197,6 +1230,7 @@ actor DurableStoreRecoveryDriver {
     /// Routes the action to the owning store (the dose store to `DailyDoseLocalStore`), then reclassifies that store.
     func perform(store: RecoveryStore, action: RecoveryAction, expecting expectation: RecoveryExpectation) async -> RecoveryResult {
         trace.append("perform:\(store.rawValue):\(action.name)")
+        generations[store, default: 0] += 1
         if store == .dose {
             guard action == .quarantineDoseBytes, case let .digest(digest) = expectation, let uid = currentUID.currentFirebaseUID() else { return .unavailable(store: .dose) }
             let result = await dose.performQuarantine(uid: uid, expecting: digest)

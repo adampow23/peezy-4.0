@@ -613,7 +613,12 @@ struct InventoryCameraView: View {
             guard let owner = artifactOwner, let uid = Auth.auth().currentUser?.uid else { return } // no owner or user: no lease, no narration
             let sessionId = roomName
             Task { @MainActor in
-                guard viewModel.isRecording, let lease = await owner.acquire(uid: uid, sessionId: sessionId) else { return }
+                guard let lease = await owner.acquire(uid: uid, sessionId: sessionId) else { return }
+                // the recording may have stopped or the frames may already be extracting during the actor hop: release, never start
+                guard viewModel.isRecording, !isStoppingRecording, !viewModel.isProcessingFrames, pendingNarrationTranscript == nil else {
+                    await owner.release(lease)
+                    return
+                }
                 pendingNarrationTranscript = lease
                 narration.start(lease: lease)
             }
