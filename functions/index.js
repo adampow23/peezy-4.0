@@ -251,6 +251,19 @@ exports.reconcileAccountDeletionAuth = onSchedule(
 );
 
 /**
+ * Historical-migration create blocker (PHASE2_CONTRACT.md C6.3; S3 Decision 4). Exported only when
+ * PHASE2_LEGACY_CREATE_BLOCKER=armed is present at module load, so an ordinary deploy never ships it.
+ */
+if (process.env.PHASE2_LEGACY_CREATE_BLOCKER === 'armed') {
+  const { beforeUserCreated } = require('firebase-functions/v2/identity');
+  const { phase2LegacyCreateBlocker } = require('./accountDeletionFence');
+  exports.phase2LegacyCreateBlocker = beforeUserCreated(
+    { region: 'us-central1' },
+    (event) => phase2LegacyCreateBlocker(event, { log: (code, counts) => logger.warn(code, counts) })
+  );
+}
+
+/**
  * Health check endpoint
  */
 exports.healthCheck = onRequest((req, res) => {

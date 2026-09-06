@@ -2661,4 +2661,104 @@ test("C6.2 call graph: every provider send in the registry files sits inside wit
   assert.deepEqual([...new Set(registryFiles)], ["functions/notifySupport.js", "functions/packageInventory.js", "functions/peezyChat.js", "functions/processInventory.js", "functions/researchTask.js", "functions/resolveProvider.js", "functions/submitCheckIn.js", "functions/supportAdmin.js"]);
 });
 
+// ---------------------------------------------------------------------------
+// S3 I3 — fence module: C3 global-scheduler cleanup step, C6.1 registry coverage,
+// phase2LegacyCreateBlocker (Decision 4)
+// ---------------------------------------------------------------------------
+
+const { execFileSync } = require("node:child_process");
+const QUARANTINE = "phase1System/dispositionTriggerState/quarantinedEvents";
+
+test("global scheduler cleanup: 0/1/100/101 quarantine rows whose reread sourcePath names the UID are deleted inside the application sweep; other users' rows and out-of-range paths survive", async () => {
+  for (const count of [0, 1, 100, 101]) {
+    const clock = new FakeClock();
+    const docs = { "users/uid-A": { name: "A" }, [`${QUARANTINE}/other`]: { sourcePath: "users/uid-B/events/e1" }, [`${QUARANTINE}/prefix`]: { sourcePath: "users/uid-AB/events/e1" }, [`${QUARANTINE}/tasks`]: { sourcePath: "users/uid-A/tasks/t1" }, "phase1System/dispositionTriggerState": { dateAfterPath: "x" } };
+    for (let i = 0; i < count; i += 1) docs[`${QUARANTINE}/q${String(i).padStart(3, "0")}`] = { sourcePath: `users/uid-A/events/e${i}`, reason: "drift" };
+    const db = fakeFirestore({ docs, clock });
+    const deps = makeDeps({ db, clock, budget: { sweeps: 3 } });
+    const credentials = { operationId: freshOperationId(), proofNonce: freshProofNonce() };
+    await expectDeletionError(() => call(deps, "begin", credentials), "unavailable", RETRY);
+    await driveToGuarding(deps, credentials);
+    const remaining = [...db.__docs.keys()].filter((p) => p.startsWith(`${QUARANTINE}/`)).sort();
+    assert.deepEqual(remaining, [`${QUARANTINE}/other`, `${QUARANTINE}/prefix`, `${QUARANTINE}/tasks`], `count ${count}`);
+    assert.ok(db.__docs.has("phase1System/dispositionTriggerState"));
+    assert.ok(db.__reads.filter((r) => r.startsWith(`${QUARANTINE}/q`)).length >= count, "every nominated row is reread before deletion");
+  }
+});
+
+test("global scheduler cleanup: a malformed in-range sourcePath is ACCOUNT_DELETION_GLOBAL_PATH_MALFORMED, the sweep blocks with the row intact, and guarding is never entered", async () => {
+  for (const bad of ["users/uid-A/events/", "users/uid-A/events/e/extra", "users/uid-A/events//"]) {
+    const clock = new FakeClock();
+    const credentials = { operationId: freshOperationId(), proofNonce: freshProofNonce() };
+    const db = fakeFirestore({ docs: { "users/uid-A": { accountDeletion: sweepingMarker([capability(UID, credentials.operationId, credentials.proofNonce)]) }, [`${QUARANTINE}/good`]: { sourcePath: "users/uid-A/events/e1" }, [`${QUARANTINE}/bad`]: { sourcePath: bad } }, clock });
+    const deps = makeDeps({ db, clock, budget: { sweeps: 3 } });
+    for (let i = 0; i < 3; i += 1) await expectDeletionError(() => call(deps, "resume", credentials), "unavailable", RETRY);
+    assert.ok(db.__docs.has(`${QUARANTINE}/bad`), bad);
+    assert.equal(fence.validateAccountDeletionMarker(markerOf(db)).phase, "DELETING_SWEEPING", bad);
+    assert.ok(deps.logs.some(([code]) => code === "ACCOUNT_DELETION_GLOBAL_PATH_MALFORMED"), bad);
+  }
+});
+
+test("C6.1 registry coverage: every existing registered file calls the root fence, absent files are the two recorded pending entries, and no active export file writes user state outside the registry", () => {
+  const PENDING = ["functions/taskDisposition.js", "functions/notificationIntents.js"]; // S6 / Reconciled 12
+  const root = path.join(__dirname, "..");
+  for (const file of Object.keys(fence.ACCOUNT_DELETION_FENCE_WRITERS_V1)) {
+    const local = path.join(root, file.replace(/^functions\//, ""));
+    if (!fs.existsSync(local)) { assert.ok(PENDING.includes(file), `${file} is absent and not recorded pending`); continue; }
+    const source = fs.readFileSync(local, "utf8");
+    assert.ok(/require\(["']\.\/accountDeletionFence["']\)/.test(source), `${file} requires the fence module`);
+    const callsFence = (text) => text.includes("assertDeletionAbsent(") || text.includes('"ACCOUNT_DELETION_FENCED"') || text.includes("'ACCOUNT_DELETION_FENCED'");
+    // A registered file whose committing transaction lives in another registered file (submitCheckIn.js →
+    // submitCheckInCore.js) is covered through that shared child.
+    const delegates = [...source.matchAll(/require\(["']\.\/([^"']+)["']\)/g)].map((m) => `functions/${m[1]}${m[1].endsWith(".js") ? "" : ".js"}`)
+      .filter((f) => f in fence.ACCOUNT_DELETION_FENCE_WRITERS_V1 && fs.existsSync(path.join(root, f.replace(/^functions\//, ""))))
+      .map((f) => fs.readFileSync(path.join(root, f.replace(/^functions\//, "")), "utf8"));
+    assert.ok(callsFence(source) || delegates.some(callsFence), `${file} calls the root fence`);
+  }
+  // Active export graph: every file reachable from index.js that performs a Firestore write is a
+  // registered writer, the fence core, or resolveProvider (whose only writes are fence-owned leases).
+  const seen = new Set();
+  const queue = ["index.js"];
+  while (queue.length) {
+    const file = queue.shift();
+    if (seen.has(file)) continue;
+    seen.add(file);
+    const source = fs.readFileSync(path.join(root, file), "utf8");
+    for (const match of source.matchAll(/require\(["']\.\/([^"']+)["']\)/g)) queue.push(match[1].endsWith(".js") || match[1].endsWith(".json") ? match[1] : `${match[1]}.js`);
+  }
+  const writePattern = /transaction\.(set|update|create|delete)\(|\b(ref|[A-Za-z]+Ref)\.(set|update|delete|create|add)\(|\.batch\(\)|recursiveDelete\(/;
+  const allowed = new Set([...Object.keys(fence.ACCOUNT_DELETION_FENCE_WRITERS_V1).map((f) => f.replace(/^functions\//, "")), "accountDeletionFence.js"]);
+  for (const file of [...seen].filter((f) => f.endsWith(".js"))) {
+    const source = fs.readFileSync(path.join(root, file), "utf8");
+    if (!writePattern.test(source)) continue;
+    assert.ok(allowed.has(file), `${file} writes Firestore but is not a registered fence writer`);
+  }
+});
+
+test("phase2LegacyCreateBlocker: accepts only beforeCreate for project peezy-1ecrdl with an empty tenant, always throws the exact permission-denied error, and index.js exports it only when PHASE2_LEGACY_CREATE_BLOCKER=armed", () => {
+  const accepted = { eventType: "providers/cloud.auth/eventTypes/user.beforeCreate:password", resource: { service: "identitytoolkit.googleapis.com", name: "projects/peezy-1ecrdl" }, data: { uid: "u1" } };
+  assert.equal(fence.classifyLegacyCreateBlockerEvent(accepted), "accepted");
+  assert.equal(fence.classifyLegacyCreateBlockerEvent({ ...accepted, eventType: "providers/cloud.auth/eventTypes/user.beforeCreate" }), "accepted");
+  assert.equal(fence.classifyLegacyCreateBlockerEvent({ ...accepted, eventType: "providers/cloud.auth/eventTypes/user.beforeSignIn:password" }), "event_type");
+  assert.equal(fence.classifyLegacyCreateBlockerEvent({ ...accepted, resource: { service: "identitytoolkit.googleapis.com", name: "projects/other" } }), "project");
+  assert.equal(fence.classifyLegacyCreateBlockerEvent({ ...accepted, resource: { service: "identitytoolkit.googleapis.com", name: "projects/peezy-1ecrdl/tenants/t1" } }), "tenant");
+  assert.equal(fence.classifyLegacyCreateBlockerEvent({ ...accepted, data: { uid: "u1", tenantId: "t1" } }), "tenant");
+  assert.equal(fence.classifyLegacyCreateBlockerEvent({ ...accepted, data: { uid: "u1", tenantId: null } }), "accepted");
+  for (const event of [accepted, { ...accepted, eventType: "providers/cloud.auth/eventTypes/user.beforeSignIn" }, undefined]) {
+    const logs = [];
+    assert.throws(() => fence.phase2LegacyCreateBlocker(event, { log: (code, counts) => logs.push([code, counts]) }), (error) => {
+      assert.equal(error.code, "permission-denied");
+      assert.equal(error.message, "Account creation is temporarily unavailable.");
+      assert.equal(error.details, undefined);
+      return true;
+    });
+    assert.equal(logs.some(([code]) => code === "LEGACY_CREATE_BLOCKER_EVENT_REJECTED"), event !== accepted);
+  }
+  assert.equal(indexExports.phase2LegacyCreateBlocker, undefined, "unarmed: no export");
+  const armed = execFileSync(process.execPath, ["-e", "const i = require('./index'); const e = i.phase2LegacyCreateBlocker; console.log(JSON.stringify({ type: typeof e, eventType: e && e.__endpoint && e.__endpoint.blockingTrigger && e.__endpoint.blockingTrigger.eventType, region: e && e.__endpoint && e.__endpoint.region }));"], { cwd: path.join(__dirname, ".."), env: { ...process.env, PHASE2_LEGACY_CREATE_BLOCKER: "armed" }, encoding: "utf8" });
+  assert.deepEqual(JSON.parse(armed.trim().split("\n").at(-1)), { type: "function", eventType: "providers/cloud.auth/eventTypes/user.beforeCreate", region: ["us-central1"] });
+  const unarmedOther = execFileSync(process.execPath, ["-e", "console.log(typeof require('./index').phase2LegacyCreateBlocker)"], { cwd: path.join(__dirname, ".."), env: { ...process.env, PHASE2_LEGACY_CREATE_BLOCKER: "yes" }, encoding: "utf8" });
+  assert.equal(unarmedOther.trim().split("\n").at(-1), "undefined", "any value other than armed leaves the export absent");
+});
+
 module.exports = { fakeFirestore, FakeClock, capability, sweepingMarker, guardingMarker, dataDeletedMarker, authGuardingMarker, accountDeletedMarker, freshOperationId, freshProofNonce, ts, UID, STARTED, GUARD_AFTER };

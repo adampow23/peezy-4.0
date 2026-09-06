@@ -607,6 +607,33 @@ async function withOutboundLease(deps, { uid, channel, deliveryId }, fn) {
 }
 
 // ---------------------------------------------------------------------------
+// phase2LegacyCreateBlocker (C6.3; Decision 4, 2026-09-06): a beforeUserCreated handler that
+// accepts only beforeCreate for project peezy-1ecrdl with an empty tenant and always throws the
+// exact permission-denied error before any user mutation. index.js exports it only when armed.
+// ---------------------------------------------------------------------------
+
+const LEGACY_CREATE_BLOCKER_EVENT_TYPE = "providers/cloud.auth/eventTypes/user.beforeCreate";
+const LEGACY_CREATE_BLOCKER_PROJECT_RESOURCE = "projects/peezy-1ecrdl";
+const LEGACY_CREATE_BLOCKER_MESSAGE = "Account creation is temporarily unavailable.";
+
+/** "accepted" | "event_type" | "project" | "tenant" — the first failing check in that order. */
+function classifyLegacyCreateBlockerEvent(event) {
+  const eventType = event && typeof event.eventType === "string" ? event.eventType : "";
+  if (eventType !== LEGACY_CREATE_BLOCKER_EVENT_TYPE && !eventType.startsWith(`${LEGACY_CREATE_BLOCKER_EVENT_TYPE}:`)) return "event_type";
+  const name = event.resource && typeof event.resource.name === "string" ? event.resource.name : "";
+  if (name.startsWith(`${LEGACY_CREATE_BLOCKER_PROJECT_RESOURCE}/tenants/`)) return "tenant";
+  if (name !== LEGACY_CREATE_BLOCKER_PROJECT_RESOURCE) return "project";
+  const tenantId = event.data ? event.data.tenantId : undefined;
+  if (tenantId !== undefined && tenantId !== null && tenantId !== "") return "tenant";
+  return "accepted";
+}
+
+function phase2LegacyCreateBlocker(event, deps = {}) {
+  if (classifyLegacyCreateBlockerEvent(event) !== "accepted") emit(deps, "LEGACY_CREATE_BLOCKER_EVENT_REJECTED", {});
+  throw new HttpsError("permission-denied", LEGACY_CREATE_BLOCKER_MESSAGE);
+}
+
+// ---------------------------------------------------------------------------
 // Logging, deadlines, read time, schedule ordinals
 // ---------------------------------------------------------------------------
 
@@ -963,11 +990,56 @@ async function sweepStorage(deps, ctx, { limit }) {
 // Application sweep and the sweeping → guarding transition (§11:1497)
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Global scheduler cleanup (C3): quarantine rows whose sourcePath names the UID
+// ---------------------------------------------------------------------------
+
+const GLOBAL_QUARANTINE_COLLECTION = "phase1System/dispositionTriggerState/quarantinedEvents";
+const GLOBAL_CLEANUP_PAGE_SIZE = 100;
+
+/** Exact `users/{uid}/events/{id}` for this UID, or null. Any other in-range shape is malformed. */
+function parseOwnedEventPath(sourcePath, uid) {
+  if (typeof sourcePath !== "string") return null;
+  const parts = sourcePath.split("/");
+  if (parts.length !== 4 || parts[0] !== "users" || parts[1] !== uid || parts[2] !== "events" || parts[3].length === 0) return null;
+  return parts[3];
+}
+
+/**
+ * Nominates up to 100 quarantine rows in the range [users/{uid}/events/, users/{uid}/events0), rereads
+ * each in its own transaction, deletes the exact matches, and blocks on a malformed in-range path.
+ * The seven cursor-map members, `dueObservation`, and the `p2b1_oldest_due_over_900_seconds` alert
+ * on the scheduler state document are removed by this step once the scheduler contract states
+ * their shape (Reconciled 12); until then no member of that document is named or touched here.
+ */
+async function sweepGlobalSchedulerState(deps, ctx) {
+  const lower = `users/${ctx.uid}/events/`;
+  const upper = `users/${ctx.uid}/events0`;
+  const snapshot = await deps.db.collection(GLOBAL_QUARANTINE_COLLECTION)
+    .where("sourcePath", ">=", lower).where("sourcePath", "<", upper)
+    .limit(GLOBAL_CLEANUP_PAGE_SIZE).get();
+  let hit = false;
+  for (const nominated of snapshot.docs) {
+    const deleted = await deps.db.runTransaction(async (transaction) => {
+      const row = await transaction.get(nominated.ref);
+      if (!row.exists) return false;
+      const sourcePath = row.get("sourcePath");
+      if (typeof sourcePath !== "string" || compareUTF8(sourcePath, lower) < 0 || compareUTF8(sourcePath, upper) >= 0) return false;
+      if (parseOwnedEventPath(sourcePath, ctx.uid) === null) throw new InvariantError("ACCOUNT_DELETION_GLOBAL_PATH_MALFORMED");
+      transaction.delete(nominated.ref);
+      return true;
+    });
+    if (deleted) hit = true;
+  }
+  return hit;
+}
+
 async function runApplicationSweep(deps, ctx) {
   let hit = false;
   if (await scrubRoot(deps, ctx)) hit = true;
   if (await sweepDescendants(deps, ctx)) hit = true;
   if (await sweepExternalFamilies(deps, ctx)) hit = true;
+  if (await sweepGlobalSchedulerState(deps, ctx)) hit = true;
   const storage = await sweepStorage(deps, ctx, { limit: 100 });
   if (storage.hit || !storage.empty) hit = true;
   return { empty: !hit };
@@ -2334,6 +2406,8 @@ module.exports = {
   // reconcilers and the historical entry
   validateReconcilerState, parseScheduleBoundary, runStorageReconciler, runAuthReconciler, runResidualChecks,
   createMigrationMarker, enterHistoricalGuarding,
+  // global scheduler cleanup and the legacy create blocker (S3)
+  sweepGlobalSchedulerState, parseOwnedEventPath, classifyLegacyCreateBlockerEvent, phase2LegacyCreateBlocker,
   // misc
   withDeadline, readTimeOf, requireEvidence, emit, productionDependencies, loadedEvidence, withFixedErrorBoundary
 };

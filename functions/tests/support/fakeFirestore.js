@@ -94,6 +94,9 @@ function fakeFirestore({ docs: initial = {}, clock } = {}) {
       rows = rows.filter(([, data]) => {
         const actual = field === "__name__" ? undefined : data[field];
         if (op === "==") return actual === value;
+        // S3: string range operators for the global-cleanup sourcePath window.
+        if (op === ">=") return typeof actual === "string" && compareBytes(actual, value) >= 0;
+        if (op === "<") return typeof actual === "string" && compareBytes(actual, value) < 0;
         throw new Error(`fake query operator unsupported: ${op}`);
       });
     }
