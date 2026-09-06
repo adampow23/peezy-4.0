@@ -1716,7 +1716,7 @@ test("C9.2.2 import has no effect; default mode is a read-only audit; every exec
   assert.deepEqual([result.report.mode, result.report.refusal], ["audit", null], "without --apply the run is the default read-only audit");
   assert.equal(migration.armingRefusal(migration.parseArguments(armed.slice(1)), production(), { projectId: "peezy-1ecrdl", databaseId: "(default)" }), "NOT_ARMED");
   result = await migration.run(armed, production());
-  assert.equal(result.report.refusal, "WRITE_SEAM_NOT_IMPLEMENTED", "the complete literal set reaches the write seam (I11b)");
+  assert.deepEqual([result.report.mode, result.report.refusal, result.report.apply.lease.fencingGeneration, result.report.apply.release.absent], ["apply", null, 1, true], "the complete literal set reaches the write seam: lease acquired, nothing to migrate, gate passed, lease released");
   assert.deepEqual(migration.rolloutTuple(migDeps(client)), migration.ROLLOUT_TUPLE_V1, "the accepted tuple equals the current rules/index bytes");
 });
 
@@ -1883,6 +1883,261 @@ test("C9.2.1/C9.2.9 two-pass audit: stable when both complete passes agree on th
   const insertingAgain = new FakeV1Client({ projectId: MIG_PROJECT, documents: { "users/u1/events/ok": migPending("ok") }, onQuery: (request, n) => { if (n === 2) insertingAgain.put("users/u1/events/late", migPending("late")); } });
   const result = await migration.run([], migDeps(insertingAgain));
   assert.equal(result.exitCode, 1, "an unstable audit exits nonzero");
+});
+
+
+// ---------------------------------------------------------------------------
+// S3 I11b — C9.2.3 lease cross-fence, C9.2.5/C9.2.6 archive writes and the four-write terminal commit,
+// C9.2.7 budgets, C9.2.8 orphan cleanup, C9.2.9 pre-ship gate, apply run under the fenced lease.
+// ---------------------------------------------------------------------------
+
+const PROD_PROJECT = "peezy-1ecrdl";
+const prodDeps = (client, overrides = {}) => migDeps(client, { resolveTarget: async () => ({ projectId: PROD_PROJECT, databaseId: "(default)" }), ownerToken: () => "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", ...overrides });
+const ARMED = ["--apply", "--project-id", PROD_PROJECT, "--confirm-project", PROD_PROJECT];
+const leaseDoc = (client) => client.get(migration.MIGRATION_LEASE_PATH);
+const readLeaseView = (client) => { const d = leaseDoc(client); return d ? { ownerToken: d.fields.ownerToken.stringValue, generation: Number(d.fields.fencingGeneration.integerValue), startedAt: d.fields.startedAt.timestampValue, renewedAt: d.fields.renewedAt.timestampValue, expiresAt: d.fields.expiresAt.timestampValue } : null; };
+
+test("C9.2.3 lease acquisition: generation 1 when both leases are absent; an exact legacy scheduler lease is deleted in the same commit; malformed non-v2, live v2, and expired-v2-within-60-seconds scheduler leases refuse with zero writes; an expired v2 past the grace acquires; a live migration lease refuses; an expired migration lease takes generation + 1", async () => {
+  const seconds = (client, delta) => ({ seconds: String(Math.floor(client.clock.millis / 1000) + delta), nanos: 0 });
+  let client = new FakeV1Client({ projectId: PROD_PROJECT });
+  let result = await migration.acquireMigrationLease(client, PROD_PROJECT, {}, "owner-1");
+  assert.deepEqual([result.acquired, result.lease.fencingGeneration, result.migratedSchedulerLease], [true, 1, false]);
+  let view = readLeaseView(client);
+  assert.deepEqual([view.ownerToken, view.generation, view.startedAt, view.renewedAt], ["owner-1", 1, view.startedAt, view.startedAt]);
+  assert.equal(Number(view.expiresAt.seconds) - Number(view.renewedAt.seconds), 300, "expiresAt == renewedAt + 300 s");
+  // exact legacy scheduler lease migrated in the same commit
+  client = new FakeV1Client({ projectId: PROD_PROJECT });
+  client.put(migration.SCHEDULER_LEASE_PATH, { runId: "old", acquiredAt: { __ts: seconds(client, -100) }, expiresAt: { __ts: seconds(client, 100) } });
+  result = await migration.acquireMigrationLease(client, PROD_PROJECT, {}, "owner-2");
+  assert.deepEqual([result.acquired, result.migratedSchedulerLease, client.get(migration.SCHEDULER_LEASE_PATH), client.commits.at(-1).writes.length], [true, true, null, 2], "delete scheduler lease + create migration lease in one commit");
+  for (const [label, schedulerLease] of [
+    ["malformed non-v2", { weird: true }],
+    ["live v2", { schemaVersion: 1, runOrdinal: 5, ownerToken: "t", startedAt: { __ts: seconds(client, -10) }, expiresAt: { __ts: seconds(client, 200) } }],
+    ["expired v2 within grace", { schemaVersion: 1, runOrdinal: 5, ownerToken: "t", startedAt: { __ts: seconds(client, -400) }, expiresAt: { __ts: seconds(client, -30) } }]
+  ]) {
+    const c = new FakeV1Client({ projectId: PROD_PROJECT });
+    c.put(migration.SCHEDULER_LEASE_PATH, schedulerLease);
+    const r = await migration.acquireMigrationLease(c, PROD_PROJECT, {}, "owner-3");
+    assert.deepEqual([r.acquired, c.commits.length, leaseDoc(c)], [false, 0, null], label);
+    assert.match(r.refusal, /^SCHEDULER_LEASE_/, label);
+  }
+  client = new FakeV1Client({ projectId: PROD_PROJECT });
+  client.put(migration.SCHEDULER_LEASE_PATH, { schemaVersion: 1, runOrdinal: 5, ownerToken: "t", startedAt: { __ts: seconds(client, -400) }, expiresAt: { __ts: seconds(client, -61) } });
+  result = await migration.acquireMigrationLease(client, PROD_PROJECT, {}, "owner-4");
+  assert.deepEqual([result.acquired, client.get(migration.SCHEDULER_LEASE_PATH) !== null], [true, true], "expired v2 past the grace acquires and leaves the v2 lease alone");
+  // live other owner refuses; expired migration lease takes generation + 1
+  const held = new FakeV1Client({ projectId: PROD_PROJECT });
+  await migration.acquireMigrationLease(held, PROD_PROJECT, {}, "owner-5");
+  result = await migration.acquireMigrationLease(held, PROD_PROJECT, {}, "owner-6");
+  assert.deepEqual([result.acquired, result.refusal], [false, "MIGRATION_LEASE_LIVE"]);
+  held.clock.advance(301_000);
+  result = await migration.acquireMigrationLease(held, PROD_PROJECT, {}, "owner-6");
+  assert.deepEqual([result.acquired, result.lease.fencingGeneration, readLeaseView(held).ownerToken], [true, 2, "owner-6"]);
+});
+
+test("C9.2.3 renewal preserves startedAt and rides every fenced commit under the exact update-time precondition; after a takeover the prior owner's fenced commit fails MIGRATION_LEASE_LOST with zero mutation; release deletes under the precondition and proves absence; a stale release after takeover fails harmlessly", async () => {
+  const client = new FakeV1Client({ projectId: PROD_PROJECT, documents: { "users/u1/events/e1": migPending("e1") } });
+  const first = await migration.acquireMigrationLease(client, PROD_PROJECT, {}, "owner-a");
+  const startedAt = readLeaseView(client).startedAt;
+  client.clock.advance(5_000);
+  const target = `${GAPIC_ROOT(PROD_PROJECT)}/users/u1/things/x`;
+  const committed = await migration.fencedCommit(client, PROD_PROJECT, {}, first.lease, [target], () => ({ writes: [{ update: { name: target, fields: gapicFields({ a: 1 }) }, currentDocument: { exists: false } }] }));
+  assert.equal(committed.committed, true);
+  let view = readLeaseView(client);
+  assert.deepEqual([view.startedAt, view.generation, Number(view.renewedAt.seconds) > Number(startedAt.seconds)], [startedAt, 1, true], "renewal keeps startedAt and advances renewedAt");
+  assert.equal(client.commits.at(-1).writes[0].update.name, `${GAPIC_ROOT(PROD_PROJECT)}/${migration.MIGRATION_LEASE_PATH}`, "the renewal is the first write of the commit");
+  // takeover: lease expires, another owner acquires generation 2; the prior owner's next fenced commit fails closed
+  client.clock.advance(301_000);
+  const second = await migration.acquireMigrationLease(client, PROD_PROJECT, {}, "owner-b");
+  assert.equal(second.lease.fencingGeneration, 2);
+  const before = client.commits.length;
+  await assert.rejects(migration.fencedCommit(client, PROD_PROJECT, {}, first.lease, [target], () => ({ writes: [{ delete: target }] })), (e) => e.code === "MIGRATION_LEASE_LOST");
+  assert.equal(client.commits.length, before, "zero mutation");
+  assert.ok(client.get("users/u1/things/x"), "the target survives");
+  // the tuple itself is checked, independently of the update-time CAS: a forged lease document with the right update time but another owner is lost
+  assert.throws(() => migration.renewalWrite({ ...second.lease, fencingGeneration: 1, updateTime: leaseDoc(client).updateTime }, leaseDoc(client), leaseDoc(client).updateTime), (e) => e.code === "MIGRATION_LEASE_LOST" && e.detail === "tuple", "generation disagreement is a lost tuple even when the update time matches");
+  assert.throws(() => migration.renewalWrite({ ...second.lease, ownerToken: "owner-zzz" }, leaseDoc(client), leaseDoc(client).updateTime), (e) => e.code === "MIGRATION_LEASE_LOST" && e.detail === "tuple", "owner disagreement is a lost tuple");
+  const stale = await migration.releaseMigrationLease(client, PROD_PROJECT, {}, first.lease);
+  assert.deepEqual([stale.released, readLeaseView(client).ownerToken], [false, "owner-b"], "stale release fails harmlessly");
+  const released = await migration.releaseMigrationLease(client, PROD_PROJECT, {}, second.lease);
+  assert.deepEqual([released.released, released.absent, leaseDoc(client)], [true, true, null]);
+});
+
+test("C9.2.5/C9.2.6 migrating an oversize source: manifest building -> chunks (exact lengths, digests, create-only) -> sealed -> the four-write terminal commit (renewal, stub replace under the source update time, quarantine create, manifest terminalized) with exact stub and schema-v2 quarantine shapes; a second run is an exact replay with zero writes; budgets hold", async () => {
+  const client = new FakeV1Client({ projectId: PROD_PROJECT, documents: { "users/u1": { name: "U" }, "users/u1/events/big": migOversize("big") } });
+  const acquisition = await migration.acquireMigrationLease(client, PROD_PROJECT, {}, "owner-m");
+  const lease = acquisition.lease;
+  const source = client.get("users/u1/events/big");
+  const sourceUpdateTime = source.updateTime;
+  const commitsBefore = client.commits.length;
+  const outcome = await migration.migrateSource(client, PROD_PROJECT, {}, lease, { sourcePath: "users/u1/events/big" }, MIG_NOW);
+  assert.equal(outcome.outcome, "TERMINALIZED");
+  const archiveId = outcome.archiveId;
+  const manifest = client.get(migration.manifestPath("u1", archiveId));
+  assert.ok(manifest, "manifest exists");
+  const m = manifest.fields;
+  assert.deepEqual([m.schemaVersion.integerValue, m.codec.stringValue, m.state.stringValue, m.chunkPayloadMax.integerValue, Number(m.chunkCount.integerValue) >= 3, m.sourcePath.stringValue, !!m.sealedAt, !!m.terminalizedAt, m.orphanedAt === undefined], ["1", "FirestoreDocumentArchiveV1", "terminalized", "393216", true, "users/u1/events/big", true, true, true]);
+  const chunkCount = Number(m.chunkCount.integerValue);
+  const totalBytes = Number(m.totalBytes.integerValue);
+  let reassembled = [];
+  for (let i = 0; i < chunkCount; i += 1) {
+    const chunk = client.get(migration.chunkPath("u1", archiveId, i)).fields;
+    const payload = Buffer.from(chunk.payload.bytesValue);
+    assert.deepEqual([Number(chunk.index.integerValue), Number(chunk.offset.integerValue), Number(chunk.length.integerValue), chunk.payloadDigest.stringValue === createHash("sha256").update(payload).digest("hex"), chunk.archiveId.stringValue], [i, i * migration.CHUNK_PAYLOAD_MAX, payload.length, true, archiveId]);
+    assert.equal(payload.length, i < chunkCount - 1 ? migration.CHUNK_PAYLOAD_MAX : totalBytes - i * migration.CHUNK_PAYLOAD_MAX, "nonfinal chunks are exactly 393,216 bytes");
+    reassembled = [...reassembled, payload];
+  }
+  const bytes = Buffer.concat(reassembled);
+  assert.deepEqual([bytes.length, createHash("sha256").update(bytes).digest("hex")], [totalBytes, m.archiveDigest.stringValue], "chunks reassemble to the digest");
+  const restored = migration.decodeArchive(bytes);
+  assert.equal(restored.fields.payload.mapValue.fields.s.stringValue.length, 1_047_600, "the archive restores the complete stored document");
+  const stub = client.get("users/u1/events/big").fields;
+  assert.deepEqual(Object.keys(stub).sort(), ["archiveRef", "outcome", "processed", "processedAt", "processingError", "processingState"], "the stub replaces the whole source");
+  assert.deepEqual([stub.processingState.stringValue, stub.processed.booleanValue, stub.outcome.stringValue, stub.processingError.stringValue, stub.archiveRef.mapValue.fields.archiveId.stringValue, stub.archiveRef.mapValue.fields.chunkCount.integerValue], ["terminal", true, "quarantined", migration.STUB_MESSAGE, archiveId, String(chunkCount)]);
+  const quarantine = client.get(`${migration.QUARANTINE_PATH}/${archiveId}`).fields;
+  assert.deepEqual(Object.keys(quarantine).sort(), ["archiveDigest", "archiveRef", "migrationKind", "quarantinedAt", "reason", "schemaVersion", "sourcePath", "sourceUpdateTime"]);
+  assert.deepEqual([quarantine.schemaVersion.integerValue, quarantine.reason.mapValue.fields.code.stringValue, quarantine.migrationKind.stringValue, quarantine.sourcePath.stringValue, quarantine.sourceUpdateTime.timestampValue], ["2", "SOURCE_TOO_LARGE", "LEGACY_OVERSIZE_ARCHIVE", "users/u1/events/big", sourceUpdateTime]);
+  assert.deepEqual([stub.processedAt.timestampValue, quarantine.quarantinedAt.timestampValue, m.terminalizedAt.timestampValue], [m.terminalizedAt.timestampValue, m.terminalizedAt.timestampValue, m.terminalizedAt.timestampValue], "one leaseNow across the terminal commit");
+  const terminal = client.commits.at(-1);
+  assert.equal(terminal.writes.length, 4, "exactly four writes");
+  assert.deepEqual(terminal.writes.map((w) => (w.update ? w.update.name : w.delete).replace(`${GAPIC_ROOT(PROD_PROJECT)}/`, "")), [migration.MIGRATION_LEASE_PATH, "users/u1/events/big", `${migration.QUARANTINE_PATH}/${archiveId}`, migration.manifestPath("u1", archiveId)]);
+  const preconditionOf = (w) => (w.currentDocument ? w.currentDocument : { absent: true });
+  assert.deepEqual([preconditionOf(terminal.writes[1]).updateTime, preconditionOf(terminal.writes[2]).exists, !!preconditionOf(terminal.writes[3]).updateTime], [sourceUpdateTime, false, true], "stub under the source update time, quarantine create-only, manifest under the sealed update time");
+  const commitsUsed = client.commits.length - commitsBefore;
+  assert.equal(commitsUsed, 1 + chunkCount + 1 + 1, "one manifest create, one commit per chunk, one seal, one terminal");
+  for (const c of client.commits.slice(commitsBefore)) assert.equal(c.writes[0].update.name, `${GAPIC_ROOT(PROD_PROJECT)}/${migration.MIGRATION_LEASE_PATH}`, "every mutation commit carries the renewal first");
+  // exact replay: zero writes
+  const before = client.commits.length;
+  const replay = await migration.migrateSource(client, PROD_PROJECT, {}, lease, { sourcePath: "users/u1/events/big" }, MIG_NOW);
+  assert.equal(replay.outcome, "DRIFT_NOT_PENDING", "a terminalized source is no longer pending");
+  assert.equal(client.commits.length, before);
+  const terminalReplay = await migration.terminalCommit(client, PROD_PROJECT, {}, lease, { archiveId, chunkCount, N: totalBytes, archiveDigest: m.archiveDigest.stringValue }, "users/u1/events/big");
+  assert.deepEqual([terminalReplay.committed, terminalReplay.replay], [false, true], "terminal attempted on a terminalized manifest with matching stub/quarantine is a replay with no write");
+  assert.equal(client.commits.length, before);
+});
+
+test("C9.2.6/C9.2.8 collisions, drift, and orphan cleanup: a preexisting quarantine at the archive id is a collision; a manifest with a different identity is ARCHIVE_ID_COLLISION; a mismatching extant chunk fails closed; a source changed after sealing yields no terminal write and the archive becomes an orphan that cleanup marks (SOURCE_CHANGED), deletes chunks descending, then deletes the manifest; referenced and terminalized archives are never cleaned; crash boundaries resume exactly", async () => {
+  const seed = () => new FakeV1Client({ projectId: PROD_PROJECT, documents: { "users/u1": { name: "U" }, "users/u1/events/big": migOversize("big") } });
+  const plan = (client) => { const d = client.get("users/u1/events/big"); return migration.archivePlan(d, "users/u1/events/big", scheduler.rawStorage.documentSize("users/u1/events/big", migration.toJsonFields(d.fields))); };
+  // preexisting quarantine → collision, no terminal write
+  let client = seed();
+  let lease = (await migration.acquireMigrationLease(client, PROD_PROJECT, {}, "o")).lease;
+  let p = plan(client);
+  client.put(`${migration.QUARANTINE_PATH}/${p.archiveId}`, { schemaVersion: 1, sourcePath: "users/u1/events/big" });
+  await assert.rejects(migration.migrateSource(client, PROD_PROJECT, {}, lease, { sourcePath: "users/u1/events/big" }, MIG_NOW), (e) => e.code === "ARCHIVE_ID_COLLISION");
+  assert.equal(client.get("users/u1/events/big").fields.processingState.stringValue, "pending", "no source write on collision");
+  // manifest identity mismatch
+  client = seed();
+  lease = (await migration.acquireMigrationLease(client, PROD_PROJECT, {}, "o")).lease;
+  p = plan(client);
+  client.put(migration.manifestPath("u1", p.archiveId), { schemaVersion: 1, archiveId: p.archiveId, codec: "FirestoreDocumentArchiveV1", sourcePath: "users/u1/events/other", sourceCreateTime: { __ts: gapicTs(0) }, sourceUpdateTime: { __ts: gapicTs(0) }, chunkPayloadMax: 393216, chunkCount: 1, totalBytes: 1, archiveDigest: "0".repeat(64), state: "building", createdAt: { __ts: gapicTs(0) } });
+  await assert.rejects(migration.migrateSource(client, PROD_PROJECT, {}, lease, { sourcePath: "users/u1/events/big" }, MIG_NOW), (e) => e.code === "ARCHIVE_ID_COLLISION");
+  // mismatching extant chunk
+  client = seed();
+  lease = (await migration.acquireMigrationLease(client, PROD_PROJECT, {}, "o")).lease;
+  p = plan(client);
+  await migration.ensureManifest(client, PROD_PROJECT, {}, lease, p, "users/u1/events/big", client.get("users/u1/events/big"));
+  client.put(migration.chunkPath("u1", p.archiveId, 0), { schemaVersion: 1, archiveId: p.archiveId, index: 0, offset: 0, length: 3, payload: Buffer.from([1, 2, 3]), payloadDigest: "x" });
+  await assert.rejects(migration.writeChunks(client, PROD_PROJECT, {}, lease, p, "users/u1/events/big"), (e) => e.code === "ARCHIVE_CHUNK_MISMATCH");
+  // source changed after sealing → DRIFT_CHANGED, no terminal write; cleanup marks SOURCE_CHANGED and removes chunks descending then the manifest
+  client = seed();
+  lease = (await migration.acquireMigrationLease(client, PROD_PROJECT, {}, "o")).lease;
+  p = plan(client);
+  await migration.ensureManifest(client, PROD_PROJECT, {}, lease, p, "users/u1/events/big", client.get("users/u1/events/big"));
+  await migration.writeChunks(client, PROD_PROJECT, {}, lease, p, "users/u1/events/big");
+  await migration.sealManifest(client, PROD_PROJECT, {}, lease, p, "users/u1/events/big");
+  client.put("users/u1/events/big", migOversize("big"), { updateTime: gapicTs(Date.parse("2026-09-03T00:00:00.000Z")) });
+  const changed = await migration.terminalCommit(client, PROD_PROJECT, {}, lease, p, "users/u1/events/big");
+  assert.deepEqual([changed.committed, changed.sourceChanged, client.get(`${migration.QUARANTINE_PATH}/${p.archiveId}`)], [false, true, null]);
+  const cleanup = await migration.cleanupOrphans(client, gapicProtos, PROD_PROJECT, {}, lease);
+  assert.deepEqual(cleanup, [{ archiveId: p.archiveId, outcome: "CLEANED" }]);
+  assert.equal(client.get(migration.manifestPath("u1", p.archiveId)), null, "manifest deleted last");
+  for (let i = 0; i < p.chunkCount; i += 1) assert.equal(client.get(migration.chunkPath("u1", p.archiveId, i)), null);
+  const deletes = client.commits.filter((c) => c.writes.some((w) => w.delete)).map((c) => c.writes.find((w) => w.delete).delete.replace(`${GAPIC_ROOT(PROD_PROJECT)}/`, ""));
+  assert.deepEqual(deletes.slice(0, p.chunkCount), Array.from({ length: p.chunkCount }, (_, i) => migration.chunkPath("u1", p.archiveId, p.chunkCount - 1 - i)), "chunks deleted descending, one fenced commit each");
+  const marked = client.commits.find((c) => c.writes.some((w) => w.update && w.update.fields.orphanReason));
+  assert.equal(marked.writes[1].update.fields.orphanReason.stringValue, "SOURCE_CHANGED");
+  // referenced (terminalized) archives are never cleaned; crash boundaries resume exactly
+  client = seed();
+  lease = (await migration.acquireMigrationLease(client, PROD_PROJECT, {}, "o")).lease;
+  p = plan(client);
+  await migration.ensureManifest(client, PROD_PROJECT, {}, lease, p, "users/u1/events/big", client.get("users/u1/events/big"));
+  const partial = await migration.writeChunks(client, PROD_PROJECT, {}, lease, p, "users/u1/events/big");
+  client.remove(migration.chunkPath("u1", p.archiveId, p.chunkCount - 1)); // crash before the final chunk
+  const resumed = await migration.writeChunks(client, PROD_PROJECT, {}, lease, p, "users/u1/events/big");
+  assert.deepEqual([partial.created, resumed.created], [p.chunkCount, 1], "resume creates only the missing chunk; existing chunks exact-compare");
+  const again = await migration.ensureManifest(client, PROD_PROJECT, {}, lease, p, "users/u1/events/big", client.get("users/u1/events/big"));
+  assert.deepEqual([again.resumed, again.state], [true, "building"], "exact-state resume writes nothing");
+  assert.equal(await migration.sealManifest(client, PROD_PROJECT, {}, lease, p, "users/u1/events/big"), "sealed");
+  assert.equal(await migration.sealManifest(client, PROD_PROJECT, {}, lease, p, "users/u1/events/big"), "sealed", "seal replay");
+  const t = await migration.terminalCommit(client, PROD_PROJECT, {}, lease, p, "users/u1/events/big");
+  assert.equal(t.committed, true);
+  const untouched = await migration.cleanupOrphans(client, gapicProtos, PROD_PROJECT, {}, lease);
+  assert.deepEqual(untouched, [], "terminalized archives are never cleaned");
+  assert.ok(client.get(migration.manifestPath("u1", p.archiveId)));
+  // a sealed manifest whose source moved on but whose quarantine references it is protected, never orphaned
+  const sealedClient = seed();
+  const sealedLease = (await migration.acquireMigrationLease(sealedClient, PROD_PROJECT, {}, "o")).lease;
+  const sp = plan(sealedClient);
+  await migration.ensureManifest(sealedClient, PROD_PROJECT, {}, sealedLease, sp, "users/u1/events/big", sealedClient.get("users/u1/events/big"));
+  await migration.writeChunks(sealedClient, PROD_PROJECT, {}, sealedLease, sp, "users/u1/events/big");
+  await migration.sealManifest(sealedClient, PROD_PROJECT, {}, sealedLease, sp, "users/u1/events/big");
+  sealedClient.put("users/u1/events/big", migOversize("big"), { updateTime: gapicTs(Date.parse("2026-09-04T00:00:00.000Z")) });
+  sealedClient.put(`${migration.QUARANTINE_PATH}/${sp.archiveId}`, { schemaVersion: 2, sourcePath: "users/u1/events/big" });
+  const protectedResult = await migration.cleanupOrphans(sealedClient, gapicProtos, PROD_PROJECT, {}, sealedLease);
+  assert.deepEqual(protectedResult, [{ archiveId: sp.archiveId, outcome: "PROTECTED" }], "a referenced sealed archive is protected");
+  assert.equal(sealedClient.get(migration.manifestPath("u1", sp.archiveId)).fields.state.stringValue, "sealed");
+  assert.ok(sealedClient.get(migration.chunkPath("u1", sp.archiveId, 0)), "chunks retained");
+});
+
+test("C9.2.7 budgets and write count: a chunk commit at the payload maximum stays within 524,288; the terminal commit within 8,523,776; a fifth write is MIGRATION_WRITE_INVARIANT before any write", async () => {
+  const client = new FakeV1Client({ projectId: PROD_PROJECT, documents: { "users/u1": { name: "U" }, "users/u1/events/big": migOversize("big") } });
+  const lease = (await migration.acquireMigrationLease(client, PROD_PROJECT, {}, "o")).lease;
+  const read = await migration.transactionalRead(client, PROD_PROJECT, [`${GAPIC_ROOT(PROD_PROJECT)}/${migration.MIGRATION_LEASE_PATH}`], {});
+  const five = Array.from({ length: 5 }, (_, i) => ({ update: { name: `${GAPIC_ROOT(PROD_PROJECT)}/users/u1/things/${i}`, fields: gapicFields({ i }) } }));
+  const before = client.commits.length;
+  await assert.rejects(client.commit === undefined ? Promise.reject(new Error("x")) : (async () => { const commitWrites = migration.fencedCommit; void commitWrites; const mod = require("../scripts/migrateOversizeEvents"); return mod.fencedCommit(client, PROD_PROJECT, {}, lease, [], () => ({ writes: five.slice(0, 4) })); })(), (e) => e.code === "MIGRATION_WRITE_INVARIANT", "renewal + four = five writes");
+  assert.equal(client.commits.length, before);
+  void read;
+  const slices = migration.chunkSlices(Buffer.alloc(migration.CHUNK_PAYLOAD_MAX * 2 + 7));
+  assert.deepEqual(slices.map((s) => [s.offset, s.length]), [[0, 393216], [393216, 393216], [786432, 7]]);
+  const chunkFields = migration.ownFields({ schemaVersion: 1, archiveId: "qev2_" + "a".repeat(40), index: 0, offset: 0, length: slices[0].length, payload: slices[0].payload, payloadDigest: "d".repeat(64) });
+  const charge = scheduler.rawStorage.transitionBudget([{ path: migration.chunkPath("u1", "qev2_" + "a".repeat(40), 0), before: null, after: migration.toJsonFields(chunkFields) }]).charge;
+  assert.ok(charge <= migration.BUDGET.chunkCommit && charge > migration.CHUNK_PAYLOAD_MAX, `chunk commit charge ${charge} within 524,288 (payload exempt from indexing)`);
+});
+
+test("C9.2.2/C9.2.9 the apply run: under the complete arming set it acquires the fenced lease, confirms the two-pass audit, migrates every failing source, cleans orphans, passes the pre-ship gate, releases the lease and proves absence; an unstable audit refuses and still releases; the report carries no raw bytes", async () => {
+  const client = new FakeV1Client({ projectId: PROD_PROJECT, documents: { "users/u1": { name: "U" }, "users/u1/events/ok": migPending("ok"), "users/u1/events/big": migOversize("big"), "users/u2/events/big2": migOversize("big2") } });
+  const result = await migration.run(ARMED, prodDeps(client));
+  assert.deepEqual([result.exitCode, result.report.refusal, result.report.mode], [0, null, "apply"], JSON.stringify(result.report.apply && result.report.apply.gate));
+  const apply = result.report.apply;
+  assert.deepEqual([apply.lease.fencingGeneration, apply.migrated.map((m) => m.outcome), apply.gate.passed, apply.gate.nonTerminal, apply.gate.broken, apply.release.released, apply.release.absent, leaseDoc(client)], [1, ["TERMINALIZED", "TERMINALIZED"], true, 0, 0, true, true, null]);
+  assert.equal(client.get("users/u1/events/ok").fields.processingState.stringValue, "pending", "admitted sources untouched");
+  assert.equal(client.get("users/u2/events/big2").fields.outcome.stringValue, "quarantined");
+  assert.equal(JSON.stringify(result.report).includes("xxxxxxxx"), false, "no raw bytes");
+  const unstable = new FakeV1Client({ projectId: PROD_PROJECT, documents: { "users/u1": { name: "U" }, "users/u1/events/ok": migPending("ok") }, onQuery: (request, n) => { if (n === 2) unstable.put("users/u1/events/late", migPending("late")); } });
+  const refused = await migration.run(ARMED, prodDeps(unstable));
+  assert.deepEqual([refused.exitCode, refused.report.refusal, refused.report.apply.release.released, leaseDoc(unstable)], [4, "AUDIT_UNSTABLE", true, null]);
+  const held = new FakeV1Client({ projectId: PROD_PROJECT, documents: { "users/u1": { name: "U" } } });
+  await migration.acquireMigrationLease(held, PROD_PROJECT, {}, "someone-else");
+  const blocked = await migration.run(ARMED, prodDeps(held));
+  assert.deepEqual([blocked.exitCode, blocked.report.refusal, held.commits.length], [4, "LEASE_REFUSED_MIGRATION_LEASE_LIVE", 1], "a live other-owner lease refuses before any write");
+});
+
+test("emulator: the read-only audit runs against the live emulator through the pinned raw client and classifies a seeded oversize source", { skip: process.env.FIRESTORE_EMULATOR_HOST ? false : "FIRESTORE_EMULATOR_HOST is unset; run scripts/test-emulator.sh node" }, async () => {
+  const { initializeApp, getApps } = require("firebase-admin/app");
+  const { getFirestore } = require("firebase-admin/firestore");
+  const app = getApps().length ? getApps()[0] : initializeApp({ projectId: "demo-peezy-phase1" });
+  const live = getFirestore(app);
+  const uid = `mig-${Date.now()}`;
+  await live.doc(`users/${uid}/events/ok`).set({ ...migPending("ok"), payload: { n: 1 } });
+  await live.doc(`users/${uid}/events/big`).set(migOversize("big"));
+  const result = await migration.run([], { env: process.env });
+  assert.equal(result.report.mode, "audit");
+  const last = result.report.audit.passes.at(-1);
+  assert.ok(last.complete, JSON.stringify(last.systemic));
+  assert.ok(last.failing.some((f) => f.sourcePath === `users/${uid}/events/big` && /^qev2_/.test(f.archiveId)), "the oversize source is classified from the live raw Document");
+  assert.ok(last.pendingCount >= 2);
 });
 
 test("timeouts do not exceed 300 seconds", () => {

@@ -430,6 +430,476 @@ async function runAudit(client, protos, projectId, callOptions, now) {
 }
 
 // ---------------------------------------------------------------------------
+// C9.2.3 migration lease (cross-fence) over public-v1 transactions
+// ---------------------------------------------------------------------------
+
+const MIGRATION_LEASE_PATH = "phase1System/dispositionTriggerState/migrationLeases/legacyOversizeMigrationV1";
+const SCHEDULER_LEASE_PATH = "phase1System/dispositionTriggerLease";
+const QUARANTINE_PATH = "phase1System/dispositionTriggerState/quarantinedEvents";
+const LEASE_SECONDS = 300;
+const SCHEDULER_GRACE_MS = 60000;
+const BUDGET = Object.freeze({ chunkCommit: 524288, manifestCommit: 65536, leaseFence: 4096, canonicalRecord: 16384, stubOrQuarantine: 32768, terminal: 8523776 });
+const STUB_MESSAGE = "Stored event exceeded the Phase 2 event-processing size limit.";
+
+function fullName(projectId, relative) { return `${documentsParent(projectId)}/${relative}`; }
+function tsFromMillis(millis) { return { seconds: String(Math.floor(millis / 1000)), nanos: (millis - Math.floor(millis / 1000) * 1000) * 1000000 }; }
+function tsMillis(value) { return Number(timestampSeconds(value)) * 1000 + Math.floor(Number(value.nanos ?? 0) / 1000000); }
+function tsPlusSeconds(value, seconds) { return { seconds: (timestampSeconds(value) + BigInt(seconds)).toString(), nanos: Number(value.nanos ?? 0) }; }
+function tsEqual(a, b) { return a && b && timestampSeconds(a) === timestampSeconds(b) && Number(a.nanos ?? 0) === Number(b.nanos ?? 0); }
+
+/** Scheduler-owned records (lease, manifest, chunk, stub, quarantine) written by this script: plain JS -> binding Values. */
+function ownValue(value) {
+  if (value === null) return { valueType: "nullValue", nullValue: "NULL_VALUE" };
+  if (typeof value === "boolean") return { valueType: "booleanValue", booleanValue: value };
+  if (typeof value === "number") { if (!Number.isSafeInteger(value)) throw new MigrationInvariant("ARCHIVE_CODEC_INVARIANT", "own number"); return { valueType: "integerValue", integerValue: String(value) }; }
+  if (typeof value === "string") return { valueType: "stringValue", stringValue: value };
+  if (Buffer.isBuffer(value)) return { valueType: "bytesValue", bytesValue: value };
+  if (value && value.__ts) return { valueType: "timestampValue", timestampValue: value.__ts };
+  if (value && typeof value === "object" && !Array.isArray(value)) return { valueType: "mapValue", mapValue: { fields: ownFields(value) } };
+  throw new MigrationInvariant("ARCHIVE_CODEC_INVARIANT", "own value");
+}
+function ownFields(map) { return Object.fromEntries(Object.entries(map).map(([k, v]) => [k, ownValue(v)])); }
+function T(value) { return { __ts: value }; }
+
+/** Transactional read of literal names: returns { readTime, found: Map(name -> document|null), transaction }. */
+async function transactionalRead(client, projectId, names, callOptions) {
+  const database = `projects/${projectId}/databases/${PRODUCTION_DATABASE}`;
+  const [begun] = await client.beginTransaction({ database, options: { readWrite: {} } }, callOptions);
+  const transaction = begun.transaction;
+  const found = new Map();
+  let readTime = null;
+  try {
+    for await (const response of client.batchGetDocuments({ database, documents: names, transaction }, callOptions)) {
+      if (response.readTime && !isTimestampLike(response.readTime)) throw new MigrationInvariant("STREAM_SHAPE_INVALID", "batchGet readTime");
+      if (readTime === null && response.readTime) readTime = response.readTime;
+      if (response.found) found.set(response.found.name, response.found);
+      else if (response.missing) found.set(response.missing, null);
+      else throw new MigrationInvariant("STREAM_SHAPE_INVALID", "batchGet member");
+    }
+    if (readTime === null) throw new MigrationInvariant("STREAM_SHAPE_INVALID", "batchGet without readTime");
+    for (const name of names) if (!found.has(name)) throw new MigrationInvariant("STREAM_SHAPE_INVALID", `batchGet missing ${name}`);
+  } catch (error) {
+    await client.rollback({ database, transaction }, callOptions).catch(() => {});
+    throw error;
+  }
+  return { readTime, found, transaction, database };
+}
+
+async function commitWrites(client, read, writes, callOptions) {
+  if (writes.length > 4) throw new MigrationInvariant("MIGRATION_WRITE_INVARIANT", "fifth write");
+  const [result] = await client.commit({ database: read.database, writes, transaction: read.transaction }, callOptions);
+  return result;
+}
+
+function isLegacySchedulerLease(fields) {
+  const keys = Object.keys(fields || {}).sort().join(",");
+  return keys === "acquiredAt,expiresAt,runId" && fields.runId.valueType === "stringValue" && fields.acquiredAt.valueType === "timestampValue" && fields.expiresAt.valueType === "timestampValue";
+}
+
+function isV2SchedulerLease(fields) {
+  const keys = Object.keys(fields || {}).sort().join(",");
+  return keys === "expiresAt,ownerToken,runOrdinal,schemaVersion,startedAt" && fields.schemaVersion.valueType === "integerValue" && fields.schemaVersion.integerValue === "1"
+    && fields.ownerToken.valueType === "stringValue" && fields.runOrdinal.valueType === "integerValue" && fields.startedAt.valueType === "timestampValue" && fields.expiresAt.valueType === "timestampValue";
+}
+
+function leaseRecord(ownerToken, generation, startedAt, leaseNow) {
+  return { schemaVersion: 1, ownerToken, fencingGeneration: generation, startedAt: T(startedAt), renewedAt: T(leaseNow), expiresAt: T(tsPlusSeconds(leaseNow, LEASE_SECONDS)) };
+}
+
+function readLease(document) {
+  const f = document.fields || {};
+  const keys = Object.keys(f).sort().join(",");
+  if (keys !== "expiresAt,fencingGeneration,ownerToken,renewedAt,schemaVersion,startedAt") throw new MigrationInvariant("MIGRATION_LEASE_INVARIANT", "members");
+  if (f.schemaVersion.integerValue !== "1" || f.ownerToken.valueType !== "stringValue" || f.fencingGeneration.valueType !== "integerValue") throw new MigrationInvariant("MIGRATION_LEASE_INVARIANT", "shape");
+  const generation = Number(f.fencingGeneration.integerValue);
+  if (!Number.isSafeInteger(generation) || generation < 1) throw new MigrationInvariant("MIGRATION_LEASE_INVARIANT", "generation");
+  return { ownerToken: f.ownerToken.stringValue, fencingGeneration: generation, startedAt: f.startedAt.timestampValue, renewedAt: f.renewedAt.timestampValue, expiresAt: f.expiresAt.timestampValue, updateTime: document.updateTime };
+}
+
+/** Acquisition: reads both lease documents in one transaction; refuses per the C9.2.3 table with zero writes. */
+async function acquireMigrationLease(client, projectId, callOptions, ownerToken) {
+  const leaseName = fullName(projectId, MIGRATION_LEASE_PATH);
+  const schedulerName = fullName(projectId, SCHEDULER_LEASE_PATH);
+  const read = await transactionalRead(client, projectId, [leaseName, schedulerName], callOptions);
+  const leaseNow = read.readTime;
+  const scheduler = read.found.get(schedulerName);
+  const migration = read.found.get(leaseName);
+  const refuse = async (reason) => { await client.rollback({ database: read.database, transaction: read.transaction }, callOptions).catch(() => {}); return { acquired: false, refusal: reason }; };
+  let deleteScheduler = null;
+  if (scheduler !== null) {
+    if (isLegacySchedulerLease(scheduler.fields)) deleteScheduler = scheduler;
+    else if (isV2SchedulerLease(scheduler.fields)) {
+      const expiresAt = scheduler.fields.expiresAt.timestampValue;
+      if (tsMillis(expiresAt) > tsMillis(leaseNow)) return refuse("SCHEDULER_LEASE_LIVE");
+      if (tsMillis(leaseNow) < tsMillis(expiresAt) + SCHEDULER_GRACE_MS) return refuse("SCHEDULER_LEASE_DRAINING");
+    } else return refuse("SCHEDULER_LEASE_SHAPE");
+  }
+  let generation = 1;
+  let precondition = { exists: false };
+  if (migration !== null) {
+    const current = readLease(migration);
+    if (tsMillis(current.expiresAt) > tsMillis(leaseNow)) return refuse("MIGRATION_LEASE_LIVE");
+    generation = current.fencingGeneration + 1;
+    if (!Number.isSafeInteger(generation)) return refuse("GENERATION_OVERFLOW");
+    precondition = { updateTime: migration.updateTime };
+  }
+  const record = leaseRecord(ownerToken, generation, leaseNow, leaseNow);
+  const writes = [{ update: { name: leaseName, fields: ownFields(record) }, currentDocument: precondition }];
+  if (deleteScheduler) writes[writes.length] = { delete: schedulerName, currentDocument: { updateTime: deleteScheduler.updateTime } };
+  const result = await commitWrites(client, read, writes, callOptions);
+  return { acquired: true, lease: { name: leaseName, ownerToken, fencingGeneration: generation, startedAt: leaseNow, updateTime: result.writeResults[0].updateTime }, migratedSchedulerLease: deleteScheduler !== null };
+}
+
+/** The fencing renewal write that every mutation commit carries first; requires the exact captured lease update time. */
+function renewalWrite(lease, leaseDocument, leaseNow) {
+  const current = readLease(leaseDocument);
+  if (current.ownerToken !== lease.ownerToken || current.fencingGeneration !== lease.fencingGeneration) throw new MigrationInvariant("MIGRATION_LEASE_LOST", "tuple");
+  if (!tsEqual(leaseDocument.updateTime, lease.updateTime)) throw new MigrationInvariant("MIGRATION_LEASE_LOST", "updateTime");
+  const record = leaseRecord(lease.ownerToken, lease.fencingGeneration, current.startedAt, leaseNow);
+  return { update: { name: lease.name, fields: ownFields(record) }, currentDocument: { updateTime: leaseDocument.updateTime } };
+}
+
+/** Fenced mutation: read the lease plus `names` in one transaction, build writes, commit with the renewal first, capture the new lease update time. */
+async function fencedCommit(client, projectId, callOptions, lease, names, build) {
+  const read = await transactionalRead(client, projectId, [lease.name, ...names], callOptions);
+  const leaseDocument = read.found.get(lease.name);
+  if (leaseDocument === null) { await client.rollback({ database: read.database, transaction: read.transaction }, callOptions).catch(() => {}); throw new MigrationInvariant("MIGRATION_LEASE_LOST", "absent"); }
+  let renewal;
+  try { renewal = renewalWrite(lease, leaseDocument, read.readTime); } catch (error) { await client.rollback({ database: read.database, transaction: read.transaction }, callOptions).catch(() => {}); throw error; }
+  const outcome = build(read.readTime, (name) => read.found.get(name));
+  if (outcome === null || outcome.writes.length === 0) { await client.rollback({ database: read.database, transaction: read.transaction }, callOptions).catch(() => {}); return { committed: false, outcome }; }
+  const result = await commitWrites(client, read, [renewal, ...outcome.writes], callOptions);
+  lease.updateTime = result.writeResults[0].updateTime;
+  return { committed: true, outcome, commitTime: result.commitTime, writeResults: result.writeResults };
+}
+
+async function releaseMigrationLease(client, projectId, callOptions, lease) {
+  const read = await transactionalRead(client, projectId, [lease.name], callOptions);
+  const document = read.found.get(lease.name);
+  if (document === null) { await client.rollback({ database: read.database, transaction: read.transaction }, callOptions).catch(() => {}); return { released: false, absent: true }; }
+  const current = readLease(document);
+  if (current.ownerToken !== lease.ownerToken || current.fencingGeneration !== lease.fencingGeneration) { await client.rollback({ database: read.database, transaction: read.transaction }, callOptions).catch(() => {}); return { released: false, absent: false }; }
+  await commitWrites(client, read, [{ delete: lease.name, currentDocument: { updateTime: document.updateTime } }], callOptions);
+  const proof = await transactionalRead(client, projectId, [lease.name], callOptions);
+  await client.rollback({ database: proof.database, transaction: proof.transaction }, callOptions).catch(() => {});
+  return { released: true, absent: proof.found.get(lease.name) === null };
+}
+
+// ---------------------------------------------------------------------------
+// C9.2.5 / C9.2.6 / C9.2.8 archive writes, terminal commit, orphan cleanup
+// ---------------------------------------------------------------------------
+
+function manifestPath(uid, archiveId) { return `users/${uid}/eventArchive/${archiveId}`; }
+function chunkPath(uid, archiveId, index) { return `${manifestPath(uid, archiveId)}/eventArchiveChunks/${String(index).padStart(2, "0")}`; }
+function uidOf(sourcePath) { return sourcePath.split("/")[1]; }
+
+function chunkSlices(bytes) {
+  const slices = [];
+  for (let offset = 0, index = 0; offset < bytes.length; offset += CHUNK_PAYLOAD_MAX, index += 1) {
+    const payload = bytes.subarray(offset, Math.min(offset + CHUNK_PAYLOAD_MAX, bytes.length));
+    slices[slices.length] = { index, offset, length: payload.length, payload: Buffer.from(payload), payloadDigest: sha256Hex(payload) };
+  }
+  return slices;
+}
+
+function manifestRecord(plan, sourcePath, document, leaseNow) {
+  return {
+    schemaVersion: 1, archiveId: plan.archiveId, codec: "FirestoreDocumentArchiveV1",
+    sourcePath, sourceCreateTime: T(document.createTime), sourceUpdateTime: T(document.updateTime),
+    chunkPayloadMax: CHUNK_PAYLOAD_MAX, chunkCount: plan.chunkCount, totalBytes: plan.N, archiveDigest: plan.archiveDigest,
+    state: "building", createdAt: T(leaseNow)
+  };
+}
+
+function manifestView(document) {
+  const f = document.fields || {};
+  const get = (k) => (f[k] ? (f[k].stringValue ?? f[k].integerValue ?? f[k].timestampValue) : undefined);
+  return { archiveId: get("archiveId"), codec: get("codec"), sourcePath: get("sourcePath"), sourceUpdateTime: f.sourceUpdateTime && f.sourceUpdateTime.timestampValue, chunkCount: Number(get("chunkCount")), totalBytes: Number(get("totalBytes")), archiveDigest: get("archiveDigest"), state: get("state"), updateTime: document.updateTime, fields: f };
+}
+
+function budgetOf(projectId, docPath, before, after) {
+  const beforeJson = before ? toJsonFields(before.fields) : null;
+  const afterJson = after ? toJsonFields(after) : null;
+  return scheduler.rawStorage.transitionBudget([{ path: docPath, before: beforeJson, after: afterJson }]);
+}
+
+function assertBudget(charge, cap, label) {
+  if (!Number.isSafeInteger(charge) || charge > cap) throw new MigrationInvariant("MIGRATION_BUDGET_INVARIANT", `${label} ${charge} > ${cap}`);
+}
+
+/** Creates or resumes the manifest; ARCHIVE_ID_COLLISION on identity mismatch; exact-state resume writes nothing. */
+async function ensureManifest(client, projectId, callOptions, lease, plan, sourcePath, document) {
+  const uid = uidOf(sourcePath);
+  const name = fullName(projectId, manifestPath(uid, plan.archiveId));
+  const result = await fencedCommit(client, projectId, callOptions, lease, [name], (leaseNow, get) => {
+    const existing = get(name);
+    if (existing !== null) {
+      const view = manifestView(existing);
+      if (view.archiveId !== plan.archiveId || view.sourcePath !== sourcePath || view.archiveDigest !== plan.archiveDigest || view.totalBytes !== plan.N || view.chunkCount !== plan.chunkCount || !tsEqual(view.sourceUpdateTime, document.updateTime)) throw new MigrationInvariant("ARCHIVE_ID_COLLISION", plan.archiveId);
+      return { writes: [], state: view.state, resumed: true };
+    }
+    const record = manifestRecord(plan, sourcePath, document, leaseNow);
+    const fields = ownFields(record);
+    assertBudget(budgetOf(projectId, manifestPath(uid, plan.archiveId), null, fields).charge, BUDGET.manifestCommit, "manifest");
+    return { writes: [{ update: { name, fields }, currentDocument: { exists: false } }], state: "building", resumed: false };
+  });
+  return { name, state: result.outcome.state, resumed: result.outcome.resumed };
+}
+
+/** Chunks ascending: create or exact-compare, one fenced commit each; then reread ascending and verify reassembly. */
+async function writeChunks(client, projectId, callOptions, lease, plan, sourcePath) {
+  const uid = uidOf(sourcePath);
+  const slices = chunkSlices(plan.bytes);
+  if (slices.length !== plan.chunkCount) throw new MigrationInvariant("ARCHIVE_CHUNK_CAP_EXCEEDED", String(plan.N));
+  let created = 0;
+  for (const slice of slices) {
+    const name = fullName(projectId, chunkPath(uid, plan.archiveId, slice.index));
+    const record = { schemaVersion: 1, archiveId: plan.archiveId, index: slice.index, offset: slice.offset, length: slice.length, payload: slice.payload, payloadDigest: slice.payloadDigest };
+    const result = await fencedCommit(client, projectId, callOptions, lease, [name], (leaseNow, get) => {
+      const existing = get(name);
+      const fields = ownFields(record);
+      if (existing !== null) {
+        const e = existing.fields || {};
+        const same = e.archiveId && e.archiveId.stringValue === plan.archiveId && e.index && Number(e.index.integerValue) === slice.index && e.offset && Number(e.offset.integerValue) === slice.offset && e.length && Number(e.length.integerValue) === slice.length && e.payloadDigest && e.payloadDigest.stringValue === slice.payloadDigest && e.payload && Buffer.from(e.payload.bytesValue || []).equals(slice.payload);
+        if (!same) throw new MigrationInvariant("ARCHIVE_CHUNK_MISMATCH", String(slice.index));
+        return { writes: [] };
+      }
+      assertBudget(budgetOf(projectId, chunkPath(uid, plan.archiveId, slice.index), null, fields).charge, BUDGET.chunkCommit, "chunk");
+      return { writes: [{ update: { name, fields }, currentDocument: { exists: false } }] };
+    });
+    if (result.committed) created += 1;
+  }
+  // reread ascending: path, schema, range, per-chunk digest, reassembly length and full digest
+  const parts = [];
+  for (const slice of slices) {
+    const [chunk] = await client.getDocument({ name: fullName(projectId, chunkPath(uid, plan.archiveId, slice.index)) }, callOptions);
+    const e = chunk.fields || {};
+    const payload = Buffer.from((e.payload && e.payload.bytesValue) || []);
+    if (Number(e.offset.integerValue) !== slice.offset || Number(e.length.integerValue) !== payload.length || sha256Hex(payload) !== e.payloadDigest.stringValue || e.archiveId.stringValue !== plan.archiveId) throw new MigrationInvariant("ARCHIVE_BROKEN", String(slice.index));
+    parts[parts.length] = payload;
+  }
+  const reassembled = Buffer.concat(parts);
+  if (reassembled.length !== plan.N || sha256Hex(reassembled) !== plan.archiveDigest) throw new MigrationInvariant("ARCHIVE_BROKEN", "reassembly");
+  return { created, verified: slices.length };
+}
+
+async function sealManifest(client, projectId, callOptions, lease, plan, sourcePath) {
+  const name = fullName(projectId, manifestPath(uidOf(sourcePath), plan.archiveId));
+  const result = await fencedCommit(client, projectId, callOptions, lease, [name], (leaseNow, get) => {
+    const existing = get(name);
+    if (existing === null) throw new MigrationInvariant("ARCHIVE_BROKEN", "manifest missing at seal");
+    const view = manifestView(existing);
+    if (view.state === "sealed" || view.state === "terminalized") return { writes: [], state: view.state };
+    if (view.state !== "building") throw new MigrationInvariant("ARCHIVE_BROKEN", `seal from ${view.state}`);
+    const fields = { ...existing.fields, state: ownValue("sealed"), sealedAt: ownValue(T(leaseNow)) };
+    assertBudget(budgetOf(projectId, manifestPath(uidOf(sourcePath), plan.archiveId), existing, fields).charge, BUDGET.manifestCommit, "seal");
+    return { writes: [{ update: { name, fields }, currentDocument: { updateTime: existing.updateTime } }], state: "sealed" };
+  });
+  return result.outcome.state;
+}
+
+function stubFields(plan, terminalizedAt) {
+  const archiveRef = { schemaVersion: 1, archiveId: plan.archiveId, codec: "FirestoreDocumentArchiveV1", chunkCount: plan.chunkCount, totalBytes: plan.N, archiveDigest: plan.archiveDigest };
+  return ownFields({ processingState: "terminal", processed: true, processedAt: T(terminalizedAt), outcome: "quarantined", processingError: STUB_MESSAGE, archiveRef });
+}
+
+function quarantineFields(plan, sourcePath, sourceUpdateTime, terminalizedAt) {
+  const archiveRef = { schemaVersion: 1, archiveId: plan.archiveId, codec: "FirestoreDocumentArchiveV1", chunkCount: plan.chunkCount, totalBytes: plan.N, archiveDigest: plan.archiveDigest };
+  return ownFields({ schemaVersion: 2, sourcePath, archiveDigest: plan.archiveDigest, reason: { code: "SOURCE_TOO_LARGE", message: STUB_MESSAGE }, migrationKind: "LEGACY_OVERSIZE_ARCHIVE", sourceUpdateTime: T(sourceUpdateTime), archiveRef, quarantinedAt: T(terminalizedAt) });
+}
+
+/** The terminal commit: exactly four writes in one public-v1 Commit under the captured preconditions. */
+async function terminalCommit(client, projectId, callOptions, lease, plan, sourcePath) {
+  const uid = uidOf(sourcePath);
+  const sourceName = fullName(projectId, sourcePath);
+  const manifestName = fullName(projectId, manifestPath(uid, plan.archiveId));
+  const quarantineName = fullName(projectId, `${QUARANTINE_PATH}/${plan.archiveId}`);
+  const result = await fencedCommit(client, projectId, callOptions, lease, [sourceName, manifestName, quarantineName], (leaseNow, get) => {
+    const source = get(sourceName);
+    const manifest = get(manifestName);
+    const quarantine = get(quarantineName);
+    if (manifest === null) throw new MigrationInvariant("ARCHIVE_BROKEN", "manifest missing at terminal");
+    const view = manifestView(manifest);
+    if (view.state === "terminalized") {
+      const stub = source && source.fields && source.fields.archiveRef && source.fields.archiveRef.mapValue && source.fields.archiveRef.mapValue.fields.archiveId && source.fields.archiveRef.mapValue.fields.archiveId.stringValue === plan.archiveId;
+      if (stub && quarantine !== null) return { writes: [], state: "terminalized", replay: true };
+      throw new MigrationInvariant("ARCHIVE_BROKEN", "terminalized without stub/quarantine");
+    }
+    if (view.state !== "sealed") throw new MigrationInvariant("ARCHIVE_BROKEN", `terminal from ${view.state}`);
+    if (quarantine !== null) throw new MigrationInvariant("ARCHIVE_ID_COLLISION", "quarantine preexisting");
+    if (source === null) return { writes: [], state: "sealed", sourceMissing: true };
+    const state = source.fields && source.fields.processingState;
+    if (!state || state.stringValue !== "pending" || !tsEqual(source.updateTime, view.sourceUpdateTime)) return { writes: [], state: "sealed", sourceChanged: true };
+    const stub = stubFields(plan, leaseNow);
+    const record = quarantineFields(plan, sourcePath, view.sourceUpdateTime, leaseNow);
+    const terminalManifest = { ...manifest.fields, state: ownValue("terminalized"), terminalizedAt: ownValue(T(leaseNow)) };
+    const stubBudget = budgetOf(projectId, sourcePath, source, stub);
+    const quarantineBudget = budgetOf(projectId, `${QUARANTINE_PATH}/${plan.archiveId}`, null, record);
+    const manifestBudget = budgetOf(projectId, manifestPath(uid, plan.archiveId), manifest, terminalManifest);
+    assertBudget(quarantineBudget.charge, BUDGET.stubOrQuarantine, "quarantine");
+    assertBudget(Buffer.byteLength(fence.TaskCanonicalV1(toJsonFields(record)), "utf8"), BUDGET.canonicalRecord, "quarantine canonical");
+    assertBudget(stubBudget.charge + quarantineBudget.charge + manifestBudget.charge + BUDGET.leaseFence, BUDGET.terminal, "terminal");
+    return {
+      writes: [
+        { update: { name: sourceName, fields: stub }, currentDocument: { updateTime: source.updateTime } },
+        { update: { name: quarantineName, fields: record }, currentDocument: { exists: false } },
+        { update: { name: manifestName, fields: terminalManifest }, currentDocument: { updateTime: manifest.updateTime } }
+      ],
+      state: "terminalized", replay: false
+    };
+  });
+  return { committed: result.committed, ...result.outcome };
+}
+
+/** One failing source end to end: manifest -> chunks -> seal -> terminal; returns the enum outcome. */
+async function migrateSource(client, projectId, callOptions, lease, failing, now) {
+  const [document] = await client.getDocument({ name: fullName(projectId, failing.sourcePath) }, callOptions).catch((error) => { if (error && (error.code === 5 || error.code === "NOT_FOUND")) return [null]; throw error; });
+  if (document === null) return { sourcePath: failing.sourcePath, outcome: "DRIFT_MISSING" };
+  const state = document.fields.processingState;
+  if (!state || state.stringValue !== "pending") return { sourcePath: failing.sourcePath, outcome: "DRIFT_NOT_PENDING" };
+  const jsonFields = toJsonFields(document.fields);
+  const updateTime = new Timestamp(Number(timestampSeconds(document.updateTime)), Number(document.updateTime.nanos ?? 0));
+  const envelope = scheduler.phase0EnvelopeRaw(failing.sourcePath, jsonFields, now, updateTime);
+  if (envelope.admitted) return { sourcePath: failing.sourcePath, outcome: "DRIFT_ADMITTED" };
+  const plan = archivePlan(document, failing.sourcePath, envelope.baseBytes);
+  const manifest = await ensureManifest(client, projectId, callOptions, lease, plan, failing.sourcePath, document);
+  if (manifest.state === "terminalized") { const t = await terminalCommit(client, projectId, callOptions, lease, plan, failing.sourcePath); return { sourcePath: failing.sourcePath, archiveId: plan.archiveId, outcome: t.replay ? "TERMINALIZED_REPLAY" : "TERMINALIZED" }; }
+  if (manifest.state === "orphaned") throw new MigrationInvariant("ARCHIVE_ID_COLLISION", "orphaned manifest");
+  const chunks = await writeChunks(client, projectId, callOptions, lease, plan, failing.sourcePath);
+  const sealed = await sealManifest(client, projectId, callOptions, lease, plan, failing.sourcePath);
+  if (sealed !== "sealed" && sealed !== "terminalized") throw new MigrationInvariant("ARCHIVE_BROKEN", sealed);
+  const terminal = await terminalCommit(client, projectId, callOptions, lease, plan, failing.sourcePath);
+  if (terminal.sourceMissing || terminal.sourceChanged) return { sourcePath: failing.sourcePath, archiveId: plan.archiveId, outcome: terminal.sourceMissing ? "DRIFT_MISSING" : "DRIFT_CHANGED", orphanCandidate: true, chunksCreated: chunks.created };
+  return { sourcePath: failing.sourcePath, archiveId: plan.archiveId, outcome: terminal.replay ? "TERMINALIZED_REPLAY" : "TERMINALIZED", chunksCreated: chunks.created };
+}
+
+/** Enumerates every manifest through the pinned query; returns views with names. */
+async function enumerateManifests(client, protos, projectId, callOptions) {
+  const query = protos.google.firestore.v1.StructuredQuery.fromObject({ from: [{ collectionId: "eventArchive", allDescendants: true }], orderBy: [{ field: { fieldPath: "__name__" }, direction: "ASCENDING" }], limit: { value: PAGE_SIZE } });
+  validateLimitWrapper(query.limit);
+  let cursor = null;
+  let manifests = [];
+  for (;;) {
+    const q = cursor === null ? query : protos.google.firestore.v1.StructuredQuery.fromObject({ ...protos.google.firestore.v1.StructuredQuery.toObject(query), startAt: { before: false, values: [{ referenceValue: cursor }] } });
+    let count = 0;
+    let last = null;
+    for await (const response of client.runQuery({ parent: documentsParent(projectId), structuredQuery: q }, callOptions)) {
+      const classified = classifyResponse(response);
+      if (classified.kind !== "document") continue;
+      const relative = classified.document.name.slice(documentsParent(projectId).length + 1);
+      if (relative.split("/").length === 4) { manifests = [...manifests, { name: classified.document.name, relative, ...manifestView(classified.document) }]; }
+      count += 1;
+      last = classified.document.name;
+    }
+    if (count < PAGE_SIZE) return manifests;
+    cursor = last;
+  }
+}
+
+/** C9.2.8 orphan cleanup for non-terminalized manifests whose source no longer references them; lease-fenced throughout. */
+async function cleanupOrphans(client, protos, projectId, callOptions, lease) {
+  const manifests = await enumerateManifests(client, protos, projectId, callOptions);
+  let results = [];
+  for (const manifest of manifests) {
+    if (manifest.state === "terminalized") continue;
+    const uid = manifest.relative.split("/")[1];
+    const sourceName = fullName(projectId, manifest.sourcePath);
+    const quarantineName = fullName(projectId, `${QUARANTINE_PATH}/${manifest.archiveId}`);
+    if (manifest.state !== "orphaned") {
+      const marked = await fencedCommit(client, projectId, callOptions, lease, [manifest.name, sourceName, quarantineName], (leaseNow, get) => {
+        const current = get(manifest.name);
+        if (current === null) return { writes: [], gone: true };
+        const source = get(sourceName);
+        const quarantine = get(quarantineName);
+        const referenced = quarantine !== null || (source !== null && source.fields.archiveRef && source.fields.archiveRef.mapValue.fields.archiveId.stringValue === manifest.archiveId);
+        const sameUpdateTime = source !== null && tsEqual(source.updateTime, manifest.sourceUpdateTime);
+        if (referenced || sameUpdateTime) return { writes: [], protected: true };
+        const reason = source === null ? "SOURCE_DELETED" : "SOURCE_CHANGED";
+        const fields = { ...current.fields, state: ownValue("orphaned"), orphanedAt: ownValue(T(leaseNow)), orphanReason: ownValue(reason) };
+        delete fields.sealedAt;
+        return { writes: [{ update: { name: manifest.name, fields }, currentDocument: { updateTime: current.updateTime } }], reason };
+      });
+      if (!marked.committed) { results = [...results, { archiveId: manifest.archiveId, outcome: marked.outcome && marked.outcome.protected ? "PROTECTED" : "GONE" }]; continue; }
+    }
+    for (let index = manifest.chunkCount - 1; index >= 0; index -= 1) {
+      const name = fullName(projectId, chunkPath(uid, manifest.archiveId, index));
+      await fencedCommit(client, projectId, callOptions, lease, [name], (leaseNow, get) => {
+        const chunk = get(name);
+        if (chunk === null) return { writes: [] };
+        if (!chunk.fields.archiveId || chunk.fields.archiveId.stringValue !== manifest.archiveId) throw new MigrationInvariant("ARCHIVE_BROKEN", "orphan chunk mismatch");
+        return { writes: [{ delete: name, currentDocument: { updateTime: chunk.updateTime } }] };
+      });
+    }
+    await fencedCommit(client, projectId, callOptions, lease, [manifest.name], (leaseNow, get) => {
+      const current = get(manifest.name);
+      if (current === null) return { writes: [] };
+      return { writes: [{ delete: manifest.name, currentDocument: { updateTime: current.updateTime } }] };
+    });
+    results = [...results, { archiveId: manifest.archiveId, outcome: "CLEANED" }];
+  }
+  return results;
+}
+
+/** C9.2.9 data conditions checked while the lease is held (rules/index tuple is checked at arming). */
+async function preShipGate(client, protos, projectId, callOptions, now) {
+  const audit = await runAudit(client, protos, projectId, callOptions, now);
+  const manifests = await enumerateManifests(client, protos, projectId, callOptions);
+  const nonTerminal = manifests.filter((m) => m.state !== "terminalized").length;
+  let broken = 0;
+  for (const manifest of manifests.filter((m) => m.state === "terminalized")) {
+    const uid = manifest.relative.split("/")[1];
+    const [source] = await client.getDocument({ name: fullName(projectId, manifest.sourcePath) }, callOptions).catch(() => [null]);
+    const [quarantine] = await client.getDocument({ name: fullName(projectId, `${QUARANTINE_PATH}/${manifest.archiveId}`) }, callOptions).catch(() => [null]);
+    const stubOk = source && source.fields.archiveRef && source.fields.archiveRef.mapValue.fields.archiveId.stringValue === manifest.archiveId && source.fields.processingState.stringValue === "terminal";
+    let digestOk = false;
+    if (stubOk && quarantine) {
+      const parts = [];
+      for (let i = 0; i < manifest.chunkCount; i += 1) {
+        const [chunk] = await client.getDocument({ name: fullName(projectId, chunkPath(uid, manifest.archiveId, i)) }, callOptions).catch(() => [null]);
+        if (!chunk) { parts.length = 0; break; }
+        parts[parts.length] = Buffer.from(chunk.fields.payload.bytesValue || []);
+      }
+      const bytes = Buffer.concat(parts);
+      digestOk = bytes.length === manifest.totalBytes && sha256Hex(bytes) === manifest.archiveDigest;
+    }
+    if (!stubOk || !quarantine || !digestOk) broken += 1;
+  }
+  const quarantineQuery = protos.google.firestore.v1.StructuredQuery.fromObject({ from: [{ collectionId: "quarantinedEvents", allDescendants: true }], orderBy: [{ field: { fieldPath: "__name__" }, direction: "ASCENDING" }], limit: { value: PAGE_SIZE } });
+  let malformedQuarantine = 0;
+  for await (const response of client.runQuery({ parent: documentsParent(projectId), structuredQuery: quarantineQuery }, callOptions)) {
+    const classified = classifyResponse(response);
+    if (classified.kind !== "document") continue;
+    const sourcePath = classified.document.fields.sourcePath && classified.document.fields.sourcePath.stringValue;
+    if (typeof sourcePath !== "string" || sourcePath.split("/").length !== 4 || !sourcePath.startsWith("users/") || sourcePath.split("/")[2] !== "events") malformedQuarantine += 1;
+  }
+  const passed = audit.preShipCriterion && nonTerminal === 0 && broken === 0 && malformedQuarantine === 0;
+  return { passed, audit: { stable: audit.stable, preShipCriterion: audit.preShipCriterion, pendingCount: audit.passes.at(-1) ? audit.passes.at(-1).pendingCount : null }, manifests: manifests.length, nonTerminal, broken, malformedQuarantine };
+}
+
+/** Apply mode under the fenced lease: confirmed audit -> migrate every failing source -> orphan cleanup -> pre-ship gate -> release. */
+async function runApply(client, protos, projectId, callOptions, now, deps) {
+  const ownerToken = deps.ownerToken ? deps.ownerToken() : require("node:crypto").randomUUID().toLowerCase();
+  const acquisition = await acquireMigrationLease(client, projectId, callOptions, ownerToken);
+  if (!acquisition.acquired) return { refusal: `LEASE_REFUSED_${acquisition.refusal}`, lease: null };
+  const lease = acquisition.lease;
+  const summary = { refusal: null, lease: { ownerToken, fencingGeneration: lease.fencingGeneration, migratedSchedulerLease: acquisition.migratedSchedulerLease }, migrated: [], cleanup: [], gate: null, release: null };
+  try {
+    const audit = await runAudit(client, protos, projectId, callOptions, now);
+    summary.audit = { stable: audit.stable, preShipCriterion: audit.preShipCriterion, failing: audit.passes.at(-1) ? audit.passes.at(-1).failing.length : null };
+    if (!audit.stable) { summary.refusal = "AUDIT_UNSTABLE"; return summary; }
+    if (audit.passes.at(-1).outOfScope.length > 0) { summary.refusal = "OUT_OF_SCOPE_SOURCE"; return summary; }
+    for (const failing of audit.passes.at(-1).failing) summary.migrated = [...summary.migrated, await migrateSource(client, projectId, callOptions, lease, failing, now)];
+    summary.cleanup = await cleanupOrphans(client, protos, projectId, callOptions, lease);
+    summary.gate = await preShipGate(client, protos, projectId, callOptions, now);
+    summary.refusal = summary.gate.passed ? null : "PRE_SHIP_GATE_FAILED";
+    return summary;
+  } finally {
+    // the same object is returned above, so the release recorded here is visible to the caller
+    summary.release = await releaseMigrationLease(client, projectId, callOptions, lease).catch((error) => ({ released: false, error: error && error.code }));
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Report and entry point
 // ---------------------------------------------------------------------------
 
@@ -489,9 +959,10 @@ async function run(argv, overrides = {}) {
     if (parsed.apply) {
       const refusal = armingRefusal(parsed, deps, resolved);
       if (refusal !== null) return { exitCode: 3, report: reportOf(parsed, deps, resolved, null, refusal) };
-      // I11b: fenced lease acquisition and archive writes follow the confirmed audit; until then apply refuses at the write seam.
-      const audit = await runAudit(client, deps.protos, projectId, callOptions, now);
-      return { exitCode: 4, report: reportOf(parsed, deps, resolved, audit, "WRITE_SEAM_NOT_IMPLEMENTED") };
+      const applied = await runApply(client, deps.protos, projectId, callOptions, now, deps);
+      const report = reportOf(parsed, deps, resolved, null, applied.refusal);
+      report.apply = applied;
+      return { exitCode: applied.refusal === null ? 0 : 4, report };
     }
     const audit = await runAudit(client, deps.protos, projectId, callOptions, now);
     return { exitCode: audit.stable ? 0 : 1, report: reportOf(parsed, deps, resolved, audit, null) };
@@ -511,5 +982,7 @@ if (require.main === module) main().catch((error) => { process.stderr.write(`${e
 module.exports = {
   MigrationInvariant, PINNED_FIRESTORE_VERSION, PINNED_CLIENT_CONFIG_SHA256, PRODUCTION_PROJECT, PAGE_SIZE, CHUNK_PAYLOAD_MAX, MAX_CHUNKS, MAX_ARCHIVE_BYTES, ROLLOUT_TUPLE_V1, KNOWN_ARGUMENTS,
   parseArguments, armingRefusal, rolloutTuple, structuredQueryFor, validateLimitWrapper, classifyResponse, inScopePath, enumeratePending,
-  toJsonValue, toJsonFields, rfc3339, encodeArchive, decodeArchive, encodeValue, archiveIdFor, archivePlan, classifyDocument, runPass, runAudit, reportOf, run, documentsParent
+  toJsonValue, toJsonFields, rfc3339, encodeArchive, decodeArchive, encodeValue, archiveIdFor, archivePlan, classifyDocument, runPass, runAudit, reportOf, run, documentsParent,
+  MIGRATION_LEASE_PATH, SCHEDULER_LEASE_PATH, QUARANTINE_PATH, LEASE_SECONDS, BUDGET, STUB_MESSAGE,
+  acquireMigrationLease, releaseMigrationLease, fencedCommit, renewalWrite, ensureManifest, writeChunks, sealManifest, terminalCommit, migrateSource, cleanupOrphans, preShipGate, runApply, chunkSlices, manifestPath, chunkPath, ownFields, transactionalRead
 };
