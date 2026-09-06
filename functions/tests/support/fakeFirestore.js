@@ -21,6 +21,13 @@ function isDirectChild(path, collectionPath) {
   return path.startsWith(`${collectionPath}/`) && !path.slice(collectionPath.length + 1).includes("/");
 }
 
+function setNested(target, field, value) {
+  const parts = field.split(".");
+  let cursor = target;
+  for (const part of parts.slice(0, -1)) { if (cursor[part] === undefined || cursor[part] === null || typeof cursor[part] !== "object") cursor[part] = {}; cursor = cursor[part]; }
+  cursor[parts.at(-1)] = value;
+}
+
 function nested(data, field) {
   return String(field).split(".").reduce((value, key) => (value === null || value === undefined ? undefined : value[key]), data);
 }
@@ -48,12 +55,13 @@ function compareBytes(a, b) {
 function fakeFirestore({ docs: initial = {}, clock } = {}) {
   const docs = new Map(Object.entries(initial).map(([path, data]) => [path, clone(data)]));
   const versions = new Map();
+  const updateTimes = new Map(); // S3 I9b: per-document updateTime, advanced by every committed write
   const writes = [];
   const reads = [];
   let versionCounter = 0;
-  const bump = (path) => versions.set(path, ++versionCounter);
-  for (const path of docs.keys()) bump(path);
   const now = () => (clock ? clock.now() : Timestamp.now());
+  const bump = (path) => { versions.set(path, ++versionCounter); updateTimes.set(path, now()); };
+  for (const path of docs.keys()) bump(path);
 
   function docRef(path) {
     const segments = path.split("/");
@@ -86,7 +94,8 @@ function fakeFirestore({ docs: initial = {}, clock } = {}) {
       startAfter: (...values) => collectionRef(path, { ...spec, startAfter: values.length === 1 && values[0] && typeof values[0] === "object" && values[0].ref
         ? { __snapshot: true, ref: values[0].ref, __data: values[0].data ? values[0].data() : undefined }
         : { __values: values } }),
-      count: () => ({ __count: true, __query: spec, path, async get() { const r = runQuery(q); return { data: () => ({ count: r.size }) }; } }),
+      count: () => ({ __count: true, __query: spec, path, async get() { const r = runQuery(q); reads.push(`${path}?count`); return { readTime: now(), data: () => ({ count: r.size }) }; } }),
+      select: (...fields) => collectionRef(path, { ...spec, select: fields.map(String) }),
       limit: (count) => collectionRef(path, { ...spec, limit: count }),
       where: (field, op, value) => collectionRef(path, { ...spec, where: [...(spec.where || []), [String(field), op, value]] }),
       async get() { reads.push(`${path}?`); return runQuery(q); },
@@ -97,14 +106,17 @@ function fakeFirestore({ docs: initial = {}, clock } = {}) {
     return q;
   }
 
-  function snapshot(ref, data = docs.get(ref.path)) {
+  function snapshot(ref, data = docs.get(ref.path), mask) {
+    // A select() mask returns only the named (possibly dotted) fields, as Firestore does.
+    const masked = mask && data !== undefined ? mask.reduce((acc, field) => { const v = nested(data, field); if (v !== undefined) setNested(acc, field, v); return acc; }, {}) : data;
     return {
       id: ref.id,
       ref,
       exists: data !== undefined,
       readTime: now(),
-      data: () => (data === undefined ? undefined : clone(data)),
-      get: (field) => data?.[field]
+      updateTime: data === undefined ? undefined : updateTimes.get(ref.path),
+      data: () => (masked === undefined ? undefined : clone(masked)),
+      get: (field) => nested(masked, field)
     };
   }
 
@@ -154,7 +166,7 @@ function fakeFirestore({ docs: initial = {}, clock } = {}) {
       });
     }
     if (spec.limit !== undefined) rows = rows.slice(0, spec.limit);
-    const list = rows.map(([p, data]) => snapshot(docRef(p), data));
+    const list = rows.map(([p, data]) => snapshot(docRef(p), data, spec.select));
     return { empty: list.length === 0, size: list.length, docs: list, readTime: now(), forEach: (fn) => list.forEach(fn) };
   }
 
@@ -233,7 +245,7 @@ function fakeFirestore({ docs: initial = {}, clock } = {}) {
         const readVersions = new Map();
         const transaction = {
           async get(target) {
-            if (target.__count) { const result = runQuery({ __query: target.__query, path: target.path }); reads.push(`${target.path}?count`); return { data: () => ({ count: result.size }) }; }
+            if (target.__count) { const result = runQuery({ __query: target.__query, path: target.path }); reads.push(`${target.path}?count`); return { readTime: now(), data: () => ({ count: result.size }) }; }
             if (target.__query) {
               const result = runQuery(target);
               for (const row of result.docs) readVersions.set(row.ref.path, versions.get(row.ref.path) || 0);

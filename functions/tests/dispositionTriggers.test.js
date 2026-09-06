@@ -742,6 +742,228 @@ test("C9.1.11 two missed completions create the condition slot before candidate 
   assert.equal(db.__writes.length, before);
 });
 
+// ---------------------------------------------------------------------------
+// S3 I9b — due observation, catch-up capacity, threshold fixed-point scan, threshold alerts,
+// wake-latency samples (C9.1.8, C9.1.10–C9.1.15, C9.1.17).
+// ---------------------------------------------------------------------------
+
+const armedTask = (thresholdAt, extra = {}) => ({ status: "Upcoming", task_generation_epoch: 3, task_instance_id: "ti1", thresholdProjection: { state: "armed", threshold_at: Timestamp.fromMillis(Date.parse(thresholdAt)), threshold_id: "th1", deadline_evidence_id: "de1" }, ...extra });
+const alertPath = (id) => `${scheduler.ALERTS_COLLECTION}/${id}`;
+const thresholdLaneOf = (report) => report.lanes.find((l) => l.lane === "threshold_attention");
+/** Wraps a db so every collectionGroup("tasks") aggregate count resolves through `countOf(real)`; other behaviour is untouched. */
+function withCountOverride(db, countOf) {
+  const wrapQuery = (q) => new Proxy(q, {
+    get(target, key) {
+      if (key === "count") return () => { const real = target.count(); return { async get() { const s = await real.get(); return { readTime: s.readTime, data: () => ({ count: countOf(s.data().count) }) }; } }; };
+      const value = target[key];
+      if (["where", "orderBy", "limit", "select", "startAfter"].includes(key)) return (...args) => wrapQuery(value.apply(target, args));
+      return typeof value === "function" ? value.bind(target) : value;
+    }
+  });
+  return new Proxy(db, { get(target, key) { if (key === "collectionGroup") return (id) => (id === "tasks" ? wrapQuery(target.collectionGroup(id)) : target.collectionGroup(id)); const v = target[key]; return typeof v === "function" ? v.bind(target) : v; } });
+}
+
+test("C9.1.10 due observation reads the count then the oldest row with separate read times and writes the exact dueObservation into schedulerHealth; a disagreeing pair or a failed query is an observation race that writes no observation, alert, cursor, or completion", async () => {
+  const { db, deps, clock } = await initialized({ "users/u1": { name: "U" } });
+  assert.equal((await scheduler.runDispositionScheduler({ scheduleTime: scheduleAt(0) }, deps)).outcome, "completed");
+  let observation = scheduler.validateHealth(healthOf(db)).dueObservation;
+  assert.deepEqual(Object.keys(observation).sort(), ["armedDueCandidateCount", "countReadTime", "observedAt", "oldestDueAgeSeconds", "oldestReadTime", "schemaVersion"]);
+  assert.deepEqual([observation.armedDueCandidateCount, observation.oldestDueAgeSeconds], [0, 0]);
+  await db.doc("users/u1/tasks/a").set(armedTask("2026-09-06T11:40:00Z"));
+  await db.doc("users/u1/tasks/b").set(armedTask("2026-09-06T11:50:00Z"));
+  await db.doc("users/u1/tasks/c").set(armedTask("2026-09-06T11:55:00Z"));
+  await db.doc("users/u1/tasks/future").set(armedTask("2026-09-07T11:55:00Z"));
+  await db.doc("users/u1/tasks/attended").set({ ...armedTask("2026-09-06T11:00:00Z"), thresholdProjection: { state: "attended", threshold_at: Timestamp.fromMillis(Date.parse("2026-09-06T11:00:00Z")) } });
+  clock.millis = Date.parse(scheduleAt(1)) + 1000;
+  const report = await scheduler.runDispositionScheduler({ scheduleTime: scheduleAt(1) }, deps);
+  assert.equal(report.outcome, "completed");
+  observation = scheduler.validateHealth(healthOf(db)).dueObservation;
+  assert.deepEqual([observation.armedDueCandidateCount, observation.oldestCandidatePath, observation.oldestThresholdAt.toMillis()], [3, "users/u1/tasks/a", Date.parse("2026-09-06T11:40:00Z")]);
+  assert.equal(observation.oldestDueAgeSeconds, Math.floor((observation.observedAt.toMillis() - Date.parse("2026-09-06T11:40:00Z")) / 1000));
+  assert.ok(observation.countReadTime && observation.oldestReadTime, "two separate read times, never one snapshot");
+  const countIndex = db.__reads.findIndex((r) => r === "__group__/x/tasks?count");
+  assert.ok(countIndex >= 0 && db.__reads.slice(countIndex + 1).includes("__group__/x/tasks?"), "count read first, oldest second");
+  assert.equal(report.thresholdAdmissionCapacity, 400, "the oldest row is 1,501 s overdue → catch-up");
+  assert.equal("dueObservation" in db.__docs.get(scheduler.STATE_PATH), false, "dueObservation lives inside schedulerHealth, never as a trigger-state key");
+  for (const [label, countOf] of [["count 0 / oldest present", () => 0], ["query failure", () => { throw new Error("unavailable"); }]]) {
+    const raced = schedDeps(withCountOverride(db, countOf), clock);
+    clock.millis += 300_000;
+    const beforeHealth = JSON.stringify(healthOf(db));
+    const alertsBefore = JSON.stringify([...db.__docs.entries()].filter(([p]) => p.startsWith(scheduler.ALERTS_COLLECTION)));
+    const before = db.__writes.length;
+    const result = await scheduler.runDispositionScheduler({ scheduleTime: scheduleAt(2 + (label.length % 2)) }, raced);
+    assert.equal(result.outcome, "incomplete", label);
+    assert.ok(raced.logs.some(([c]) => c === (label === "query failure" ? "SCHEDULER_OBSERVATION_FAILED" : "SCHEDULER_OBSERVATION_RACE")), label);
+    const health = healthOf(db);
+    assert.equal(JSON.stringify(health.dueObservation), JSON.parse(beforeHealth).dueObservation && JSON.stringify(JSON.parse(beforeHealth).dueObservation), `${label}: observation unchanged`);
+    assert.equal(health.recentRuns.at(-1).state, "running", label);
+    assert.equal(JSON.stringify([...db.__docs.entries()].filter(([p]) => p.startsWith(scheduler.ALERTS_COLLECTION))), alertsBefore, `${label}: no alert written or cleared (the earlier run's oldest-due slot stays)`);
+    assert.equal(raced.metrics.length, 0, label);
+    assert.equal(db.__writes.slice(before).filter((w) => w.path.startsWith("users/")).length, 0, `${label}: no candidate mutation`);
+  }
+  // count > 0 / oldest absent is the mirror race
+  await db.doc("users/u1/tasks/a").delete(); await db.doc("users/u1/tasks/b").delete(); await db.doc("users/u1/tasks/c").delete();
+  clock.millis += 300_000;
+  const mirror = schedDeps(withCountOverride(db, () => 5), clock);
+  assert.equal((await scheduler.runDispositionScheduler({ scheduleTime: scheduleAt(5) }, mirror)).outcome, "incomplete");
+  assert.ok(mirror.logs.some(([c]) => c === "SCHEDULER_OBSERVATION_RACE"));
+  // grammar: an observation with a partial oldest triple is an invariant; a threshold cursor key in trigger state blocks acquisition
+  const good = scheduler.validateHealth(healthOf(db));
+  assert.equal(good.dueObservation.armedDueCandidateCount, 3, "the last accepted observation is the ordinal +1 one");
+  const { oldestThresholdAt, ...partial } = good.dueObservation;
+  assert.throws(() => scheduler.validateHealth({ ...good, dueObservation: partial }), (e) => e.code === "SCHEDULER_HEALTH_INVARIANT", "a partial oldest triple");
+  assert.throws(() => scheduler.validateHealth({ ...good, dueObservation: { ...good.dueObservation, oldestThresholdAt, armedDueCandidateCount: 0 } }), (e) => e.code === "SCHEDULER_HEALTH_INVARIANT", "count 0 with oldest members");
+  await db.doc(scheduler.STATE_PATH).update({ threshold_attention: { path: "users/u1/tasks/a" } });
+  clock.millis += 300_000;
+  assert.equal((await scheduler.runDispositionScheduler({ scheduleTime: scheduleAt(6) }, deps)).code, "SCHEDULER_STATE_INVARIANT");
+});
+
+test("C9.1.12 catchUp is decided after the observations and the eligible-refusal aggregate: an absent lastCompletedOrdinal, a missing ordinal, an eligible threshold refusal, or a candidate overdue by more than 300 seconds admit 400; otherwise 200", async () => {
+  const { db, deps, clock } = await initialized({ "users/u1": { name: "U" } });
+  const runAt = async (k) => { clock.millis = Date.parse(scheduleAt(k)) + 1000; return scheduler.runDispositionScheduler({ scheduleTime: scheduleAt(k) }, deps); };
+  let r = await runAt(0);
+  assert.deepEqual([r.outcome, r.catchUp, r.thresholdAdmissionCapacity], ["completed", true, 400], "lastCompletedOrdinal absent");
+  r = await runAt(1);
+  assert.deepEqual([r.catchUp, r.thresholdAdmissionCapacity], [false, 200], "contiguous");
+  r = await runAt(3);
+  assert.deepEqual([r.catchUp, r.thresholdAdmissionCapacity], [true, 400], "one missing ordinal");
+  await db.doc("users/u1/schedulerRefusals/srf1_x").set({ schemaVersion: 1, lane: "threshold_attention", candidatePath: "users/u1/tasks/x", candidateFingerprint: "f", firstRefusedOrdinal: ORD0 + 3, lastAttemptOrdinal: ORD0 + 3, nextEligibleOrdinal: ORD0 + 4, refusalCount: 1, saturated: false, reasonCode: "VALIDATION_REFUSAL", firstRefusedAt: clock.now(), lastRefusedAt: clock.now() });
+  r = await runAt(4);
+  assert.deepEqual([r.catchUp, r.thresholdAdmissionCapacity, r.eligibleThresholdRefusalCount], [true, 400, 1], "eligible threshold refusal");
+  await db.doc("users/u1/schedulerRefusals/srf1_x").update({ nextEligibleOrdinal: ORD0 + 9 });
+  r = await runAt(5);
+  assert.deepEqual([r.catchUp, r.thresholdAdmissionCapacity, r.eligibleThresholdRefusalCount], [false, 200, 0], "ineligible refusal does not count");
+  await db.doc("users/u1/schedulerRefusals/srf1_x").delete();
+  clock.millis = Date.parse(scheduleAt(6)) + 1000;
+  await db.doc("users/u1/tasks/old").set(armedTask(new Date(clock.millis - 300_000).toISOString()));
+  r = await runAt(6);
+  assert.deepEqual([r.catchUp, r.thresholdAdmissionCapacity, healthOf(db).dueObservation.oldestDueAgeSeconds], [false, 200, 300], "exactly 300 seconds is not catch-up");
+  await db.doc("users/u1/tasks/old").set(armedTask(new Date(Date.parse(scheduleAt(7)) + 1000 - 301_000).toISOString()));
+  r = await runAt(7);
+  assert.deepEqual([r.catchUp, r.thresholdAdmissionCapacity, healthOf(db).dueObservation.oldestDueAgeSeconds], [true, 400, 301], "301 seconds is catch-up");
+});
+
+test("C9.1.11 OLDEST_DUE_OVER_900_SECONDS is observed at 901 seconds and not at 900 with the exact payload and clears when a complete observation proves it absent; THRESHOLD_CAPACITY_EXCEEDED is active at exactly 201 contiguous and 401 catch-up, never at 200/400", async () => {
+  const { db, deps, clock } = await initialized({ "users/u1": { name: "U" } });
+  const runAt = async (k) => { clock.millis = Date.parse(scheduleAt(k)) + 1000; return scheduler.runDispositionScheduler({ scheduleTime: scheduleAt(k) }, deps); };
+  assert.equal((await runAt(0)).outcome, "completed");
+  const oldest = alertPath("p2b1_oldest_due_over_900_seconds");
+  await db.doc("users/u1/tasks/a").set(armedTask(new Date(Date.parse(scheduleAt(1)) + 1000 - 900_000).toISOString()));
+  assert.equal((await runAt(1)).outcome, "completed");
+  assert.equal(db.__docs.has(oldest), false, "900 seconds is not over 900");
+  await db.doc("users/u1/tasks/a").set(armedTask(new Date(Date.parse(scheduleAt(2)) + 1000 - 901_000).toISOString()));
+  const r2 = await runAt(2);
+  assert.equal(r2.outcome, "completed", "the alert does not stop the evaluation");
+  const slot = db.__docs.get(oldest);
+  assert.deepEqual([slot.condition, slot.occurrenceCount, slot.candidatePath, slot.thresholdAt.toMillis(), slot.ageSeconds, slot.armedDueCandidateCount, slot.firstObservedOrdinal], ["OLDEST_DUE_OVER_900_SECONDS", 1, "users/u1/tasks/a", Date.parse(scheduleAt(2)) + 1000 - 901_000, 901, 1, ORD0 + 2]);
+  assert.ok(deps.logs.some(([c, counts]) => c === "PHASE2B_OLDEST_DUE_OVER_900_SECONDS" && counts.occurrenceCount === 1));
+  assert.equal((await runAt(3)).outcome, "completed");
+  assert.equal(db.__docs.get(oldest).occurrenceCount, 2, "a still-armed row is observed again on the next ordinal");
+  await db.doc("users/u1/tasks/a").delete();
+  assert.equal((await runAt(4)).outcome, "completed");
+  assert.equal(db.__docs.has(oldest), false, "complete observation proving the condition absent deletes the slot");
+  // capacity: 200 contiguous rows fit; the 201st exceeds; under catch-up 400 fit and 401 exceed
+  const capacity = alertPath("p2b1_threshold_capacity_exceeded");
+  // rows are stamped 60 s before each run so that contiguity is decided by the ordinals alone (a row over 300 s overdue is itself a catch-up cause)
+  const stamp = (n, k) => { for (let i = 0; i < n; i += 1) db.__docs.set(`users/u1/tasks/c${String(i).padStart(3, "0")}`, armedTask(new Date(Date.parse(scheduleAt(k)) + 1000 - 60_000).toISOString())); };
+  stamp(200, 5);
+  let r = await runAt(5);
+  assert.deepEqual([r.outcome, r.thresholdAdmissionCapacity, db.__docs.has(capacity), r.objective], ["completed", 200, false, true], "exactly 200 fits contiguous");
+  assert.equal(thresholdLaneOf(r).admitted, 200);
+  stamp(201, 6);
+  r = await runAt(6);
+  assert.equal(r.objective, false, "201 > 200: the run does not meet the objective");
+  const cap = db.__docs.get(capacity);
+  assert.deepEqual([cap.condition, cap.armedDueCandidateCount, cap.admissionCapacity, cap.occurrenceCount], ["THRESHOLD_CAPACITY_EXCEEDED", 201, 200, 1]);
+  assert.equal(r.outcome, "incomplete", "the scan meets its 201st distinct candidate with capacity consumed");
+  stamp(201, 7);
+  r = await runAt(7); // previous ordinal incomplete → catch-up 400
+  assert.deepEqual([r.outcome, r.thresholdAdmissionCapacity, db.__docs.has(capacity)], ["completed", 400, false], "201 fits catch-up and the capacity slot clears");
+  stamp(400, 9);
+  r = await runAt(9); // ordinal 8 skipped → catch-up
+  assert.deepEqual([r.outcome, r.thresholdAdmissionCapacity, db.__docs.has(capacity)], ["completed", 400, false], "exactly 400 fits catch-up");
+  stamp(401, 11);
+  r = await runAt(11);
+  assert.deepEqual([r.objective, db.__docs.get(capacity).armedDueCandidateCount, db.__docs.get(capacity).admissionCapacity], [false, 401, 400]);
+});
+
+test("C9.1.14/C9.1.15/C9.1.17 the threshold lane pages exactly 50/51 run-locally with no trigger-state cursor, admits each distinct candidate once under the select mask and a captured identity, a row inserted behind the run-local cursor is caught by the uncursored pass, and a policy-absent armed row is a definitive no-op that is never mutated", async () => {
+  const docs = { "users/u1": { name: "U" } };
+  for (let i = 0; i < 51; i += 1) docs[`users/u1/tasks/t${String(i).padStart(3, "0")}`] = armedTask(new Date(Date.parse("2026-09-06T11:00:00Z") + i * 1000).toISOString());
+  const { db, deps } = await initialized(docs);
+  const before = JSON.stringify([...db.__docs.entries()].filter(([p]) => p.startsWith("users/u1/tasks/")));
+  const r = await scheduler.runDispositionScheduler({ scheduleTime: scheduleAt(0) }, deps);
+  assert.equal(r.outcome, "completed");
+  const lane = thresholdLaneOf(r);
+  assert.deepEqual([lane.admitted, lane.passes, lane.pages], [51, 2, [50, 1, 50, 1]], "50/51 pages, a second uncursored pass reaches the fixed point");
+  assert.equal(JSON.stringify([...db.__docs.entries()].filter(([p]) => p.startsWith("users/u1/tasks/"))), before, "policy-absent rows are definitive no-ops: no task byte changes");
+  assert.equal(db.__writes.some((w) => w.path === scheduler.STATE_PATH && w.data && "threshold_attention" in w.data), false, "no threshold cursor write");
+  assert.deepEqual(Object.keys(db.__docs.get(scheduler.STATE_PATH)), ["schedulerHealth"], "no threshold cursor in trigger state");
+  assert.ok(db.__reads.filter((x) => x === "users/u1/tasks/t000").length === 1, "each candidate reread exactly once by path");
+  // a row inserted behind the run-local cursor (earlier threshold_at than the first page's last row) is caught by the next pass
+  const { db: db2, deps: deps2 } = await initialized(docs);
+  let waves = 0;
+  deps2.elapsedSeconds = () => { waves += 1; if (waves === 6) db2.__docs.set("users/u1/tasks/late", armedTask("2026-09-06T10:59:00Z")); return 0; };
+  const r2 = await scheduler.runDispositionScheduler({ scheduleTime: scheduleAt(0) }, deps2);
+  assert.equal(r2.outcome, "completed");
+  assert.deepEqual([thresholdLaneOf(r2).admitted, thresholdLaneOf(r2).passes], [52, 3], "the late row is admitted by the uncursored pass; a third pass proves the fixed point");
+  // identity race: a candidate whose captured identity changed before its transaction is neither admitted nor mutated; the page is unsettled
+  const { db: db3, deps: deps3 } = await initialized({ "users/u1": { name: "U" }, "users/u1/tasks/x": armedTask("2026-09-06T11:00:00Z") });
+  let calls = 0;
+  deps3.elapsedSeconds = () => { calls += 1; if (calls === 2) db3.__docs.get("users/u1/tasks/x").task_instance_id = "ti2"; return 0; };
+  const r3 = await scheduler.runDispositionScheduler({ scheduleTime: scheduleAt(0) }, deps3);
+  assert.equal(r3.outcome, "incomplete");
+  assert.deepEqual([thresholdLaneOf(r3).settled, thresholdLaneOf(r3).admitted], [false, 0]);
+  // a fenced owner's row is neither admitted nor classified
+  const { db: db4, deps: deps4 } = await initialized({ "users/u2": { accountDeletion: { schemaVersion: 1, state: "DELETING", capabilities: [{ operationId: "adel1_00000000-0000-4000-8000-000000000001", proofSHA256: "a".repeat(64) }], startedAt: Timestamp.fromMillis(0), storageGuardAfter: Timestamp.fromMillis(604800000) } }, "users/u2/tasks/x": armedTask("2026-09-06T11:00:00Z") });
+  const r4 = await scheduler.runDispositionScheduler({ scheduleTime: scheduleAt(0) }, deps4);
+  assert.deepEqual([r4.outcome, thresholdLaneOf(r4).settled, db4.__docs.get("users/u2/tasks/x").thresholdProjection.state], ["incomplete", false, "armed"]);
+  // a missed threshold deadline starts no wave and leaves the run incomplete with nothing persisted
+  const { db: db5, deps: deps5 } = await initialized({ "users/u1": { name: "U" }, "users/u1/tasks/x": armedTask("2026-09-06T11:00:00Z") });
+  deps5.elapsedSeconds = () => 130;
+  const r5 = await scheduler.runDispositionScheduler({ scheduleTime: scheduleAt(0) }, deps5);
+  assert.deepEqual([r5.outcome, thresholdLaneOf(r5).settled, thresholdLaneOf(r5).admitted], ["incomplete", false, 0]);
+  assert.deepEqual(Object.keys(db5.__docs.get(scheduler.STATE_PATH)), ["schedulerHealth"]);
+});
+
+test("C9.1.15 with capacity consumed the scan continues without mutation and the first additional distinct eligible candidate writes the exact THRESHOLD_SCAN_CAPACITY_EXCEEDED slot (aggregate count exactly 200, then a late cutoff-eligible row) with no checkpoint or completion; the next run replays and the fixed point deletes the slot", async () => {
+  const { db, deps, clock } = await initialized({ "users/u1": { name: "U" } });
+  assert.equal((await scheduler.runDispositionScheduler({ scheduleTime: scheduleAt(0) }, deps)).outcome, "completed");
+  const base = Date.parse(scheduleAt(1)) + 1000 - 250_000; // every row within 300 s of the run: contiguous
+  for (let i = 0; i < 200; i += 1) db.__docs.set(`users/u1/tasks/t${String(i).padStart(3, "0")}`, armedTask(new Date(base + i * 1000).toISOString()));
+  clock.millis = Date.parse(scheduleAt(1)) + 1000;
+  let waves = 0;
+  deps.elapsedSeconds = () => { waves += 1; if (waves === 8) db.__docs.set("users/u1/tasks/late", armedTask(new Date(base - 1000).toISOString())); return 0; };
+  const r = await scheduler.runDispositionScheduler({ scheduleTime: scheduleAt(1) }, deps);
+  assert.deepEqual([r.outcome, r.objective, r.thresholdAdmissionCapacity, thresholdLaneOf(r).admitted, thresholdLaneOf(r).scanCapacityExceeded], ["incomplete", false, 200, 200, true]);
+  const slot = db.__docs.get(alertPath("p2b1_threshold_scan_capacity_exceeded"));
+  assert.deepEqual([slot.condition, slot.candidateCountLowerBound, slot.admissionCapacity, slot.occurrenceCount, slot.thresholdCutoff.toMillis()], ["THRESHOLD_SCAN_CAPACITY_EXCEEDED", 201, 200, 1, healthOf(db).dueObservation.observedAt.toMillis()]);
+  assert.equal(db.__docs.has(alertPath("p2b1_threshold_capacity_exceeded")), false, "the aggregate count was exactly 200: no capacity alert");
+  assert.equal(healthOf(db).recentRuns.at(-1).state, "running");
+  assert.equal(deps.metrics.length, 1, "no completion metric for this run (only the first run's)");
+  assert.ok(r.lanes.every((l) => l.lane === "threshold_attention" || l.lane === "event_envelope_prepass"), "no ordinary lane runs after the scan alert");
+  deps.elapsedSeconds = () => 0;
+  clock.millis = Date.parse(scheduleAt(2)) + 1000;
+  const replay = await scheduler.runDispositionScheduler({ scheduleTime: scheduleAt(2) }, deps);
+  assert.deepEqual([replay.outcome, replay.thresholdAdmissionCapacity, thresholdLaneOf(replay).admitted], ["completed", 400, 201]);
+  assert.equal(db.__docs.has(alertPath("p2b1_threshold_scan_capacity_exceeded")), false, "fixed point deletes the prior scan-capacity slot");
+});
+
+test("C9.1.8 completion computes wake-latency samples from the run's committed threshold paths at the completion read time with nearest-rank quantiles; no committed path is exactly {count:0}", async () => {
+  const { db, deps, clock } = await initialized({ "users/u1": { name: "U" } });
+  const acquired = await scheduler.acquireScheduler(deps, scheduler.parseScheduleEvent({ scheduleTime: scheduleAt(0) }));
+  const run = { ...acquired, deps };
+  const at = (s) => Timestamp.fromMillis(clock.millis - s * 1000);
+  const completedAt = await scheduler.completeScheduler(deps, run, [{ path: "users/u1/tasks/a", thresholdAt: at(10) }, { path: "users/u1/tasks/b", thresholdAt: at(1) }, { path: "users/u1/tasks/c", thresholdAt: at(7) }, { path: "users/u1/tasks/d", thresholdAt: at(-5) }, { path: "users/u1/tasks/e", thresholdAt: at(3.7) }]);
+  assert.equal(completedAt.toMillis(), clock.millis);
+  const latency = scheduler.validateHealth(healthOf(db)).recentRuns.at(-1).thresholdWakeLatency;
+  assert.deepEqual(latency, { count: 5, p50Seconds: 3, p95Seconds: 10, maxSeconds: 10 });
+  await scheduler.releaseScheduler(deps, run);
+  const acquired2 = await scheduler.acquireScheduler(deps, scheduler.parseScheduleEvent({ scheduleTime: scheduleAt(1) }));
+  await scheduler.completeScheduler(deps, { ...acquired2, deps }, []);
+  assert.deepEqual(scheduler.validateHealth(healthOf(db)).recentRuns.at(-1).thresholdWakeLatency, { count: 0 });
+});
+
 test("timeouts do not exceed 300 seconds", () => {
   const root = path.resolve(__dirname, "..");
   const read = (f) => fs.readFileSync(path.join(root, f), "utf8");

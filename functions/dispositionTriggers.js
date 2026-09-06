@@ -38,11 +38,24 @@ const ORDINARY_LANES = Object.freeze([
 ]);
 const CURSOR_KEYS = Object.freeze([PHASE0_CURSOR_KEY, ...ORDINARY_LANES.map((l) => l.lane)]);
 const LEGACY_RESIDUE_KEYS = Object.freeze(["dateAfterAt", "dateAfterPath", "eventTaskAfterPath"]);
-const STATE_KEYS = Object.freeze(["schedulerHealth", "dueObservation", ...CURSOR_KEYS]);
+const STATE_KEYS = Object.freeze(["schedulerHealth", ...CURSOR_KEYS]);
 const PHASE0_DEADLINE = 40;
 const PHASE0_SELECT = 100;
 const ORDINARY_SELECT = 50;
 const ALERT_SLOT_BOUND = 11;
+// C9.1.10 / C9.1.12 / C9.1.14 / C9.1.15 — threshold lane
+const THRESHOLD_LANE = "threshold_attention";
+const THRESHOLD_SELECT = 50;
+const THRESHOLD_DEADLINE = 130;
+const THRESHOLD_CAPACITY_CONTIGUOUS = 200;
+const THRESHOLD_CAPACITY_CATCH_UP = 400;
+const OLDEST_DUE_ALERT_SECONDS = 900;
+const CATCH_UP_AGE_SECONDS = 300;
+const THRESHOLD_MASK = Object.freeze(["thresholdProjection.state", "thresholdProjection.threshold_at", "task_generation_epoch", "task_instance_id"]);
+const ALERT_TWO_MISSED = "p2b1_two_missed_completions";
+const ALERT_OLDEST_DUE = "p2b1_oldest_due_over_900_seconds";
+const ALERT_THRESHOLD_CAPACITY = "p2b1_threshold_capacity_exceeded";
+const ALERT_THRESHOLD_SCAN = "p2b1_threshold_scan_capacity_exceeded";
 
 class SchedulerInvariant extends Error {
   constructor(code, detail) { super(detail ? `${code}: ${detail}` : code); this.code = code; }
@@ -405,14 +418,32 @@ function sameLease(a, b) {
     a.startedAt.toMillis() === b.startedAt.toMillis() && a.expiresAt.toMillis() === b.expiresAt.toMillis();
 }
 
+/** C9.1.10 — exact dueObservation grammar (a member of schedulerHealth). */
+function validateDueObservation(observation) {
+  const invariant = (detail) => new SchedulerInvariant("SCHEDULER_HEALTH_INVARIANT", detail);
+  if (observation === null || typeof observation !== "object" || Array.isArray(observation)) throw invariant("dueObservation");
+  const keys = Object.keys(observation).sort().join(",");
+  const base = "armedDueCandidateCount,countReadTime,observedAt,oldestDueAgeSeconds,oldestReadTime,schemaVersion";
+  const withOldest = "armedDueCandidateCount,countReadTime,observedAt,oldestCandidatePath,oldestDueAgeSeconds,oldestReadTime,oldestThresholdAt,schemaVersion";
+  if (keys !== base && keys !== withOldest) throw invariant("dueObservation members");
+  if (observation.schemaVersion !== 1) throw invariant("dueObservation schemaVersion");
+  for (const k of ["observedAt", "countReadTime", "oldestReadTime"]) if (!isMillisTimestamp(observation[k])) throw invariant(`dueObservation ${k}`);
+  safeOrdinal(observation.armedDueCandidateCount); safeOrdinal(observation.oldestDueAgeSeconds);
+  if (keys === withOldest) {
+    if (observation.armedDueCandidateCount < 1 || typeof observation.oldestCandidatePath !== "string" || !observation.oldestCandidatePath || !isMillisTimestamp(observation.oldestThresholdAt)) throw invariant("dueObservation oldest");
+  } else if (observation.armedDueCandidateCount !== 0 || observation.oldestDueAgeSeconds !== 0) throw invariant("dueObservation empty");
+  return observation;
+}
+
 /** C9.1.8 — exact schedulerHealth grammar. */
 function validateHealth(health) {
   const invariant = (detail) => new SchedulerInvariant("SCHEDULER_HEALTH_INVARIANT", detail);
   if (health === null || typeof health !== "object" || Array.isArray(health)) throw invariant("map");
   const keys = Object.keys(health).sort();
-  const allowed = ["activatedOrdinal", "lastCompletedOrdinal", "lastStartedOrdinal", "recentRuns", "schemaVersion"];
+  const allowed = ["activatedOrdinal", "dueObservation", "lastCompletedOrdinal", "lastStartedOrdinal", "recentRuns", "schemaVersion"];
   if (!keys.every((k) => allowed.includes(k)) || !["activatedOrdinal", "lastStartedOrdinal", "recentRuns", "schemaVersion"].every((k) => keys.includes(k))) throw invariant("members");
   if (health.schemaVersion !== 1) throw invariant("schemaVersion");
+  if (health.dueObservation !== undefined) validateDueObservation(health.dueObservation);
   safeOrdinal(health.activatedOrdinal); safeOrdinal(health.lastStartedOrdinal);
   if (health.lastCompletedOrdinal !== undefined) safeOrdinal(health.lastCompletedOrdinal);
   if (!Array.isArray(health.recentRuns) || health.recentRuns.length > RECENT_RUNS) throw invariant("recentRuns");
@@ -524,7 +555,7 @@ async function acquireScheduler(deps, schedule) {
     return {
       lease: nextLease, runOrdinal: schedule.runOrdinal, scheduledAt: schedule.scheduledAt, leaseNow, runNow: leaseNow,
       effectiveLast, missingBeforeThisRun, migrated, cursors: Object.fromEntries(CURSOR_KEYS.filter((k) => state[k] !== undefined).map((k) => [k, state[k]])),
-      catchUp: health.lastCompletedOrdinal === undefined || missingBeforeThisRun >= 1
+      lastCompletedAbsent: health.lastCompletedOrdinal === undefined
     };
   });
 }
@@ -686,6 +717,160 @@ async function runOrdinaryLane(deps, run, lane) {
 }
 
 // ---------------------------------------------------------------------------
+// C9.1.10 / C9.1.12 / C9.1.15 — due observation, catch-up, threshold fixed-point scan
+// ---------------------------------------------------------------------------
+
+/** The exact candidate superset: armed projections due at or before `cutoff`. */
+function dueSupersetQuery(db, cutoff) {
+  return db.collectionGroup("tasks")
+    .where("thresholdProjection.state", "==", "armed")
+    .where("thresholdProjection.threshold_at", "<=", cutoff);
+}
+
+/** C9.1.10 — count first, oldest second, separate read times; a disagreeing pair or a failed query stops the evaluation. */
+async function observeDue(deps, run) {
+  const { db } = deps;
+  const observationNow = deps.now();
+  let countSnapshot;
+  let oldestSnapshot;
+  let count;
+  let oldest;
+  try {
+    countSnapshot = await dueSupersetQuery(db, observationNow).count().get();
+    count = countSnapshot.data().count;
+    oldestSnapshot = await dueSupersetQuery(db, observationNow)
+      .orderBy("thresholdProjection.threshold_at", "asc").orderBy(documentIdField(), "asc").select(...THRESHOLD_MASK).limit(1).get();
+    oldest = oldestSnapshot.docs[0];
+  } catch (error) {
+    throw new SchedulerInvariant("SCHEDULER_OBSERVATION_FAILED");
+  }
+  if (!Number.isSafeInteger(count) || (count === 0) !== (oldest === undefined)) throw new SchedulerInvariant("SCHEDULER_OBSERVATION_RACE");
+  const observation = {
+    schemaVersion: 1, observedAt: observationNow, countReadTime: readTimeOf(countSnapshot, deps), oldestReadTime: readTimeOf(oldestSnapshot, deps),
+    armedDueCandidateCount: count, oldestDueAgeSeconds: 0
+  };
+  if (oldest !== undefined) {
+    const at = oldest.get("thresholdProjection.threshold_at");
+    if (!isMillisTimestamp(at)) throw new SchedulerInvariant("SCHEDULER_OBSERVATION_RACE");
+    observation.oldestCandidatePath = oldest.ref.path;
+    observation.oldestThresholdAt = at;
+    observation.oldestDueAgeSeconds = Math.max(0, Math.floor((observationNow.toMillis() - at.toMillis()) / 1000));
+  }
+  validateDueObservation(observation);
+  await fenced(deps, run, async (transaction) => {
+    const snapshot = await transaction.get(stateRef(db));
+    const health = validateHealth(snapshot.data().schedulerHealth);
+    const next = validateHealth({ ...health, dueObservation: observation });
+    transaction.update(stateRef(db), { schedulerHealth: next });
+  });
+  return observation;
+}
+
+/** C9.1.19 aggregate: eligible refusals for one lane at `ordinal` (never materialized). */
+async function eligibleRefusalCount(db, lane, ordinal) {
+  const snapshot = await db.collectionGroup("schedulerRefusals").where("lane", "==", lane).where("nextEligibleOrdinal", "<=", ordinal).count().get();
+  return safeOrdinal(snapshot.data().count);
+}
+
+/** C9.1.12 — evaluated only after the observations and the eligible-refusal aggregate are read. */
+function decideCatchUp(run, observation, eligibleThresholdRefusalCount) {
+  const catchUp = run.lastCompletedAbsent || run.missingBeforeThisRun >= 1 || eligibleThresholdRefusalCount > 0
+    || (observation.oldestCandidatePath !== undefined && observation.oldestDueAgeSeconds > CATCH_UP_AGE_SECONDS);
+  const thresholdAdmissionCapacity = catchUp ? THRESHOLD_CAPACITY_CATCH_UP : THRESHOLD_CAPACITY_CONTIGUOUS;
+  return { catchUp, thresholdAdmissionCapacity, thresholdRefusalCeiling: catchUp ? 200 : 100 };
+}
+
+/** Query-captured identity under the select mask (C9.1.17): generation, instance, update time, and the projection members. */
+function thresholdIdentity(snapshot) {
+  const at = snapshot.get("thresholdProjection.threshold_at");
+  return {
+    epoch: snapshot.get("task_generation_epoch") ?? null,
+    instance: snapshot.get("task_instance_id") ?? null,
+    updateTime: isMillisTimestamp(snapshot.updateTime) ? snapshot.updateTime.toMillis() : null,
+    state: snapshot.get("thresholdProjection.state") ?? null,
+    thresholdAt: isMillisTimestamp(at) ? at.toMillis() : null
+  };
+}
+
+function thresholdCandidate(snapshot) {
+  const identity = thresholdIdentity(snapshot);
+  return { ref: snapshot.ref, identity, fingerprint: canonicalJSON(identity) };
+}
+
+/**
+ * C9.1.17 / C9.3.11 threshold-scan reread: fenced, complete document by path, captured identity compared before any
+ * mutation. The intent-producing branches require the task's current policy state, deadline evidence, and the intent
+ * registry (S6 / I10); with none of those surfaces present the row is a definitive no-op, and a stale or attended
+ * projection is refreshed only by its owning reducer.
+ */
+async function thresholdCandidateInTransaction(db, candidate, run) {
+  return db.runTransaction(async (transaction) => {
+    await requireSchedulerFence(transaction, db, run);
+    const snapshot = await transaction.get(candidate.ref);
+    if (!snapshot.exists) return { kind: "absent" };
+    const current = thresholdIdentity(snapshot);
+    if (canonicalJSON({ ...current, state: null, thresholdAt: null }) !== canonicalJSON({ ...candidate.identity, state: null, thresholdAt: null })) return { kind: "identity_race" };
+    await assertDeletionAbsent(transaction, db, [taskUserId(candidate.ref)]);
+    const projection = snapshot.get("thresholdProjection");
+    const at = projection && projection.threshold_at;
+    if (!projection || projection.state !== "armed" || !isMillisTimestamp(at) || at.toMillis() > run.runNow.toMillis()) return { kind: "noop" };
+    return { kind: "noop", thresholdAt: at };
+  });
+}
+
+/** C9.1.14 / C9.1.15 — run-local 50/51 paging to a fixed point; no trigger-state cursor; capacity consumed → scan without mutation. */
+async function runThresholdLane(deps, run, observation, capacity) {
+  const { db } = deps;
+  const cutoff = observation.observedAt;
+  const settled = new Map();
+  let committed = [];
+  let pages = [];
+  let admitted = 0;
+  let passes = 0;
+  const report = (extra) => ({ lane: THRESHOLD_LANE, admitted, passes, pages, ...extra });
+  const scanExceeded = async () => {
+    await observeCondition(deps, run, ALERT_THRESHOLD_SCAN, "THRESHOLD_SCAN_CAPACITY_EXCEEDED", { thresholdCutoff: cutoff, candidateCountLowerBound: capacity + 1, admissionCapacity: capacity });
+    return report({ settled: false, scanCapacityExceeded: true });
+  };
+  for (;;) {
+    passes += 1;
+    let cursor = null;
+    let newInPass = 0;
+    for (;;) {
+      if (Number(elapsedSeconds(run)) >= THRESHOLD_DEADLINE) return report({ settled: false, deadline: true });
+      let query = dueSupersetQuery(db, cutoff).orderBy("thresholdProjection.threshold_at", "asc").orderBy(documentIdField(), "asc").select(...THRESHOLD_MASK);
+      if (cursor) query = query.startAfter(cursor.at, db.doc(cursor.path));
+      const page = await query.limit(THRESHOLD_SELECT + 1).get();
+      const selected = page.docs.slice(0, THRESHOLD_SELECT);
+      pages = [...pages, selected.length];
+      const fresh = selected.map(thresholdCandidate).filter((c) => settled.get(c.ref.path) !== c.fingerprint);
+      if (fresh.length > 0 && admitted >= capacity) return scanExceeded();
+      const admissible = fresh.slice(0, capacity - admitted);
+      const outcomes = await runWaves(run, admissible, THRESHOLD_DEADLINE, (candidate) => thresholdCandidateInTransaction(db, candidate, run));
+      if (outcomes.some((o) => o !== undefined && !o.ok && o.code === "SCHEDULER_FENCE_LOST")) throw new SchedulerInvariant("SCHEDULER_FENCE_LOST");
+      let unsettled = false;
+      outcomes.forEach((o, i) => {
+        if (o === undefined || !o.ok || o.value.kind === "identity_race") { unsettled = true; return; }
+        const candidate = admissible[i];
+        settled.set(candidate.ref.path, candidate.fingerprint);
+        admitted += 1;
+        newInPass += 1;
+        if (o.value.kind === "woke") committed = [...committed, { path: candidate.ref.path, thresholdAt: o.value.thresholdAt }];
+      });
+      if (unsettled) return report({ settled: false });
+      if (fresh.length > admissible.length) return scanExceeded();
+      if (page.docs.length > THRESHOLD_SELECT) {
+        const last = selected.at(-1);
+        cursor = { at: last.get("thresholdProjection.threshold_at"), path: last.ref.path };
+      } else break;
+    }
+    if (newInPass === 0) break;
+  }
+  await clearCondition(deps, run, ALERT_THRESHOLD_SCAN);
+  return report({ settled: true, committed });
+}
+
+// ---------------------------------------------------------------------------
 // C9.1.6 / C9.1.8 / C9.1.9 — completion
 // ---------------------------------------------------------------------------
 
@@ -694,11 +879,13 @@ function nearestRank(samples, fraction) {
   return sorted[Math.max(0, Math.ceil(fraction * sorted.length) - 1)];
 }
 
-async function completeScheduler(deps, run, thresholdSamples) {
+/** C9.1.8 — `committed` = run-local threshold paths whose wake transaction committed, with their stored threshold_at. */
+async function completeScheduler(deps, run, committed) {
   return fenced(deps, run, async (transaction) => {
     const snapshot = await transaction.get(stateRef(deps.db));
     const health = validateHealth(snapshot.data().schedulerHealth);
     const completedAt = readTimeOf(snapshot, deps);
+    const thresholdSamples = committed.map((c) => Math.max(0, Math.floor((completedAt.toMillis() - c.thresholdAt.toMillis()) / 1000)));
     const latency = thresholdSamples.length === 0 ? { count: 0 } : {
       count: thresholdSamples.length, p50Seconds: nearestRank(thresholdSamples, 0.5), p95Seconds: nearestRank(thresholdSamples, 0.95), maxSeconds: Math.max(...thresholdSamples)
     };
@@ -730,20 +917,44 @@ async function runDispositionScheduler(event, deps) {
   const report = { outcome: "incomplete", runOrdinal: run.runOrdinal, lanes: [], migrated: run.migrated };
   try {
     if (run.missingBeforeThisRun >= 2) {
-      await observeCondition(deps, run, "p2b1_two_missed_completions", "TWO_MISSED_COMPLETIONS", { effectiveLastCompletedOrdinal: run.effectiveLast, requiredCompletedOrdinal: run.runOrdinal - 2 });
+      await observeCondition(deps, run, ALERT_TWO_MISSED, "TWO_MISSED_COMPLETIONS", { effectiveLastCompletedOrdinal: run.effectiveLast, requiredCompletedOrdinal: run.runOrdinal - 2 });
     } else {
-      await clearCondition(deps, run, "p2b1_two_missed_completions");
+      await clearCondition(deps, run, ALERT_TWO_MISSED);
     }
     const phase0 = await runPhase0(deps, run);
     report.lanes = [...report.lanes, phase0];
     let allSettled = phase0.settled;
+    // C9.1.10 / C9.1.12 — observations, eligible-refusal aggregate, then the catch-up decision
+    const observation = await observeDue(deps, run);
+    report.dueObservation = observation;
+    report.eligibleThresholdRefusalCount = await eligibleRefusalCount(deps.db, THRESHOLD_LANE, run.runOrdinal);
+    const { catchUp, thresholdAdmissionCapacity } = decideCatchUp(run, observation, report.eligibleThresholdRefusalCount);
+    report.catchUp = catchUp;
+    report.thresholdAdmissionCapacity = thresholdAdmissionCapacity;
+    report.objective = true;
+    // C9.1.11 — global condition slots proved present or absent by this complete observation
+    if (observation.oldestDueAgeSeconds > OLDEST_DUE_ALERT_SECONDS) {
+      await observeCondition(deps, run, ALERT_OLDEST_DUE, "OLDEST_DUE_OVER_900_SECONDS", { candidatePath: observation.oldestCandidatePath, thresholdAt: observation.oldestThresholdAt, ageSeconds: observation.oldestDueAgeSeconds, armedDueCandidateCount: observation.armedDueCandidateCount });
+    } else {
+      await clearCondition(deps, run, ALERT_OLDEST_DUE);
+    }
+    if (observation.armedDueCandidateCount > thresholdAdmissionCapacity) {
+      report.objective = false;
+      await observeCondition(deps, run, ALERT_THRESHOLD_CAPACITY, "THRESHOLD_CAPACITY_EXCEEDED", { armedDueCandidateCount: observation.armedDueCandidateCount, admissionCapacity: thresholdAdmissionCapacity });
+    } else {
+      await clearCondition(deps, run, ALERT_THRESHOLD_CAPACITY);
+    }
+    const threshold = await runThresholdLane(deps, run, observation, thresholdAdmissionCapacity);
+    report.lanes = [...report.lanes, threshold];
+    if (threshold.scanCapacityExceeded) { report.objective = false; return report; }
+    if (!threshold.settled) { allSettled = false; report.objective = false; }
     for (const lane of ORDINARY_LANES) {
       const result = await runOrdinaryLane(deps, run, lane);
       report.lanes = [...report.lanes, result];
       if (!result.settled) allSettled = false;
     }
-    if (!allSettled) return report;
-    await completeScheduler(deps, run, []);
+    if (!allSettled) { report.objective = false; return report; }
+    await completeScheduler(deps, run, threshold.committed);
     emit(deps, "DISPOSITION_SCHEDULER_COMPLETED", { runOrdinal: run.runOrdinal });
     metric(deps, "phase2/disposition_scheduler_completed_count", 1);
     report.outcome = "completed";
@@ -798,6 +1009,13 @@ module.exports = {
   clearCondition,
   completeScheduler,
   validateHealth,
+  validateDueObservation,
+  observeDue,
+  decideCatchUp,
+  runThresholdLane,
+  thresholdCandidateInTransaction,
+  THRESHOLD_LANE,
+  THRESHOLD_MASK,
   runDispositionScheduler,
   productionDependencies,
   __private: {
