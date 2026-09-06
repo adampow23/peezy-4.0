@@ -2761,4 +2761,25 @@ test("phase2LegacyCreateBlocker: accepts only beforeCreate for project peezy-1ec
   assert.equal(unarmedOther.trim().split("\n").at(-1), "undefined", "any value other than armed leaves the export absent");
 });
 
+// ---------------------------------------------------------------------------
+// S3 I4 — C7: exact direct @google-cloud/firestore dependency and the regenerated lock
+// ---------------------------------------------------------------------------
+
+test("package.json pins @google-cloud/firestore 7.11.6 as an exact direct dependency under Node 24 and the lock resolves every C7 version unchanged", () => {
+  const root = path.join(__dirname, "..");
+  const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
+  assert.equal(pkg.dependencies["@google-cloud/firestore"], "7.11.6", "exact, not a caret range");
+  assert.deepEqual(pkg.engines, { node: "24" });
+  const lock = JSON.parse(fs.readFileSync(path.join(root, "package-lock.json"), "utf8"));
+  assert.equal(lock.lockfileVersion, 3);
+  assert.equal(lock.packages[""].dependencies["@google-cloud/firestore"], "7.11.6");
+  assert.deepEqual(lock.packages[""].engines, { node: "24" });
+  const locked = (name) => lock.packages[`node_modules/${name}`].version;
+  assert.deepEqual(
+    { firestore: locked("@google-cloud/firestore"), storage: locked("@google-cloud/storage"), gax: locked("google-gax"), auth: locked("google-auth-library"), admin: locked("firebase-admin") },
+    { firestore: "7.11.6", storage: "7.18.0", gax: "4.6.1", auth: "9.15.1", admin: "13.6.0" }
+  );
+  assert.equal(Object.keys(lock.packages).filter((p) => p.endsWith("node_modules/@google-cloud/firestore")).length, 1, "one deduplicated firestore package");
+});
+
 module.exports = { fakeFirestore, FakeClock, capability, sweepingMarker, guardingMarker, dataDeletedMarker, authGuardingMarker, accountDeletedMarker, freshOperationId, freshProofNonce, ts, UID, STARTED, GUARD_AFTER };
