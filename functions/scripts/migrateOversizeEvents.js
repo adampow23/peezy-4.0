@@ -26,7 +26,7 @@ const MAX_ARCHIVE_BYTES = CHUNK_PAYLOAD_MAX * MAX_CHUNKS; // 19,267,584
 const ARCHIVE_SLACK_BYTES = 8192;
 /** The accepted rollout tuple: exact bytes of firestore.rules and the C7 index result; refrozen at S3 close-out. */
 const ROLLOUT_TUPLE_V1 = Object.freeze({
-  rulesSha256: "afeb8ae52a9ba616dfc605c63c050ecaf97f8f032d643be5bb5602a35f7d766b",
+  rulesSha256: "0d2717756505dca107fd3fffbac1e869e43380326400633c1c63fab5804777e9",
   indexesSha256: "a6de8daf701a75ff3db025ca244dbf2218432c5c1a06b0992cd88358250d88e8"
 });
 const KNOWN_RESPONSE_MEMBERS = Object.freeze(["document", "transaction", "readTime", "skippedResults", "explainMetrics", "done", "continuationSelector"]);

@@ -3020,3 +3020,147 @@ test("C9.4.3 warm-cache restoration and static zero directory writers: after the
   assert.equal(/require\(["']\.\/seedProviderDirectory["']\)/.test(fs.readFileSync(path.join(__dirname, "..", "index.js"), "utf8")), false, "the seeding CLI is outside the active export graph");
 });
 
+// ---------------------------------------------------------------------------
+// S3 I12b — C9.4.4 sealAccountDeletionProviderEvidence.js: prepare/seal over a generated trust anchor, every refusal
+// before artifact creation, once-only write, read-verification through the fence loader, Build-A absence, and the
+// static module graph (the artifact is imported only by accountDeletionFence.js; zero runtime writers).
+// ---------------------------------------------------------------------------
+
+const sealer = require("../scripts/sealAccountDeletionProviderEvidence");
+
+/** An in-memory repository: every implementation path plus the rules/index/lock bytes and the bundle. */
+function sealerRepository(overrides = {}) {
+  const files = new Map();
+  for (const relative of sealer.IMPLEMENTATION_PATHS_V1) files.set(relative, Buffer.from(`// ${relative}\n`));
+  files.set("evidence/bundle.bin", Buffer.from("signed evidence bundle"));
+  for (const [k, v] of Object.entries(overrides)) { if (v === null) files.delete(k); else files.set(k, Buffer.isBuffer(v) ? v : Buffer.from(v)); }
+  const written = new Map();
+  const root = "/repo";
+  const deps = {
+    root,
+    readFile: (file) => { const rel = path.relative(root, file); if (written.has(rel)) return written.get(rel); if (!files.has(rel)) { const e = new Error(`ENOENT ${rel}`); e.code = "ENOENT"; throw e; } return files.get(rel); },
+    writeFileExclusive: (file, bytes) => { const rel = path.relative(root, file); if (written.has(rel) || files.has(rel)) { const e = new Error("EEXIST"); e.code = "EEXIST"; throw e; } written.set(rel, Buffer.from(bytes)); },
+    written, files
+  };
+  return deps;
+}
+
+function sealingInput(overrides = {}) {
+  return {
+    generationId: "22222222-2222-4222-8222-222222222222", region: "us-central1",
+    bucketConfig: ACCEPTED_BUCKET_CONFIG, firestoreConfig: ACCEPTED_FIRESTORE_CONFIG,
+    storageDestinations: [], firestoreDestinations: [], authDestinations: [{ id: "a" }, { id: "b" }, { id: "c" }, { id: "d" }], cloudAuditDestinations: [], providerCopyDestinations: [],
+    copyProducerDeny: { schemaVersion: 1, entries: [] },
+    policyChecks: [policyCheck(0), policyCheck(1, { adapterId: "google_iam_get_policy_v1", etagSource: "body.etag", resourceURL: "https://cloudresourcemanager.googleapis.com/v3/projects/peezy-1ecrdl:getIamPolicy" })],
+    authResidualRetentionSeconds: 86400, authResidualChecks: residualChecks(),
+    firestoreRulesetId: "ruleset-1", firestoreReleaseId: "release-1", storageRulesetId: "ruleset-2", storageReleaseId: "release-2",
+    activatedAt: "2026-09-06T00:00:00.000Z", bundlePath: "evidence/bundle.bin", postCutoffMatchCount: 0, backlogCount: 0,
+    ...overrides
+  };
+}
+
+function signWith(anchor, prepared) { return b64urlOf(edSign(null, Buffer.from(prepared.messageHex, "hex"), anchor.privateKey)); }
+
+test("C9.4.4 sealer: prepare assembles the exact unsigned authority (implementation digest over the 27-path set, raw repository digests, array digests, bundle digest) and prints the payload digest and message; seal verifies the offline signature, writes the canonical artifact exactly once, and the fence loader activates the written bytes", async () => {
+  const source = fs.readFileSync(path.join(__dirname, "..", "scripts", "sealAccountDeletionProviderEvidence.js"), "utf8");
+  assert.match(source, /if \(require\.main === module\) main\(\)/);
+  assert.equal(sealer.IMPLEMENTATION_PATHS_V1.length, 27);
+  assert.deepEqual([...sealer.IMPLEMENTATION_PATHS_V1].sort((a, b) => Buffer.compare(Buffer.from(a), Buffer.from(b))), [...sealer.IMPLEMENTATION_PATHS_V1], "unsigned UTF-8 path order");
+  assert.ok(!sealer.IMPLEMENTATION_PATHS_V1.includes(sealer.ARTIFACT_RELATIVE_PATH), "the artifact is the sole exclusion");
+  const anchor = makeTrustAnchor();
+  const repo = sealerRepository();
+  const deps = { ...repo, trustAnchor: anchor };
+  const input = sealingInput();
+  const prepared = sealer.prepare(input, deps);
+  assert.match(prepared.signedAuthorityPayloadSHA256, /^[0-9a-f]{64}$/);
+  const expectedImplementation = sha256(fence.TaskCanonicalV1({ domain: "account_deletion_provider_implementation.v1", files: sealer.IMPLEMENTATION_PATHS_V1.map((p) => ({ path: p, sha256: sha256Bytes(repo.files.get(p)) })) }));
+  assert.equal(prepared.implementationSHA256, expectedImplementation, "implementation digest over raw bytes in path order");
+  assert.equal(prepared.externalEvidenceBundleSHA256, sha256Bytes(repo.files.get("evidence/bundle.bin")));
+  assert.equal(prepared.messageHex.slice(0, Buffer.from("peezy.account_deletion_provider_evidence.v1\0", "ascii").length * 2), Buffer.from("peezy.account_deletion_provider_evidence.v1\0", "ascii").toString("hex"), "domain prefix");
+  assert.equal(repo.written.size, 0, "prepare writes nothing");
+  const signature = signWith(anchor, prepared);
+  const sealed = sealer.seal(input, signature, deps);
+  assert.equal(repo.written.size, 1);
+  const bytes = repo.written.get(sealer.ARTIFACT_RELATIVE_PATH);
+  const loaded = fence.loadProviderEvidenceAuthority(bytes, { trustAnchor: anchor });
+  assert.equal(loaded.ok, true, "the fence loader activates the sealed bytes");
+  assert.deepEqual([loaded.authority.authoritySHA256, loaded.authority.generationId, loaded.authority.firestoreRulesSHA256, loaded.authority.authDestinations.count, loaded.authority.externalEvidenceSignatureBase64URL], [sealed.authoritySHA256, input.generationId, sha256Bytes(repo.files.get("firestore.rules")), 4, signature]);
+  assert.equal(bytes.toString("utf8"), fence.TaskCanonicalV1(loaded.authority), "canonical bytes on disk");
+  assert.deepEqual(Object.keys(loaded.authority), fence.AUTHORITY_KEYS ? [...fence.AUTHORITY_KEYS] : Object.keys(loaded.authority));
+  // once-only: a second seal refuses overwrite and leaves the bytes unchanged
+  assert.throws(() => sealer.seal(input, signature, deps), (e) => e.code === "SEALER_ARTIFACT_EXISTS");
+  assert.ok(repo.written.get(sealer.ARTIFACT_RELATIVE_PATH).equals(bytes));
+  // CLI: prepare and seal through run()
+  const cliRepo = sealerRepository({ "sealing-input.json": JSON.stringify(input) });
+  const cliDeps = { ...cliRepo, trustAnchor: anchor };
+  const p = await sealer.run(["--prepare", "--input", "sealing-input.json"], cliDeps);
+  assert.deepEqual([p.exitCode, p.report.refusal, p.report.result.signedAuthorityPayloadSHA256], [0, null, prepared.signedAuthorityPayloadSHA256]);
+  const s = await sealer.run(["--seal", "--input", "sealing-input.json", "--signature", signWith(anchor, p.report.result)], cliDeps);
+  assert.deepEqual([s.exitCode, s.report.refusal, cliRepo.written.size], [0, null, 1]);
+});
+
+test("C9.4.4 sealer refusals precede artifact creation: absent trust anchor (Build A literal), nonzero postCutoffMatchCount, nonzero backlogCount, non-finite retention, unknown/surplus/missing input member, malformed generation, bundle over cap or empty, missing implementation file, invalid or wrong-key signature, unknown argument, usage; the artifact cap +1 refuses", async () => {
+  const anchor = makeTrustAnchor();
+  const base = sealerRepository();
+  const good = sealingInput();
+  const cases = [
+    ["absent trust anchor", good, { trustAnchor: sealer.SEALER_TRUST_ANCHOR_V1 }, "TRUST_ANCHOR_ABSENT"],
+    ["nonzero postCutoff", sealingInput({ postCutoffMatchCount: 1 }), {}, "SEALER_POST_CUTOFF_MATCHES"],
+    ["nonzero backlog", sealingInput({ backlogCount: 3 }), {}, "SEALER_BACKLOG_NONZERO"],
+    ["nonfinite retention", sealingInput({ authResidualRetentionSeconds: Infinity }), {}, "SEALER_RETENTION_NONFINITE"],
+    ["nonfinite check retention", sealingInput({ authResidualChecks: [{ ...residualChecks()[0], retentionSeconds: NaN }] }), {}, "SEALER_RETENTION_NONFINITE"],
+    ["surplus member", sealingInput({ extra: 1 }), {}, "SEALER_INPUT_INVALID"],
+    ["missing member", (() => { const i = sealingInput(); delete i.region; return i; })(), {}, "SEALER_INPUT_INVALID"],
+    ["malformed generation", sealingInput({ generationId: "not-a-uuid" }), {}, "SEALER_INPUT_INVALID"],
+    ["wrong region", sealingInput({ region: "us-east1" }), {}, "SEALER_INPUT_INVALID"],
+    ["empty bundle", good, { repoOverrides: { "evidence/bundle.bin": Buffer.alloc(0) } }, "SEALER_BUNDLE_INVALID"],
+    ["bundle over cap", good, { repoOverrides: { "evidence/bundle.bin": Buffer.alloc(sealer.BUNDLE_CAP_BYTES + 1) } }, "SEALER_BUNDLE_INVALID"],
+    ["missing implementation file", good, { repoOverrides: { "functions/taskDisposition.js": null } }, "SEALER_IMPLEMENTATION_FILE_MISSING"]
+  ];
+  void base;
+  for (const [label, input, overrides, code] of cases) {
+    const repo = sealerRepository(overrides.repoOverrides || {});
+    const deps = { ...repo, trustAnchor: overrides.trustAnchor || anchor };
+    assert.throws(() => sealer.prepare(input, deps), (e) => e.code === code, label);
+    assert.throws(() => sealer.seal(input, b64urlOf(Buffer.alloc(64)), deps), (e) => e.code === code, `${label} (seal)`);
+    assert.equal(repo.written.size, 0, `${label}: no artifact`);
+  }
+  // signatures: garbage, wrong key, tampered message → no write
+  const repo = sealerRepository();
+  const deps = { ...repo, trustAnchor: anchor };
+  const prepared = sealer.prepare(good, deps);
+  assert.throws(() => sealer.seal(good, "not-base64url!", deps), (e) => e.code === "SEALER_SIGNATURE_INVALID");
+  assert.throws(() => sealer.seal(good, b64urlOf(Buffer.alloc(64)), deps), (e) => e.code === "SEALER_SIGNATURE_INVALID");
+  assert.throws(() => sealer.seal(good, signWith(makeTrustAnchor(), prepared), deps), (e) => e.code === "SEALER_SIGNATURE_INVALID", "another key");
+  assert.throws(() => sealer.seal(sealingInput({ activatedAt: "2026-09-07T00:00:00.000Z" }), signWith(anchor, prepared), deps), (e) => e.code === "SEALER_SIGNATURE_INVALID", "the signature binds the payload");
+  assert.equal(repo.written.size, 0);
+  // artifact cap: an oversize policy check pushes the canonical artifact past 131,072 bytes
+  const big = sealingInput({ bucketConfig: { ...ACCEPTED_BUCKET_CONFIG, lifecycle: { rule: [{ note: "x".repeat(70000) }] } }, policyChecks: [policyCheck(0, { resourceName: "r".repeat(4000) }), ...Array.from({ length: 11 }, (_, i) => policyCheck(i + 1, { resourceName: "r".repeat(4000), domain: "d".repeat(4000), expectedEtag: "e".repeat(1000) }))] });
+  const bigPrepared = sealer.prepare(big, deps);
+  const outcome = (() => { try { sealer.seal(big, signWith(anchor, bigPrepared), deps); return "sealed"; } catch (e) { return e.code; } })();
+  assert.ok(["SEALER_ARTIFACT_OVER_CAP", "SEALER_ARTIFACT_INVALID"].includes(outcome), `over-cap artifact refuses (${outcome})`);
+  assert.equal(repo.written.size, 0);
+  // CLI usage and unknown argument
+  const cli = sealerRepository({ "in.json": JSON.stringify(good) });
+  for (const [label, argv, code] of [["unknown", ["--prepare", "--input", "in.json", "--force"], "UNKNOWN_ARGUMENT"], ["no mode", ["--input", "in.json"], "SEALER_USAGE"], ["seal without signature", ["--seal", "--input", "in.json"], "SEALER_USAGE"], ["two modes", ["--prepare", "--seal", "--input", "in.json", "--signature", "x"], "UNKNOWN_ARGUMENT"]]) {
+    const r = await sealer.run(argv, { ...cli, trustAnchor: anchor });
+    assert.deepEqual([r.exitCode, r.report.refusal], [1, code], label);
+  }
+  assert.equal(cli.written.size, 0);
+});
+
+test("C9.4.4 Build A and the static module graph: the fence trust-anchor literal and the sealer literal are both absent and equal; the artifact is absent in the repository; with no artifact the fence reports PROVIDER_EVIDENCE_NOT_ACTIVATED and unrelated exports load; the artifact path is named only by accountDeletionFence.js and the sealer, and no module writes it", () => {
+  assert.deepEqual(fence.PROVIDER_EVIDENCE_TRUST_ANCHOR_V1, sealer.SEALER_TRUST_ANCHOR_V1, "the two reviewed literals agree (Build A: absent)");
+  assert.equal(fs.existsSync(path.join(__dirname, "..", "accountDeletionProviderEvidenceV1.json")), false, "Build A carries no authority JSON");
+  assert.deepEqual(fence.loadProviderEvidenceAuthority(undefined, { trustAnchor: sealer.SEALER_TRUST_ANCHOR_V1 }), { ok: false, code: "PROVIDER_EVIDENCE_NOT_ACTIVATED" });
+  const functionsDir = path.join(__dirname, "..");
+  const names = [];
+  const walk = (dir) => { for (const entry of fs.readdirSync(dir, { withFileTypes: true })) { if (entry.name === "node_modules" || entry.name.startsWith(".")) continue; const full = path.join(dir, entry.name); if (entry.isDirectory()) walk(full); else if (entry.name.endsWith(".js") && !full.includes(`${path.sep}tests${path.sep}`) && !full.includes(`${path.sep}rules-tests${path.sep}`)) names.push(full); } };
+  walk(functionsDir);
+  const referencing = names.filter((f) => fs.readFileSync(f, "utf8").includes("accountDeletionProviderEvidenceV1.json")).map((f) => path.relative(functionsDir, f)).sort();
+  assert.deepEqual(referencing, ["accountDeletionFence.js", "scripts/sealAccountDeletionProviderEvidence.js"], "artifact named only by the fence (reader) and the sealer (sole producer)");
+  const fenceSource = fs.readFileSync(path.join(functionsDir, "accountDeletionFence.js"), "utf8");
+  assert.equal(/writeFile[^\n]*accountDeletionProviderEvidenceV1|accountDeletionProviderEvidenceV1[^\n]*writeFile/.test(fenceSource), false, "the fence never writes the artifact");
+  assert.equal(/require\(["']\.\/scripts\//.test(fs.readFileSync(path.join(functionsDir, "index.js"), "utf8")), false, "no script is in the deployed export graph");
+});
+

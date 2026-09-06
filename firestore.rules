@@ -271,6 +271,10 @@ service cloud.firestore {
       allow read: if isLiveOwner(userId);
       allow write: if false;
     }
+    // C9.2.8 / C9.2.10: event archives (manifests and chunks) are server-only; the migration CLI is the only writer.
+    match /users/{userId}/eventArchive/{document=**} {
+      allow read, write: if false;
+    }
 
     // Existing server-owned output surfaces retain owner read access.
     match /users/{userId}/packingAggregate/{document=**} {
@@ -291,6 +295,10 @@ service cloud.firestore {
     }
 
     match /phase1System/{document=**} {
+      allow read, write: if false;
+    }
+    // C9.4.1: historical account-migration candidates are server-only.
+    match /accountDeletionLegacyCandidates/{document=**} {
       allow read, write: if false;
     }
 

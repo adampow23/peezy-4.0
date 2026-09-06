@@ -446,7 +446,35 @@ test("root dailyDose writes carry the exact stamped map and the epoch field is s
 // S3 (briefs/S3_BRIEF.md; PHASE2_CONTRACT.md C3, C5, C6.1, C6.8): account-deletion
 // boundaries, the fcmTokens grammar, server-only collections, and late Storage.
 // The §5 cleanup predicates, the historical-migration candidates collection, and the
-// access-budget rows wait for Reconciled 12.
+// C9.2.10 access budgets (static bound): a task write evaluates at most two distinct root reads; every other single
+// client write stays within ten document accesses after the one root access. The bound is over distinct get()/exists()
+// targets reachable from one rule expression, which Firestore counts once per document per evaluation.
+test("C9.2.10 access budgets: no rule expression reaches more than two distinct document reads for task writes or ten for any other single write", () => {
+  const rules = fs.readFileSync(path.resolve(__dirname, "../../firestore.rules"), "utf8");
+  const functionBodies = {};
+  for (const match of rules.matchAll(/function (\w+)\([^)]*\) \{([\s\S]*?)\n    \}/g)) functionBodies[match[1]] = match[2];
+  const directReads = (body) => new Set([...body.matchAll(/(?:get|exists)\((\/databases[^)]*)\)/g)].map((m) => m[1].replace(/\$\(\w+\)/g, "$")));
+  const reachableReads = (body, seen = new Set()) => {
+    const reads = directReads(body);
+    for (const call of body.matchAll(/\b(\w+)\(/g)) {
+      const name = call[1];
+      if (functionBodies[name] && !seen.has(name)) { seen.add(name); for (const r of reachableReads(functionBodies[name], seen)) reads.add(r); }
+    }
+    return reads;
+  };
+  let worstTask = 0; let worstOther = 0;
+  for (const block of rules.matchAll(/match ([^ ]+) \{([\s\S]*?)\n    \}/g)) {
+    const [, matchPath, body] = block;
+    for (const allow of body.matchAll(/allow ([a-z, ]+): if ([\s\S]*?);/g)) {
+      const ops = allow[1]; const expression = allow[2];
+      if (!/write|create|update|delete/.test(ops)) continue;
+      const count = reachableReads(expression).size;
+      if (/\/tasks\/\{taskId\}$/.test(matchPath)) worstTask = Math.max(worstTask, count); else worstOther = Math.max(worstOther, count);
+    }
+  }
+  assert.ok(worstTask <= 2, `task writes read at most two distinct documents (${worstTask})`);
+  assert.ok(worstOther <= 10, `other single writes stay within ten accesses (${worstOther})`);
+});
 // ---------------------------------------------------------------------------
 
 const { serverTimestamp, getDocs, collection } = require("firebase/firestore");
@@ -541,7 +569,12 @@ test("phase2System documents, both work-row collections, outboundLeases, legacyR
     "eventArchiveChunks/c1",
     `users/${OWNER}/eventArchiveChunks/c1`,
     "schedulerRefusals/r1",
-    `users/${OWNER}/schedulerRefusals/r1`
+    `users/${OWNER}/schedulerRefusals/r1`,
+    `users/${OWNER}/eventArchive/qev2_${"a".repeat(40)}`,
+    `users/${OWNER}/eventArchive/qev2_${"a".repeat(40)}/eventArchiveChunks/00`,
+    "accountDeletionLegacyCandidates/adlc1_x",
+    "phase1System/dispositionTriggerState/phase2bAlerts/p2b1_two_missed_completions",
+    "phase1System/dispositionTriggerState/migrationLeases/legacyOversizeMigrationV1"
   ];
   await seed(Object.fromEntries(paths.map((documentPath) => [documentPath, { value: 1 }])));
   for (const db of [dbFor(OWNER), dbFor(OTHER), anonymousDb()]) {
