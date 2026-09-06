@@ -414,3 +414,8 @@ Increments (each ends green + committed):
 - [ ] I7 Close: xcodebuild BUILD SUCCEEDED; all S1 suites green on the emulator; C7 hashes re-verified (retakeAssessment slice unchanged; Settings remainder identical after normalizing line 833); LESSONS/lessons.md updated; commit.
 
 Residuals carried to later slices (recorded, not hidden): PeezySettingsView `deleteAccount()` hunk needs `Phase2ProductionRuntime.accountDeletionCoordinator` (S4/S7); gate admission at the PaywallGateView/SubscriptionManager/PeezyStackViewModel/InventorySessionManager dispatch edges needs the S7-published barrier instance; S1 declares the seams and types only.
+
+## S3 inputs recorded 2026-09-06 (owner decisions)
+- `taskReset` marker: spec v5 §697 canonical + manifest v9 §5:543 terminal invariants (contract Reconciled 9). Marker is the `taskReset` field of `users/{uid}`; account implied by path, no `uid` member. `functions/taskPlan.js:649-656` is the preimage S3 replaces.
+- Data-final wire restored into contract C2.3 from manifest v7:1307 (Reconciled 8); S2 mirrors, S3 consumes.
+- I6 scope (approved): S1 builds the reset envelope file, reserve → bind → prepared row, phase vocabulary, epoch-conflict snapshot, and the coordinator calling reserve first. Drive-reducer cleanup authority and the three cleanup callbacks go to S3 with the closure slice. Condition: a test proves that with S1 landed and S3 absent the user-visible retake path is identical to today, with no half-wired gesture and no reachable state nothing owns.
