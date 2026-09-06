@@ -490,6 +490,7 @@ test("owner is denied every read and write across user paths while the accountDe
 test("descendant and userKnowledge writes require marker absence: a fresh owner without a root document still writes, and the root create/update can never carry accountDeletion", async () => {
   const fresh = "fresh-owner-2";
   const db = environment.authenticatedContext(fresh).firestore();
+  await assertSucceeds(getDoc(doc(db, `users/${fresh}`))); // D15 point-path read of an absent root
   await assertSucceeds(setDoc(doc(db, `users/${fresh}/fcmTokens/tok`), { createdAt: serverTimestamp(), platform: "ios" }));
   await assertSucceeds(setDoc(doc(db, `users/${fresh}/inventory/room-1`), { name: "Kitchen" }));
   await assertFails(setDoc(doc(db, `users/${fresh}`), { name: "Fresh", accountDeletion: MARKERS.DELETING_SWEEPING }));

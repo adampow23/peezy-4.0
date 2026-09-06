@@ -163,7 +163,8 @@ service cloud.firestore {
     // owner writes may never create, modify, or remove it. Root-doc delete
     // is server-side only (deleteAccount, Admin SDK).
     match /users/{userId} {
-      allow read: if isOwner(userId) && !('accountDeletion' in resource.data);
+      // An absent root reads as marker absence (the D15 point-path read precedes creation).
+      allow read: if isOwner(userId) && (resource == null || !('accountDeletion' in resource.data));
       allow create: if isOwner(userId)
         && !request.resource.data.keys().hasAny(['subscription', 'taskReset', 'taskGenerationEpoch', 'accountDeletion'])
         && (!('dailyDose' in request.resource.data)
