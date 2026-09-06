@@ -3,7 +3,8 @@ const admin = require("firebase-admin");
 const Anthropic = require("@anthropic-ai/sdk");
 const { getAIConfig } = require("./aiConfig");
 const { requireMovePass } = require("./entitlement");
-const { assertDeletionAbsent } = require("./accountDeletionFence");
+const { assertDeletionAbsent, withOutboundLease } = require("./accountDeletionFence");
+const { Timestamp } = require("firebase-admin/firestore");
 
 const RESEARCH_SYSTEM_PROMPT = `You are Peezy's research engine. You produce one practical, verified action
 brief for one task and one user's answered flow. Write like a sharp friend who
@@ -670,7 +671,8 @@ async function completeModelTurn({
   maxSearchesPerBrief,
   researchScope,
   messages,
-  allowedURLs
+  allowedURLs,
+  lease
 }) {
   for (let continuation = 0; continuation <= MAX_CONTINUATIONS; continuation += 1) {
     const request = {
@@ -689,7 +691,12 @@ async function completeModelTurn({
       }];
     }
 
-    const response = await client.messages.create(request);
+    // C6.2: every Anthropic call runs under an anthropic outbound lease keyed by the authenticated uid.
+    const response = await withOutboundLease(
+      { db: lease.db, now: () => Timestamp.fromMillis(Date.now()) },
+      { uid: lease.uid, channel: "anthropic" },
+      () => client.messages.create(request)
+    );
     logTokenUsage(response, researchScope, continuation);
     collectSearchResultURLs(response, allowedURLs);
 
@@ -709,7 +716,7 @@ async function completeModelTurn({
   throw new Error("Research generation did not finish");
 }
 
-async function generateBrief({ client, aiConfig, researchScope, context }) {
+async function generateBrief({ client, aiConfig, researchScope, context, lease }) {
   const messages = [{ role: "user", content: buildUserMessage(context) }];
   const allowedURLs = new Set();
 
@@ -720,7 +727,8 @@ async function generateBrief({ client, aiConfig, researchScope, context }) {
     maxSearchesPerBrief: aiConfig.maxSearchesPerBrief,
     researchScope,
     messages,
-    allowedURLs
+    allowedURLs,
+    lease
   }));
   const firstBrief = normalizeBrief(parseBriefJSON(firstResponse));
   const firstGuard = guardBriefURLs(firstBrief, allowedURLs);
@@ -743,7 +751,8 @@ async function generateBrief({ client, aiConfig, researchScope, context }) {
     maxSearchesPerBrief: aiConfig.maxSearchesPerBrief,
     researchScope,
     messages,
-    allowedURLs
+    allowedURLs,
+    lease
   }));
   const secondBrief = normalizeBrief(parseBriefJSON(secondResponse));
   const secondGuard = guardBriefURLs(secondBrief, allowedURLs);
@@ -813,7 +822,8 @@ const researchTask = onCall(
         client: getAnthropicClient(),
         aiConfig,
         researchScope,
-        context
+        context,
+        lease: { db, uid: request.auth.uid }
       });
 
       await db.runTransaction(async (transaction) => {

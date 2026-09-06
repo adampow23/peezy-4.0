@@ -16,7 +16,8 @@
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
 const nodemailer = require('nodemailer');
-const { assertDeletionAbsent } = require('./accountDeletionFence');
+const { assertDeletionAbsent, withOutboundLease } = require('./accountDeletionFence');
+const { Timestamp } = require('firebase-admin/firestore');
 
 const ADMIN_EMAIL = 'adam@peezymove.com';
 
@@ -170,12 +171,13 @@ exports.packageInventory = onCall(
 
       // 8. Send email
       const mailer = getTransporter();
-      await mailer.sendMail({
+      // C6.2: the send runs under an inventory_email outbound lease keyed by the owner's root.
+      await withOutboundLease({ db, now: () => Timestamp.fromMillis(Date.now()) }, { uid: userId, channel: 'inventory_email' }, () => mailer.sendMail({
         from: `"Peezy Move" <${ADMIN_EMAIL}>`,
         to: ADMIN_EMAIL,
         subject: `New Inventory: ${assessment.userName || 'Unknown'} — ${assessment.currentAddress || 'No address'} → ${assessment.newAddress || 'No address'}`,
         html: html
-      });
+      }));
 
       // 9. Store in admin collection
       const packageData = {

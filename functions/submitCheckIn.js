@@ -1,6 +1,8 @@
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const admin = require("firebase-admin");
 const twilio = require("twilio");
+const { Timestamp } = require("firebase-admin/firestore");
+const { withOutboundLease } = require("./accountDeletionFence");
 const {
   buildFlags,
   calibrationRecord,
@@ -22,7 +24,7 @@ async function bookedMoveContext(db, userId) {
   return snapshot.exists ? parsedBookingContext(snapshot.get("answers")) : null;
 }
 
-async function notifyFlags(vendorName, flags) {
+async function notifyFlags(db, userId, vendorName, flags) {
   if (flags.length === 0) return;
 
   const accountSid = process.env.TWILIO_ACCOUNT_SID;
@@ -38,12 +40,14 @@ async function notifyFlags(vendorName, flags) {
 
   try {
     const client = twilio(accountSid, authToken);
+    const leaseDeps = { db, now: () => Timestamp.fromMillis(Date.now()) };
     for (const flag of flags) {
-      await client.messages.create({
+      // C6.2: one check-in SMS per flag, each under its own checkin_sms outbound lease.
+      await withOutboundLease(leaseDeps, { uid: userId, channel: "checkin_sms" }, () => client.messages.create({
         body: flagMessage(vendorName, flag),
         from: fromNumber,
         to: notifyNumber
-      });
+      }));
     }
     console.log(`Check-in flag SMS sent (${flags.length})`);
   } catch (error) {
@@ -105,7 +109,7 @@ const submitCheckIn = onCall(
       admin.firestore.Timestamp.now()
     );
 
-    await notifyFlags(vendor?.name ?? "General move", flags);
+    await notifyFlags(db, userId, vendor?.name ?? "General move", flags);
 
     return {
       success: true,

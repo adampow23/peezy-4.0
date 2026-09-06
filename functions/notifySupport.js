@@ -5,6 +5,7 @@
 
 const nodemailer = require('nodemailer');
 const twilio = require('twilio');
+const { withOutboundLease } = require('./accountDeletionFence');
 
 const SUPPORT_FROM_EMAIL = 'adam@peezymove.com';
 
@@ -30,7 +31,7 @@ function getTransporter() {
   return transporter;
 }
 
-async function sendEmail({ uid, textPreview, taskTitle }) {
+async function sendEmail({ uid, textPreview, taskTitle }, deps) {
   const destination = process.env.SUPPORT_NOTIFY_EMAIL;
   if (!destination) return;
 
@@ -40,18 +41,19 @@ async function sendEmail({ uid, textPreview, taskTitle }) {
       : 'New Peezy support message';
     const taskLine = taskTitle ? `Task: ${taskTitle}\n` : '';
 
-    await getTransporter().sendMail({
+    // C6.2: the send runs under a support_email outbound lease keyed by the sender's root.
+    await withOutboundLease(deps, { uid, channel: 'support_email' }, () => getTransporter().sendMail({
       from: `"Peezy Move" <${SUPPORT_FROM_EMAIL}>`,
       to: destination,
       subject,
       text: `User: ${uid}\n${taskLine}\n${textPreview}`
-    });
+    }));
   } catch (error) {
     console.error('[notifySupport] Email failed:', error.message);
   }
 }
 
-async function sendSms({ uid, textPreview, taskTitle }) {
+async function sendSms({ uid, textPreview, taskTitle }, deps) {
   const destination = process.env.SUPPORT_NOTIFY_SMS;
   if (!destination) return;
 
@@ -72,20 +74,22 @@ async function sendSms({ uid, textPreview, taskTitle }) {
     }
 
     const client = twilio(accountSid, authToken);
-    await client.messages.create({
+    // C6.2: the send runs under a support_sms outbound lease keyed by the sender's root.
+    await withOutboundLease(deps, { uid, channel: 'support_sms' }, () => client.messages.create({
       body,
       from: fromNumber,
       to: destination
-    });
+    }));
   } catch (error) {
     console.error('[notifySupport] SMS failed:', error.message);
   }
 }
 
-async function notifySupport(params) {
+/** `deps` is the lease dependency pair `{db, now}` (C3 outbound leases; millisecond clock). */
+async function notifySupport(params, deps) {
   await Promise.all([
-    sendEmail(params),
-    sendSms(params)
+    sendEmail(params, deps),
+    sendSms(params, deps)
   ]);
 }
 

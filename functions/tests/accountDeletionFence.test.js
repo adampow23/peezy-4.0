@@ -2211,23 +2211,28 @@ test("emulator: Phase 2 reset protocol on real Firestore — rso1_ record, Recon
 // Provider boundaries for the handler-level families: the Anthropic SDK and nodemailer are replaced
 // at the module boundary before index.js loads; Auth and Storage are stubbed on the admin namespace.
 const Module = require("node:module");
-const providerCalls = { anthropic: [], mail: [] };
+const providerCalls = { anthropic: [], mail: [], sms: [] };
 let anthropicScript = () => ({ content: [{ type: "text", text: "Hello" }], stop_reason: "end_turn", usage: { input_tokens: 1, output_tokens: 1 } });
+// Every provider stub records the outbound-lease rows that exist in the active Firestore at send time.
+const leaseSnapshot = () => [...(activeDb ? activeDb.__docs.entries() : [])].filter(([p]) => p.includes("/outboundLeases/")).map(([p, d]) => ({ path: p, ...d }));
 class FakeAnthropic {
-  constructor(options) { this.options = options; this.messages = { create: async (request) => { providerCalls.anthropic.push(request); return anthropicScript(request); } }; }
+  constructor(options) { this.options = options; this.messages = { create: async (request) => { providerCalls.anthropic.push({ request, leases: leaseSnapshot() }); return anthropicScript(request); } }; }
 }
-const fakeMailer = { createTransport: () => ({ sendMail: async (message) => { providerCalls.mail.push(message); return { accepted: [message.to] }; } }) };
+const fakeMailer = { createTransport: () => ({ sendMail: async (message) => { providerCalls.mail.push({ message, leases: leaseSnapshot() }); return { accepted: [message.to] }; } }) };
+const fakeTwilio = () => ({ messages: { create: async (message) => { providerCalls.sms.push({ message, leases: leaseSnapshot() }); return { sid: "SM1" }; } } });
+let storageFiles = [];
 const originalModuleLoad = Module._load;
 Module._load = function loadWithProviderStubs(request, parent, isMain) {
   if (request === "@anthropic-ai/sdk") return FakeAnthropic;
   if (request === "nodemailer") return fakeMailer;
+  if (request === "twilio") return fakeTwilio;
   return originalModuleLoad.call(this, request, parent, isMain);
 };
 process.env.ANTHROPIC_API_KEY = "test-key";
 process.env.GMAIL_APP_PASSWORD = "test-password";
 delete process.env.SUPPORT_NOTIFY_EMAIL; delete process.env.SUPPORT_NOTIFY_SMS; delete process.env.ADAM_NOTIFY_NUMBER;
 Object.defineProperty(admin, "auth", { configurable: true, value: () => ({ getUser: async (uid) => ({ uid, email: "user@example.com" }) }) });
-Object.defineProperty(admin, "storage", { configurable: true, value: () => ({ bucket: () => ({ getFiles: async () => [[]] }) }) });
+Object.defineProperty(admin, "storage", { configurable: true, value: () => ({ bucket: () => ({ getFiles: async () => [storageFiles] }) }) });
 
 const indexExports = require("../index");
 const { executeSpawn } = require("../spawnTasks");
@@ -2511,6 +2516,149 @@ test("processInventory is root-fenced at process error and onInventoryRoomWritte
   const source = fs.readFileSync(path.join(__dirname, "..", "processInventory.js"), "utf8");
   const success = source.slice(source.indexOf("// 9. Critical room write"), source.indexOf("// 10. Best-effort cleanup"));
   assert.ok(success.includes("assertDeletionAbsent"), "the process-success write is fenced");
+});
+
+// ---------------------------------------------------------------------------
+// S3 I2 — C6.2 outbound leases: support email/SMS, inventory email, check-in SMS,
+// Anthropic messages.create in processInventory/researchTask/peezyChat
+// ---------------------------------------------------------------------------
+
+const { notifySupport } = require("../notifySupport");
+const LEASE_KEYS_EXPECTED = ["path", "schema_version", "kind", "account_uid", "delivery_id", "channel", "state", "created_at", "expires_at"];
+
+function assertOneLease(record, uid, channel) {
+  const matching = record.leases.filter((lease) => lease.channel === channel);
+  assert.equal(matching.length, 1, `exactly one live ${channel} lease at send time`);
+  const lease = matching[0];
+  assert.deepEqual(Object.keys(lease).sort(), [...LEASE_KEYS_EXPECTED].sort());
+  assert.match(lease.path, new RegExp(`^users/${uid}/outboundLeases/uol1_[0-9a-f-]{36}$`));
+  assert.equal(lease.schema_version, 1);
+  assert.equal(lease.kind, "USER_OUTBOUND_LEASE");
+  assert.equal(lease.account_uid, uid);
+  assert.equal(lease.channel, channel);
+  assert.equal(lease.state, "sending");
+  assert.equal(fence.millis(lease.expires_at) - fence.millis(lease.created_at), 600_000);
+}
+
+function withEnv(values, fn) {
+  const saved = Object.fromEntries(Object.keys(values).map((k) => [k, process.env[k]]));
+  for (const [k, v] of Object.entries(values)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+  return Promise.resolve().then(fn).finally(() => { for (const [k, v] of Object.entries(saved)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; } });
+}
+
+const TWILIO_ENV = { TWILIO_ACCOUNT_SID: "AC1", TWILIO_AUTH_TOKEN: "tok", TWILIO_FROM_NUMBER: "+15550000000" };
+const leaseDeps = (db) => ({ db, now: () => AdminTimestamp.fromMillis(Date.now()) });
+
+test("support email and SMS run under one support_email and one support_sms lease keyed by the sender; a fenced sender sends nothing and every lease is released", async () => {
+  await withEnv({ ...TWILIO_ENV, SUPPORT_NOTIFY_EMAIL: "founder@example.com", SUPPORT_NOTIFY_SMS: "+15551112222" }, async () => {
+    providerCalls.mail.length = 0; providerCalls.sms.length = 0;
+    activeDb = fakeFirestore({ docs: { "users/uid-T": { name: "T" } } });
+    await indexExports.submitSupportMessage.run(USER_REQUEST("uid-T", { text: "help" }));
+    assert.equal(providerCalls.mail.length, 1);
+    assert.equal(providerCalls.sms.length, 1);
+    assertOneLease(providerCalls.mail[0], "uid-T", "support_email");
+    assertOneLease(providerCalls.sms[0], "uid-T", "support_sms");
+    assert.equal(leaseSnapshot().length, 0, "leases are released after the send");
+
+    providerCalls.mail.length = 0; providerCalls.sms.length = 0;
+    const caps = [capability("uid-U", freshOperationId(), freshProofNonce())];
+    activeDb = fakeFirestore({ docs: { "users/uid-U": { name: "U", accountDeletion: sweepingMarker(caps) } } });
+    await notifySupport({ uid: "uid-U", textPreview: "x", taskTitle: "" }, leaseDeps(activeDb));
+    assert.equal(providerCalls.mail.length, 0);
+    assert.equal(providerCalls.sms.length, 0);
+    assert.equal(activeDb.__writes.length, 0);
+  });
+});
+
+test("inventory email runs under an inventory_email lease that precedes the package record; a fenced account sends nothing", async () => {
+  providerCalls.mail.length = 0;
+  activeDb = providerDb("uid-V", null, { "users/uid-V/user_assessments/a": { userName: "Val" }, "users/uid-V/inventory/kitchen": { name: "Kitchen", items: [] } });
+  await indexExports.packageInventory.run(USER_REQUEST("uid-V", {}));
+  assert.equal(providerCalls.mail.length, 1);
+  assertOneLease(providerCalls.mail[0], "uid-V", "inventory_email");
+  assert.equal(leaseSnapshot().length, 0);
+
+  providerCalls.mail.length = 0;
+  const caps = [capability("uid-W", freshOperationId(), freshProofNonce())];
+  activeDb = providerDb("uid-W", dataDeletedMarker(caps), { "users/uid-W/user_assessments/a": { userName: "Wes" } });
+  await expectDeletionError(() => indexExports.packageInventory.run(USER_REQUEST("uid-W", {})), "failed-precondition", FENCED);
+  assert.equal(providerCalls.mail.length, 0);
+  assert.equal(activeDb.__writes.length, 0);
+});
+
+test("check-in flags send one SMS per flag, each under its own checkin_sms lease; a fenced account sends nothing", async () => {
+  await withEnv({ ...TWILIO_ENV, ADAM_NOTIFY_NUMBER: "+15553334444" }, async () => {
+    providerCalls.sms.length = 0;
+    activeDb = providerDb("uid-X", null);
+    const answers = { arrivedInWindow: true, crewWorkedSteadily: true, costMoreThanQuoted: true, damaged: true };
+    const result = await indexExports.submitCheckIn.run(USER_REQUEST("uid-X", { answers }));
+    assert.equal(result.flags.length, 2);
+    assert.equal(providerCalls.sms.length, 2);
+    for (const call of providerCalls.sms) assertOneLease(call, "uid-X", "checkin_sms");
+    assert.equal(leaseSnapshot().length, 0);
+
+    providerCalls.sms.length = 0;
+    const caps = [capability("uid-Y", freshOperationId(), freshProofNonce())];
+    activeDb = providerDb("uid-Y", sweepingMarker(caps));
+    await expectDeletionError(() => indexExports.submitCheckIn.run(USER_REQUEST("uid-Y", { answers })), "failed-precondition", FENCED);
+    assert.equal(providerCalls.sms.length, 0);
+  });
+});
+
+test("every Anthropic messages.create in peezyChat, researchTask, and processInventory runs under an anthropic lease keyed by the authenticated uid", async () => {
+  providerCalls.anthropic.length = 0;
+  activeDb = providerDb("uid-Z", null);
+  await indexExports.peezyChat.run(USER_REQUEST("uid-Z", { surface: "support", message: "hi" }));
+  assert.equal(providerCalls.anthropic.length, 1);
+  assertOneLease(providerCalls.anthropic[0], "uid-Z", "anthropic");
+  assert.equal(leaseSnapshot().length, 0);
+
+  providerCalls.anthropic.length = 0;
+  activeDb = providerDb("uid-Z", null, { "taskCatalog/TASK_R": { title: "Research me", researchEnabled: true, researchScope: "reasoning" } });
+  const previousScript = anthropicScript;
+  anthropicScript = () => ({ content: [{ type: "text", text: "not json" }], stop_reason: "end_turn", usage: {} });
+  try {
+    await assert.rejects(() => indexExports.researchTask.run(USER_REQUEST("uid-Z", { taskId: "TASK_R", flowAnswers: { provider: ["Acme"] } })));
+    assert.ok(providerCalls.anthropic.length >= 1, "the research turn reached the provider");
+    for (const call of providerCalls.anthropic) assertOneLease(call, "uid-Z", "anthropic");
+    assert.equal(leaseSnapshot().length, 0);
+
+    providerCalls.anthropic.length = 0;
+    storageFiles = [{ name: "inventory/uid-Z/s1/frame_0.jpg", download: async () => [Buffer.from("jpeg")], delete: async () => {} }];
+    activeDb = providerDb("uid-Z", null, { "users/uid-Z/inventorySessions/s1": { status: "processing" } });
+    await assert.rejects(() => indexExports.processInventory.run(USER_REQUEST("uid-Z", { userId: "uid-Z", sessionId: "s1", roomName: "Kitchen", frameCount: 1 })));
+    assert.equal(providerCalls.anthropic.length, 1);
+    assertOneLease(providerCalls.anthropic[0], "uid-Z", "anthropic");
+    assert.equal(leaseSnapshot().length, 0);
+  } finally {
+    anthropicScript = previousScript;
+    storageFiles = [];
+  }
+});
+
+test("C6.2 call graph: every provider send in the registry files sits inside withOutboundLease, and the registry names exactly the active callers", () => {
+  const sendPattern = /\.messages\.create\(|\.sendMail\(|sendEachForMulticast\(/g;
+  for (const entry of fence.USER_OUTBOUND_PROVIDERS_V1) {
+    const file = entry.via || entry.file;
+    if (file === "functions/index.js") continue;
+    const source = fs.readFileSync(path.join(__dirname, "..", file.replace(/^functions\//, "")), "utf8");
+    assert.ok(source.includes("withOutboundLease"), `${file} imports the lease helper`);
+    // resolveProvider.js leases its search dynamically (the leased callback invokes the turn helper);
+    // S2's provider-cache family proves that behaviorally. The lexical rule covers S3's seven sites.
+    if (file === "functions/resolveProvider.js") continue;
+    let match;
+    let sends = 0;
+    while ((match = sendPattern.exec(source)) !== null) {
+      sends += 1;
+      const before = source.slice(0, match.index);
+      const leaseIndex = before.lastIndexOf("withOutboundLease(");
+      const boundary = Math.max(before.lastIndexOf("\nasync function "), before.lastIndexOf("\nfunction "), before.lastIndexOf("\nconst "), before.lastIndexOf("\nexports."));
+      assert.ok(leaseIndex > boundary, `${file}: send at ${match.index} is outside withOutboundLease`);
+    }
+    assert.ok(sends >= 1, `${file} has a provider send`);
+  }
+  const registryFiles = fence.USER_OUTBOUND_PROVIDERS_V1.map((e) => e.via || e.file).sort();
+  assert.deepEqual([...new Set(registryFiles)], ["functions/notifySupport.js", "functions/packageInventory.js", "functions/peezyChat.js", "functions/processInventory.js", "functions/researchTask.js", "functions/resolveProvider.js", "functions/submitCheckIn.js", "functions/supportAdmin.js"]);
 });
 
 module.exports = { fakeFirestore, FakeClock, capability, sweepingMarker, guardingMarker, dataDeletedMarker, authGuardingMarker, accountDeletedMarker, freshOperationId, freshProofNonce, ts, UID, STARTED, GUARD_AFTER };

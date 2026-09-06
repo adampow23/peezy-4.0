@@ -7,7 +7,8 @@
 const { createHash } = require('node:crypto');
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { onDocumentWritten } = require('firebase-functions/v2/firestore');
-const { assertDeletionAbsent } = require('./accountDeletionFence');
+const { assertDeletionAbsent, withOutboundLease } = require('./accountDeletionFence');
+const { Timestamp } = require('firebase-admin/firestore');
 const admin = require('firebase-admin');
 const Anthropic = require('@anthropic-ai/sdk');
 const { getAIConfig } = require('./aiConfig');
@@ -807,15 +808,20 @@ Return only a valid JSON array with no markdown, explanation, preamble, or backt
 
       const client = getAnthropicClient();
       const inventoryModel = await getAIConfig('inventoryModel');
-      const response = await client.messages.create({
-        model: inventoryModel,
-        max_tokens: 4096,
-        system: systemPromptFinal,
-        messages: [{
-          role: 'user',
-          content: userContent
-        }]
-      });
+      // C6.2: the Anthropic call runs under an anthropic outbound lease keyed by the owner's root.
+      const response = await withOutboundLease(
+        { db, now: () => Timestamp.fromMillis(Date.now()) },
+        { uid: userId, channel: 'anthropic' },
+        () => client.messages.create({
+          model: inventoryModel,
+          max_tokens: 4096,
+          system: systemPromptFinal,
+          messages: [{
+            role: 'user',
+            content: userContent
+          }]
+        })
+      );
       logTokenUsage(response);
 
       // 6. Parse response — extract JSON from text content

@@ -4,7 +4,8 @@ const Anthropic = require("@anthropic-ai/sdk");
 const { getAIConfig } = require("./aiConfig");
 const { buildChatSystemPrompt } = require("./systemPrompt");
 const { requireMovePass } = require("./entitlement");
-const { assertDeletionAbsent } = require("./accountDeletionFence");
+const { assertDeletionAbsent, withOutboundLease } = require("./accountDeletionFence");
+const { Timestamp } = require("firebase-admin/firestore");
 
 const HISTORY_LIMIT = 20;
 const MAX_MESSAGE_LENGTH = 8000;
@@ -346,14 +347,19 @@ function withTimeout(operation) {
   }
 }
 
-async function generateAssistantText({ model, context, messages, surface }) {
-  const response = await withTimeout(getAnthropicClient().messages.create({
-    model,
-    max_tokens: CHAT_MAX_TOKENS,
-    temperature: 0.3,
-    system: buildChatSystemPrompt(context),
-    messages
-  }));
+async function generateAssistantText({ model, context, messages, surface, lease }) {
+  // C6.2: the Anthropic call runs under an anthropic outbound lease keyed by the authenticated uid.
+  const response = await withTimeout(withOutboundLease(
+    { db: lease.db, now: () => Timestamp.fromMillis(Date.now()) },
+    { uid: lease.uid, channel: "anthropic" },
+    () => getAnthropicClient().messages.create({
+      model,
+      max_tokens: CHAT_MAX_TOKENS,
+      temperature: 0.3,
+      system: buildChatSystemPrompt(context),
+      messages
+    })
+  ));
   logTokenUsage(response, surface);
 
   if (response.stop_reason === "refusal") {
@@ -413,7 +419,8 @@ const peezyChat = onCall(
         model: requireChatModel(configuredModel),
         context,
         messages,
-        surface
+        surface,
+        lease: { db, uid: request.auth.uid }
       });
 
       const assistantMessageRef = messagesRef.doc();

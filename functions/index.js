@@ -219,7 +219,7 @@ exports.submitSupportMessage = onCall(
         uid: userId,
         textPreview: text.slice(0, 500),
         taskTitle: taskContext?.title || ''
-      });
+      }, { db, now: () => admin.firestore.Timestamp.fromMillis(Date.now()) });
     } catch (_error) {
       logger.warn('SUPPORT_NOTIFY_FAILED');
     }
