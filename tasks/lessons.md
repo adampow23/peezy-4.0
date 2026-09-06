@@ -53,3 +53,8 @@
 - Rec 4 (drop process precision: preimage hashes → diff gate, C8 → PEEZY_STATE list, Reconciled → archive, no citations/Sources/restated hashes): applied in R12 (C7 diff gate, C1 spec row dropped, provenance archived, PEEZY_STATE §4 trail).
 - Rec 5 (section reads only; PEEZY_STATE §4 + last ledger entry + brief at session start): applied from this point; recorded in PHASE2_WORKFLOW_v2 session rules.
 - Rec 6 (RED = one named assertion fails; extend fakeFirestore.js once per slice before the first Node RED): applied — fakeFirestore.js gained field orderBy, forEach, range/in/array-contains operators, collection groups, snapshot cursors, count(); the I6 Swift families were re-run red under a deliberate break after the compile-only red.
+
+## 2026-09-06 — S3 close-out
+- Ownership resolves from the contract's C10 test-file rows, not from code comments or ledger prose: an S1 comment put the legacy-migration transitions in S3, but C10.4 assigns that family to S4. Check the C10 row before scoping an increment that a comment or brief line seems to imply.
+- There is no `npm test` in `functions/`; the offline envelope is the contract's C10.9 command restricted to the files that exist, plus `accountDeletionFence.test.js`. Record the exact command in the close-out so the next session does not rediscover it.
+- Emulator runs share ports: chain node, rules, and swift in one nohup script that writes a `.done` marker, then wait once. The Swift Testing total is the `Test run with N tests in M suites passed` line; counting `✘` matches Firebase log noise.

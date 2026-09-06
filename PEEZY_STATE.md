@@ -116,14 +116,15 @@ Evidence rule: sections 1–3 use only active reachable code/data at the committ
 - Cross-cutting changes: spec → codex-consensus adversarial review → execute converged plan → report.
 - No live seeds/deploys from inside a task; human runs them.
 - Session close-out: regenerate (not append) this file's sections 1–3 if anything changed; note the date.
+- S3 close (2026-09-06): code head eb0cc81; STATUS.md and HANDOFF.md at the root are the slice snapshot and handoff; the rule-4 diff review is recorded in tasks/todo.md under "S3 close-out".
 - Executable authority: docs/plans/PHASE2_CONTRACT.md sha256 fb6a8bf63da7d0388229bcc8525f7333c51d544568506af37c66f19b18a94ce8 (S3-CD2 index policy: an override covers every leaf path beneath its field path, 2026-09-06, prior eca4bfc0; S3-CD1…CD4: OriginalEventBytesV1 grammar, base D8 equations/index policy/FirestoreWriteBudgetV1 formula, qev1 retry member and record, spec-5.2 event-state map — Reconciled 12 port gaps fixed 2026-09-06, prior 227dc26b; C9.2.10 gains the frozen index base literal it named only by hash — a Reconciled 12 port gap fixed 2026-09-06, prior cfbffd3d; C7 coordinator diff-gate row corrected for I7, 2026-09-06, prior 3f0c83ae; Reconciled 12, 2026-09-06: C8 pointer rows replaced by C9 state tables/unions/shapes and C10 ownership + test envelope; C7 preimage hashes replaced by the diff gate; header narrative and the Reconciled list archived at docs/archive/phase2/PHASE2_CONTRACT_PROVENANCE.md; prior 759b6226). Archived, never read again by any session: docs/archive/phase2/PHASE2_REPLACEMENT_MANIFEST_v9.md (sha256 a064bc68…) and docs/archive/phase2/PHASE2_EXECUTABLE_SPEC_v5.md (sha256 e02ef938…); a missing shape is a contract defect to fix in the contract. Any contract change = new hash here.
 
 ### Resolution sign-off trail (36 IDs; moved from contract C8 by Reconciled 12, 2026-09-06)
 
 | ID | Closure | Status |
 |---|---|---|
-| D1–D9, B1, D11 | `functions/dispositionTriggers.js` · `functions/tests/dispositionTriggers.test.js` (D11 also `PEEZY_STATE_REGEN_SPEC.md`, `accountDeletionFence.test.js`) | S3, pending (C9.1) |
-| D10, MIG-EVENT-V1 | `functions/scripts/migrateOversizeEvents.js` · `functions/tests/dispositionTriggers.test.js` | S3, pending (C9.2) |
+| D1–D9, B1, D11 | `functions/dispositionTriggers.js` · `functions/tests/dispositionTriggers.test.js` (D11 also `PEEZY_STATE_REGEN_SPEC.md`, `accountDeletionFence.test.js`) | S3 closed 2026-09-06 (C9.1; D11 regeneration item in PEEZY_STATE_REGEN_SPEC.md) |
+| D10, MIG-EVENT-V1 | `functions/scripts/migrateOversizeEvents.js` · `functions/tests/dispositionTriggers.test.js` | S3 closed 2026-09-06 (C9.2; live index/rules deploy and the arming triple are owner actions at the S7 pre-ship gate) |
 | D12, D13 | `functions/taskPlan.js` · `functions/tests/taskPlan.test.js` | S6, pending (C9.5) |
 | D14, D15, D24, B2 | `TaskPlanService.swift`, `RetakeAssessmentCoordinator.swift` · `DurableStoreRecoveryTests.swift`, `TaskPlanDispositionTests.swift` | S1 closed (D14 reserve-first, D15, D24, B2 reserve/bind); S3 drive landed additively (I6) |
 | D18–D21 | `functions/taskPlan.js`, `TaskDispositionSurface.swift`, `TaskDispositionCoordinator.swift` · `TaskSupersessionTests.swift` | S6, pending (C9.5) |
@@ -131,7 +132,7 @@ Evidence rule: sections 1–3 use only active reachable code/data at the committ
 | D23, D28, B4 | `DurableStoreReadiness.swift`, `PeezyV1App.swift` · `DurableStoreRecoveryTests.swift`, `TaskRouteTests.swift` | D23 S1 closed (seams); D28/B4 S7, pending (C9.7) |
 | D25, D26, D27 | `functions/taskInteraction.js`, `functions/taskPlan.js` · `functions/tests/taskInteraction.test.js` | S6, pending (C9.6) |
 | D29, D31, D32 | contract C10 count gate, file lists, selection, normalizer | S7, pending (C10) |
-| D30 | `RetakeAssessmentCoordinator.swift` · `DurableStoreRecoveryTests.swift` | S3 (I7, Decision 10 approved) |
-| MIG-RESET-V1 | `functions/taskPlan.js` · `functions/tests/taskPlan.test.js` | S2 closed (server); client §6.5 rows S3 (C9.4) |
+| D30 | `RetakeAssessmentCoordinator.swift` · `DurableStoreRecoveryTests.swift` | S3 closed 2026-09-06 (I7, Decision 10) |
+| MIG-RESET-V1 | `functions/taskPlan.js` · `functions/tests/taskPlan.test.js` | S2 closed (server); S3 closed the client drive/DTO/transport rows (I6/I7) and `inspectLegacyTaskReset` (I10); the C9.4.5 client legacy-migration rows are S4 (contract C10.4 gives that family to S4) |
 
 Addendum (added per adversarial review 2026-08-23; **binding by default** — the owner may amend or strike it): no live-service or billing operations from inside a task — production-connected UI/integration tests, callable invocations, remote Firestore/Storage writes, StoreKit purchase/restore — except against an explicitly enumerated non-production target or with exact human authorization naming the target and action. Regenerating sections 1–3 requires a full evidence-and-acceptance pass against a fresh snapshot, never a partial-knowledge overwrite; refresh ARCHIVE_MANIFEST.md if the root document set changed.
