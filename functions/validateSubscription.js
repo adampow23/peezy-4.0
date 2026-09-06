@@ -9,6 +9,7 @@
 const crypto = require("node:crypto");
 const { onRequest } = require("firebase-functions/v2/https");
 const admin = require("firebase-admin");
+const { assertDeletionAbsent } = require("./accountDeletionFence");
 const {
   PRODUCT_PERIODS,
   SERVER_TIMESTAMP,
@@ -113,6 +114,15 @@ function createValidationHandler(dependencies = {}) {
         verifiedDeletedOwnerUid
       });
 
+      if (decision.writes.length > 0) {
+        // C6.1 root fence: every current and prospective owner root of the binding is read in
+        // unsigned-UTF8 order and must carry no accountDeletion marker before any write.
+        const owners = [input.userId];
+        if (binding && typeof binding.userId === "string" && binding.userId !== input.userId) {
+          owners.push(binding.userId);
+        }
+        await assertDeletionAbsent(transaction, db, owners);
+      }
       const timestamp = decision.writes.length > 0
         ? serverTimestampProvider()
         : null;

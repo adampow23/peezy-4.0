@@ -2319,4 +2319,91 @@ test("dispositionTriggers committing transactions are root-fenced: date wake, ev
   assert.equal(/console\./.test(source), false, "no console sink remains in dispositionTriggers.js");
 });
 
+// ---------------------------------------------------------------------------
+// S3 I1b — C6.1 fence integration: entitlement.js, validateSubscription.js,
+// submitCheckIn.js + submitCheckInCore.js
+// ---------------------------------------------------------------------------
+
+const { createValidationHandler } = require("../validateSubscription");
+const { writeReviewAndAccountability } = require("../submitCheckInCore");
+
+function httpResponse() {
+  const res = { statusCode: null, body: null };
+  res.status = (code) => { res.statusCode = code; return res; };
+  res.json = (body) => { res.body = body; return res; };
+  return res;
+}
+
+const SUBSCRIPTION_BODY = (overrides = {}) => ({
+  userId: "user_123", productId: "peezy.plus.move", originalTransactionId: "original.123", transactionId: "transaction.123",
+  purchaseDate: "2026-08-16T11:00:00.000Z", expirationDate: "2099-01-01T00:00:00.000Z", environment: "Sandbox", isUpgraded: false, ...overrides
+}); // a later purchase date than the stored binding makes the decision "renewed" (it writes)
+
+test("redeemGiftCode refuses a deleting account inside its committing transaction with zero writes and otherwise redeems", async () => {
+  const caps = [capability("uid-H", freshOperationId(), freshProofNonce())];
+  activeDb = fakeFirestore({ docs: { "users/uid-H": { name: "H", accountDeletion: accountDeletedMarker(caps) }, "giftCodes/PEEZY-ABCD-EFGH": { status: "unredeemed" } } });
+  await expectDeletionError(() => indexExports.redeemGiftCode.run(USER_REQUEST("uid-H", { code: "peezy-abcd-efgh" })), "failed-precondition", FENCED);
+  assert.equal(activeDb.__writes.length, 0);
+  assert.equal(activeDb.__docs.get("giftCodes/PEEZY-ABCD-EFGH").status, "unredeemed");
+
+  activeDb = fakeFirestore({ docs: { "users/uid-I": { name: "I" }, "giftCodes/PEEZY-ABCD-EFGH": { status: "unredeemed" } } });
+  const result = await indexExports.redeemGiftCode.run(USER_REQUEST("uid-I", { code: "PEEZY-ABCD-EFGH" }));
+  assert.equal(result.success, true);
+  assert.equal(activeDb.__docs.get("giftCodes/PEEZY-ABCD-EFGH").status, "redeemed");
+  assert.equal(activeDb.__docs.get("giftCodes/PEEZY-ABCD-EFGH").redeemedBy, "uid-I");
+  assert.equal(activeDb.__docs.get("users/uid-I").subscription.productId, "peezy.plus.move");
+  assert.equal(activeDb.__docs.get("users/uid-I").name, "I");
+});
+
+test("validateSubscription fences the prospective owner root and the binding's current owner root before its writes; a fenced root commits nothing", async () => {
+  const caps = [capability("user_123", freshOperationId(), freshProofNonce())];
+  const auth = { async getUser(uid) { if (uid === "gone_user") { const e = new Error("not found"); e.code = "auth/user-not-found"; throw e; } return { uid }; } };
+  const handle = (db, body) => {
+    const handler = createValidationHandler({ db, auth, now: () => new Date("2026-08-16T12:00:00.000Z"), serverTimestamp: () => new Date("2026-08-16T12:00:00.000Z"), logger: () => {} });
+    const res = httpResponse();
+    return handler({ method: "POST", body }, res).then(() => res);
+  };
+
+  // Prospective owner under deletion: the decision would write, so it is fenced and nothing commits.
+  const fencedProspective = fakeFirestore({ docs: { "users/user_123": { accountDeletion: sweepingMarker(caps) } , "subscriptions/original.123": { userId: "user_123", productId: "peezy.plus.move", originalTransactionId: "original.123", transactionId: "transaction.100", purchaseDate: "2026-08-15T11:00:00.000Z", expirationDate: "2027-02-15T11:00:00.000Z", environment: "Sandbox", isUpgraded: false, status: "active" } } });
+  const res1 = await handle(fencedProspective, SUBSCRIPTION_BODY());
+  assert.equal(res1.statusCode, 500);
+  assert.equal(fencedProspective.__writes.length, 0);
+  assert.ok(fencedProspective.__reads.includes("users/user_123"));
+
+  // Binding held by a verified-deleted Auth user whose root is the permanent tombstone: rebinding is a
+  // write against that current owner root too, so it is fenced and nothing commits.
+  const goneCaps = [capability("gone_user", freshOperationId(), freshProofNonce())];
+  const fencedCurrent = fakeFirestore({ docs: { "users/user_123": { name: "U" }, "users/gone_user": { accountDeletion: accountDeletedMarker(goneCaps) }, "subscriptions/original.123": { userId: "gone_user", productId: "peezy.plus.move", originalTransactionId: "original.123", transactionId: "transaction.100", purchaseDate: "2026-08-15T11:00:00.000Z", expirationDate: "2027-02-15T11:00:00.000Z", environment: "Sandbox", isUpgraded: false, status: "active" } } });
+  const res2 = await handle(fencedCurrent, SUBSCRIPTION_BODY());
+  assert.equal(res2.statusCode, 500);
+  assert.equal(fencedCurrent.__writes.length, 0);
+  assert.ok(fencedCurrent.__reads.includes("users/gone_user"));
+
+  // Open roots commit the binding and the user subscription.
+  const open = fakeFirestore({ docs: { "users/user_123": { name: "U" }, "subscriptions/original.123": { userId: "user_123", productId: "peezy.plus.move", originalTransactionId: "original.123", transactionId: "transaction.100", purchaseDate: "2026-08-15T11:00:00.000Z", expirationDate: "2027-02-15T11:00:00.000Z", environment: "Sandbox", isUpgraded: false, status: "active" } } });
+  const res3 = await handle(open, SUBSCRIPTION_BODY());
+  assert.equal(res3.statusCode, 200, JSON.stringify(res3.body));
+  assert.ok(open.__writes.length > 0);
+  assert.equal(open.__docs.get("users/user_123").subscription.transactionId, "transaction.123");
+});
+
+test("check-in review transaction is root-fenced through submitCheckInCore and the submitCheckIn callable; a fenced owner commits nothing", async () => {
+  const caps = [capability("uid-J", freshOperationId(), freshProofNonce())];
+  const vendor = { vendorId: "v1", name: "Movers" };
+  const review = { vendorId: "v1", userId: "uid-J", answers: { damage: "yes" }, flags: ["damage"], submittedAt: new Date("2026-09-01T00:00:00.000Z") };
+  const fenced = fakeFirestore({ docs: { "users/uid-J": { accountDeletion: dataDeletedMarker(caps) }, "vendors/v1": { active: true, accountability: { strikes: [] } } } });
+  await expectDeletionError(() => writeReviewAndAccountability(fenced, fenced.doc("vendorReviews/r1"), fenced.doc("estimateCalibration/c1"), vendor, review, { reviewId: "r1", userId: "uid-J" }, new Date("2026-09-01T00:00:00.000Z")), "failed-precondition", FENCED);
+  assert.equal(fenced.__writes.length, 0);
+
+  const open = fakeFirestore({ docs: { "users/uid-K": { name: "K" }, "vendors/v1": { active: true, accountability: { strikes: [] } } } });
+  await writeReviewAndAccountability(open, open.doc("vendorReviews/r1"), null, vendor, { ...review, userId: "uid-K" }, null, new Date("2026-09-01T00:00:00.000Z"));
+  assert.equal(open.__docs.get("vendorReviews/r1").userId, "uid-K");
+  assert.ok(open.__docs.get("vendors/v1").accountability.strikes.length >= 1);
+
+  activeDb = fakeFirestore({ docs: { "users/uid-J": { accountDeletion: dataDeletedMarker(caps) } } });
+  await expectDeletionError(() => indexExports.submitCheckIn.run(USER_REQUEST("uid-J", { answers: { arrivedInWindow: true, crewWorkedSteadily: true, costMoreThanQuoted: false, damaged: true } })), "failed-precondition", FENCED);
+  assert.equal(activeDb.__writes.length, 0);
+});
+
 module.exports = { fakeFirestore, FakeClock, capability, sweepingMarker, guardingMarker, dataDeletedMarker, authGuardingMarker, accountDeletedMarker, freshOperationId, freshProofNonce, ts, UID, STARTED, GUARD_AFTER };

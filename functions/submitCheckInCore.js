@@ -3,6 +3,7 @@ const {
   normalizeStrikes,
   pendingStrikesForFlags
 } = require("./accountabilityLadder");
+const { assertDeletionAbsent } = require("./accountDeletionFence");
 
 const FLAG_LABELS = Object.freeze({
   late_arrival: "did not arrive in the window",
@@ -152,6 +153,8 @@ async function writeReviewAndAccountability(
 
   await db.runTransaction(async (transaction) => {
     const vendorSnapshot = vendorRef ? await transaction.get(vendorRef) : null;
+    // C6.1 root fence: the committing transaction reads the review owner's root and requires accountDeletion absent.
+    await assertDeletionAbsent(transaction, db, [review.userId]);
 
     transaction.set(reviewRef, review);
     if (calibrationRef && calibration) {

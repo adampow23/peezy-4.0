@@ -1,5 +1,6 @@
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
+const { assertDeletionAbsent } = require('./accountDeletionFence');
 
 const MOVE_PASS_PRODUCT_ID = 'peezy.plus.move';
 const GIFT_CODE_SOURCE = 'giftCode';
@@ -82,6 +83,8 @@ const redeemGiftCode = onCall(
       if (giftCodeSnapshot.data()?.status !== 'unredeemed') {
         throw new HttpsError('failed-precondition', 'This code was already used');
       }
+      // C6.1 root fence: the committing transaction reads the owner root and requires accountDeletion absent.
+      await assertDeletionAbsent(transaction, db, [request.auth.uid]);
 
       transaction.update(giftCodeRef, {
         status: 'redeemed',
