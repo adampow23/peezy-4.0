@@ -17,7 +17,9 @@ const { submitCheckIn } = require('./submitCheckIn');
 const { redeemGiftCode } = require('./entitlement');
 const { spawnTasks } = require('./spawnTasks');
 const { changeTaskPlan } = require('./taskPlan');
+const logger = require('firebase-functions/logger');
 const { handleAccountDeletionRequest, productionDependencies, runStorageReconciler, runAuthReconciler } = require('./accountDeletionFence');
+const { assertDeletionAbsent } = require('./accountDeletionFence'); // S3: C6.1 root fence for the three inline writers
 const { evaluateDispositionTriggers } = require('./dispositionTriggers');
 const { notifySupport } = require('./notifySupport');
 const {
@@ -52,18 +54,23 @@ exports.requestConcierge = onCall(
     const { taskId, taskTitle, taskCategory, userName, currentAddress, newAddress, moveDate, moveDistance } = request.data || {};
 
     const db = admin.firestore();
-    await db.collection('conciergeRequests').add({
-      taskId: taskId || '',
-      taskTitle: taskTitle || '',
-      taskCategory: taskCategory || '',
-      userId,
-      userName: userName || '',
-      currentAddress: currentAddress || '',
-      newAddress: newAddress || '',
-      moveDate: moveDate || '',
-      moveDistance: moveDistance || '',
-      requestedAt: admin.firestore.FieldValue.serverTimestamp(),
-      status: 'pending'
+    const requestRef = db.collection('conciergeRequests').doc();
+    // C6.1 root fence: the committing transaction reads the owner root and requires accountDeletion absent.
+    await db.runTransaction(async (transaction) => {
+      await assertDeletionAbsent(transaction, db, [userId]);
+      transaction.create(requestRef, {
+        taskId: taskId || '',
+        taskTitle: taskTitle || '',
+        taskCategory: taskCategory || '',
+        userId,
+        userName: userName || '',
+        currentAddress: currentAddress || '',
+        newAddress: newAddress || '',
+        moveDate: moveDate || '',
+        moveDistance: moveDistance || '',
+        requestedAt: admin.firestore.FieldValue.serverTimestamp(),
+        status: 'pending'
+      });
     });
 
     return { success: true };
@@ -85,16 +92,21 @@ exports.submitTaskFlow = onCall(
     const { userName, taskId, taskTitle, taskType, confirmedFields, transferChoice } = request.data || {};
 
     const db = admin.firestore();
-    await db.collection('taskFlowSubmissions').add({
-      userId,
-      userName: userName || '',
-      taskId: taskId || '',
-      taskTitle: taskTitle || '',
-      taskType: taskType || '',
-      confirmedFields: confirmedFields || {},
-      transferChoice: transferChoice || null,
-      submittedAt: admin.firestore.FieldValue.serverTimestamp(),
-      status: 'pending'
+    const submissionRef = db.collection('taskFlowSubmissions').doc();
+    // C6.1 root fence: the committing transaction reads the owner root and requires accountDeletion absent.
+    await db.runTransaction(async (transaction) => {
+      await assertDeletionAbsent(transaction, db, [userId]);
+      transaction.create(submissionRef, {
+        userId,
+        userName: userName || '',
+        taskId: taskId || '',
+        taskTitle: taskTitle || '',
+        taskType: taskType || '',
+        confirmedFields: confirmedFields || {},
+        transferChoice: transferChoice || null,
+        submittedAt: admin.firestore.FieldValue.serverTimestamp(),
+        status: 'pending'
+      });
     });
 
     return { success: true };
@@ -145,25 +157,12 @@ exports.submitSupportMessage = onCall(
       userRef.collection('user_assessments').limit(1).get()
     ]);
 
+    // Fixed event codes only (C3 logging closure): no Error, UID, or payload value is logged.
+    let firstUserMessage = false;
     if (userMessagesResult.status === 'fulfilled') {
-      const userMessagesSnapshot = userMessagesResult.value;
-      if (userMessagesSnapshot.size === 1) {
-        try {
-          await supportChatRef.doc(FIRST_SUPPORT_AUTO_ACK_ID).create({
-            text: FIRST_SUPPORT_AUTO_ACK_TEXT,
-            sender: 'support',
-            isAutoResponse: true,
-            read: false,
-            timestamp: admin.firestore.FieldValue.serverTimestamp()
-          });
-        } catch (error) {
-          if (error.code !== 6 && error.code !== 'already-exists') {
-            console.error('Support auto-acknowledgment failed:', error.message);
-          }
-        }
-      }
+      firstUserMessage = userMessagesResult.value.size === 1;
     } else {
-      console.error('Support auto-acknowledgment lookup failed:', userMessagesResult.reason.message);
+      logger.warn('SUPPORT_AUTO_ACK_LOOKUP_FAILED');
     }
 
     let userName = '';
@@ -176,7 +175,7 @@ exports.submitSupportMessage = onCall(
         userName = assessment.userName.trim();
       }
     } else {
-      console.error('Support user name lookup failed:', assessmentResult.reason.message);
+      logger.warn('SUPPORT_USER_NAME_LOOKUP_FAILED');
     }
 
     const threadData = {
@@ -194,15 +193,36 @@ exports.submitSupportMessage = onCall(
       threadData.userName = userName;
     }
 
-    void notifySupport({
-      uid: userId,
-      textPreview: text.slice(0, 500),
-      taskTitle: taskContext?.title || ''
-    }).catch(error => {
-      console.error('[notifySupport] Unexpected failure:', error.message);
+    // C6.1 root fence: the auto-acknowledgment (created only when absent) and the thread record
+    // commit in one transaction that reads the owner root and requires accountDeletion absent.
+    const autoAckRef = supportChatRef.doc(FIRST_SUPPORT_AUTO_ACK_ID);
+    await db.runTransaction(async (transaction) => {
+      await assertDeletionAbsent(transaction, db, [userId]);
+      if (firstUserMessage) {
+        const autoAckSnapshot = await transaction.get(autoAckRef);
+        if (!autoAckSnapshot.exists) {
+          transaction.create(autoAckRef, {
+            text: FIRST_SUPPORT_AUTO_ACK_TEXT,
+            sender: 'support',
+            isAutoResponse: true,
+            read: false,
+            timestamp: admin.firestore.FieldValue.serverTimestamp()
+          });
+        }
+      }
+      transaction.set(db.collection('supportThreads').doc(userId), threadData, { merge: true });
     });
 
-    await db.collection('supportThreads').doc(userId).set(threadData, { merge: true });
+    // C6.2: the support notification is awaited only after its committed record.
+    try {
+      await notifySupport({
+        uid: userId,
+        textPreview: text.slice(0, 500),
+        taskTitle: taskContext?.title || ''
+      });
+    } catch (_error) {
+      logger.warn('SUPPORT_NOTIFY_FAILED');
+    }
 
     return { success: true };
   }

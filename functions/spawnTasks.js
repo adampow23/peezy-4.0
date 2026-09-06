@@ -1,4 +1,5 @@
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
+const { deletionError } = require("./accountDeletionFence");
 const admin = require("firebase-admin");
 const { createHash } = require("node:crypto");
 
@@ -407,6 +408,8 @@ async function executeSpawn(db, userId, request, now = new Date()) {
     }
     const tokenSnapshot = await transaction.get(tokenRef);
     if (tokenSnapshot.exists) return replayToken(tokenSnapshot, fingerprint);
+    // C6.1 root fence: every committing branch requires accountDeletion absent on the owner root.
+    if (rootSnapshot.exists && rootSnapshot.data()?.accountDeletion !== undefined) throw deletionError("ACCOUNT_DELETION_FENCED");
 
     const taskRows = resolvedSpawns.map(({ spawn, row }, ordinal) => {
       const id = subjectAware

@@ -2203,4 +2203,120 @@ test("emulator: Phase 2 reset protocol on real Firestore — rso1_ record, Recon
   assert.deepEqual(committed.receipt, { ...final, replayed: true });
 });
 
+// ---------------------------------------------------------------------------
+// S3 I1a — C6.1 fence integration: index.js inline writers, spawnTasks.js,
+// dispositionTriggers.js committing transactions (briefs/S3_BRIEF.md)
+// ---------------------------------------------------------------------------
+
+const indexExports = require("../index");
+const { executeSpawn } = require("../spawnTasks");
+const dispositionTriggers = require("../dispositionTriggers");
+
+const USER_REQUEST = (uid, data) => ({ auth: { uid }, data });
+const FENCED = { schemaVersion: 1, reason: "ACCOUNT_DELETION_FENCED" };
+
+function markerOnly(db, uid) {
+  return Object.keys(db.__docs.get(`users/${uid}`) || {});
+}
+
+test("index.js inline writers are root-fenced: requestConcierge, submitTaskFlow, and submitSupportMessage refuse a deleting account with zero writes and otherwise commit their records inside a transaction", async () => {
+  const caps = [capability("uid-D", freshOperationId(), freshProofNonce())];
+  for (const marker of [sweepingMarker(caps), guardingMarker(caps), dataDeletedMarker(caps), authGuardingMarker(caps), accountDeletedMarker(caps), { state: "junk" }]) {
+    activeDb = fakeFirestore({ docs: { "users/uid-D": { name: "D", accountDeletion: marker }, "users/uid-D/supportChat/m1": { sender: "user", text: "hi" } } });
+    const db = activeDb;
+    const before = db.__writes.length;
+    await expectDeletionError(() => indexExports.requestConcierge.run(USER_REQUEST("uid-D", { taskId: "BOX_RETURN" })), "failed-precondition", FENCED);
+    await expectDeletionError(() => indexExports.submitTaskFlow.run(USER_REQUEST("uid-D", { taskId: "COMPARE_QUOTES", confirmedFields: {} })), "failed-precondition", FENCED);
+    await expectDeletionError(() => indexExports.submitSupportMessage.run(USER_REQUEST("uid-D", { text: "help" })), "failed-precondition", FENCED);
+    assert.equal(db.__writes.length, before, JSON.stringify(marker));
+    assert.deepEqual(markerOnly(db, "uid-D"), ["name", "accountDeletion"]);
+  }
+
+  activeDb = fakeFirestore({ docs: { "users/uid-E": { name: "E" }, "users/uid-E/supportChat/m1": { sender: "user", text: "first" }, "users/uid-E/user_assessments/a1": { userName: "  Eve " } } });
+  const db = activeDb;
+  await indexExports.requestConcierge.run(USER_REQUEST("uid-E", { taskId: "BOX_RETURN", taskTitle: "Return boxes", userId: "forged" }));
+  const concierge = [...db.__docs.entries()].filter(([p]) => p.startsWith("conciergeRequests/"));
+  assert.equal(concierge.length, 1);
+  assert.equal(concierge[0][1].userId, "uid-E");
+  assert.equal(concierge[0][1].status, "pending");
+  assert.ok(db.__reads.includes("users/uid-E"), "the committing transaction reads the owner root");
+
+  await indexExports.submitTaskFlow.run(USER_REQUEST("uid-E", { taskId: "COMPARE_QUOTES", taskTitle: "Compare", confirmedFields: { choice: "first" } }));
+  const flows = [...db.__docs.entries()].filter(([p]) => p.startsWith("taskFlowSubmissions/"));
+  assert.equal(flows.length, 1);
+  assert.equal(flows[0][1].userId, "uid-E");
+  assert.deepEqual(flows[0][1].confirmedFields, { choice: "first" });
+
+  const result = await indexExports.submitSupportMessage.run(USER_REQUEST("uid-E", { text: "  help me  ", taskContext: { userTaskId: "t", catalogTaskId: "c", title: "Title" } }));
+  assert.deepEqual(result, { success: true });
+  const ack = db.__docs.get("users/uid-E/supportChat/first-message-auto-acknowledgment");
+  assert.equal(ack.sender, "support");
+  assert.equal(ack.isAutoResponse, true);
+  const thread = db.__docs.get("supportThreads/uid-E");
+  assert.equal(thread.uid, "uid-E");
+  assert.equal(thread.lastMessageText, "help me");
+  assert.equal(thread.lastSender, "user");
+  assert.equal(thread.userName, "Eve");
+  assert.deepEqual(thread.taskContext, { userTaskId: "t", catalogTaskId: "c", title: "Title" });
+  // A replayed first message keeps the existing acknowledgment byte-for-byte and still commits the thread.
+  const ackBefore = JSON.stringify(ack);
+  await indexExports.submitSupportMessage.run(USER_REQUEST("uid-E", { text: "again" }));
+  assert.equal(JSON.stringify(db.__docs.get("users/uid-E/supportChat/first-message-auto-acknowledgment")), ackBefore);
+  assert.equal(db.__docs.get("supportThreads/uid-E").lastMessageText, "again");
+});
+
+test("index.js submitSupportMessage awaits the support notification only after its committed record", async () => {
+  const source = fs.readFileSync(path.join(__dirname, "..", "index.js"), "utf8");
+  const handler = source.slice(source.indexOf("exports.submitSupportMessage"), source.indexOf("exports.deleteAccount"));
+  assert.equal(handler.includes("void notifySupport"), false, "the notification is no longer fire-and-forget");
+  const commitIndex = handler.indexOf("runTransaction");
+  const notifyIndex = handler.indexOf("await notifySupport");
+  assert.ok(commitIndex > 0 && notifyIndex > commitIndex, "notifySupport is awaited after the committing transaction");
+  assert.equal(/console\./.test(handler), false, "no console sink remains in submitSupportMessage");
+  assert.equal(/error\.message|\.reason\.message/.test(handler), false, "no Error-derived value is logged");
+});
+
+test("spawnTasks refuses a deleting account inside its committing transaction with zero writes and otherwise creates its tasks", async () => {
+  const row = { taskId: "FORWARD_MAIL", title: "Forward your mail", actionCategory: "notify", category: "admin", actionType: "workflow", taskType: "survey", conditions: {}, desc: "File the USPS change of address.", estHours: 1, tips: "Do it online.", urgencyPercentage: 90, whyNeeded: "Mail follows you." };
+  const request = { token: "task-1-spawn", source: { kind: "conversation", taskId: "MOVERS" }, spawns: [{ taskId: "FORWARD_MAIL" }] };
+  const caps = [capability("uid-F", freshOperationId(), freshProofNonce())];
+  const fenced = fakeFirestore({ docs: { "taskCatalog/FORWARD_MAIL": row, "users/uid-F": { name: "F", accountDeletion: sweepingMarker(caps) }, "users/uid-F/identity/identity": {} } });
+  await expectDeletionError(() => executeSpawn(fenced, "uid-F", request, new Date("2026-08-08T15:00:00Z")), "failed-precondition", FENCED);
+  assert.equal(fenced.__writes.length, 0);
+
+  const open = fakeFirestore({ docs: { "taskCatalog/FORWARD_MAIL": row, "users/uid-G": { name: "G" }, "users/uid-G/identity/identity": {} } });
+  const result = await executeSpawn(open, "uid-G", request, new Date("2026-08-08T15:00:00Z"));
+  assert.equal(result.created.length, 1);
+  assert.equal([...open.__docs.keys()].filter((p) => p.startsWith("users/uid-G/tasks/")).length, 1);
+  assert.equal(open.__docs.has("users/uid-G/spawnTokens/task-1-spawn"), true);
+});
+
+test("dispositionTriggers committing transactions are root-fenced: date wake, event consume and quarantine, and event-task wake refuse a deleting owner with zero writes", async () => {
+  const caps = [capability("u1", freshOperationId(), freshProofNonce())];
+  const NOW = new Date("2026-08-27T17:00:00.000Z");
+  const dueTask = { status: "Snoozed", snoozedUntil: new Date("2026-08-27T16:00:00.000Z"), dispositionContract: { profile_version: 3, disposition: "DEFERRED", owner: "user:u1", next_action: "Wait", next_trigger: { kind: "date", at: new Date("2026-08-27T16:00:00.000Z"), payload: { basis: "institution_promised_date", source_evidence_id: "e1" } }, resume_destination: "flow:due", visible_status_copy: "Waiting" } };
+  const pendingEvent = { event_id: "event-2", event_name: "institution.updated", canonical_key: "service/provider-1", source_version: 2, observed_at: new Date("2026-08-27T16:59:00.000Z"), source_evidence_id: "evidence-2", effect: "fire", payload: { nested: [true, 2, { note: "ready" }] }, processingState: "pending", processed: false };
+  const malformedEvent = { processingState: "pending", processed: false, event_name: 7 };
+  const eventTask = { status: "Snoozed", snoozedUntil: new Date("2026-09-01T00:00:00.000Z"), dispositionContract: { profile_version: 3, disposition: "DEFERRED", owner: "user:u1", next_action: "Wait", next_trigger: { kind: "event", event_name: "institution.updated", canonical_key: "service/provider-1", after_source_version: 1, payload: { source_evidence_id: "evidence-1" } }, resume_destination: "flow:event", visible_status_copy: "Waiting" } };
+  const stateId = dispositionTriggers.canonicalEventStateId("institution.updated", "service/provider-1");
+  const highWater = { event_name: "institution.updated", canonical_key: "service/provider-1", source_version: 2, effect: "fire", event_id: "event-2", observed_at: new Date("2026-08-27T16:59:00.000Z"), source_evidence_id: "evidence-2", payload: {}, fingerprint: "f", advancedAt: NOW };
+  const docs = { "users/u1": { accountDeletion: sweepingMarker(caps) }, "users/u1/tasks/due": dueTask, "users/u1/events/event-2": pendingEvent, "users/u1/events/bad": malformedEvent, "users/u1/tasks/event-task": eventTask, [`users/u1/eventState/${stateId}`]: highWater };
+  const db = fakeFirestore({ docs });
+  await expectDeletionError(() => dispositionTriggers.wakeDateTaskInTransaction(db, db.doc("users/u1/tasks/due"), NOW), "failed-precondition", FENCED);
+  await expectDeletionError(() => dispositionTriggers.consumeEventEnvelopeInTransaction(db, db.doc("users/u1/events/event-2"), NOW), "failed-precondition", FENCED);
+  await expectDeletionError(() => dispositionTriggers.consumeEventEnvelopeInTransaction(db, db.doc("users/u1/events/bad"), NOW), "failed-precondition", FENCED);
+  await expectDeletionError(() => dispositionTriggers.reconcileEventTaskInTransaction(db, db.doc("users/u1/tasks/event-task"), NOW), "failed-precondition", FENCED);
+  assert.equal(db.__writes.length, 0);
+
+  const openDocs = { ...docs, "users/u1": { name: "U" } };
+  const open = fakeFirestore({ docs: openDocs });
+  assert.equal(await dispositionTriggers.wakeDateTaskInTransaction(open, open.doc("users/u1/tasks/due"), NOW), true);
+  assert.equal(await dispositionTriggers.consumeEventEnvelopeInTransaction(open, open.doc("users/u1/events/bad"), NOW), "quarantined");
+  assert.equal(await dispositionTriggers.reconcileEventTaskInTransaction(open, open.doc("users/u1/tasks/event-task"), NOW), true);
+  assert.equal(open.__docs.get("users/u1/tasks/due").status, "Upcoming");
+  assert.equal(open.__docs.get("users/u1/tasks/event-task").status, "Upcoming");
+  const source = fs.readFileSync(path.join(__dirname, "..", "dispositionTriggers.js"), "utf8");
+  assert.equal(/console\./.test(source), false, "no console sink remains in dispositionTriggers.js");
+});
+
 module.exports = { fakeFirestore, FakeClock, capability, sweepingMarker, guardingMarker, dataDeletedMarker, authGuardingMarker, accountDeletedMarker, freshOperationId, freshProofNonce, ts, UID, STARTED, GUARD_AFTER };

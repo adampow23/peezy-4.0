@@ -530,12 +530,17 @@ function buildRootWire(marker, { operationId, authorityKind, replayed }) {
  * Reads every named owner root in unsigned-UTF8 order inside the caller's transaction
  * and requires `accountDeletion` absent. A present (even malformed) marker fences.
  */
+function ownerRootRef(db, uid) {
+  // The Admin SDK exposes both surfaces; a Firestore-like boundary may implement only one.
+  return typeof db.doc === "function" ? db.doc(`users/${uid}`) : db.collection("users").doc(uid);
+}
+
 async function assertDeletionAbsent(transaction, db, uids) {
   const unique = [...new Set(uids)].sort(compareUTF8);
   if (unique.length === 0) throw new Error("assertDeletionAbsent: at least one uid is required");
   for (const uid of unique) {
     if (!isUID(uid)) throw new Error("assertDeletionAbsent: invalid uid");
-    const snapshot = await transaction.get(db.doc(`users/${uid}`));
+    const snapshot = await transaction.get(ownerRootRef(db, uid));
     const data = snapshot.exists ? snapshot.data() : undefined;
     if (data && data.accountDeletion !== undefined) throw deletionError("ACCOUNT_DELETION_FENCED");
   }

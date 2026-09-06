@@ -3,6 +3,8 @@
 const admin = require("firebase-admin");
 const { createHash, randomUUID } = require("node:crypto");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
+const logger = require("firebase-functions/logger");
+const { assertDeletionAbsent } = require("./accountDeletionFence");
 const {
   buildUpcomingContract,
   dateFromValue,
@@ -241,6 +243,7 @@ async function wakeDateTaskInTransaction(db, ref, now) {
     const data = snapshot.data();
     const contract = buildUpcomingContract(data.dispositionContract, "Ready to continue");
     validateDispositionContract("Upcoming", contract, now);
+    await assertDeletionAbsent(transaction, db, [taskUserId(ref)]); // C6.1 root fence
     transaction.update(ref, {
       status: "Upcoming",
       dispositionContract: contract,
@@ -270,6 +273,7 @@ async function consumeEventEnvelopeInTransaction(db, eventRef, now) {
   return db.runTransaction(async (transaction) => {
     const eventSnapshot = await transaction.get(eventRef);
     if (!eventSnapshot.exists || eventSnapshot.data()?.processingState !== "pending") return "noop";
+    await assertDeletionAbsent(transaction, db, [eventUserId(eventRef)]); // C6.1 root fence (every committing branch)
 
     let envelope;
     try {
@@ -335,6 +339,7 @@ async function reconcileEventTaskInTransaction(db, taskRef, now) {
 
     const contract = buildUpcomingContract(data.dispositionContract, "Ready to continue");
     validateDispositionContract("Upcoming", contract, now);
+    await assertDeletionAbsent(transaction, db, [userId]); // C6.1 root fence
     transaction.update(taskRef, {
       status: "Upcoming",
       dispositionContract: contract,
@@ -353,11 +358,9 @@ async function readState(db) {
   return snapshot.exists ? snapshot.data() : {};
 }
 
-function logCandidateError(kind, ref, error) {
-  console.error(`Disposition trigger ${kind} candidate failed`, {
-    path: ref.path,
-    error: String(error?.message || error)
-  });
+// C3 logging closure: fixed event code and a fixed kind only; never the path or the Error.
+function logCandidateError(kind) {
+  logger.warn("DISPOSITION_TRIGGER_CANDIDATE_FAILED", { kind });
 }
 
 async function processDateTasks(db, now, runId) {
@@ -378,7 +381,7 @@ async function processDateTasks(db, now, runId) {
     try {
       return await wakeDateTaskInTransaction(db, candidate.ref, now);
     } catch (error) {
-      logCandidateError("date", candidate.ref, error);
+      logCandidateError("date");
       return false;
     }
   });
@@ -405,7 +408,7 @@ async function processEvents(db, now, runId) {
     try {
       return await consumeEventEnvelopeInTransaction(db, candidate.ref, now);
     } catch (error) {
-      logCandidateError("event", candidate.ref, error);
+      logCandidateError("event");
       return "failed";
     }
   });
@@ -428,7 +431,7 @@ async function processEventTasks(db, now, runId) {
     try {
       return await reconcileEventTaskInTransaction(db, candidate.ref, now);
     } catch (error) {
-      logCandidateError("event-task", candidate.ref, error);
+      logCandidateError("event-task");
       return false;
     }
   });
