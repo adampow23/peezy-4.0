@@ -56,6 +56,14 @@ const ALERT_TWO_MISSED = "p2b1_two_missed_completions";
 const ALERT_OLDEST_DUE = "p2b1_oldest_due_over_900_seconds";
 const ALERT_THRESHOLD_CAPACITY = "p2b1_threshold_capacity_exceeded";
 const ALERT_THRESHOLD_SCAN = "p2b1_threshold_scan_capacity_exceeded";
+// C9.1.18 / C9.1.19 — durable refusals and retry admission
+const REFUSAL_REASONS = Object.freeze(["VALIDATION_REFUSAL", "AUTHORITY_REFUSAL", "IDENTITY_RACE", "TRANSACTION_RETRY_EXHAUSTED"]);
+const REFUSAL_MAX_COUNT = 8;
+const REFUSAL_MAX_BACKOFF = 16;
+const ORDINARY_RETRY_RESERVE = 10;
+const RETRY_SELECT = 50;
+const ALERT_FAIRNESS_PREFIX = "p2b1_fairness_capacity_exceeded_";
+const THRESHOLD_LANE_SPEC = Object.freeze({ lane: THRESHOLD_LANE, kind: "threshold", deadline: THRESHOLD_DEADLINE });
 
 class SchedulerInvariant extends Error {
   constructor(code, detail) { super(detail ? `${code}: ${detail}` : code); this.code = code; }
@@ -239,22 +247,27 @@ function leaseIsLive(data, now) {
   return Boolean(trimmed(data?.runId)) && expiresAt !== null && expiresAt.getTime() > now.getTime();
 }
 
+/** Transaction-form date wake over an already-read snapshot; the caller owns the transaction and any scheduler fence. */
+async function wakeDateTaskTx(db, transaction, ref, snapshot, now) {
+  if (!snapshot.exists || !shouldWakeDateTask(snapshot.data(), now)) return false;
+  const data = snapshot.data();
+  const contract = buildUpcomingContract(data.dispositionContract, "Ready to continue");
+  validateDispositionContract("Upcoming", contract, now);
+  await assertDeletionAbsent(transaction, db, [taskUserId(ref)]); // C6.1 root fence
+  transaction.update(ref, {
+    status: "Upcoming",
+    dispositionContract: contract,
+    snoozedUntil: deleteField()
+  });
+  return true;
+}
+
 async function wakeDateTaskInTransaction(db, ref, rawNow, run = null) {
   const now = toDate(rawNow);
   return db.runTransaction(async (transaction) => {
     if (run) await requireSchedulerFence(transaction, db, run);
     const snapshot = await transaction.get(ref);
-    if (!snapshot.exists || !shouldWakeDateTask(snapshot.data(), now)) return false;
-    const data = snapshot.data();
-    const contract = buildUpcomingContract(data.dispositionContract, "Ready to continue");
-    validateDispositionContract("Upcoming", contract, now);
-    await assertDeletionAbsent(transaction, db, [taskUserId(ref)]); // C6.1 root fence
-    transaction.update(ref, {
-      status: "Upcoming",
-      dispositionContract: contract,
-      snoozedUntil: deleteField()
-    });
-    return true;
+    return wakeDateTaskTx(db, transaction, ref, snapshot, now);
   });
 }
 
@@ -328,33 +341,38 @@ async function consumeEventEnvelopeInTransaction(db, eventRef, rawNow, run = nul
   });
 }
 
+/** Transaction-form event reconcile over an already-read task snapshot. */
+async function reconcileEventTaskTx(db, transaction, taskRef, taskSnapshot, now) {
+  if (!taskSnapshot.exists) return false;
+  const data = taskSnapshot.data();
+  const trigger = data?.dispositionContract?.next_trigger;
+  if (data?.status !== "Snoozed" || trigger?.kind !== "event" || trigger?.fired === true) {
+    return false;
+  }
+  const userId = taskUserId(taskRef);
+  const stateId = canonicalEventStateId(trimmed(trigger.event_name), trimmed(trigger.canonical_key));
+  const stateRef = db.doc(`users/${userId}/eventState/${stateId}`);
+  const stateSnapshot = await transaction.get(stateRef);
+  const highWater = stateSnapshot.exists ? stateSnapshot.data() : null;
+  if (!shouldWakeEventTask(data, highWater)) return false;
+
+  const contract = buildUpcomingContract(data.dispositionContract, "Ready to continue");
+  validateDispositionContract("Upcoming", contract, now);
+  await assertDeletionAbsent(transaction, db, [userId]); // C6.1 root fence
+  transaction.update(taskRef, {
+    status: "Upcoming",
+    dispositionContract: contract,
+    snoozedUntil: deleteField()
+  });
+  return true;
+}
+
 async function reconcileEventTaskInTransaction(db, taskRef, rawNow, run = null) {
   const now = toDate(rawNow);
   return db.runTransaction(async (transaction) => {
     if (run) await requireSchedulerFence(transaction, db, run);
     const taskSnapshot = await transaction.get(taskRef);
-    if (!taskSnapshot.exists) return false;
-    const data = taskSnapshot.data();
-    const trigger = data?.dispositionContract?.next_trigger;
-    if (data?.status !== "Snoozed" || trigger?.kind !== "event" || trigger?.fired === true) {
-      return false;
-    }
-    const userId = taskUserId(taskRef);
-    const stateId = canonicalEventStateId(trimmed(trigger.event_name), trimmed(trigger.canonical_key));
-    const stateRef = db.doc(`users/${userId}/eventState/${stateId}`);
-    const stateSnapshot = await transaction.get(stateRef);
-    const highWater = stateSnapshot.exists ? stateSnapshot.data() : null;
-    if (!shouldWakeEventTask(data, highWater)) return false;
-
-    const contract = buildUpcomingContract(data.dispositionContract, "Ready to continue");
-    validateDispositionContract("Upcoming", contract, now);
-    await assertDeletionAbsent(transaction, db, [userId]); // C6.1 root fence
-    transaction.update(taskRef, {
-      status: "Upcoming",
-      dispositionContract: contract,
-      snoozedUntil: deleteField()
-    });
-    return true;
+    return reconcileEventTaskTx(db, transaction, taskRef, taskSnapshot, now);
   });
 }
 
@@ -673,7 +691,7 @@ async function runPhase0(deps, run) {
   return { lane: PHASE0_CURSOR_KEY, examined: selected.length, settled: true, outcomes: outcomes.map((o) => o.value) };
 }
 
-/** Ordinary lanes: exact 50/51 pages over (status, kind, fired) with the date lanes bounded by runNow. */
+/** Ordinary lanes: (status, kind, fired, [at]) under the lane's select mask; the caller applies the page limit. */
 function ordinaryQuery(db, lane, run) {
   let query = db.collectionGroup("tasks")
     .where("status", "==", lane.status)
@@ -686,38 +704,39 @@ function ordinaryQuery(db, lane, run) {
   }
   const cursor = run.cursors[lane.lane];
   if (cursor) query = lane.kind === "date" ? query.startAfter(cursor.at, db.doc(cursor.path)) : query.startAfter(db.doc(cursor.path));
-  return query.limit(ORDINARY_SELECT + 1);
+  return query.select(...laneMask(lane));
 }
 
 /** H55 branch (C9.3.11 policy-absent rows): Snoozed lanes wake through the Phase 1 reducers; other policy-absent rows are definitive no-ops. */
-function ordinaryReducer(db, lane, candidate, run) {
-  if (lane.status !== "Snoozed") return Promise.resolve(false);
-  return lane.kind === "date"
-    ? wakeDateTaskInTransaction(db, candidate.ref, run.runNow, run)
-    : reconcileEventTaskInTransaction(db, candidate.ref, run.runNow, run);
+function ordinaryReducerFor(lane, run) {
+  return async (transaction, snapshot) => {
+    if (lane.status !== "Snoozed") return { woke: false };
+    const now = toDate(run.runNow);
+    const woke = lane.kind === "date"
+      ? await wakeDateTaskTx(run.deps.db, transaction, snapshot.ref, snapshot, now)
+      : await reconcileEventTaskTx(run.deps.db, transaction, snapshot.ref, snapshot, now);
+    return { woke };
+  };
 }
 
-async function runOrdinaryLane(deps, run, lane) {
-  const { db } = deps;
-  const snapshot = await ordinaryQuery(db, lane, run).get();
-  const selected = snapshot.docs.slice(0, ORDINARY_SELECT);
-  const outcomes = await runWaves(run, selected, lane.deadline, (candidate) => ordinaryReducer(db, lane, candidate, run));
-  if (outcomes.some((o) => o !== undefined && !o.ok && o.code === "SCHEDULER_FENCE_LOST")) throw new SchedulerInvariant("SCHEDULER_FENCE_LOST");
-  const settled = outcomes.every((o) => o !== undefined && o.ok);
-  if (!settled) return { lane: lane.lane, examined: selected.length, settled: false, woke: outcomes.filter((o) => o && o.ok && o.value === true).length };
-  const last = selected.at(-1);
-  if (snapshot.docs.length > ORDINARY_SELECT && last) {
-    const cursor = { path: last.ref.path };
-    if (lane.kind === "date") cursor.at = last.get("dispositionContract.next_trigger.at");
-    await writeCursor(deps, run, lane.lane, cursor);
-  } else if (run.cursors[lane.lane]) {
-    await writeCursor(deps, run, lane.lane, null);
-  }
-  return { lane: lane.lane, examined: selected.length, settled: true, woke: outcomes.filter((o) => o.value === true).length };
+/**
+ * C9.3.11 threshold-scan reread over the complete document: owner fence, exact armed projection due at runNow. The
+ * intent-producing branches require the task's current policy state, deadline evidence, and the intent registry
+ * (S6 / I10); with none of those surfaces present the row is a definitive no-op, and a stale or attended projection
+ * is refreshed only by its owning reducer.
+ */
+function thresholdReducerFor(run) {
+  return async (transaction, snapshot) => {
+    await assertDeletionAbsent(transaction, run.deps.db, [taskUserId(snapshot.ref)]);
+    const projection = snapshot.get("thresholdProjection");
+    const at = projection && projection.threshold_at;
+    if (!projection || projection.state !== "armed" || !isMillisTimestamp(at) || at.toMillis() > run.runNow.toMillis()) return { woke: false };
+    return { woke: false, thresholdAt: at };
+  };
 }
 
 // ---------------------------------------------------------------------------
-// C9.1.10 / C9.1.12 / C9.1.15 — due observation, catch-up, threshold fixed-point scan
+// C9.1.10 / C9.1.12 — due observation and catch-up
 // ---------------------------------------------------------------------------
 
 /** The exact candidate superset: armed projections due at or before `cutoff`. */
@@ -780,84 +799,319 @@ function decideCatchUp(run, observation, eligibleThresholdRefusalCount) {
   return { catchUp, thresholdAdmissionCapacity, thresholdRefusalCeiling: catchUp ? 200 : 100 };
 }
 
-/** Query-captured identity under the select mask (C9.1.17): generation, instance, update time, and the projection members. */
-function thresholdIdentity(snapshot) {
-  const at = snapshot.get("thresholdProjection.threshold_at");
-  return {
-    epoch: snapshot.get("task_generation_epoch") ?? null,
-    instance: snapshot.get("task_instance_id") ?? null,
-    updateTime: isMillisTimestamp(snapshot.updateTime) ? snapshot.updateTime.toMillis() : null,
-    state: snapshot.get("thresholdProjection.state") ?? null,
-    thresholdAt: isMillisTimestamp(at) ? at.toMillis() : null
-  };
+// ---------------------------------------------------------------------------
+// C9.1.18 / C9.1.19 / C9.1.20 — durable refusals, eligible retry admission, cursor-pass branches
+// ---------------------------------------------------------------------------
+
+class RefusalSignal extends Error {
+  constructor(reasonCode) { super(reasonCode); this.refusalReason = reasonCode; }
 }
 
-function thresholdCandidate(snapshot) {
-  const identity = thresholdIdentity(snapshot);
-  return { ref: snapshot.ref, identity, fingerprint: canonicalJSON(identity) };
+function sha256Hex(text) { return createHash("sha256").update(text).digest("hex"); }
+
+function refusalId(lane, candidatePath) {
+  return `srf1_${sha256Hex(canonicalJSON({ domain: "scheduler_refusal.v1", lane, candidate_path: candidatePath })).slice(0, 40)}`;
 }
 
-/**
- * C9.1.17 / C9.3.11 threshold-scan reread: fenced, complete document by path, captured identity compared before any
- * mutation. The intent-producing branches require the task's current policy state, deadline evidence, and the intent
- * registry (S6 / I10); with none of those surfaces present the row is a definitive no-op, and a stale or attended
- * projection is refreshed only by its owning reducer.
- */
-async function thresholdCandidateInTransaction(db, candidate, run) {
-  return db.runTransaction(async (transaction) => {
-    await requireSchedulerFence(transaction, db, run);
-    const snapshot = await transaction.get(candidate.ref);
-    if (!snapshot.exists) return { kind: "absent" };
-    const current = thresholdIdentity(snapshot);
-    if (canonicalJSON({ ...current, state: null, thresholdAt: null }) !== canonicalJSON({ ...candidate.identity, state: null, thresholdAt: null })) return { kind: "identity_race" };
-    await assertDeletionAbsent(transaction, db, [taskUserId(candidate.ref)]);
-    const projection = snapshot.get("thresholdProjection");
-    const at = projection && projection.threshold_at;
-    if (!projection || projection.state !== "armed" || !isMillisTimestamp(at) || at.toMillis() > run.runNow.toMillis()) return { kind: "noop" };
-    return { kind: "noop", thresholdAt: at };
+function refusalRefFor(db, lane, candidatePath) {
+  const parts = typeof candidatePath === "string" ? candidatePath.split("/") : [];
+  if (parts.length !== 4 || parts[0] !== "users" || parts[2] !== "tasks" || !parts[1] || !parts[3]) throw new SchedulerInvariant("SCHEDULER_REFUSAL_INVARIANT", "candidatePath");
+  return db.doc(`users/${parts[1]}/schedulerRefusals/${refusalId(lane.lane, candidatePath)}`);
+}
+
+/** C9.1.17 select() mask per lane: exactly filter fields, order fields, task_generation_epoch, task_instance_id. */
+function laneMask(lane) {
+  if (lane.kind === "threshold") return THRESHOLD_MASK;
+  return ["status", "dispositionContract.next_trigger.kind", "dispositionContract.next_trigger.fired", ...(lane.kind === "date" ? ["dispositionContract.next_trigger.at"] : []), "task_generation_epoch", "task_instance_id"];
+}
+
+/** The lane's complete field-mask result with explicit missing tags. */
+function selectedIdentity(lane, snapshot) {
+  const identity = {};
+  for (const field of laneMask(lane)) {
+    const value = snapshot.get(field);
+    identity[field] = value === undefined ? { missing: true } : value;
+  }
+  return identity;
+}
+
+function documentUpdateTime(snapshot) {
+  const updateTime = snapshot.updateTime;
+  return isMillisTimestamp(updateTime) ? { seconds: updateTime.seconds, nanos: updateTime.nanoseconds } : { missing: true };
+}
+
+/** C9.1.18 — SHA-256(TaskCanonicalV1({lane,candidate_path,document_update_time,selected_identity})); no domain member. */
+function candidateFingerprint(lane, snapshot) {
+  return sha256Hex(canonicalJSON({ lane: lane.lane, candidate_path: snapshot.ref.path, document_update_time: documentUpdateTime(snapshot), selected_identity: selectedIdentity(lane, snapshot) }));
+}
+
+/** C9.1.18 — exact record grammar and the valid-row invariants; any violation fails closed. */
+function validateRefusal(record, lane, candidatePath, id) {
+  const invariant = (detail) => new SchedulerInvariant("SCHEDULER_REFUSAL_INVARIANT", detail);
+  if (record === null || typeof record !== "object" || Array.isArray(record)) throw invariant("map");
+  const keys = Object.keys(record).sort().join(",");
+  if (keys !== "candidateFingerprint,candidatePath,firstRefusedAt,firstRefusedOrdinal,lane,lastAttemptOrdinal,lastRefusedAt,nextEligibleOrdinal,reasonCode,refusalCount,saturated,schemaVersion") throw invariant("members");
+  if (record.schemaVersion !== 1) throw invariant("schemaVersion");
+  if (record.lane !== lane.lane || record.candidatePath !== candidatePath || id !== refusalId(lane.lane, candidatePath)) throw invariant("identity");
+  if (typeof record.candidateFingerprint !== "string" || !/^[0-9a-f]{64}$/.test(record.candidateFingerprint)) throw invariant("fingerprint");
+  if (!REFUSAL_REASONS.includes(record.reasonCode)) throw invariant("reasonCode");
+  for (const k of ["firstRefusedOrdinal", "lastAttemptOrdinal", "nextEligibleOrdinal"]) if (!Number.isSafeInteger(record[k]) || record[k] < 0) throw invariant(k);
+  if (!Number.isSafeInteger(record.refusalCount) || record.refusalCount < 1 || record.refusalCount > REFUSAL_MAX_COUNT) throw invariant("refusalCount");
+  if (record.saturated !== (record.refusalCount === REFUSAL_MAX_COUNT)) throw invariant("saturated");
+  if (!(record.firstRefusedOrdinal <= record.lastAttemptOrdinal && record.lastAttemptOrdinal < record.nextEligibleOrdinal)) throw invariant("ordinals");
+  if (!isMillisTimestamp(record.firstRefusedAt) || !isMillisTimestamp(record.lastRefusedAt) || record.firstRefusedAt.toMillis() > record.lastRefusedAt.toMillis()) throw invariant("times");
+  return record;
+}
+
+function refusalReasonOf(error) {
+  if (error instanceof RefusalSignal) return error.refusalReason;
+  if (error && error.details && error.details.reason === "ACCOUNT_DELETION_FENCED") return "AUTHORITY_REFUSAL";
+  if (error && error.code === 10) return "TRANSACTION_RETRY_EXHAUSTED";
+  return "VALIDATION_REFUSAL";
+}
+
+/** Branch (2): exact refusal create/update after rereading the candidate identity (its own fenced bookkeeping transaction). */
+async function recordRefusal(deps, run, lane, ref, reasonCode) {
+  const { db } = deps;
+  const rref = refusalRefFor(db, lane, ref.path);
+  return fenced(deps, run, async (transaction) => {
+    const refusalSnapshot = await transaction.get(rref);
+    const snapshot = await transaction.get(ref);
+    const existing = refusalSnapshot.exists ? validateRefusal(refusalSnapshot.data(), lane, ref.path, rref.id) : null;
+    if (!snapshot.exists) { if (existing) transaction.delete(rref); return { kind: "absent" }; }
+    const fingerprint = candidateFingerprint(lane, snapshot);
+    const ordinal = run.runOrdinal;
+    const now = run.runNow;
+    let next;
+    if (existing && existing.candidateFingerprint === fingerprint && existing.reasonCode === reasonCode) {
+      if (existing.lastAttemptOrdinal >= ordinal) throw new SchedulerInvariant("SCHEDULER_REFUSAL_INVARIANT", "nonmonotonic");
+      const refusalCount = Math.min(REFUSAL_MAX_COUNT, existing.refusalCount + 1);
+      next = { ...existing, lastAttemptOrdinal: ordinal, lastRefusedAt: now, refusalCount, saturated: refusalCount === REFUSAL_MAX_COUNT, nextEligibleOrdinal: ordinal + Math.min(2 ** (refusalCount - 1), REFUSAL_MAX_BACKOFF) };
+    } else {
+      next = { schemaVersion: 1, lane: lane.lane, candidatePath: ref.path, candidateFingerprint: fingerprint, firstRefusedOrdinal: ordinal, lastAttemptOrdinal: ordinal, nextEligibleOrdinal: ordinal + 1, refusalCount: 1, saturated: false, reasonCode, firstRefusedAt: now, lastRefusedAt: now };
+    }
+    validateRefusal(next, lane, ref.path, rref.id);
+    transaction.set(rref, next);
+    return { kind: "refused", reasonCode, refusalCount: next.refusalCount };
   });
 }
 
-/** C9.1.14 / C9.1.15 — run-local 50/51 paging to a fixed point; no trigger-state cursor; capacity consumed → scan without mutation. */
-async function runThresholdLane(deps, run, observation, capacity) {
+/**
+ * Fresh admission (C9.1.19/C9.1.20): fenced; reads the deterministic refusal path and the complete candidate; branch (3)
+ * for an absent candidate, branch (4) for an extant same-fingerprint refusal, IDENTITY_RACE when the captured identity
+ * moved, obsolete stale-fingerprint authority removed before the candidate consumes this fresh slot; any refusal
+ * becomes branch (2) bookkeeping.
+ */
+async function admitFresh(deps, run, lane, candidate, reducer) {
   const { db } = deps;
-  const cutoff = observation.observedAt;
+  const rref = refusalRefFor(db, lane, candidate.ref.path);
+  try {
+    return await db.runTransaction(async (transaction) => {
+      await requireSchedulerFence(transaction, db, run);
+      const refusalSnapshot = await transaction.get(rref);
+      const snapshot = await transaction.get(candidate.ref);
+      const refusal = refusalSnapshot.exists ? validateRefusal(refusalSnapshot.data(), lane, candidate.ref.path, rref.id) : null;
+      if (!snapshot.exists) { if (refusal) transaction.delete(rref); return { kind: "absent" }; }
+      const current = candidateFingerprint(lane, snapshot);
+      if (refusal && refusal.candidateFingerprint === current) return { kind: "extant" };
+      if (current !== candidate.fingerprint) throw new RefusalSignal("IDENTITY_RACE");
+      if (refusal) transaction.delete(rref);
+      const result = await reducer(transaction, snapshot);
+      return { kind: result && result.woke ? "woke" : "noop", thresholdAt: result ? result.thresholdAt : undefined };
+    });
+  } catch (error) {
+    if (error instanceof SchedulerInvariant) throw error;
+    return recordRefusal(deps, run, lane, candidate.ref, refusalReasonOf(error));
+  }
+}
+
+function eligibleRetryQuery(db, lane, ordinal) {
+  return db.collectionGroup("schedulerRefusals")
+    .where("lane", "==", lane.lane)
+    .where("nextEligibleOrdinal", "<=", ordinal)
+    .orderBy("nextEligibleOrdinal", "asc").orderBy("firstRefusedOrdinal", "asc").orderBy("lastAttemptOrdinal", "asc").orderBy(documentIdField(), "asc");
+}
+
+/** Ordered eligible pages (run-local 50/51, no persisted cursor) until `wanted` deduplicated refusals are collected. */
+async function collectRetries(db, lane, ordinal, wanted) {
+  let collected = [];
+  const seen = new Set();
+  let cursor = null;
+  while (collected.length < wanted) {
+    let query = eligibleRetryQuery(db, lane, ordinal);
+    if (cursor) query = query.startAfter(cursor.nextEligibleOrdinal, cursor.firstRefusedOrdinal, cursor.lastAttemptOrdinal, cursor.ref);
+    const page = await query.limit(RETRY_SELECT + 1).get();
+    const selected = page.docs.slice(0, RETRY_SELECT);
+    for (const doc of selected) {
+      const key = `${String(doc.get("candidatePath"))}\n${String(doc.get("candidateFingerprint"))}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      collected = [...collected, doc];
+      if (collected.length >= wanted) break;
+    }
+    if (page.docs.length <= RETRY_SELECT || selected.length === 0) break;
+    const last = selected.at(-1);
+    cursor = { nextEligibleOrdinal: last.get("nextEligibleOrdinal"), firstRefusedOrdinal: last.get("firstRefusedOrdinal"), lastAttemptOrdinal: last.get("lastAttemptOrdinal"), ref: last.ref };
+  }
+  return collected;
+}
+
+/** Retry reread: refusal and candidate together; missing/changed deletes the obsolete authority; success or definitive no-op deletes atomically; another refusal updates it. */
+async function retryRefusal(deps, run, lane, refusalDoc, reducer) {
+  const { db } = deps;
+  const candidatePath = refusalDoc.get("candidatePath");
+  const rref = refusalRefFor(db, lane, candidatePath);
+  if (rref.path !== refusalDoc.ref.path) throw new SchedulerInvariant("SCHEDULER_REFUSAL_INVARIANT", "derived path");
+  const ref = db.doc(candidatePath);
+  try {
+    return await db.runTransaction(async (transaction) => {
+      await requireSchedulerFence(transaction, db, run);
+      const refusalSnapshot = await transaction.get(rref);
+      if (!refusalSnapshot.exists) return { kind: "retry_missing" };
+      const refusal = validateRefusal(refusalSnapshot.data(), lane, candidatePath, rref.id);
+      const snapshot = await transaction.get(ref);
+      if (!snapshot.exists) { transaction.delete(rref); return { kind: "absent" }; }
+      if (candidateFingerprint(lane, snapshot) !== refusal.candidateFingerprint) { transaction.delete(rref); return { kind: "changed" }; }
+      const result = await reducer(transaction, snapshot);
+      transaction.delete(rref);
+      return { kind: result && result.woke ? "woke" : "noop", thresholdAt: result ? result.thresholdAt : undefined };
+    });
+  } catch (error) {
+    if (error instanceof SchedulerInvariant) throw error;
+    return recordRefusal(deps, run, lane, ref, refusalReasonOf(error));
+  }
+}
+
+/** C9.1.11 FAIRNESS_CAPACITY_EXCEEDED: eligible count above the applicable ceiling (100 contiguous, 200 catch-up); never the observed count. */
+async function observeFairness(deps, run, laneToken, eligibleCount, result) {
+  const alertId = ALERT_FAIRNESS_PREFIX + laneToken;
+  if (eligibleCount > run.refusalCeiling) {
+    await observeCondition(deps, run, alertId, "FAIRNESS_CAPACITY_EXCEEDED", { eligibleRefusalCount: eligibleCount, refusalCapacity: run.refusalCeiling }, laneToken);
+    result.fairnessExceeded = true;
+    run.objective = false;
+  } else {
+    await clearCondition(deps, run, alertId);
+  }
+}
+
+/** Folds wave outcomes into the lane result and the run-local settled map; returns whether the page settled. */
+function tally(outcomes, items, pathOf, settled, result, source) {
+  let unsettled = false;
+  let invariant = null;
+  outcomes.forEach((outcome, index) => {
+    if (outcome === undefined || !outcome.ok) { unsettled = true; if (outcome && outcome.code) invariant = outcome.code; return; }
+    const path = pathOf(items[index]);
+    const kind = outcome.value.kind;
+    if (source === "retried") result.retried += 1;
+    if (kind === "woke" || kind === "noop" || kind === "absent") {
+      settled.set(path, null);
+      if (kind === "woke") { result.woke += 1; if (outcome.value.thresholdAt) result.committed = [...result.committed, { path, thresholdAt: outcome.value.thresholdAt }]; }
+      if (source === "fresh") result.admitted += 1;
+    } else if (kind === "refused") { result.refused += 1; settled.set(path, null); }
+    else if (kind === "extant") { result.extant += 1; settled.set(path, null); }
+  });
+  return { unsettled, invariant };
+}
+
+function laneResult(lane, eligibleRefusalCount, retryReserve) {
+  return { lane: lane.lane, eligibleRefusalCount, retryReserve, retried: 0, admitted: 0, examined: 0, extant: 0, refused: 0, woke: 0, committed: [], settled: false };
+}
+
+function isSettled(settled, path, fingerprint) {
+  if (!settled.has(path)) return false;
+  const known = settled.get(path);
+  return known === null || known === fingerprint;
+}
+
+/** Ordinary lane: retries first (reserve 10 of 50, both transfer directions), then the fresh page shrunk by the retries admitted; checkpoint on the last fresh row iff one more exists. */
+async function runOrdinaryLane(deps, run, lane) {
+  const { db } = deps;
+  const ceiling = ORDINARY_SELECT;
+  const eligible = await eligibleRefusalCount(db, lane.lane, run.runOrdinal);
+  const result = laneResult(lane, eligible, ORDINARY_RETRY_RESERVE);
+  await observeFairness(deps, run, lane.lane, eligible, result);
+  const retries = await collectRetries(db, lane, run.runOrdinal, Math.min(eligible, ceiling));
+  let retryShare = Math.min(ORDINARY_RETRY_RESERVE, retries.length);
+  const freshLimit = ceiling - retryShare;
+  const snapshot = await ordinaryQuery(db, lane, run).limit(freshLimit + 1).get();
+  const selected = snapshot.docs.slice(0, freshLimit);
+  result.examined = selected.length;
+  if (selected.length < freshLimit) retryShare = Math.min(retries.length, ceiling - selected.length);
   const settled = new Map();
-  let committed = [];
-  let pages = [];
-  let admitted = 0;
-  let passes = 0;
-  const report = (extra) => ({ lane: THRESHOLD_LANE, admitted, passes, pages, ...extra });
+  const reducer = ordinaryReducerFor(lane, run);
+  const retryItems = retries.slice(0, retryShare);
+  const retryOutcomes = await runWaves(run, retryItems, lane.deadline, (doc) => retryRefusal(deps, run, lane, doc, reducer));
+  if (retryOutcomes.some((o) => o !== undefined && !o.ok && o.code === "SCHEDULER_FENCE_LOST")) throw new SchedulerInvariant("SCHEDULER_FENCE_LOST");
+  const retryTally = tally(retryOutcomes, retryItems, (doc) => doc.get("candidatePath"), settled, result, "retried");
+  const candidates = selected.map((doc) => ({ ref: doc.ref, fingerprint: candidateFingerprint(lane, doc) })).filter((c) => !isSettled(settled, c.ref.path, c.fingerprint));
+  const freshOutcomes = await runWaves(run, candidates, lane.deadline, (candidate) => admitFresh(deps, run, lane, candidate, reducer));
+  if (freshOutcomes.some((o) => o !== undefined && !o.ok && o.code === "SCHEDULER_FENCE_LOST")) throw new SchedulerInvariant("SCHEDULER_FENCE_LOST");
+  const freshTally = tally(freshOutcomes, candidates, (c) => c.ref.path, settled, result, "fresh");
+  const invariant = retryTally.invariant || freshTally.invariant;
+  if (invariant) emit(deps, invariant);
+  if (retryTally.unsettled || freshTally.unsettled) return result;
+  const last = selected.at(-1);
+  if (snapshot.docs.length > freshLimit && last) {
+    const cursor = { path: last.ref.path };
+    if (lane.kind === "date") cursor.at = last.get("dispositionContract.next_trigger.at");
+    await writeCursor(deps, run, lane.lane, cursor);
+  } else if (run.cursors[lane.lane]) {
+    await writeCursor(deps, run, lane.lane, null);
+  }
+  result.settled = true;
+  return result;
+}
+
+/** C9.1.14 / C9.1.15 / C9.1.19 — threshold lane: retries from half the ceiling first, then run-local 50/51 paging to a fixed point; leftover capacity transfers back to retries. */
+async function runThresholdLane(deps, run, observation, capacity, eligible) {
+  const { db } = deps;
+  const lane = THRESHOLD_LANE_SPEC;
+  const cutoff = observation.observedAt;
+  const reserve = capacity / 2;
+  const result = laneResult(lane, eligible, reserve);
+  result.passes = 0;
+  result.pages = [];
+  await observeFairness(deps, run, lane.lane, eligible, result);
+  const settled = new Map();
+  const reducer = thresholdReducerFor(run);
+  const retries = await collectRetries(db, lane, run.runOrdinal, Math.min(eligible, capacity));
+  const runRetries = async (items) => {
+    const outcomes = await runWaves(run, items, lane.deadline, (doc) => retryRefusal(deps, run, lane, doc, reducer));
+    if (outcomes.some((o) => o !== undefined && !o.ok && o.code === "SCHEDULER_FENCE_LOST")) throw new SchedulerInvariant("SCHEDULER_FENCE_LOST");
+    const t = tally(outcomes, items, (doc) => doc.get("candidatePath"), settled, result, "retried");
+    if (t.invariant) emit(deps, t.invariant);
+    return !t.unsettled;
+  };
+  const firstShare = Math.min(reserve, retries.length);
+  if (!(await runRetries(retries.slice(0, firstShare)))) return result;
+  const consumed = () => result.retried + result.admitted + result.refused;
   const scanExceeded = async () => {
     await observeCondition(deps, run, ALERT_THRESHOLD_SCAN, "THRESHOLD_SCAN_CAPACITY_EXCEEDED", { thresholdCutoff: cutoff, candidateCountLowerBound: capacity + 1, admissionCapacity: capacity });
-    return report({ settled: false, scanCapacityExceeded: true });
+    result.scanCapacityExceeded = true;
+    return result;
   };
   for (;;) {
-    passes += 1;
+    result.passes += 1;
     let cursor = null;
     let newInPass = 0;
     for (;;) {
-      if (Number(elapsedSeconds(run)) >= THRESHOLD_DEADLINE) return report({ settled: false, deadline: true });
+      if (Number(elapsedSeconds(run)) >= THRESHOLD_DEADLINE) { result.deadline = true; return result; }
       let query = dueSupersetQuery(db, cutoff).orderBy("thresholdProjection.threshold_at", "asc").orderBy(documentIdField(), "asc").select(...THRESHOLD_MASK);
       if (cursor) query = query.startAfter(cursor.at, db.doc(cursor.path));
       const page = await query.limit(THRESHOLD_SELECT + 1).get();
       const selected = page.docs.slice(0, THRESHOLD_SELECT);
-      pages = [...pages, selected.length];
-      const fresh = selected.map(thresholdCandidate).filter((c) => settled.get(c.ref.path) !== c.fingerprint);
-      if (fresh.length > 0 && admitted >= capacity) return scanExceeded();
-      const admissible = fresh.slice(0, capacity - admitted);
-      const outcomes = await runWaves(run, admissible, THRESHOLD_DEADLINE, (candidate) => thresholdCandidateInTransaction(db, candidate, run));
+      result.pages = [...result.pages, selected.length];
+      const fresh = selected.map((doc) => ({ ref: doc.ref, fingerprint: candidateFingerprint(lane, doc) })).filter((c) => !isSettled(settled, c.ref.path, c.fingerprint));
+      const remaining = capacity - consumed();
+      if (fresh.length > 0 && remaining <= 0) return scanExceeded();
+      const admissible = fresh.slice(0, Math.max(0, remaining));
+      const outcomes = await runWaves(run, admissible, THRESHOLD_DEADLINE, (candidate) => admitFresh(deps, run, lane, candidate, reducer));
       if (outcomes.some((o) => o !== undefined && !o.ok && o.code === "SCHEDULER_FENCE_LOST")) throw new SchedulerInvariant("SCHEDULER_FENCE_LOST");
-      let unsettled = false;
-      outcomes.forEach((o, i) => {
-        if (o === undefined || !o.ok || o.value.kind === "identity_race") { unsettled = true; return; }
-        const candidate = admissible[i];
-        settled.set(candidate.ref.path, candidate.fingerprint);
-        admitted += 1;
-        newInPass += 1;
-        if (o.value.kind === "woke") committed = [...committed, { path: candidate.ref.path, thresholdAt: o.value.thresholdAt }];
-      });
-      if (unsettled) return report({ settled: false });
+      const before = result.admitted + result.refused + result.extant;
+      const t = tally(outcomes, admissible, (c) => c.ref.path, settled, result, "fresh");
+      if (t.invariant) emit(deps, t.invariant);
+      if (t.unsettled) return result;
+      newInPass += result.admitted + result.refused + result.extant - before;
       if (fresh.length > admissible.length) return scanExceeded();
       if (page.docs.length > THRESHOLD_SELECT) {
         const last = selected.at(-1);
@@ -866,8 +1120,13 @@ async function runThresholdLane(deps, run, observation, capacity) {
     }
     if (newInPass === 0) break;
   }
+  const leftover = capacity - consumed();
+  if (leftover > 0 && retries.length > firstShare) {
+    if (!(await runRetries(retries.slice(firstShare, firstShare + leftover)))) return result;
+  }
   await clearCondition(deps, run, ALERT_THRESHOLD_SCAN);
-  return report({ settled: true, committed });
+  result.settled = true;
+  return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -928,9 +1187,12 @@ async function runDispositionScheduler(event, deps) {
     const observation = await observeDue(deps, run);
     report.dueObservation = observation;
     report.eligibleThresholdRefusalCount = await eligibleRefusalCount(deps.db, THRESHOLD_LANE, run.runOrdinal);
-    const { catchUp, thresholdAdmissionCapacity } = decideCatchUp(run, observation, report.eligibleThresholdRefusalCount);
+    const { catchUp, thresholdAdmissionCapacity, thresholdRefusalCeiling } = decideCatchUp(run, observation, report.eligibleThresholdRefusalCount);
     report.catchUp = catchUp;
     report.thresholdAdmissionCapacity = thresholdAdmissionCapacity;
+    report.thresholdRefusalCeiling = thresholdRefusalCeiling;
+    run.refusalCeiling = thresholdRefusalCeiling;
+    run.objective = true;
     report.objective = true;
     // C9.1.11 — global condition slots proved present or absent by this complete observation
     if (observation.oldestDueAgeSeconds > OLDEST_DUE_ALERT_SECONDS) {
@@ -944,7 +1206,7 @@ async function runDispositionScheduler(event, deps) {
     } else {
       await clearCondition(deps, run, ALERT_THRESHOLD_CAPACITY);
     }
-    const threshold = await runThresholdLane(deps, run, observation, thresholdAdmissionCapacity);
+    const threshold = await runThresholdLane(deps, run, observation, thresholdAdmissionCapacity, report.eligibleThresholdRefusalCount);
     report.lanes = [...report.lanes, threshold];
     if (threshold.scanCapacityExceeded) { report.objective = false; return report; }
     if (!threshold.settled) { allSettled = false; report.objective = false; }
@@ -953,6 +1215,7 @@ async function runDispositionScheduler(event, deps) {
       report.lanes = [...report.lanes, result];
       if (!result.settled) allSettled = false;
     }
+    report.objective = report.objective && run.objective;
     if (!allSettled) { report.objective = false; return report; }
     await completeScheduler(deps, run, threshold.committed);
     emit(deps, "DISPOSITION_SCHEDULER_COMPLETED", { runOrdinal: run.runOrdinal });
@@ -1013,7 +1276,14 @@ module.exports = {
   observeDue,
   decideCatchUp,
   runThresholdLane,
-  thresholdCandidateInTransaction,
+  refusalId,
+  candidateFingerprint,
+  validateRefusal,
+  recordRefusal,
+  collectRetries,
+  laneMask,
+  ORDINARY_LANES,
+  THRESHOLD_LANE_SPEC,
   THRESHOLD_LANE,
   THRESHOLD_MASK,
   runDispositionScheduler,

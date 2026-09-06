@@ -179,8 +179,10 @@ function fakeFirestore({ docs: initial = {}, clock } = {}) {
     return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, resolveSentinels(v)]));
   }
 
+  let batchCounter = 0;
   function applyOps(ops, readVersions) {
-    for (const op of ops) if (op.data !== undefined) op.data = resolveSentinels(op.data);
+    const batch = ++batchCounter; // S3 I9c: every commit (transaction or single write) tags its writes with one batch id
+    for (const op of ops) { if (op.data !== undefined) op.data = resolveSentinels(op.data); op.batch = batch; }
     for (const [path, version] of readVersions || []) {
       if ((versions.get(path) || 0) !== version) {
         const error = new Error(`contention on ${path}`);
