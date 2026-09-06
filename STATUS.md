@@ -1,6 +1,6 @@
 # STATUS — Phase 2 at the S3 close (2026-09-06)
 
-Authority: `docs/plans/PHASE2_CONTRACT.md` (sha256 `1ab1c970c6058e1dc67ad40a0703bec8099e244e879f4362c96f855a9247d84d`). Project state: `PEEZY_STATE.md`. Workflow: `PHASE2_WORKFLOW_v2.md`. This file is the one-page snapshot a reader needs before opening either; it is rewritten at every slice close.
+Authority: `docs/plans/PHASE2_CONTRACT.md` (sha256 `f675caaf93dc0203cbceb57ad32a687843c44de1de109f8cb4b0554a6d9e6c78`). Project state: `PEEZY_STATE.md`. Workflow: `PHASE2_WORKFLOW_v2.md`. This file is the one-page snapshot a reader needs before opening either; it is rewritten at every slice close.
 
 ## Where Phase 2 stands
 

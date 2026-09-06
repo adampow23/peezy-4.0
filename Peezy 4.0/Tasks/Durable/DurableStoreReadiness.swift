@@ -13,6 +13,33 @@ enum DurableStore: String, CaseIterable, Sendable, Codable {
     case route, handoff, reset, workflow
 }
 
+/// S4-CD1: the recovery surface's store vocabulary — the four durable stores plus
+/// the dose store (`peezy.{uid}.dailyDose.v2`), which is never a `ReadinessVector`
+/// member and blocks only the reset's dose cleanup.
+enum RecoveryStore: String, CaseIterable, Sendable, Codable, Hashable {
+    case route, handoff, reset, workflow, dose
+
+    init(_ store: DurableStore) {
+        switch store {
+        case .route: self = .route
+        case .handoff: self = .handoff
+        case .reset: self = .reset
+        case .workflow: self = .workflow
+        }
+    }
+
+    /// The durable store this projects onto; nil for the dose store.
+    var durable: DurableStore? {
+        switch self {
+        case .route: return .route
+        case .handoff: return .handoff
+        case .reset: return .reset
+        case .workflow: return .workflow
+        case .dose: return nil
+        }
+    }
+}
+
 enum StoreReadiness: Sendable, Equatable {
     case loading
     case ready
@@ -117,18 +144,23 @@ enum BlockedSnapshot: Sendable, Equatable {
     case storageIOUnavailable(store: DurableStore, errorCode: StorageIOErrorCode)
     case installationAuthorityUnavailable(errorCode: KeychainUnavailableCode)
     case installationAuthorityInvalid
+    /// S4-CD1: the `peezy.{uid}.dailyDose.v2` bytes fail the C9.5.16 grammar; every byte and
+    /// every legacy key is untouched; the sole action copies the bytes aside before removal.
+    case doseMalformed(recoveryStateDigest: String, bytesSHA256: String, byteLength: Int)
 
-    var store: DurableStore {
+    var store: RecoveryStore {
         switch self {
         case let .quarantined(store, _, _, _), let .collision(store, _, _, _),
              let .recoveredPendingCleanup(store, _), let .quarantineConflict(store, _, _, _),
              let .receiptMismatch(store, _, _), let .storageIOUnavailable(store, _):
-            return store
+            return RecoveryStore(store)
         case .resetEpochConflict:
             return .reset
         case .foreignInstallation, .foreignResolutionRequired,
              .installationAuthorityUnavailable, .installationAuthorityInvalid:
             return .handoff
+        case .doseMalformed:
+            return .dose
         }
     }
 
@@ -145,6 +177,7 @@ enum BlockedSnapshot: Sendable, Equatable {
         case .storageIOUnavailable: return "storage_io_unavailable"
         case .installationAuthorityUnavailable: return "installation_authority_unavailable"
         case .installationAuthorityInvalid: return "installation_authority_invalid"
+        case .doseMalformed: return "malformed"
         }
     }
 
@@ -166,6 +199,8 @@ enum BlockedSnapshot: Sendable, Equatable {
             return ["retry"]
         case .installationAuthorityInvalid:
             return ["repair_installation_identity"]
+        case .doseMalformed:
+            return ["quarantine_dose_bytes"]
         }
     }
 
@@ -174,7 +209,8 @@ enum BlockedSnapshot: Sendable, Equatable {
         case let .quarantined(_, digest, _, _), let .collision(_, digest, _, _),
              let .recoveredPendingCleanup(_, digest), let .quarantineConflict(_, digest, _, _),
              let .receiptMismatch(_, digest, _), let .resetEpochConflict(digest, _, _),
-             let .foreignInstallation(digest, _), let .foreignResolutionRequired(digest, _, _, _):
+             let .foreignInstallation(digest, _), let .foreignResolutionRequired(digest, _, _, _),
+             let .doseMalformed(digest, _, _):
             return digest
         case .storageIOUnavailable, .installationAuthorityUnavailable, .installationAuthorityInvalid:
             return nil
@@ -187,9 +223,239 @@ enum RecoveryResult: Sendable, Equatable {
     case ready
     case blocked(BlockedSnapshot)
     /// `{schemaVersion:1,reason:"RECOVERY_BUSY",store}`
-    case busy(store: DurableStore)
+    case busy(store: RecoveryStore)
     /// `{schemaVersion:1,reason:"RECOVERY_ACTION_UNAVAILABLE",store}`
-    case unavailable(store: DurableStore)
+    case unavailable(store: RecoveryStore)
+}
+
+// MARK: - S4 recovery observation, attempt keys, actions, and the store-owner protocol (C9.7.12, C9.7.14; S4-CD1, S4-CD5, S4-CD7)
+
+/// `FileObservationV1` — one durable file as observed by its owner (C9.7.12).
+enum FileObservationV1: Sendable, Equatable {
+    case absent
+    case valid(byteLength: Int, bytesSHA256: String, generationId: String, envelopeSHA256: String)
+    case malformed(byteLength: Int, bytesSHA256: String)
+    case overCap(byteLength: Int, fileIdentityDigest: String)
+
+    var canonical: [String: Any] {
+        switch self {
+        case .absent:
+            return ["present": false]
+        case let .valid(byteLength, bytesSHA256, generationId, envelopeSHA256):
+            return ["present": true, "classification": "valid", "byteLength": byteLength, "bytesSHA256": bytesSHA256, "generationId": generationId, "envelopeSHA256": envelopeSHA256]
+        case let .malformed(byteLength, bytesSHA256):
+            return ["present": true, "classification": "malformed", "byteLength": byteLength, "bytesSHA256": bytesSHA256]
+        case let .overCap(byteLength, fileIdentityDigest):
+            return ["present": true, "classification": "over_cap", "byteLength": byteLength, "fileIdentityDigest": fileIdentityDigest]
+        }
+    }
+
+    /// `fileIdentityDigest` over the fstat tuple (base-10 strings) of an opened no-follow descriptor.
+    static func fileIdentityDigest(device: UInt64, inode: UInt64, size: UInt64, mtimeSeconds: Int64, mtimeNanoseconds: Int64, ctimeSeconds: Int64, ctimeNanoseconds: Int64) -> String {
+        TaskCanonicalV1.sha256Hex([
+            "deviceDecimal": String(device), "inodeDecimal": String(inode), "sizeDecimal": String(size),
+            "mtimeSecondsDecimal": String(mtimeSeconds), "mtimeNanosecondsDecimal": String(mtimeNanoseconds),
+            "ctimeSecondsDecimal": String(ctimeSeconds), "ctimeNanosecondsDecimal": String(ctimeNanoseconds),
+        ])
+    }
+}
+
+/// Handoff-only observations that enter the observed state after authority success (C9.7.12).
+enum FirebaseObservationV1: Sendable, Equatable {
+    case signedOut
+    case signedIn(uid: String)
+
+    var canonical: [String: Any] {
+        switch self {
+        case .signedOut: return ["state": "signed_out"]
+        case let .signedIn(uid): return ["state": "signed_in", "uid": uid]
+        }
+    }
+}
+
+/// `RecoveryObservedStateV1` (C9.7.12): the exact map whose canonical SHA-256 is the
+/// `recoveryStateDigest` every digest-bearing action CASes. The dose alternative (S4-CD1)
+/// carries the malformed v2 bytes' digest and length in place of file observations.
+enum RecoveryObservedStateV1: Sendable, Equatable {
+    case files(store: DurableStore, baseState: String, target: FileObservationV1, quarantine: FileObservationV1, availableActions: [String],
+               keychainInstallationId: String? = nil, firebase: FirebaseObservationV1? = nil, auth: SignedAuthTuple? = nil, mismatchIdentityDigest: String? = nil)
+    case dose(bytesSHA256: String, byteLength: Int, quarantineCount: Int)
+
+    var store: RecoveryStore {
+        switch self {
+        case let .files(store, _, _, _, _, _, _, _, _): return RecoveryStore(store)
+        case .dose: return .dose
+        }
+    }
+
+    var availableActions: [String] {
+        switch self {
+        case let .files(_, _, _, _, actions, _, _, _, _): return actions
+        case .dose: return ["quarantine_dose_bytes"]
+        }
+    }
+
+    var canonical: [String: Any] {
+        switch self {
+        case let .files(store, baseState, target, quarantine, actions, keychain, firebase, auth, mismatch):
+            var map: [String: Any] = ["schemaVersion": 1, "store": store.rawValue, "baseState": baseState, "target": target.canonical, "quarantine": quarantine.canonical, "availableActions": actions]
+            if let keychain { map["keychain"] = ["state": "valid", "installationId": keychain] }
+            if let firebase { map["firebase"] = firebase.canonical }
+            if let auth { map["auth"] = ["state": "signed_in", "uid": auth.uid, "authEpochUUID": auth.authEpochUUID, "credentialRevision": auth.credentialRevision] }
+            if let mismatch { map["mismatchIdentityDigest"] = mismatch }
+            return map
+        case let .dose(bytesSHA256, byteLength, quarantineCount):
+            return ["schemaVersion": 1, "store": "dose", "baseState": "malformed", "bytesSHA256": bytesSHA256, "byteLength": byteLength, "quarantineCount": quarantineCount, "availableActions": ["quarantine_dose_bytes"]]
+        }
+    }
+
+    /// `recoveryStateDigest = lowercase SHA-256(TaskCanonicalV1(RecoveryObservedStateV1))`.
+    var recoveryStateDigest: String { TaskCanonicalV1.sha256Hex(canonical) }
+}
+
+/// The typed unavailable branch: a store whose observation is refused by I/O or Keychain (C9.7.2).
+struct UnavailableToken: Sendable, Equatable, Hashable {
+    let store: RecoveryStore
+    let state: String
+    let errorCode: String
+}
+
+/// `RecoveryAttemptKey` (C9.7.12): the private key of the single shared `(RecoveryAttemptKey,Task)` slot per store owner.
+enum RecoveryAttemptKey: Sendable, Equatable, Hashable {
+    case recover(recoveryStateDigest: String)
+    case merge(recoveryStateDigest: String)
+    case discard(recoveryStateDigest: String)
+    case cleanup(recoveryStateDigest: String)
+    case receiptReconcile(recoveryStateDigest: String, mismatchIdentityDigest: String)
+    case foreignReconcile(recoveryStateDigest: String)
+    case resolveForeign(recoveryStateDigest: String, resolutionDigest: String, choicesSHA256: String)
+    case recoverEpoch(recoveryStateDigest: String, expectedTaskGenerationEpoch: Int, expectedPhase: ResetRowPhase, action: ResetRecoveryAction)
+    case unavailable(store: RecoveryStore, state: String, errorCode: String, action: String)
+    case doseQuarantine(recoveryStateDigest: String)
+
+    var kind: String {
+        switch self {
+        case .recover: return "recover"
+        case .merge: return "merge"
+        case .discard: return "discard"
+        case .cleanup: return "cleanup"
+        case .receiptReconcile: return "receipt_reconcile"
+        case .foreignReconcile: return "foreign_reconcile"
+        case .resolveForeign: return "resolve_foreign"
+        case .recoverEpoch: return "recover_epoch"
+        case .unavailable: return "unavailable"
+        case .doseQuarantine: return "dose_quarantine"
+        }
+    }
+
+    var canonical: [String: Any] {
+        switch self {
+        case let .recover(d), let .merge(d), let .discard(d), let .cleanup(d), let .foreignReconcile(d), let .doseQuarantine(d):
+            return ["kind": kind, "recoveryStateDigest": d]
+        case let .receiptReconcile(d, mismatch):
+            return ["kind": kind, "recoveryStateDigest": d, "mismatchIdentityDigest": mismatch]
+        case let .resolveForeign(d, resolution, choices):
+            return ["kind": kind, "recoveryStateDigest": d, "resolutionDigest": resolution, "choicesSHA256": choices]
+        case let .recoverEpoch(d, epoch, phase, action):
+            return ["kind": kind, "recoveryStateDigest": d, "expectedTaskGenerationEpoch": epoch, "expectedPhase": phase.rawValue, "action": action.rawValue]
+        case let .unavailable(store, state, errorCode, action):
+            return ["kind": kind, "store": store.rawValue, "state": state, "errorCode": errorCode, "action": action]
+        }
+    }
+}
+
+/// `RecoveryAction` (S4-CD5): the public actions of C9.7.4, mapping 1:1 onto the attempt-key kinds.
+enum RecoveryAction: Sendable, Equatable {
+    case recover
+    case discardQuarantine
+    case retryCleanup
+    case merge
+    case reconcile(mismatchIdentityDigest: String)
+    case foreignReconcile
+    case resolve(resolutionDigest: String, choices: [String])
+    case retry(errorCode: String)
+    case repairInstallationIdentity
+    case quarantineDoseBytes
+
+    /// The C9.7.2 `availableActions` literal.
+    var name: String {
+        switch self {
+        case .recover: return "recover"
+        case .discardQuarantine: return "discard_quarantine"
+        case .retryCleanup: return "retry_cleanup"
+        case .merge: return "merge"
+        case .reconcile, .foreignReconcile: return "reconcile"
+        case .resolve: return "resolve"
+        case .retry: return "retry"
+        case .repairInstallationIdentity: return "repair_installation_identity"
+        case .quarantineDoseBytes: return "quarantine_dose_bytes"
+        }
+    }
+
+    /// The private key this action derives under the given expectation (C9.7.12 public-action table); nil when
+    /// the expectation kind does not match the action (a digest-bearing action needs a digest, unavailable actions the token).
+    func attemptKey(expecting expectation: RecoveryExpectation) -> RecoveryAttemptKey? {
+        switch (self, expectation) {
+        case let (.recover, .digest(d)): return .recover(recoveryStateDigest: d)
+        case let (.merge, .digest(d)): return .merge(recoveryStateDigest: d)
+        case let (.discardQuarantine, .digest(d)): return .discard(recoveryStateDigest: d)
+        case let (.retryCleanup, .digest(d)): return .cleanup(recoveryStateDigest: d)
+        case let (.reconcile(mismatch), .digest(d)): return .receiptReconcile(recoveryStateDigest: d, mismatchIdentityDigest: mismatch)
+        case let (.foreignReconcile, .digest(d)): return .foreignReconcile(recoveryStateDigest: d)
+        case let (.resolve(resolution, choices), .digest(d)):
+            return .resolveForeign(recoveryStateDigest: d, resolutionDigest: resolution, choicesSHA256: TaskCanonicalV1.sha256Hex(["choices": choices]))
+        case let (.quarantineDoseBytes, .digest(d)): return .doseQuarantine(recoveryStateDigest: d)
+        case let (.retry(errorCode), .unavailable(token)) where token.errorCode == errorCode:
+            return .unavailable(store: token.store, state: token.state, errorCode: token.errorCode, action: "retry")
+        case let (.repairInstallationIdentity, .unavailable(token)):
+            return .unavailable(store: token.store, state: token.state, errorCode: token.errorCode, action: "repair")
+        default:
+            return nil
+        }
+    }
+}
+
+/// `RecoveryObservation` (S4-CD5): what an owner's `observe()` returns — a digest-bearing observed state or the typed unavailable branch.
+enum RecoveryObservation: Sendable, Equatable {
+    case observed(RecoveryObservedStateV1)
+    case unavailable(UnavailableToken)
+}
+
+/// `RecoveryExpectation` (S4-CD5): the token a caller CASes — the displayed digest, or the unavailable token for Retry/Repair.
+enum RecoveryExpectation: Sendable, Equatable {
+    case digest(String)
+    case unavailable(UnavailableToken)
+}
+
+/// `DurableStoreRecovering` (S4-CD5): the one protocol every durable-store owner conforms to. The coordinator
+/// drives every store only through it and never opens, replaces, or unlinks an owner's file; the single
+/// `(RecoveryAttemptKey,Task)` slot of C9.7.12 lives in the owner.
+protocol DurableStoreRecovering: Sendable {
+    func observe() async -> RecoveryObservation
+    func classify(_ observation: RecoveryObservation) -> RecoveryClassification
+    func perform(_ action: RecoveryAction, expecting expectation: RecoveryExpectation) async -> RecoveryResult
+}
+
+/// The pure classification result: `ready | blocked(BlockedSnapshot)` (never `loading`).
+enum RecoveryClassification: Sendable, Equatable {
+    case ready
+    case blocked(BlockedSnapshot)
+}
+
+/// `NarrationLease` (S4-CD7): issued by `RoomCaptureArtifactOwner` only while the deletion gate is `clear` for the
+/// UID and the current gate generation; the only value `pendingNarration`, `pendingNarrationTranscript`, and
+/// `NarrationService.start(lease:)` hold.
+struct NarrationLease: Sendable, Equatable, Hashable {
+    let leaseId: String
+    let uid: String
+    let gateGeneration: GateGeneration
+    let sessionId: String
+}
+
+/// The registration of one in-flight media transfer under a lease (S4-CD7): `{handleId (lowercase UUID), lease}`; settled by its call site.
+struct TransferHandle: Sendable, Equatable, Hashable {
+    let handleId: String
+    let lease: NarrationLease
 }
 
 // MARK: - Signed auth and identity seams (§8)
@@ -778,14 +1044,25 @@ enum TaskCanonicalV1 {
 
 // MARK: - DurableFileEnvelopeV1 codec (§7); file I/O lives with each owner
 
-enum DurableFileKind: String, Sendable {
+enum DurableFileKind: String, Sendable, CaseIterable {
+    case taskRouteInboxV1 = "TASK_ROUTE_INBOX_V1"
+    case handoffAuthorityV1 = "HANDOFF_AUTHORITY_V1"
     case taskPlanResetV2 = "TASK_PLAN_RESET_V2"
+    case workflowRequestsV2 = "WORKFLOW_REQUESTS_V2"
 
+    /// C9.7.1 normal `storeCap` (complete canonical outer-envelope bytes); the handoff
+    /// expanded regime (68,157,440) is the owner's, applied only when its predicates hold.
     var storeCap: Int {
         switch self {
+        case .taskRouteInboxV1: return 131_072
+        case .handoffAuthorityV1: return 524_288
         case .taskPlanResetV2: return 131_072
+        case .workflowRequestsV2: return 16_777_216
         }
     }
+
+    /// The expanded handoff cap `128 * 524,288 + 2 * 524,288`.
+    static let expandedHandoffStoreCap = 68_157_440
 }
 
 struct DecodedDurableEnvelope: Sendable {
@@ -797,21 +1074,31 @@ struct DecodedDurableEnvelope: Sendable {
 
 enum DurableEnvelopeCodec {
     static let uuidPattern = #"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"#
+    /// C9.7.1 byte rule reserve: the byte length of the largest `recoveryReceipt` member a
+    /// later recovery may add, so every normal write leaves room for it.
+    static let recoveryReceiptReserve = 190
 
     /// Canonical envelope bytes with `sha256` over the complete canonical envelope
-    /// minus itself; nil when the payload is not canonical or exceeds the cap.
-    static func encode(fileKind: DurableFileKind, generationId: String, payload: [String: Any], recoveryReceipt: [String: Any]? = nil) -> Data? {
-        var envelope: [String: Any] = ["schemaVersion": 1, "fileKind": fileKind.rawValue, "generationId": generationId, "payload": payload]
-        if let recoveryReceipt { envelope["recoveryReceipt"] = recoveryReceipt }
+    /// minus itself; nil when the payload is not canonical, the complete bytes exceed
+    /// `storeCap`, or the receipt-less base plus the 190-byte reserve exceeds `storeCap`
+    /// (C9.7.1: `baseEnvelopeBytesWithoutRecoveryReceipt + 190 <= storeCap`).
+    static func encode(fileKind: DurableFileKind, generationId: String, payload: [String: Any], recoveryReceipt: [String: Any]? = nil, storeCap: Int? = nil) -> Data? {
+        let cap = storeCap ?? fileKind.storeCap
+        var base: [String: Any] = ["schemaVersion": 1, "fileKind": fileKind.rawValue, "generationId": generationId, "payload": payload]
+        guard let unsignedBase = TaskCanonicalV1.data(base) else { return nil }
+        base["sha256"] = TaskCanonicalV1.sha256Hex(data: unsignedBase)
+        guard let baseBytes = TaskCanonicalV1.data(base), baseBytes.count + recoveryReceiptReserve <= cap else { return nil }
+        guard let recoveryReceipt else { return baseBytes }
+        var envelope: [String: Any] = ["schemaVersion": 1, "fileKind": fileKind.rawValue, "generationId": generationId, "payload": payload, "recoveryReceipt": recoveryReceipt]
         guard let unsigned = TaskCanonicalV1.data(envelope) else { return nil }
         envelope["sha256"] = TaskCanonicalV1.sha256Hex(data: unsigned)
-        guard let bytes = TaskCanonicalV1.data(envelope), bytes.count <= fileKind.storeCap else { return nil }
+        guard let bytes = TaskCanonicalV1.data(envelope), bytes.count <= cap else { return nil }
         return bytes
     }
 
     /// Strict decode: exact member set, exact kind, canonical bytes, matching hash, cap.
-    static func decode(_ bytes: Data, fileKind: DurableFileKind) -> DecodedDurableEnvelope? {
-        guard bytes.count <= fileKind.storeCap,
+    static func decode(_ bytes: Data, fileKind: DurableFileKind, storeCap: Int? = nil) -> DecodedDurableEnvelope? {
+        guard bytes.count <= (storeCap ?? fileKind.storeCap),
               let object = try? JSONSerialization.jsonObject(with: bytes) as? [String: Any] else { return nil }
         let keys = Set(object.keys)
         guard keys == ["schemaVersion", "fileKind", "generationId", "payload", "sha256"]

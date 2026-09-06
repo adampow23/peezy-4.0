@@ -343,6 +343,126 @@ struct DurableStoreRecoveryTests {
         try FirebaseEmulator.signOut()
     }
 
+    // MARK: - S4 I1 — recovery types (C9.7.12, C9.7.14), the dose member (S4-CD1), file kinds and the byte rule (C9.7.1)
+
+    @Test func fileKindsCarryTheC971CapsAndTheByteRuleReservesTheReceipt() throws {
+        #expect(DurableFileKind.taskRouteInboxV1.storeCap == 131_072)
+        #expect(DurableFileKind.handoffAuthorityV1.storeCap == 524_288)
+        #expect(DurableFileKind.taskPlanResetV2.storeCap == 131_072)
+        #expect(DurableFileKind.workflowRequestsV2.storeCap == 16_777_216)
+        #expect(DurableFileKind.expandedHandoffStoreCap == 128 * 524_288 + 2 * 524_288)
+        #expect(DurableEnvelopeCodec.recoveryReceiptReserve == 190)
+        let receipt: [String: Any] = ["schemaVersion": 1, "quarantineSHA256": String(repeating: "a", count: 64), "recoveredCount": 9_007_199_254_740_991, "droppedCount": 9_007_199_254_740_991]
+        // 190 is exactly the byte length of `,"recoveryReceipt":{...}` with the largest members.
+        let memberObject = TaskCanonicalV1.data(["recoveryReceipt": receipt])!.count
+        #expect(memberObject - 2 + 1 == 190, "the reserve equals the largest receipt member text")
+        // base + 190 == cap admits; base + 191 refuses; the receipt then fits inside the same cap.
+        let generation = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        let base = DurableEnvelopeCodec.encode(fileKind: .taskRouteInboxV1, generationId: generation, payload: ["records": [], "pad": ""], storeCap: 1_000_000)!.count
+        let room = 131_072 - 190 - base
+        let exact = DurableEnvelopeCodec.encode(fileKind: .taskRouteInboxV1, generationId: generation, payload: ["records": [], "pad": String(repeating: "x", count: room)])
+        #expect(exact != nil && exact!.count + 190 == 131_072, "base + 190 == cap is admitted")
+        let over = DurableEnvelopeCodec.encode(fileKind: .taskRouteInboxV1, generationId: generation, payload: ["records": [], "pad": String(repeating: "x", count: room + 1)])
+        #expect(over == nil, "base + 191 is refused")
+        let receipted = try #require(DurableEnvelopeCodec.encode(fileKind: .taskRouteInboxV1, generationId: generation, payload: ["records": [], "pad": String(repeating: "x", count: room)], recoveryReceipt: receipt))
+        #expect(receipted.count <= 131_072)
+        let decoded = try #require(DurableEnvelopeCodec.decode(receipted, fileKind: .taskRouteInboxV1))
+        #expect(TaskCanonicalV1.data(decoded.recoveryReceipt!) == TaskCanonicalV1.data(receipt), "the receipt survives byte-identically")
+        #expect(DurableEnvelopeCodec.decode(receipted, fileKind: .workflowRequestsV2) == nil, "fileKind must match")
+        for kind in DurableFileKind.allCases {
+            let bytes = try #require(DurableEnvelopeCodec.encode(fileKind: kind, generationId: generation, payload: ["records": []]))
+            #expect(DurableEnvelopeCodec.decode(bytes, fileKind: kind)?.generationId == generation, Comment(rawValue: kind.rawValue))
+        }
+    }
+
+    @Test func doseMalformedSnapshotCarriesTheDoseStoreItsSingleActionAndItsDigest() {
+        let snapshot = BlockedSnapshot.doseMalformed(recoveryStateDigest: "d", bytesSHA256: String(repeating: "b", count: 64), byteLength: 12)
+        #expect(snapshot.store == .dose)
+        #expect(snapshot.state == "malformed")
+        #expect(snapshot.availableActions == ["quarantine_dose_bytes"])
+        #expect(snapshot.recoveryStateDigest == "d")
+        #expect(RecoveryStore(.reset) == .reset && RecoveryStore.reset.durable == .reset && RecoveryStore.dose.durable == nil)
+        #expect(RecoveryStore.allCases.map(\.rawValue) == ["route", "handoff", "reset", "workflow", "dose"])
+        #expect(RecoveryResult.busy(store: .dose) != .busy(store: .reset))
+        #expect(BlockedSnapshot.storageIOUnavailable(store: .route, errorCode: .fileOpenFailed).store == .route)
+    }
+
+    @Test func recoveryObservedStateDigestIsTheCanonicalSHA256AndTheDoseAlternativeCarriesItsMembers() {
+        let target = FileObservationV1.valid(byteLength: 10, bytesSHA256: String(repeating: "1", count: 64), generationId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", envelopeSHA256: String(repeating: "2", count: 64))
+        let files = RecoveryObservedStateV1.files(store: .route, baseState: "quarantined", target: target, quarantine: .absent, availableActions: ["recover", "discard_quarantine"])
+        #expect(Set(files.canonical.keys) == ["schemaVersion", "store", "baseState", "target", "quarantine", "availableActions"])
+        #expect(files.recoveryStateDigest == TaskCanonicalV1.sha256Hex(files.canonical))
+        #expect(files.store == .route && files.availableActions == ["recover", "discard_quarantine"])
+        let handoff = RecoveryObservedStateV1.files(store: .handoff, baseState: "foreign_installation", target: .overCap(byteLength: 9, fileIdentityDigest: "f"), quarantine: .malformed(byteLength: 3, bytesSHA256: "m"), availableActions: ["reconcile"], keychainInstallationId: "install", firebase: .signedIn(uid: "A"))
+        #expect((handoff.canonical["keychain"] as? [String: String]) == ["state": "valid", "installationId": "install"])
+        #expect((handoff.canonical["firebase"] as? [String: String]) == ["state": "signed_in", "uid": "A"])
+        let dose = RecoveryObservedStateV1.dose(bytesSHA256: String(repeating: "b", count: 64), byteLength: 12, quarantineCount: 1)
+        #expect(TaskCanonicalV1.data(dose.canonical) == TaskCanonicalV1.data(["schemaVersion": 1, "store": "dose", "baseState": "malformed", "bytesSHA256": String(repeating: "b", count: 64), "byteLength": 12, "quarantineCount": 1, "availableActions": ["quarantine_dose_bytes"]]))
+        #expect(dose.store == .dose)
+        let again = RecoveryObservedStateV1.dose(bytesSHA256: String(repeating: "b", count: 64), byteLength: 12, quarantineCount: 2)
+        #expect(dose.recoveryStateDigest != again.recoveryStateDigest, "a second quarantined blob changes the observed state")
+        #expect(FileObservationV1.absent.canonical.count == 1)
+        #expect(FileObservationV1.fileIdentityDigest(device: 1, inode: 2, size: 3, mtimeSeconds: 4, mtimeNanoseconds: 5, ctimeSeconds: 6, ctimeNanoseconds: 7) == TaskCanonicalV1.sha256Hex(["deviceDecimal": "1", "inodeDecimal": "2", "sizeDecimal": "3", "mtimeSecondsDecimal": "4", "mtimeNanosecondsDecimal": "5", "ctimeSecondsDecimal": "6", "ctimeNanosecondsDecimal": "7"]))
+    }
+
+    @Test func recoveryAttemptKeysMapOneToOneOntoTheActions() {
+        let digest = RecoveryExpectation.digest("d")
+        let token = UnavailableToken(store: .route, state: "storage_io_unavailable", errorCode: "FILE_OPEN_FAILED")
+        #expect(RecoveryAction.recover.attemptKey(expecting: digest) == .recover(recoveryStateDigest: "d"))
+        #expect(RecoveryAction.merge.attemptKey(expecting: digest) == .merge(recoveryStateDigest: "d"))
+        #expect(RecoveryAction.discardQuarantine.attemptKey(expecting: digest) == .discard(recoveryStateDigest: "d"))
+        #expect(RecoveryAction.retryCleanup.attemptKey(expecting: digest) == .cleanup(recoveryStateDigest: "d"))
+        #expect(RecoveryAction.reconcile(mismatchIdentityDigest: "m").attemptKey(expecting: digest) == .receiptReconcile(recoveryStateDigest: "d", mismatchIdentityDigest: "m"))
+        #expect(RecoveryAction.foreignReconcile.attemptKey(expecting: digest) == .foreignReconcile(recoveryStateDigest: "d"))
+        #expect(RecoveryAction.resolve(resolutionDigest: "r", choices: ["b", "a"]).attemptKey(expecting: digest) == .resolveForeign(recoveryStateDigest: "d", resolutionDigest: "r", choicesSHA256: TaskCanonicalV1.sha256Hex(["choices": ["b", "a"]])))
+        #expect(RecoveryAction.quarantineDoseBytes.attemptKey(expecting: digest) == .doseQuarantine(recoveryStateDigest: "d"))
+        #expect(RecoveryAction.retry(errorCode: "FILE_OPEN_FAILED").attemptKey(expecting: .unavailable(token)) == .unavailable(store: .route, state: "storage_io_unavailable", errorCode: "FILE_OPEN_FAILED", action: "retry"))
+        #expect(RecoveryAction.repairInstallationIdentity.attemptKey(expecting: .unavailable(token)) == .unavailable(store: .route, state: "storage_io_unavailable", errorCode: "FILE_OPEN_FAILED", action: "repair"))
+        #expect(RecoveryAction.retry(errorCode: "FILE_READ_FAILED").attemptKey(expecting: .unavailable(token)) == nil, "a retry carries the exact unavailable error code")
+        #expect(RecoveryAction.recover.attemptKey(expecting: .unavailable(token)) == nil, "a digest-bearing action needs the displayed digest")
+        #expect(RecoveryAction.retry(errorCode: "FILE_OPEN_FAILED").attemptKey(expecting: digest) == nil, "Retry carries no state digest")
+        let kinds = [RecoveryAttemptKey.recover(recoveryStateDigest: "d"), .merge(recoveryStateDigest: "d"), .discard(recoveryStateDigest: "d"), .cleanup(recoveryStateDigest: "d"), .receiptReconcile(recoveryStateDigest: "d", mismatchIdentityDigest: "m"), .foreignReconcile(recoveryStateDigest: "d"), .resolveForeign(recoveryStateDigest: "d", resolutionDigest: "r", choicesSHA256: "c"), .recoverEpoch(recoveryStateDigest: "d", expectedTaskGenerationEpoch: 1, expectedPhase: .prepared, action: .retryReset), .unavailable(store: .handoff, state: "installation_authority_invalid", errorCode: "KEYCHAIN_VALUE_INVALID", action: "repair"), .doseQuarantine(recoveryStateDigest: "d")].map(\.kind)
+        #expect(kinds == ["recover", "merge", "discard", "cleanup", "receipt_reconcile", "foreign_reconcile", "resolve_foreign", "recover_epoch", "unavailable", "dose_quarantine"])
+        #expect(TaskCanonicalV1.data(RecoveryAttemptKey.recoverEpoch(recoveryStateDigest: "d", expectedTaskGenerationEpoch: 1, expectedPhase: .prepared, action: .retryReset).canonical) == TaskCanonicalV1.data(["kind": "recover_epoch", "recoveryStateDigest": "d", "expectedTaskGenerationEpoch": 1, "expectedPhase": "prepared", "action": "retry_reset"]))
+        #expect([RecoveryAction.recover, .discardQuarantine, .retryCleanup, .merge, .reconcile(mismatchIdentityDigest: "m"), .resolve(resolutionDigest: "r", choices: []), .retry(errorCode: "x"), .repairInstallationIdentity, .quarantineDoseBytes].map(\.name) == ["recover", "discard_quarantine", "retry_cleanup", "merge", "reconcile", "resolve", "retry", "repair_installation_identity", "quarantine_dose_bytes"])
+    }
+
+    @Test func durableStoreRecoveringProtocolIsExactAndOwnerShaped() async {
+        actor Stub: DurableStoreRecovering {
+            var performed: [RecoveryAttemptKey] = []
+            func observe() async -> RecoveryObservation { .unavailable(UnavailableToken(store: .route, state: "storage_io_unavailable", errorCode: "FILE_OPEN_FAILED")) }
+            nonisolated func classify(_ observation: RecoveryObservation) -> RecoveryClassification {
+                switch observation {
+                case let .unavailable(token): return .blocked(.storageIOUnavailable(store: token.store.durable!, errorCode: StorageIOErrorCode(rawValue: token.errorCode)!))
+                case let .observed(state): return state.availableActions.isEmpty ? .ready : .blocked(.quarantined(store: state.store.durable!, recoveryStateDigest: state.recoveryStateDigest, quarantineEnumerable: true, pendingRecordCount: nil))
+                }
+            }
+            func perform(_ action: RecoveryAction, expecting expectation: RecoveryExpectation) async -> RecoveryResult {
+                guard let key = action.attemptKey(expecting: expectation) else { return .unavailable(store: .route) }
+                performed.append(key)
+                return .busy(store: .route)
+            }
+        }
+        let stub = Stub()
+        let observation = await stub.observe()
+        #expect(stub.classify(observation) == .blocked(.storageIOUnavailable(store: .route, errorCode: .fileOpenFailed)))
+        let ready = RecoveryObservedStateV1.files(store: .route, baseState: "ready", target: .absent, quarantine: .absent, availableActions: [])
+        #expect(stub.classify(.observed(ready)) == .ready)
+        #expect(await stub.perform(.retry(errorCode: "FILE_OPEN_FAILED"), expecting: .unavailable(UnavailableToken(store: .route, state: "storage_io_unavailable", errorCode: "FILE_OPEN_FAILED"))) == .busy(store: .route))
+        #expect(await stub.perform(.recover, expecting: .unavailable(UnavailableToken(store: .route, state: "storage_io_unavailable", errorCode: "FILE_OPEN_FAILED"))) == .unavailable(store: .route))
+        #expect(await stub.performed == [.unavailable(store: .route, state: "storage_io_unavailable", errorCode: "FILE_OPEN_FAILED", action: "retry")])
+        let recovering: any DurableStoreRecovering = stub
+        _ = recovering
+    }
+
+    @Test func narrationLeaseAndTransferHandleAreExactValues() {
+        let lease = NarrationLease(leaseId: "11111111-1111-4111-8111-111111111111", uid: "A", gateGeneration: GateGeneration(rawValue: 3), sessionId: "s1")
+        #expect(lease == NarrationLease(leaseId: "11111111-1111-4111-8111-111111111111", uid: "A", gateGeneration: GateGeneration(rawValue: 3), sessionId: "s1"))
+        #expect(lease != NarrationLease(leaseId: "11111111-1111-4111-8111-111111111111", uid: "A", gateGeneration: GateGeneration(rawValue: 4), sessionId: "s1"), "a lease is bound to one gate generation")
+        let handle = TransferHandle(handleId: "h1", lease: lease)
+        #expect(Set([handle, TransferHandle(handleId: "h1", lease: lease)]).count == 1)
+    }
+
     // MARK: - Epoch stamps (I4, stamps only; manifest §5:540-546). Cleanup belongs to S3.
 
     @Test func dailyDoseLocalStoreWritesAStampedV2EnvelopeAndCASesRevision() async throws {
