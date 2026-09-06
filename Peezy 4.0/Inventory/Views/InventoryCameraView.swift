@@ -22,7 +22,9 @@ struct InventoryCameraView: View {
     @State private var narration = NarrationService()
     @State private var showScanCoaching: Bool
     @State private var showNarrationOffer = false
-    @State private var pendingNarrationTranscript: String?
+    /// S4 (S4-CD7): holds only the actor-issued lease; the transcript itself is deposited in `RoomCaptureArtifactOwner`.
+    @State private var pendingNarrationTranscript: NarrationLease?
+    @Environment(\.roomCaptureArtifactOwner) private var artifactOwner
     @State private var isStoppingRecording = false
     @AppStorage private var narrationOfferSeen: Bool
 
@@ -95,9 +97,9 @@ struct InventoryCameraView: View {
         }
         .onChange(of: viewModel.extractedFrames.count) { _, count in
             guard count > 0, !viewModel.isProcessingFrames else { return }
-            let transcript = pendingNarrationTranscript
+            let lease = pendingNarrationTranscript
             pendingNarrationTranscript = nil
-            onComplete(viewModel.extractedFrames, transcript)
+            onComplete(viewModel.extractedFrames, lease?.leaseId)
         }
         .onChange(of: viewModel.isRecording) { _, recording in
             if recording {
@@ -600,18 +602,28 @@ struct InventoryCameraView: View {
                 await viewModel.stopRecording()
                 isStoppingRecording = false
             }
-            pendingNarrationTranscript = narration.stopAndSnapshot()
+            let transcript = narration.stopAndSnapshot()
+            if let lease = pendingNarrationTranscript, let transcript, let owner = artifactOwner {
+                Task { _ = await owner.deposit(transcript, for: lease) } // dropped when the lease no longer revalidates
+            }
         } else {
             viewModel.startRecording()
             guard viewModel.isRecording else { return }
             pendingNarrationTranscript = nil
-            narration.start()
+            guard let owner = artifactOwner, let uid = Auth.auth().currentUser?.uid else { return } // no owner or user: no lease, no narration
+            let sessionId = roomName
+            Task { @MainActor in
+                guard viewModel.isRecording, let lease = await owner.acquire(uid: uid, sessionId: sessionId) else { return }
+                pendingNarrationTranscript = lease
+                narration.start(lease: lease)
+            }
         }
     }
 
     private func cleanupAndDiscardNarration() {
         viewModel.cleanup()
         _ = narration.stopAndSnapshot()
+        if let lease = pendingNarrationTranscript, let owner = artifactOwner { Task { await owner.release(lease) } }
         pendingNarrationTranscript = nil
         isStoppingRecording = false
     }

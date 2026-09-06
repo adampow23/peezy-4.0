@@ -259,11 +259,20 @@ final class ItemConfirmViewModel {
     private let userId: String
     private let storageService = InventoryStorageService()
     private let confirmationIndices: [Int]
+    /// S4-CD7: the media-transfer registry and the lease every frame download runs under; nil keeps the committed behavior.
+    private let artifactOwner: RoomCaptureArtifactOwner?
+    private let lease: NarrationLease?
 
-    init(items: [InventoryItem], sessionId: String, userId: String) {
+    convenience init(items: [InventoryItem], sessionId: String, userId: String) {
+        self.init(items: items, sessionId: sessionId, userId: userId, artifactOwner: nil, lease: nil)
+    }
+
+    init(items: [InventoryItem], sessionId: String, userId: String, artifactOwner: RoomCaptureArtifactOwner?, lease: NarrationLease?) {
         self.allItems = items
         self.sessionId = sessionId
         self.userId = userId
+        self.artifactOwner = artifactOwner
+        self.lease = lease
 
         var indices: [Int] = []
         var toConfirm: [InventoryItem] = []
@@ -317,11 +326,25 @@ final class ItemConfirmViewModel {
         defer { isLoadingFrame = false }
 
         do {
-            let frameData = try await storageService.downloadFrame(
-                userId: userId,
-                sessionId: sessionId,
-                frameIndex: frameIndex
-            )
+            // the download is a registered transfer: cancellation cancels the awaiting Task, settlement follows its exit
+            let service = storageService
+            let (userId, sessionId) = (self.userId, self.sessionId)
+            let downloadTask = Task { try await service.downloadFrame(userId: userId, sessionId: sessionId, frameIndex: frameIndex) }
+            var handle: TransferHandle?
+            if let artifactOwner, let lease { handle = await artifactOwner.register(transfer: lease, cancel: { downloadTask.cancel() }) }
+            let frameData: Data
+            do {
+                frameData = try await downloadTask.value
+                if let artifactOwner, let handle { await artifactOwner.settle(handle) }
+            } catch {
+                if let artifactOwner, let handle { await artifactOwner.settle(handle) }
+                throw error
+            }
+            // a revoked lease drops the buffer after the await
+            if let artifactOwner, let lease, await artifactOwner.revalidate(lease) == false {
+                croppedImage = nil
+                return
+            }
 
             guard let fullImage = UIImage(data: frameData) else {
                 croppedImage = nil

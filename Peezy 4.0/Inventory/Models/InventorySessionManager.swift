@@ -88,6 +88,12 @@ final class InventorySessionManager {
     private let apiClient: any InventoryProcessingCalling
     private let coverageConfirmationStore: any CoverageConfirmationPersisting
     private let userIDProvider: () -> String?
+    /// S4 (S4-CD7): the sole issuer of narration leases and the transfer registry. S7 attaches the one production
+    /// owner; until then each manager holds a transitional owner over a permanently clear gate.
+    private var artifactOwner = RoomCaptureArtifactOwner(gateSnapshot: { (.clear, GateGeneration(rawValue: 0)) })
+
+    /// Owner wiring (S7): the one `RoomCaptureArtifactOwner`.
+    func attachArtifactOwner(_ owner: RoomCaptureArtifactOwner) { artifactOwner = owner }
 
     init() {
         self.apiClient = InventoryAPIClient()
@@ -127,7 +133,8 @@ final class InventorySessionManager {
     /// view-tree changes. Cancelled on reset or when user navigates away.
     private var processingTask: Task<Void, Never>?
     private var retainedProcessingRequest: InventoryProcessingRequest?
-    private var pendingNarration: String?
+    /// S4 (S4-CD7): holds only the actor-issued lease; the transcript is materialized from the owner when the request is built.
+    private var pendingNarration: NarrationLease?
 
     // MARK: - Computed
 
@@ -316,20 +323,33 @@ final class InventorySessionManager {
         // before starting a new one. (Defensive — shouldn't happen in normal
         // flow but cheap to handle.)
         teardownActiveProcessing()
-        pendingNarration = narration
 
         isProcessing = true
         state = .processing(roomName: roomName, progress: "Uploading frames...")
 
         // Capture only what we need. `self` is captured weakly so the Task
         // doesn't keep the manager alive past its natural lifetime.
+        // `narration` is the camera view's lease ID (S4-CD7), resolved against the owner inside the pipeline.
         processingTask = Task { @MainActor [weak self] in
             await self?.runProcessingPipeline(
                 frames: frames,
                 userId: userId,
-                roomName: roomName
+                roomName: roomName,
+                narrationLeaseId: narration
             )
         }
+    }
+
+    /// The §8.9.3 admission every `InventoryAPIClient` call site applies (S4-CD6): the current signed UID is the request's,
+    /// the deletion gate is `clear`, and the response is applied only while the Firestore runtime generation it was
+    /// dispatched under is still current. Pure, so the fixtures can drive every projection.
+    nonisolated static func admits(currentUID: String?, requestUID: String, gate: AccountDeletionGate) -> Bool {
+        currentUID == requestUID && gate == .clear
+    }
+
+    /// The generation the dispatch ran under; nil before the runtime is installed (the S1 transitional path).
+    private func currentRuntimeGeneration() -> FirestoreRuntimeGeneration? {
+        FirestoreRuntime.shared.isInstalled ? FirestoreRuntime.provider.published().generation : nil
     }
 
     /// Internal pipeline. Owns the upload + Cloud Function call, then installs
@@ -338,25 +358,49 @@ final class InventorySessionManager {
     private func runProcessingPipeline(
         frames: [ExtractedFrame],
         userId: String,
-        roomName: String
+        roomName: String,
+        narrationLeaseId: String? = nil
     ) async {
         do {
-            // Phase 1 — upload frames to Storage + create session doc
-            let session = try await storageService.uploadFrames(
-                frames,
-                userId: userId,
-                roomName: roomName
-            )
+            // S4-CD7: every media transfer runs under a lease; the camera's lease is reused, else one is acquired for the
+            // scan. No lease (the gate is not clear for this UID) closes the registry: no next segment.
+            var lease: NarrationLease?
+            if let narrationLeaseId { lease = await artifactOwner.lease(withId: narrationLeaseId) }
+            if lease == nil { lease = await artifactOwner.acquire(uid: userId, sessionId: roomName) }
+            guard let lease else {
+                isProcessing = false
+                error = "Scanning is paused while your account is being cleared."
+                state = .roomList
+                return
+            }
+            pendingNarration = lease
 
-            // Bail out if the user moved on while we were uploading.
-            guard !Task.isCancelled else { return }
+            // Phase 1 — upload frames to Storage + create session doc, registered as an in-flight transfer whose
+            // cancellation cancels the awaiting Task; the transfer settles when that Task exits by return or throw.
+            let service = storageService
+            let uploadTask = Task { try await service.uploadFrames(frames, userId: userId, roomName: roomName) }
+            let handle = await artifactOwner.register(transfer: lease, cancel: { uploadTask.cancel() })
+            let session: InventoryScanSession
+            do {
+                session = try await uploadTask.value
+                await artifactOwner.settle(handle)
+            } catch {
+                await artifactOwner.settle(handle)
+                throw error
+            }
+
+            // Bail out if the user moved on while we were uploading; a revoked lease drops the buffer.
+            guard !Task.isCancelled, await artifactOwner.revalidate(lease) else {
+                pendingNarration = nil
+                return
+            }
 
             state = .processing(roomName: roomName, progress: "Analyzing room...")
 
             // Phase 2 — kick off Cloud Function. The complete callable payload
             // is retained if entitlement is denied so a purchase can retry it
             // without uploading or scanning again.
-            let narrationForRequest = pendingNarration
+            let narrationForRequest = await artifactOwner.materialize(for: lease)
             pendingNarration = nil
             let request = InventoryProcessingRequest(
                 userId: userId,
@@ -379,9 +423,26 @@ final class InventorySessionManager {
     }
 
     func processUploadedSession(_ request: InventoryProcessingRequest) async {
+        // §8.9.3 admission (S4-CD6): the current signed UID, a clear gate, and the dispatch generation
+        let gate = await artifactOwner.currentGate().gate
+        guard Self.admits(currentUID: userIDProvider(), requestUID: request.userId, gate: gate) else {
+            isProcessing = false
+            error = "Scanning is paused while your account is being cleared."
+            retainedProcessingRequest = nil
+            movePassRequired = false
+            state = .roomList
+            return
+        }
+        let dispatchGeneration = currentRuntimeGeneration()
+        // a held response across a generation change, a gate change, or an account change is discarded, never applied
+        func stillAdmitted() async -> Bool {
+            if Task.isCancelled { return false }
+            if let dispatchGeneration, !FirestoreRuntime.provider.isCurrent(dispatchGeneration) { return false }
+            return Self.admits(currentUID: userIDProvider(), requestUID: request.userId, gate: await artifactOwner.currentGate().gate)
+        }
         do {
             try await apiClient.processInventory(request)
-            guard !Task.isCancelled else { return }
+            guard await stillAdmitted() else { return }
 
             retainedProcessingRequest = nil
             movePassRequired = false
@@ -394,14 +455,14 @@ final class InventorySessionManager {
                 roomName: request.roomName
             )
         } catch InventoryError.movePassRequired {
-            guard !Task.isCancelled else { return }
+            guard await stillAdmitted() else { return }
             isProcessing = false
             error = nil
             retainedProcessingRequest = request
             movePassRequired = true
             state = .roomList
         } catch {
-            guard !Task.isCancelled else { return }
+            guard await stillAdmitted() else { return }
             isProcessing = false
             self.error = error.localizedDescription
             retainedProcessingRequest = nil
@@ -514,6 +575,7 @@ final class InventorySessionManager {
 
         observedSessionId = nil
         retainedProcessingRequest = nil
+        if let lease = pendingNarration { let owner = artifactOwner; Task { await owner.release(lease) } }
         pendingNarration = nil
         movePassRequired = false
     }

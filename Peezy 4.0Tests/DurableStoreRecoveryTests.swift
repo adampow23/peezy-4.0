@@ -2139,8 +2139,81 @@ struct DurableStoreRecoveryTests {
         let purge = Task { await authority.purgeAll() }
         while !sdk.calls.contains("checkForUnsentReports") { await Task.yield() }
         #expect(AnalyticsEvents.isSuspended, "the gate closes before the first SDK call completes")
-        sdk.complete(false)
+        // the double stores its continuation right after recording the call; a duplicate callback loses the CAS harmlessly
+        for _ in 0..<3 { for _ in 0..<20 { await Task.yield() }; sdk.complete(false) }
         #expect(await purge.value == .cleared)
+    }
+
+    // MARK: - S4 I10 — inventory scope: §8.9.3 admission at the InventoryAPIClient call sites (S4-CD6), narration and media leases (S4-CD7)
+
+    @MainActor @Test func inventoryAdmissionRequiresTheCurrentUIDAndAClearGateAndDiscardsAHeldResponseAfterTheGateChanges() async throws {
+        // the pure admission over every gate member and a UID mismatch
+        for gate in [AccountDeletionGate.loading, .blocked, .active(uid: "A"), .active(uid: "B"), .guarding(uid: "A", authGuardAfter: DeletionWires.authGuardAfter), .guarding(uid: "B", authGuardAfter: DeletionWires.authGuardAfter)] {
+            #expect(!InventorySessionManager.admits(currentUID: "A", requestUID: "A", gate: gate), Comment(rawValue: "\(gate)"))
+        }
+        #expect(InventorySessionManager.admits(currentUID: "A", requestUID: "A", gate: .clear))
+        #expect(!InventorySessionManager.admits(currentUID: "B", requestUID: "A", gate: .clear) && !InventorySessionManager.admits(currentUID: nil, requestUID: "A", gate: .clear))
+        // the pinned three-argument initializer, the owner attached by the mount seam
+        let gate = GateSnapshotStub()
+        let owner = RoomCaptureArtifactOwner(gateSnapshot: gate.snapshot)
+        let client = HoldableInventoryClient()
+        let uid = UIDProbe("A")
+        let manager = InventorySessionManager(coverageConfirmationStore: NoopCoverageStore(), userIDProvider: { uid.uid }, apiClient: client)
+        manager.attachArtifactOwner(owner)
+        let request = InventoryProcessingRequest(userId: "A", sessionId: "s1", roomName: "Kitchen", frameCount: 3, narration: nil)
+        // a nonclear gate before the call: refused with zero calls
+        gate.set(gate: .active(uid: "A"))
+        await manager.processUploadedSession(request)
+        #expect(client.requests.isEmpty && manager.error == "Scanning is paused while your account is being cleared." && !manager.movePassRequired)
+        // a different current UID: refused with zero calls
+        gate.set(gate: .clear)
+        uid.uid = "B"
+        await manager.processUploadedSession(request)
+        #expect(client.requests.isEmpty)
+        uid.uid = "A"
+        // admitted: the entitlement denial is applied when nothing changed during the call
+        client.setDenying(true)
+        await manager.processUploadedSession(request)
+        #expect(client.requests == ["A/s1"] && manager.movePassRequired)
+        manager.discardRetainedProcessingRequest()
+        #expect(!manager.movePassRequired)
+        // a held response across a gate change is discarded, never applied
+        client.setHold()
+        let held = Task { await manager.processUploadedSession(request) }
+        while !client.isHolding { await Task.yield() }
+        gate.set(gate: .active(uid: "A"))
+        client.release()
+        await held.value
+        #expect(client.requests.count == 2 && !manager.movePassRequired, "the denial that arrived after the gate closed was not applied")
+        // a held response across an account change is discarded too
+        gate.set(gate: .clear)
+        client.setHold()
+        let switched = Task { await manager.processUploadedSession(request) }
+        while !client.isHolding { await Task.yield() }
+        uid.uid = "B"
+        client.release()
+        await switched.value
+        #expect(client.requests.count == 3 && !manager.movePassRequired)
+    }
+
+    @MainActor @Test func narrationStartsOnlyUnderALeaseAndTheOwnerResolvesLeasesByIdForTheSessionManager() async {
+        let gate = GateSnapshotStub()
+        let owner = RoomCaptureArtifactOwner(gateSnapshot: gate.snapshot)
+        let lease = await owner.acquire(uid: "A", sessionId: "Kitchen")
+        let issued = lease!
+        let resolved = await owner.lease(withId: issued.leaseId)
+        let missing = await owner.lease(withId: "missing")
+        #expect(resolved == issued && missing == nil)
+        let gateNow = await owner.currentGate()
+        #expect(gateNow.gate == .clear && gateNow.generation == issued.gateGeneration)
+        let narration = NarrationService()
+        #expect(narration.activeLease == nil)
+        narration.start(lease: issued)
+        #expect(narration.activeLease == issued, "the recording runs under the actor-issued lease (listening itself needs the microphone authorization)")
+        await owner.revokeAll()
+        let afterRevoke = await owner.lease(withId: issued.leaseId)
+        let reissued = await owner.acquire(uid: "A", sessionId: "Kitchen")
+        #expect(afterRevoke == nil && reissued == nil, "after revocation no lease resolves or is issued")
     }
 
     // MARK: - Epoch stamps (I4, stamps only; manifest §5:540-546). Cleanup belongs to S3.
@@ -3678,6 +3751,30 @@ enum LegacyFixtures {
     }
     static func seed(_ directory: URL, migration: LegacyResetMigrationV1, records: [[String: Any]] = [], gesture: ResetGestureV1? = nil) throws {
         try ResetFixtures.envelope(records: records, migrations: [migration.map()], gesture: gesture?.map()).write(to: ResetFixtures.target(directory))
+    }
+}
+
+/// The coverage store the pinned three-argument initializer needs; nothing is persisted.
+struct NoopCoverageStore: CoverageConfirmationPersisting {
+    func insertConfirmedRoomID(_ roomID: String, userID: String) async throws -> Set<String> { [roomID] }
+}
+
+/// A holdable `InventoryProcessingCalling`: records requests, parks the call until released, and can throw the entitlement denial.
+final class HoldableInventoryClient: InventoryProcessingCalling, @unchecked Sendable {
+    private let lock = NSLock()
+    private var recorded: [String] = []
+    private var holding = false
+    private var held: CheckedContinuation<Void, Never>?
+    private var denies = false
+    var requests: [String] { lock.withLock { recorded } }
+    func setHold() { lock.withLock { holding = true } }
+    var isHolding: Bool { lock.withLock { held != nil } }
+    func release() { let c: CheckedContinuation<Void, Never>? = lock.withLock { defer { held = nil; holding = false }; return held }; c?.resume() }
+    func setDenying(_ value: Bool) { lock.withLock { denies = value } }
+    func processInventory(_ request: InventoryProcessingRequest) async throws {
+        let shouldHold: Bool = lock.withLock { recorded.append("\(request.userId)/\(request.sessionId)"); return holding }
+        if shouldHold { await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in lock.withLock { held = c } } }
+        if lock.withLock({ denies }) { throw InventoryError.movePassRequired }
     }
 }
 

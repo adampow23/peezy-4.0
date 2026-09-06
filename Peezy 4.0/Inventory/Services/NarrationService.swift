@@ -56,7 +56,11 @@ final class NarrationService {
     }
 
     /// Starts listening. Silently no-ops on any failure.
-    func start() {
+    /// S4 (S4-CD7): the lease the current recording runs under; only a lease issued by `RoomCaptureArtifactOwner` starts listening.
+    private(set) var activeLease: NarrationLease?
+
+    func start(lease: NarrationLease) {
+        activeLease = lease
         guard !isListening, Self.isAuthorized,
               let recognizer = SFSpeechRecognizer(locale: Locale.current),
               recognizer.isAvailable, recognizer.supportsOnDeviceRecognition

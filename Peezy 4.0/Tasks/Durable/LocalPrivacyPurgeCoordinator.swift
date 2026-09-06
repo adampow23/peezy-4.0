@@ -1,5 +1,6 @@
 import FirebaseFirestore
 import Foundation
+import SwiftUI
 
 // S4 (C10.2 L4119): the Firestore runtime owner, the client-telemetry privacy authority, the
 // room/media/narration-transfer actor, the completion-presentation owner, and the local privacy
@@ -310,6 +311,12 @@ actor RoomCaptureArtifactOwner: RoomCaptureArtifactPurging {
     func registeredArtifacts() -> [URL] { artifacts.keys.sorted { $0.path < $1.path } }
     func outstandingLeases() -> Int { leases.count }
     func inFlightTransfers() -> Int { transfers.count }
+
+    /// The outstanding lease with this ID (the camera view hands the session manager only the lease ID).
+    func lease(withId leaseId: String) -> NarrationLease? { leases.first { $0.leaseId == leaseId } }
+
+    /// The deletion gate and generation the §8.9.3 admission at the inventory call sites reads (S4-CD6).
+    func currentGate() async -> (gate: AccountDeletionGate, generation: GateGeneration) { await gateSnapshot() }
 
     /// Invalidates every lease, invokes every registered transfer's `cancel`, and awaits every registered
     /// transfer's settlement before returning (S4-CD7); no lease is issued again until `reopen()`.
@@ -930,5 +937,20 @@ actor LocalPrivacyPurgeCoordinator: LocalPrivacyPurgeCoordinating {
                 }
             }
         }
+    }
+}
+
+// MARK: - The room-capture owner in the SwiftUI environment (S7 injects the one production owner; nil until then)
+
+private struct RoomCaptureArtifactOwnerKey: EnvironmentKey {
+    static let defaultValue: RoomCaptureArtifactOwner? = nil
+}
+
+extension EnvironmentValues {
+    /// The sole `RoomCaptureArtifactOwner`; the camera view acquires narration leases from it. Nil (unmounted) means
+    /// no lease can be issued, so no narration is captured.
+    var roomCaptureArtifactOwner: RoomCaptureArtifactOwner? {
+        get { self[RoomCaptureArtifactOwnerKey.self] }
+        set { self[RoomCaptureArtifactOwnerKey.self] = newValue }
     }
 }
