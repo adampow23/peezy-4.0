@@ -133,11 +133,23 @@ function fakeFirestore({ docs: initial = {}, clock } = {}) {
     for (const op of ops) {
       if (op.type === "delete") docs.delete(op.path);
       else if (op.type === "update") docs.set(op.path, applyUpdate(docs.get(op.path), op.data));
-      else if (op.type === "set" && op.options?.merge) docs.set(op.path, applyUpdate(docs.get(op.path) || {}, op.data));
+      else if (op.type === "set" && op.options?.merge) docs.set(op.path, deepMerge(docs.get(op.path) || {}, op.data));
       else docs.set(op.path, clone(op.data));
       bump(op.path);
       writes.push(op);
     }
+  }
+
+  // Firestore set(..., {merge:true}) merges nested maps recursively; arrays and sentinels replace.
+  function deepMerge(existing, data) {
+    const next = clone(existing || {});
+    for (const [key, value] of Object.entries(data)) {
+      if (value && typeof value === "object" && value.methodName === "FieldValue.delete") { delete next[key]; continue; }
+      const isMap = value !== null && typeof value === "object" && !Array.isArray(value) && !(value instanceof Timestamp) && value.methodName === undefined;
+      const existingMap = next[key] !== null && typeof next[key] === "object" && !Array.isArray(next[key]) && !(next[key] instanceof Timestamp);
+      next[key] = isMap && existingMap ? deepMerge(next[key], value) : clone(value);
+    }
+    return next;
   }
 
   function applyUpdate(existing, data) {

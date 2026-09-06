@@ -1046,10 +1046,11 @@ function timestampNow(now) {
   return Timestamp.fromMillis(now.getTime());
 }
 
+/** Firestore `set(..., {merge:true})` deep-merges nested maps; the marker must be replaced, so it is written with `update`. */
 function writeRecordAndMarker(transaction, recordRef, userRef, record, { create = false } = {}) {
   if (create) transaction.create(recordRef, record);
   else transaction.set(recordRef, record);
-  transaction.set(userRef, { taskReset: projectResetMarker(record) }, { merge: true });
+  transaction.update(userRef, { taskReset: projectResetMarker(record) });
 }
 
 /** Appends a caller alias (first-seen, unique, cap 16); a later alias past capacity resolves without persisting. */
@@ -1122,7 +1123,9 @@ async function classifyPhase2Reset(db, uid, request, now, { finalize }) {
       updated_at: nowTs
     };
     transaction.create(recordRef, record);
-    transaction.set(userRef, { taskReset: projectResetMarker(record), taskGenerationEpoch: r, activeMoveEventId: record.active_move_event_id }, { merge: true });
+    const rootWrite = { taskReset: projectResetMarker(record), taskGenerationEpoch: r, activeMoveEventId: record.active_move_event_id };
+    if (rootSnapshot.exists) transaction.update(userRef, rootWrite);
+    else transaction.set(userRef, rootWrite);
     return { kind: "active", record, created: true, userRef, recordRef, canonicalId, fingerprint };
   });
 }
@@ -1486,7 +1489,7 @@ async function executeReconcileLegacyTaskReset(db, uid, request, now) {
       };
       validateResetRecord(active, { uid, canonicalId, fingerprint: active.request_fingerprint });
       transaction.create(operationRef(userRef, canonicalId), active);
-      transaction.set(userRef, { taskReset: projectResetMarker(active), taskGenerationEpoch: r, activeMoveEventId: active.active_move_event_id }, { merge: true });
+      transaction.update(userRef, { taskReset: projectResetMarker(active), taskGenerationEpoch: r, activeMoveEventId: active.active_move_event_id });
       Object.assign(record, {
         source_state: recordClass, expected_task_generation_epoch: e, task_generation_epoch: r, canonical_operation_id: canonicalId,
         active_move_event_id: active.active_move_event_id, progress_receipt: progressReceipt(active, false)

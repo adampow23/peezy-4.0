@@ -56,3 +56,4 @@ functions/taskPlan.js
 functions/tests/taskPlan.test.js
 functions/resolveProvider.js
 functions/supportAdmin.js
+functions/tests/support/fakeFirestore.js

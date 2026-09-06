@@ -1961,4 +1961,201 @@ test("submitWorkflowAnswers is root-fenced: a deleting account refuses before an
   assert.equal(result.success, true);
 });
 
+// ---------------------------------------------------------------------------
+// I6 — C7 pin gates and the emulator-backed subset (Decision 8; skipped offline)
+// ---------------------------------------------------------------------------
+
+test("C7 pins: recursive-delete.js and firestore_client_config.json hashes and constants, transitive package versions, and the pinned function deadlines", () => {
+  const root = path.join(__dirname, "..");
+  const fileHash = (p) => createHash("sha256").update(fs.readFileSync(p)).digest("hex");
+  const firestorePkg = path.join(root, "node_modules", "@google-cloud", "firestore");
+  assert.equal(fileHash(path.join(firestorePkg, "build", "src", "recursive-delete.js")), "2a17d8fb6d975cdf3863c3826783f061a728a8a710fa7a3f81b10d0e7c407270");
+  assert.equal(fileHash(path.join(firestorePkg, "build", "src", "v1", "firestore_client_config.json")), "2ed7a9046d766121b7f308b22384b1a6caaf7c6eaed5d9ea553556af3c987e41");
+  const recursive = require(path.join(firestorePkg, "build", "src", "recursive-delete.js"));
+  assert.equal(recursive.RECURSIVE_DELETE_MAX_PENDING_OPS, 5000);
+  assert.equal(recursive.RECURSIVE_DELETE_MIN_PENDING_OPS, 1000);
+  const config = JSON.parse(fs.readFileSync(path.join(firestorePkg, "build", "src", "v1", "firestore_client_config.json"), "utf8"));
+  const methods = config.interfaces["google.firestore.v1.Firestore"].methods;
+  assert.equal(methods.Commit.timeout_millis, 60000);
+  assert.equal(methods.BatchWrite.timeout_millis, 60000);
+  const version = (name) => JSON.parse(fs.readFileSync(path.join(root, "node_modules", ...name.split("/"), "package.json"), "utf8")).version;
+  assert.deepEqual({ firestore: version("@google-cloud/firestore"), storage: version("@google-cloud/storage"), gax: version("google-gax"), auth: version("google-auth-library"), admin: version("firebase-admin") },
+    { firestore: "7.11.6", storage: "7.18.0", gax: "4.6.1", auth: "9.15.1", admin: "13.6.0" });
+  const index = fs.readFileSync(path.join(root, "index.js"), "utf8");
+  assert.match(index, /exports\.deleteAccount = onCall\(\s*\{ region: 'us-central1', timeoutSeconds: 60, memory: '512MiB' \}/);
+  assert.equal((index.match(/timeoutSeconds: 270/g) || []).length, 2, "both reconcilers carry the 270 s deadline");
+  const taskPlan = fs.readFileSync(path.join(root, "taskPlan.js"), "utf8");
+  assert.match(taskPlan, /const changeTaskPlan = onCall\(\s*\{ region: "us-central1", timeoutSeconds: 540, memory: "512MiB" \}/);
+});
+
+const EMULATOR_HOST = process.env.FIRESTORE_EMULATOR_HOST;
+const emulatorSkip = EMULATOR_HOST ? false : "FIRESTORE_EMULATOR_HOST is unset; run scripts/test-emulator.sh node";
+
+function emulatorDeps({ db, auth, client, extra = {} }) {
+  const deps = {
+    db, auth, bucket: fakeBucket(), logs: [], hooks: {}, metrics: [],
+    evidence: () => testEvidence(),
+    evidenceFence: async () => ({ earliestVersionTime: Timestamp.fromMillis(Date.now()) }),
+    now: () => Timestamp.fromMillis(Date.now()),
+    log: (code, counts) => deps.logs.push([code, counts]),
+    metric: (name, value) => deps.metrics.push([name, value]),
+    firestore: { client, documentsRoot: "projects/demo-peezy-phase1/databases/(default)/documents" },
+    verifyBucketConfiguration: () => {},
+    budget: { sweeps: 4, storagePages: 4, deadlineMs: 42_000 },
+    timeouts: { getUserMs: 3000, deleteUserMs: 10000, providerMs: 3000 },
+    ...extra
+  };
+  return deps;
+}
+
+function emulatorHandles() {
+  const { initializeApp, getApps } = require("firebase-admin/app");
+  const { getFirestore } = require("firebase-admin/firestore");
+  const { getAuth } = require("firebase-admin/auth");
+  const grpc = require("@grpc/grpc-js");
+  const { v1 } = require("@google-cloud/firestore");
+  const app = getApps().length ? getApps()[0] : initializeApp({ projectId: "demo-peezy-phase1" });
+  const [host, port] = EMULATOR_HOST.split(":");
+  const raw = new v1.FirestoreClient({ servicePath: host, port: Number(port), sslCreds: grpc.credentials.createInsecure() });
+  // The emulator requires the owner bearer for metadata RPCs (production credentials supply it).
+  const client = { listCollectionIds: (request, options) => raw.listCollectionIds(request, { ...options, otherArgs: { headers: { authorization: "Bearer owner" } } }) };
+  return { db: getFirestore(app), auth: getAuth(app), client };
+}
+
+function lastBoundaryIso(offsetSeconds) {
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  const epoch = Math.floor((nowSeconds - offsetSeconds) / 300) * 300 + offsetSeconds;
+  return new Date(epoch * 1000).toISOString().replace(".000Z", "Z");
+}
+
+test("emulator: begin, sweeps, and guarding on real Firestore — listCollectionIds tuple, recursiveDelete, orphaned descendants, external families, other users untouched", { skip: emulatorSkip }, async () => {
+  const { db, auth, client } = emulatorHandles();
+  const uid = `emu-${randomUUID().slice(0, 8)}`;
+  await db.doc(`users/${uid}`).set({ name: "E", email: "e@example.com" });
+  await db.doc(`users/${uid}/tasks/t1`).set({ status: "Upcoming" });
+  await db.doc(`users/${uid}/tasks/t1/nested/x`).set({ deep: true });
+  await db.doc(`users/${uid}/orphan/missing/deep/leaf`).set({ orphan: true });
+  await db.doc(`userKnowledge/${uid}`).set({ facts: 1 });
+  await db.doc(`conciergeRequests/${uid}-r1`).set({ userId: uid });
+  await db.doc(`users/other-${uid}/tasks/t`).set({ keep: true });
+  const deps = emulatorDeps({ db, auth, client });
+  const credentials = { operationId: freshOperationId(), proofNonce: freshProofNonce() };
+  const request = (action) => ({ data: { schemaVersion: 1, action, uid, ...credentials }, auth: { uid } });
+  await expectDeletionError(() => fence.handleAccountDeletionRequest(request("begin"), deps), "unavailable", RETRY);
+  let marker;
+  for (let i = 0; i < 6; i += 1) {
+    await expectDeletionError(() => fence.handleAccountDeletionRequest(request("resume"), deps), "unavailable", RETRY);
+    marker = (await db.doc(`users/${uid}`).get()).data().accountDeletion;
+    if (fence.validateAccountDeletionMarker(marker).phase === "DELETING_GUARDING") break;
+  }
+  assert.equal(fence.validateAccountDeletionMarker(marker).phase, "DELETING_GUARDING", JSON.stringify(deps.logs));
+  const [ids] = await client.listCollectionIds({ parent: `${deps.firestore.documentsRoot}/users/${uid}`, pageSize: 100 }, { autoPaginate: false });
+  assert.deepEqual([...ids], []);
+  assert.equal((await db.doc(`userKnowledge/${uid}`).get()).exists, false);
+  assert.equal((await db.doc(`conciergeRequests/${uid}-r1`).get()).exists, false);
+  assert.equal((await db.doc(`users/other-${uid}/tasks/t`).get()).exists, true);
+  assert.deepEqual(Object.keys((await db.doc(`users/${uid}`).get()).data()), ["accountDeletion"]);
+  fence.validateStorageWork((await db.doc(`accountDeletionStorageWork/${fence.storageWorkId(uid)}`).get()).data(), { uid, marker });
+  assert.equal(marker.capabilities[0].operationId, credentials.operationId);
+});
+
+test("emulator: Storage reconciler → DATA_DELETED, finalize → AUTH_GUARDING through the Auth emulator, Auth reconciler → ACCOUNT_DELETED", { skip: emulatorSkip }, async () => {
+  const { db, auth, client } = emulatorHandles();
+  const uid = `emu-${randomUUID().slice(0, 8)}`;
+  const credentials = { operationId: freshOperationId(), proofNonce: freshProofNonce() };
+  const startedAt = Timestamp.fromMillis(Date.now() - 12 * 86400_000);
+  const guardAfter = Timestamp.fromMillis(startedAt.toMillis() + 604800_000);
+  const cleanupAt = Timestamp.fromMillis(startedAt.toMillis() + 3600_000);
+  const marker = { schemaVersion: 1, state: "DELETING", capabilities: [capability(uid, credentials.operationId, credentials.proofNonce)], startedAt, storageGuardAfter: guardAfter, firestoreCleanupAt: cleanupAt };
+  fence.validateAccountDeletionMarker(marker);
+  await db.doc(`users/${uid}`).set({ accountDeletion: marker });
+  await db.doc(`accountDeletionStorageWork/${fence.storageWorkId(uid)}`).set({ schema_version: 1, kind: "ACCOUNT_DELETION_STORAGE_WORK", work_id: fence.storageWorkId(uid), account_uid: uid, marker_started_at: startedAt, storage_guard_after: guardAfter, failure_count: 0, next_eligible_run: 0, created_at: startedAt, updated_at: startedAt });
+  const storageIso = lastBoundaryIso(0);
+  const storageOrdinal = Math.floor(Date.parse(storageIso) / 1000 / 300);
+  await db.doc("phase2System/accountDeletionStorageReconcilerV1").set({ schema_version: 1, kind: "ACCOUNT_DELETION_STORAGE_RECONCILER", last_started_ordinal: storageOrdinal - 12, last_completed_ordinal: storageOrdinal - 12, cursor_id: "", lease: null, heartbeat: null });
+  const deps = emulatorDeps({ db, auth, client });
+  // other rows may sit in the shared work collection from earlier tests in this run; walk past boundaries until this uid's row is reduced
+  for (let i = 0; i < 12; i += 1) {
+    const state = (await db.doc("phase2System/accountDeletionStorageReconcilerV1").get()).data();
+    const iso = new Date((state.last_started_ordinal + 1) * 300 * 1000).toISOString().replace(".000Z", "Z");
+    if (Date.parse(iso) > Date.now()) break;
+    await fence.runStorageReconciler({ scheduleTime: iso }, deps);
+    const current = (await db.doc(`users/${uid}`).get()).data().accountDeletion;
+    if (fence.validateAccountDeletionMarker(current).phase === "DATA_DELETED") break;
+  }
+  const dataDeleted = (await db.doc(`users/${uid}`).get()).data().accountDeletion;
+  assert.equal(fence.validateAccountDeletionMarker(dataDeleted).phase, "DATA_DELETED", JSON.stringify(deps.logs));
+  assert.equal((await db.doc(`accountDeletionStorageWork/${fence.storageWorkId(uid)}`).get()).exists, false);
+
+  await auth.createUser({ uid });
+  const wire = await fence.handleAccountDeletionRequest({ data: { schemaVersion: 1, action: "finalize", uid, ...credentials } }, deps);
+  assert.equal(wire.kind, "account_deletion_auth_guarding");
+  assert.equal(wire.replayed, false);
+  await assert.rejects(auth.getUser(uid), (e) => fence.isUserNotFound(e));
+  const guarding = (await db.doc(`users/${uid}`).get()).data().accountDeletion;
+  assert.equal(fence.validateAccountDeletionMarker(guarding).phase, "AUTH_GUARDING");
+  const work = (await db.doc(`accountDeletionAuthWork/${fence.authWorkId(uid)}`).get()).data();
+  assert.equal(work.state, "guarding");
+
+  // rewind the whole time chain consistently so the guard deadline (retention 86400 s) is already past:
+  // completions and data-final four days ago (after storageGuardAfter = startedAt + 7 d), absence two days ago, deadline one day ago
+  const fourDaysAgo = Timestamp.fromMillis(Date.now() - 4 * 86400_000);
+  const observed = Timestamp.fromMillis(Date.now() - 2 * 86400_000);
+  const pastGuard = Timestamp.fromMillis(observed.toMillis() + 86400_000);
+  const rewound = { ...guarding, storageGuardCompletedAt: fourDaysAgo, firestoreVersionGuardCompletedAt: fourDaysAgo, dataDeletedAt: fourDaysAgo, authAbsenceObservedAt: observed, authGuardAfter: pastGuard };
+  fence.validateAccountDeletionMarker(rewound);
+  await db.doc(`users/${uid}`).update({ accountDeletion: rewound });
+  await db.doc(`accountDeletionAuthWork/${fence.authWorkId(uid)}`).set({ ...work, data_deleted_at: fourDaysAgo, auth_absence_observed_at: observed, auth_guard_after: pastGuard, next_eligible_run: 0, created_at: fourDaysAgo, updated_at: observed });
+  const authIso = lastBoundaryIso(120);
+  const authOrdinal = fence.authScheduleOrdinal(Math.floor(Date.parse(authIso) / 1000));
+  await db.doc("phase2System/accountDeletionAuthReconcilerV1").set({ schema_version: 1, kind: "ACCOUNT_DELETION_AUTH_RECONCILER", last_started_ordinal: authOrdinal - 12, last_completed_ordinal: authOrdinal - 12, cursor_id: "", lease: null, heartbeat: null });
+  const authDeps = emulatorDeps({ db, auth, client, extra: { providerHTTP: fakeProviderHTTP(() => jsonResponse({ matchCount: 0 })) } });
+  for (let i = 0; i < 12; i += 1) {
+    const state = (await db.doc("phase2System/accountDeletionAuthReconcilerV1").get()).data();
+    const iso = new Date(((state.last_started_ordinal + 1) * 300 + 120) * 1000).toISOString().replace(".000Z", "Z");
+    if (Date.parse(iso) > Date.now()) break;
+    await fence.runAuthReconciler({ scheduleTime: iso }, authDeps);
+    const current = (await db.doc(`users/${uid}`).get()).data().accountDeletion;
+    if (fence.validateAccountDeletionMarker(current).phase === "ACCOUNT_DELETED") break;
+  }
+  const deleted = (await db.doc(`users/${uid}`).get()).data().accountDeletion;
+  assert.equal(fence.validateAccountDeletionMarker(deleted).phase, "ACCOUNT_DELETED", JSON.stringify(authDeps.logs));
+  assert.equal((await db.doc(`accountDeletionAuthWork/${fence.authWorkId(uid)}`).get()).exists, false);
+  const replay = await fence.handleAccountDeletionRequest({ data: { schemaVersion: 1, action: "resume", uid, ...credentials } }, deps);
+  assert.equal(replay.kind, "account_deletion_account_deleted");
+  assert.equal(replay.replayed, true);
+});
+
+test("emulator: Phase 2 reset protocol on real Firestore — rso1_ record, Reconciled 9 marker, four-target deletion, tombstone finalize, inspection", { skip: emulatorSkip }, async () => {
+  const { db } = emulatorHandles();
+  const { handleTaskPlanRequest, resetCanonicalId, resetRequestFingerprint, projectResetMarker } = require("../taskPlan");
+  const uid = `emu-${randomUUID().slice(0, 8)}`;
+  await db.doc(`users/${uid}`).set({ name: "R", taskGenerationEpoch: 1 });
+  await db.doc(`users/${uid}/tasks/a`).set({ status: "Upcoming" });
+  await db.doc(`users/${uid}/tasks/b`).set({ status: "Done" });
+  await db.doc(`users/${uid}/notificationIntents/n`).set({ kind: "TASK_RESUME" });
+  await db.doc(`users/${uid}/taskPlanOperations/pcs1_snap`).set({ kind: "CONFIRMATION_SNAPSHOT" });
+  await db.doc(`users/${uid}/taskPlanOperations/op1_keep`).set({ kind: "TASK_OPERATION", state: "COMMITTED" });
+  const aliasId = `rsa1_${randomUUID()}`;
+  const call = (data) => handleTaskPlanRequest({ auth: { uid }, data }, () => db, new Date(), { resetProtocolMode: "compat" });
+  const progress = await call({ action: "resetAllTasks", operationId: aliasId, reason: "retake_assessment", expectedTaskGenerationEpoch: 1 });
+  const canonical = resetCanonicalId(uid, 2);
+  assert.equal(progress.operationId, canonical);
+  assert.equal(progress.state, "awaiting_local_reset");
+  assert.deepEqual(progress.deletedCounts, { tasks: 2, notificationIntents: 1, taskDeadlineEvidence: 0, confirmationSnapshots: 1 });
+  const root = (await db.doc(`users/${uid}`).get()).data();
+  assert.equal(root.taskGenerationEpoch, 2);
+  const record = (await db.doc(`users/${uid}/taskPlanOperations/${canonical}`).get()).data();
+  assert.deepEqual(fence.TaskCanonicalV1(root.taskReset), fence.TaskCanonicalV1(projectResetMarker(record)));
+  assert.equal((await db.doc(`users/${uid}/taskPlanOperations/op1_keep`).get()).exists, true);
+  const inspection = await call({ action: "inspectCommittedOperation", family: "RESET", authority: { operationId: canonical }, requestAuthority: { requestFingerprint: resetRequestFingerprint(1) }, identityDigest: fence.sha256Hex(fence.TaskCanonicalV1({ kind: "reset", uid, expectedTaskGenerationEpoch: 1 })) });
+  assert.equal(inspection.outcome, "pending");
+  const final = await call({ action: "finalizeTaskReset", operationId: aliasId, reason: "retake_assessment", expectedTaskGenerationEpoch: 1 });
+  assert.equal(final.kind, "reset_final");
+  assert.equal("taskReset" in (await db.doc(`users/${uid}`).get()).data(), false);
+  const committed = await call({ action: "inspectCommittedOperation", family: "RESET", authority: { operationId: canonical }, requestAuthority: { requestFingerprint: resetRequestFingerprint(1) }, identityDigest: fence.sha256Hex(fence.TaskCanonicalV1({ kind: "reset", uid, expectedTaskGenerationEpoch: 1 })) });
+  assert.equal(committed.outcome, "committed");
+  assert.deepEqual(committed.receipt, { ...final, replayed: true });
+});
+
 module.exports = { fakeFirestore, FakeClock, capability, sweepingMarker, guardingMarker, dataDeletedMarker, authGuardingMarker, accountDeletedMarker, freshOperationId, freshProofNonce, ts, UID, STARTED, GUARD_AFTER };

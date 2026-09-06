@@ -22,3 +22,11 @@
 - The simulator reports no file-protection class; assert `.protectionKey` on device builds only and say so in the test.
 - Inside `#expect`, `await` may only lead the expression; hoist any awaited operand that sits to the right of `&&` or `==`.
 - When a slice must leave a user path identical, keep the legacy identity (here the UserDefaults operation id) as the server-facing one and let the new durable identity ride alongside; the spec forbids importing the legacy id as the new alias (v9:569).
+
+## 2026-09-06 — S2 server implementation
+- A reconciler fixture must advance its clock with each schedule boundary: the lease grammar requires `scheduled_at <= started_at`, so a fake clock left at the first boundary silently refuses every later acquisition and the run looks like it did nothing.
+- A cursor that "advances to the selected row" revisits a single-row backlog only after a wrap; fixtures that expect the same row on consecutive runs are wrong, not the reducer.
+- The in-memory Firestore must mirror Admin SDK value semantics or tests lie: `Date` values come back as `Timestamp`, `FieldValue.delete()`/`serverTimestamp()` are sentinel objects (never deep-cloned), and a concurrency probe must decrement when the response resolves, not on a timer.
+- firebase-admin's package `exports` map blocks deep requires (`firebase-admin/lib/...`, even `package.json`); load SDK internals by filesystem path from `node_modules`.
+- Never put a cron string inside a `/** */` comment: `*/5` closes the comment and breaks the module at parse time.
+- Bash heredocs cannot carry raw control bytes (the tool rejects them); spell control characters in regexes with backslash-u escapes or use the Write tool.

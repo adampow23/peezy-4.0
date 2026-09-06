@@ -9,6 +9,7 @@
 #   scripts/test-emulator.sh                      # Swift S1 suites + rules tests
 #   scripts/test-emulator.sh swift [Suite ...]    # Swift suites only (default: S1 suites)
 #   scripts/test-emulator.sh rules                # rules tests only
+#   scripts/test-emulator.sh node                 # S2 Node suites (emulator-backed subset + offline matrices)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -32,10 +33,14 @@ SWIFT_CMD="env -u PEEZY_RUN_FIRESTORE_INTEGRATION \
   test \"\${PIPESTATUS[0]}\" -eq 0"
 
 RULES_CMD="(cd functions && FIRESTORE_EMULATOR_HOST=\"\$FIRESTORE_EMULATOR_HOST\" node --test rules-tests/firestoreRules.test.js)"
+# S2 (briefs/S2_BRIEF.md, Decision 9): node@24 by explicit path, never PATH node.
+NODE24="/opt/homebrew/opt/node@24/bin/node"
+NODE_CMD="(cd functions && FIRESTORE_EMULATOR_HOST=\"\$FIRESTORE_EMULATOR_HOST\" FIREBASE_AUTH_EMULATOR_HOST=\"\$FIREBASE_AUTH_EMULATOR_HOST\" $NODE24 --test tests/accountDeletionFence.test.js tests/taskPlan.test.js)"
 
 case "$MODE" in
   swift) INNER="$SWIFT_CMD" ;;
   rules) INNER="$RULES_CMD" ;;
+  node)  INNER="$NODE_CMD" ;;
   all)   INNER="$SWIFT_CMD && $RULES_CMD" ;;
   *) echo "unknown mode: $MODE" >&2; exit 2 ;;
 esac
