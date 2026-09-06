@@ -1,6 +1,7 @@
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const admin = require("firebase-admin");
 const Anthropic = require("@anthropic-ai/sdk");
+const logger = require('firebase-functions/logger');
 const { getAIConfig } = require("./aiConfig");
 const { requireMovePass } = require("./entitlement");
 const { assertDeletionAbsent, withOutboundLease } = require("./accountDeletionFence");
@@ -101,14 +102,9 @@ const TRAILING_URL_PUNCTUATION = /[.,;:!?\]\)}]+$/;
 let anthropicClient = null;
 
 function logTokenUsage(response, researchScope, continuation) {
-  console.log(JSON.stringify({
-    event: "anthropic_usage",
-    function: "researchTask",
-    researchScope,
-    continuation,
-    inputTokens: response?.usage?.input_tokens ?? null,
-    outputTokens: response?.usage?.output_tokens ?? null
-  }));
+  const inputTokens = response?.usage?.input_tokens ?? 0;
+  const outputTokens = response?.usage?.output_tokens ?? 0;
+  logger.info("ANTHROPIC_USAGE", { function: "researchTask", researchScope, continuation, inputTokens, outputTokens });
 }
 
 function getAnthropicClient() {
@@ -852,7 +848,7 @@ const researchTask = onCall(
         });
       } catch (writeError) {
         if (writeError?.details?.reason === "ACCOUNT_DELETION_FENCED") throw writeError;
-        console.error("researchTask could not persist its failed state", writeError);
+        logger.error("RESEARCH_FAILED_STATE_WRITE_FAILED");
       }
 
       if (error instanceof HttpsError) throw error;

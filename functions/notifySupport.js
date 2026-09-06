@@ -5,6 +5,7 @@
 
 const nodemailer = require('nodemailer');
 const twilio = require('twilio');
+const logger = require('firebase-functions/logger');
 const { withOutboundLease } = require('./accountDeletionFence');
 
 const SUPPORT_FROM_EMAIL = 'adam@peezymove.com';
@@ -49,7 +50,7 @@ async function sendEmail({ uid, textPreview, taskTitle }, deps) {
       text: `User: ${uid}\n${taskLine}\n${textPreview}`
     }));
   } catch (error) {
-    console.error('[notifySupport] Email failed:', error.message);
+    logger.warn('SUPPORT_EMAIL_FAILED');
   }
 }
 
@@ -81,7 +82,7 @@ async function sendSms({ uid, textPreview, taskTitle }, deps) {
       to: destination
     }));
   } catch (error) {
-    console.error('[notifySupport] SMS failed:', error.message);
+    logger.warn('SUPPORT_SMS_FAILED');
   }
 }
 

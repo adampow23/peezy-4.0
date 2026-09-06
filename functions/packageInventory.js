@@ -16,6 +16,7 @@
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
 const nodemailer = require('nodemailer');
+const logger = require('firebase-functions/logger');
 const { assertDeletionAbsent, withOutboundLease } = require('./accountDeletionFence');
 const { Timestamp } = require('firebase-admin/firestore');
 
@@ -214,12 +215,12 @@ exports.packageInventory = onCall(
         transaction.create(packageRef, packageData);
       });
 
-      console.log(`packageInventory: sent package for user ${userId} (${assessment.userName})`);
+      logger.info('INVENTORY_PACKAGE_SENT');
       return { success: true };
 
     } catch (error) {
       if (error instanceof HttpsError) throw error;
-      console.error('packageInventory error:', error);
+      logger.error('INVENTORY_PACKAGE_FAILED');
       throw new HttpsError('internal', error.message || 'Failed to package inventory');
     }
   }

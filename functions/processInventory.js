@@ -7,6 +7,7 @@
 const { createHash } = require('node:crypto');
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { onDocumentWritten } = require('firebase-functions/v2/firestore');
+const logger = require('firebase-functions/logger');
 const { assertDeletionAbsent, withOutboundLease } = require('./accountDeletionFence');
 const { Timestamp } = require('firebase-admin/firestore');
 const admin = require('firebase-admin');
@@ -58,12 +59,9 @@ function getAnthropicClient() {
 }
 
 function logTokenUsage(response) {
-  console.log(JSON.stringify({
-    event: 'anthropic_usage',
-    function: 'processInventory',
-    inputTokens: response?.usage?.input_tokens ?? null,
-    outputTokens: response?.usage?.output_tokens ?? null
-  }));
+  const inputTokens = response?.usage?.input_tokens ?? 0;
+  const outputTokens = response?.usage?.output_tokens ?? 0;
+  logger.info('ANTHROPIC_USAGE', { function: 'processInventory', inputTokens, outputTokens });
 }
 
 function buildCubeRowLookup(rows) {
@@ -554,17 +552,14 @@ function referencedEvidenceFrameIndices(trace) {
   return retained;
 }
 
-async function cleanupSessionFrames(frames, trace, logger = console) {
+async function cleanupSessionFrames(frames, trace, log = logger) {
   const retained = referencedEvidenceFrameIndices(trace);
   const deletions = frames.filter((frame) => !retained.has(frame.index));
   await Promise.all(deletions.map(async (frame) => {
     try {
       await frame.storageFile.delete();
     } catch (error) {
-      logger.error('processInventory: frame cleanup failed', {
-        frame: frame.name,
-        error: error.message || String(error)
-      });
+      log.error('INVENTORY_FRAME_CLEANUP_FAILED');
     }
   }));
   return {
@@ -639,7 +634,7 @@ async function handleInventoryRoomWrite(event) {
         });
       } catch (error) {
         if (error?.details?.reason === 'ACCOUNT_DELETION_FENCED') throw error;
-        console.error('inventory room packing failed', { userId, roomId, error });
+        logger.error('INVENTORY_ROOM_PACKING_FAILED');
         await db.runTransaction(async (transaction) => {
           await assertDeletionAbsent(transaction, db, [userId]); // C6.1 root fence (onInventoryRoomWritten)
           transaction.set(roomRef, {
@@ -665,25 +660,21 @@ exports.processInventory = onCall(
     enforceAppCheck: false
   },
   async (request) => {
-    console.log('processInventory: handler entered');
-
     // 1. Validate auth
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'Must be authenticated');
     }
     await requireMovePass(request.auth.uid);
-    console.log('processInventory: auth valid, uid =', request.auth.uid);
 
     // 2. Extract parameters
     const { userId, sessionId, roomName, frameCount, narration } = request.data;
-    console.log('processInventory: params', { userId, sessionId, roomName, frameCount });
     if (!userId || !sessionId || !roomName) {
       throw new HttpsError('invalid-argument', 'Missing required fields');
     }
 
     // 3. Verify requesting user matches userId (security)
     if (request.auth.uid !== userId) {
-      console.error('processInventory: uid mismatch', request.auth.uid, '!==', userId);
+      logger.warn('PROCESS_INVENTORY_UID_MISMATCH');
       throw new HttpsError('permission-denied', 'Cannot process another user inventory');
     }
 
@@ -703,17 +694,12 @@ exports.processInventory = onCall(
         .sort((left, right) => left.name.localeCompare(right.name));
 
       if (frameCount !== frameFiles.length) {
-        console.warn('processInventory: frame count mismatch', {
-          reportedFrameCount: frameCount ?? null,
-          listedFrameCount: frameFiles.length,
-          sessionId
-        });
+        logger.warn('PROCESS_INVENTORY_FRAME_COUNT_MISMATCH', { listedFrameCount: frameFiles.length });
       }
       if (frameFiles.length === 0) {
         throw new Error('No uploaded frames found');
       }
 
-      console.log('processInventory: downloading listed frames', frameFiles.map((file) => file.name));
       const frames = await Promise.all(frameFiles.map(async (file, position) => {
         const [buffer] = await file.download();
         const indexMatch = file.name.match(/frame_(\d+)\.jpg$/);
@@ -724,7 +710,7 @@ exports.processInventory = onCall(
           base64: buffer.toString('base64')
         };
       }));
-      console.log('processInventory: downloaded', frames.length, 'frames, sizes:', frames.map(f => f.base64.length));
+      logger.info('PROCESS_INVENTORY_FRAMES_DOWNLOADED', { count: frames.length });
 
       // 5. Build Claude API request with multi-image input
       const imageContent = frames.map((frame) => ([
@@ -839,9 +825,7 @@ Return only a valid JSON array with no markdown, explanation, preamble, or backt
         }
         rawItems = JSON.parse(jsonStr);
       } catch (parseErr) {
-        console.error('processInventory: JSON parse failed', {
-          responseChars: textContent.text.length
-        });
+        logger.error('PROCESS_INVENTORY_JSON_PARSE_FAILED', { responseChars: textContent.text.length });
         throw new Error('Claude returned invalid JSON');
       }
 
@@ -904,19 +888,7 @@ Return only a valid JSON array with no markdown, explanation, preamble, or backt
           adjusted = !Number.isFinite(reportedCubicFeet) || cubicFeet !== reportedCubicFeet;
 
           if (adjusted) {
-            console.warn(JSON.stringify({
-              event: 'inventory_cube_adjusted',
-              function: 'processInventory',
-              sessionId,
-              itemIndex: idx,
-              type,
-              reportedCubicFeet: Number.isFinite(reportedCubicFeet)
-                ? reportedCubicFeet
-                : null,
-              cubicFeet,
-              low: cubeRow.low,
-              high: cubeRow.high
-            }));
+            logger.info('INVENTORY_CUBE_ADJUSTED', { itemIndex: idx });
           }
         } else {
           cubicFeet = unknownSizeTypical[sizeEstimate];
@@ -960,10 +932,7 @@ Return only a valid JSON array with no markdown, explanation, preamble, or backt
         });
         evidenceTrace = roomPackingWrite.packTrace;
       } catch (packingError) {
-        console.error('processInventory: packing simulation failed', {
-          sessionId,
-          error: packingError.message || String(packingError)
-        });
+        logger.error('PROCESS_INVENTORY_PACKING_FAILED');
         roomPackingWrite = {
           packMeta: failedPackMeta(inventoryRevision, cubeSheet.configVersion, packingError)
         };
@@ -987,18 +956,15 @@ Return only a valid JSON array with no markdown, explanation, preamble, or backt
       try {
         await cleanupSessionFrames(frames, evidenceTrace);
       } catch (cleanupError) {
-        console.error('processInventory: frame cleanup failed independently', {
-          sessionId,
-          error: cleanupError.message || String(cleanupError)
-        });
+        logger.warn('PROCESS_INVENTORY_FRAME_CLEANUP_FAILED');
       }
 
-      console.log(`processInventory: ${items.length} items found for session ${sessionId}`);
+      logger.info('PROCESS_INVENTORY_COMPLETE', { itemCount: items.length });
 
       return { success: true, itemCount: items.length };
 
     } catch (error) {
-      console.error('processInventory error:', error);
+      logger.error('PROCESS_INVENTORY_FAILED');
 
       // Update session with error status
       await db.runTransaction(async (transaction) => {
@@ -1009,7 +975,7 @@ Return only a valid JSON array with no markdown, explanation, preamble, or backt
         });
       }).catch((e) => {
         if (e?.details?.reason === 'ACCOUNT_DELETION_FENCED') throw e;
-        console.error('Failed to update error status:', e);
+        logger.error('PROCESS_INVENTORY_ERROR_STATUS_WRITE_FAILED');
       });
 
       throw new HttpsError('internal', error.message || 'Processing failed');

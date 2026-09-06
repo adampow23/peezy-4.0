@@ -2342,7 +2342,7 @@ function productionDependencies() {
     bucket: admin.storage().bucket(),
     now: () => Timestamp.fromMillis(Date.now()),
     log: (code, counts) => logger.info(code, counts || {}),
-    metric: (name, value) => logger.info("phase2_metric", { metric: name, value }),
+    metric: (metricName, value) => logger.info("phase2_metric", { metric: metricName, value }),
     firestore: { client: new v1.FirestoreClient(), documentsRoot: `projects/${projectId}/databases/(default)/documents` },
     firestoreAdmin: new v1.FirestoreAdminClient(),
     providerHTTP: productionProviderHTTP(),

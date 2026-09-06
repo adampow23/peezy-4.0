@@ -9,6 +9,7 @@
 const crypto = require("node:crypto");
 const { onRequest } = require("firebase-functions/v2/https");
 const admin = require("firebase-admin");
+const fixedLogger = require("firebase-functions/logger");
 const { assertDeletionAbsent } = require("./accountDeletionFence");
 const {
   PRODUCT_PERIODS,
@@ -45,25 +46,12 @@ function replaceServerTimestamps(value, serverTimestamp) {
 }
 
 function logFields(decision, body, input) {
-  const rawOriginalTransactionId = input?.originalTransactionId ?? body?.originalTransactionId;
-  const originalTransactionId = (
-    typeof rawOriginalTransactionId === "string" &&
-    LOG_IDENTIFIER_PATTERN.test(rawOriginalTransactionId)
-  )
-    ? rawOriginalTransactionId
-    : null;
-  const rawUid = input?.userId ?? body?.userId;
+  // C3 logging closure: fixed event code, fixed outcome/reason classes, a fixed product class; no UID or transaction value.
   const rawProductId = input?.productId ?? body?.productId;
   const entry = {
     event: "validateSubscription",
     outcome: decision.outcome,
     reason: decision.reason,
-    uid: typeof rawUid === "string" && LOG_IDENTIFIER_PATTERN.test(rawUid)
-      ? rawUid
-      : null,
-    otxHash: originalTransactionId == null
-      ? null
-      : crypto.createHash("sha256").update(originalTransactionId).digest("hex").slice(0, 8),
     productId: typeof rawProductId === "string" && Object.hasOwn(PRODUCT_PERIODS, rawProductId)
       ? rawProductId
       : null
@@ -79,7 +67,7 @@ function createValidationHandler(dependencies = {}) {
   const serverTimestampProvider = dependencies.serverTimestamp || (
     () => admin.firestore.FieldValue.serverTimestamp()
   );
-  const logger = dependencies.logger || ((entry) => console.log(JSON.stringify(entry)));
+  const logger = dependencies.logger || ((entry) => fixedLogger.info("VALIDATE_SUBSCRIPTION", entry));
 
   async function runDecisionTransaction(input, now, verifiedDeletedOwnerUid = null) {
     const db = dependencies.db || admin.firestore();

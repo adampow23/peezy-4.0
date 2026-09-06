@@ -7,6 +7,7 @@
  */
 
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
+const logger = require('firebase-functions/logger');
 const admin = require('firebase-admin');
 const { deletionError } = require('./accountDeletionFence');
 const { createHash } = require('node:crypto');
@@ -35,7 +36,7 @@ const getWorkflowQualifying = onCall(
       throw new HttpsError('invalid-argument', 'workflowId is required');
     }
 
-    console.log(`Getting workflow: ${workflowId}`);
+    logger.info('WORKFLOW_DEFINITION_LOOKUP');
 
     // Firestore-first (Spec 04): the flowDefinitions collection is the
     // definition source for the config-driven FlowEngine. Served through
@@ -50,7 +51,7 @@ const getWorkflowQualifying = onCall(
         return { flowDefinition: definitionDoc.data() };
       }
     } catch (err) {
-      console.error(`flowDefinitions lookup failed for ${workflowId}:`, err.message);
+      logger.warn('FLOW_DEFINITION_LOOKUP_FAILED');
     }
 
     // Check vendor workflows first
@@ -83,7 +84,7 @@ const getWorkflowQualifying = onCall(
     }
 
     // Generic fallback: 3-question survey for any unrecognized workflowId
-    console.log(`No specific qualifying found for ${workflowId} — returning generic survey`);
+    logger.info('WORKFLOW_GENERIC_SURVEY');
     const genericQuestions = [
       {
         id: "priority",
@@ -156,14 +157,14 @@ const submitWorkflowAnswers = onCall(
     }
     const submissionToken = validateSubmissionToken(request.data?.submissionToken);
     
-    console.log(`Submitting answers for workflow: ${workflowId}, user: ${userId}`);
+    logger.info('WORKFLOW_ANSWERS_SUBMITTED');
     try {
       return await executeWorkflowAnswers(
         admin.firestore(), userId, workflowId, answers, undefined, undefined, submissionToken
       );
 
     } catch (error) {
-      console.error('Error submitting workflow answers:', error);
+      logger.error('WORKFLOW_ANSWERS_FAILED');
       if (error instanceof HttpsError) throw error;
       throw new HttpsError('internal', 'Failed to submit answers');
     }

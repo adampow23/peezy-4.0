@@ -1,6 +1,7 @@
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const admin = require("firebase-admin");
 const Anthropic = require("@anthropic-ai/sdk");
+const logger = require('firebase-functions/logger');
 const { getAIConfig } = require("./aiConfig");
 const { buildChatSystemPrompt } = require("./systemPrompt");
 const { requireMovePass } = require("./entitlement");
@@ -30,13 +31,9 @@ const APP_FACTS = Object.freeze({
 let anthropicClient = null;
 
 function logTokenUsage(response, surface) {
-  console.log(JSON.stringify({
-    event: "anthropic_usage",
-    function: "peezyChat",
-    surface,
-    inputTokens: response?.usage?.input_tokens ?? null,
-    outputTokens: response?.usage?.output_tokens ?? null
-  }));
+  const inputTokens = response?.usage?.input_tokens ?? 0;
+  const outputTokens = response?.usage?.output_tokens ?? 0;
+  logger.info("ANTHROPIC_USAGE", { function: "peezyChat", surface, inputTokens, outputTokens });
 }
 
 function getAnthropicClient() {
@@ -439,12 +436,7 @@ const peezyChat = onCall(
         sender: "assistant"
       };
     } catch (error) {
-      console.error("peezyChat failed", {
-        uid: request.auth.uid,
-        surface,
-        taskId,
-        error: error?.message
-      });
+      logger.error("PEEZY_CHAT_FAILED", { surface });
       if (error instanceof HttpsError) throw error;
       throw new HttpsError("internal", "Chat response could not be generated");
     }

@@ -1,6 +1,7 @@
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const admin = require("firebase-admin");
 const twilio = require("twilio");
+const logger = require('firebase-functions/logger');
 const { Timestamp } = require("firebase-admin/firestore");
 const { withOutboundLease } = require("./accountDeletionFence");
 const {
@@ -34,7 +35,7 @@ async function notifyFlags(db, userId, vendorName, flags) {
 
   if (!accountSid || !authToken || !fromNumber || !notifyNumber ||
       accountSid === "placeholder_will_set_later") {
-    console.warn("SMS notify not configured");
+    logger.warn("CHECKIN_SMS_NOT_CONFIGURED");
     return;
   }
 
@@ -49,9 +50,9 @@ async function notifyFlags(db, userId, vendorName, flags) {
         to: notifyNumber
       }));
     }
-    console.log(`Check-in flag SMS sent (${flags.length})`);
+    logger.info("CHECKIN_SMS_SENT", { count: flags.length });
   } catch (error) {
-    console.error("SMS notify failed:", error.message);
+    logger.warn("CHECKIN_SMS_FAILED");
   }
 }
 

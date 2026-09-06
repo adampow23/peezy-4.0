@@ -597,13 +597,11 @@ test("24. a retried transaction emits exactly one structured log line", async ()
   assert.equal(result.response.statusCode, 200);
   assert.equal(db.transactions.length, 2);
   assert.equal(logs.length, 1);
+  // S3 (Decision 3, C3 logging closure): the entry carries fixed classes only — no uid, no transaction-derived hash.
   assert.deepEqual(logs[0], {
     event: "validateSubscription",
     outcome: "synced",
     reason: "created",
-    uid: "user_123",
-    otxHash: logs[0].otxHash,
     productId: "peezy.plus.move"
   });
-  assert.match(logs[0].otxHash, /^[a-f0-9]{8}$/);
 });

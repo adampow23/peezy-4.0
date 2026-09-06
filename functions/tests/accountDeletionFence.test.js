@@ -2815,3 +2815,82 @@ test("fake Firestore query semantics: collection groups, range/in/array-contains
   const scalarCursor = await db.collection("users/a/tasks").orderBy(FieldPath.documentId()).startAfter("t1").get();
   assert.deepEqual(scalarCursor.docs.map((d) => d.id), ["t2"]);
 });
+
+// ---------------------------------------------------------------------------
+// S3 — C5: `active exports contain no dynamic server log sink` (C3 logging closure)
+// ---------------------------------------------------------------------------
+
+/** Files reachable from index.js through relative requires. */
+function activeExportFiles() {
+  const root = path.join(__dirname, "..");
+  const seen = new Set();
+  const queue = ["index.js"];
+  while (queue.length) {
+    const file = queue.shift();
+    if (seen.has(file)) continue;
+    seen.add(file);
+    const source = fs.readFileSync(path.join(root, file), "utf8");
+    for (const match of source.matchAll(/require\(["']\.\/([^"']+)["']\)/g)) {
+      const target = match[1].endsWith(".js") || match[1].endsWith(".json") ? match[1] : `${match[1]}.js`;
+      if (target.endsWith(".js")) queue.push(target);
+    }
+  }
+  return [...seen].sort();
+}
+
+/** Returns the balanced argument text of the call whose "(" sits at `open`. */
+function callArguments(source, open) {
+  let depth = 0;
+  for (let i = open; i < source.length; i += 1) {
+    const ch = source[i];
+    if (ch === "(") depth += 1;
+    if (ch === ")") { depth -= 1; if (depth === 0) return source.slice(open + 1, i); }
+  }
+  return source.slice(open + 1);
+}
+
+const FORBIDDEN_LOG_ROOTS = new Set(["error", "err", "e", "exception", "writeError", "cleanupError", "packingError", "parseErr", "request", "req", "response", "res", "payload", "data", "uid", "userId", "user", "path", "message", "text", "token", "tokens", "name", "frame", "file", "sessionId", "taskId", "roomId", "workflowId", "email", "phone", "body", "reason"]);
+const FORBIDDEN_LOG_TAILS = new Set(["message", "stack", "name", "path", "id", "uid", "userId", "text", "email"]);
+
+/** A log value is fixed or bounded: a literal, or an identifier/member expression not rooted in a payload-like name. */
+function isFixedOrBoundedValue(text) {
+  const value = text.trim();
+  if (/^(-?\d+(\.\d+)?|true|false|null|"[A-Za-z0-9_./-]*"|'[A-Za-z0-9_./-]*')$/.test(value)) return true;
+  if (!/^[A-Za-z_$][\w$]*(\.[A-Za-z_$][\w$]*)*$/.test(value)) return false;
+  const parts = value.split(".");
+  return !FORBIDDEN_LOG_ROOTS.has(parts[0]) && !FORBIDDEN_LOG_TAILS.has(parts.at(-1));
+}
+
+test("active exports contain no dynamic server log sink", () => {
+  const root = path.join(__dirname, "..");
+  const violations = [];
+  for (const file of activeExportFiles()) {
+    const source = fs.readFileSync(path.join(root, file), "utf8");
+    const lines = source.split("\n");
+    lines.forEach((line, index) => {
+      if (/^\s*(\/\/|\*)/.test(line)) return;
+      if (/\bconsole\s*\./.test(line)) violations.push(`${file}:${index + 1} console sink`);
+    });
+    const pattern = /\b(?:logger|log)\s*\.\s*(log|error|warn|info|debug)\s*\(/g;
+    let match;
+    while ((match = pattern.exec(source)) !== null) {
+      const lineNumber = source.slice(0, match.index).split("\n").length;
+      const args = callArguments(source, match.index + match[0].length - 1);
+      // first argument: a fixed uppercase event code, or the `code` pass-through of a fixed-code helper
+      const first = args.split(",")[0].trim();
+      const fixedCode = /^["'][A-Za-z][A-Za-z0-9_/]*["']$/.test(first) || first === "code";
+      if (!fixedCode) { violations.push(`${file}:${lineNumber} non-fixed event code ${first}`); continue; }
+      const rest = args.slice(first.length).replace(/^\s*,?\s*/, "").trim();
+      if (rest === "" || rest === "{}" || rest === "counts" || rest === "counts || {}" || rest === "entry") continue;
+      if (/[`+]/.test(rest)) { violations.push(`${file}:${lineNumber} string composition in log arguments`); continue; }
+      const body = rest.startsWith("{") && rest.endsWith("}") ? rest.slice(1, -1) : null;
+      if (body === null) { violations.push(`${file}:${lineNumber} non-object log payload ${rest}`); continue; }
+      for (const entry of body.split(",").map((s) => s.trim()).filter(Boolean)) {
+        const colon = entry.indexOf(":");
+        const value = colon < 0 ? entry : entry.slice(colon + 1);
+        if (!isFixedOrBoundedValue(value)) violations.push(`${file}:${lineNumber} dynamic log value ${entry}`);
+      }
+    }
+  }
+  assert.deepEqual(violations, [], violations.join("\n"));
+});
