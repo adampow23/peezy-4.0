@@ -110,6 +110,11 @@ function validateIntentIdentity(uid, intentId, data) {
 
 const WAKE_MEMBERS = "cause,fired_at,intent_id,resume_destination,schema_version,task_instance_id,wake_id";
 
+/** C9.3.11: the urgent basis names the threshold's deadline evidence and threshold (the exact basis/class the firing transaction carried). */
+function isUrgencyBasis(basis) {
+  return basis !== null && typeof basis === "object" && !Array.isArray(basis) && isNonBlankString(basis.deadline_evidence_id) && isNonBlankString(basis.threshold_id);
+}
+
 /** C9.3.1 wake evidence grammar: exact members, timestamp, urgency enum, and a basis exactly when urgent. */
 function validateWakeEvidence(wake) {
   if (wake === null || typeof wake !== "object" || Array.isArray(wake)) throw new Error("wake shape");
@@ -119,7 +124,7 @@ function validateWakeEvidence(wake) {
   if (!isNonBlankString(wake.task_instance_id) || !isNonBlankString(wake.resume_destination) || !isTimestamp(wake.fired_at)) throw new Error("wake values");
   if (!["normal", "urgent_recovery"].includes(wake.urgency)) throw new Error("wake urgency");
   const basis = wake.urgency_basis;
-  if (wake.urgency === "urgent_recovery" ? basis === null || typeof basis !== "object" || Array.isArray(basis) : basis !== undefined) throw new Error("wake urgency basis");
+  if (wake.urgency === "urgent_recovery" ? !isUrgencyBasis(basis) : basis !== undefined) throw new Error("wake urgency basis");
   validateCause(wake.cause);
   return wake;
 }
@@ -149,7 +154,7 @@ async function produceWake(transaction, db, params) {
   requireTaskOwner(uid, taskRef);
   if (!isNonBlankString(task.task_instance_id)) throw new Error("task instance");
   if (!["normal", "urgent_recovery"].includes(urgency)) throw new Error("urgency");
-  if (urgency === "urgent_recovery" && !urgencyBasis) throw new Error("urgency basis");
+  if (urgency === "urgent_recovery" && !isUrgencyBasis(urgencyBasis)) throw new Error("urgency basis");
   if (!isNonBlankString(resumeDestination) || !isNonBlankString(policyFingerprint) || !isSafeNonNegative(interactionEpoch) || !isSafeNonNegative(interactionRevision)) throw new Error("wake params");
   const cleanRoute = validateRoute(route);
   const cleanCause = validateCause(cause);
@@ -195,7 +200,7 @@ async function produceWake(transaction, db, params) {
 async function upgradeWakeUrgency(transaction, db, uid, taskRef, task, urgencyBasis) {
   const wake = task && task.wakeEvidence;
   if (!wake || wake.schema_version !== 1 || !WAKE_ID_RE.test(String(wake.wake_id))) throw new Error("wake missing");
-  if (!urgencyBasis) throw new Error("urgency basis");
+  if (!isUrgencyBasis(urgencyBasis)) throw new Error("urgency basis");
   requireTaskOwner(uid, taskRef);
   await fence.assertDeletionAbsent(transaction, db, [uid]); // C6.1
   const next = { ...wake, urgency: "urgent_recovery", urgency_basis: urgencyBasis };
@@ -278,6 +283,7 @@ function isClaimResponse(response, uid, request) {
   if (typeof response.expiresAt !== "string" || !WIRE_RE.test(response.expiresAt)) return false;
   const parsed = Date.parse(response.expiresAt);
   if (!Number.isFinite(parsed) || new Date(parsed).toISOString() !== response.expiresAt) return false;
+  try { if (timestampWire(Timestamp.fromMillis(parsed)) !== response.expiresAt) return false; } catch (error) { return false; } // inside the Firestore timestamp domain
   return Buffer.byteLength(canonical(response), "utf8") <= RESPONSE_CAP_BYTES;
 }
 

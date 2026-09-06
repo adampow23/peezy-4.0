@@ -1161,7 +1161,8 @@ struct DurableStoreRecoveryTests {
 
     /// C9.5.8 foreign caller: while A's drive is in flight and the account is B, a call on A's handle waits for the slot,
     /// discards A's result, rereads auth, and restarts (then A's handle is stale for B) instead of rejecting immediately.
-    @Test func foreignCallerWaitsForTheInFlightSlotBeforeItsHandleIsJudged() async throws {
+    @Test(arguments: [SignedAuthAuthority.signedIn(tupleB), SignedAuthAuthority.signedOut])
+    func foreignCallerWaitsForTheInFlightSlotBeforeItsHandleIsJudged(foreignAuth: SignedAuthAuthority) async throws {
         let directory = try temporaryDirectory()
         let auth = SignedAuthStub(.signedIn(tupleA))
         let registry = ResetOperationRegistry(directory: directory, clock: ResetClockStub(), auth: auth, epochAuthority: EpochStub(epoch: 1))
@@ -1173,7 +1174,7 @@ struct DurableStoreRecoveryTests {
         await remote.setHoldDispatch()
         let winner = Task { try await registry.drive(handle: handle, remote: remote, cleanup: await trace.callbacks()) }
         while await remote.heldCount == 0 { await Task.yield() }
-        auth.set(.signedIn(tupleB))
+        auth.set(foreignAuth)
         let readsBefore = auth.reads
         let settled = NotificationCounter()
         let foreign = Task { defer { Task { await settled.bump() } }; return try await registry.drive(handle: handle, remote: remote, cleanup: await DriveTrace().callbacks()) }
@@ -1185,8 +1186,9 @@ struct DurableStoreRecoveryTests {
         let winnerResult = await winner.result
         let foreignResult = await foreign.result
         guard case .failure = winnerResult else { Issue.record("the winner drifted to B and must return the auth branch"); return }
-        guard case let .failure(foreignError) = foreignResult, let registryError = foreignError as? ResetOperationRegistry.RegistryError, registryError == .operationStale(uid: "A", handleId: handle.handleId) else {
-            Issue.record("after the slot retires, the foreign caller restarts and finds A's handle stale for B"); return
+        let expected: ResetOperationRegistry.RegistryError = foreignAuth == .signedOut ? .authRequired : .operationStale(uid: "A", handleId: handle.handleId)
+        guard case let .failure(foreignError) = foreignResult, let registryError = foreignError as? ResetOperationRegistry.RegistryError, registryError == expected else {
+            Issue.record("after the slot retires, the foreign caller restarts: signed out → the auth branch; another account → A's handle is stale"); return
         }
         #expect(await trace.order == ["resetDispatch"], "no call or callback ran for either caller after the switch")
     }

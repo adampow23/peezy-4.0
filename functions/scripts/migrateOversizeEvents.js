@@ -978,7 +978,8 @@ async function run(argv, overrides = {}) {
       return { exitCode: applied.refusal === null ? 0 : 4, report };
     }
     const audit = await runAudit(client, deps.protos, projectId, callOptions, now);
-    return { exitCode: audit.stable ? 0 : 1, report: reportOf(parsed, deps, resolved, audit, null) };
+    // C9.2.2 audit exit: zero only when the C9.2.9 criterion holds (a complete zero-failing, zero-out-of-scope pass confirmed by its second pass)
+    return { exitCode: audit.preShipCriterion ? 0 : 1, report: reportOf(parsed, deps, resolved, audit, null) };
   } finally {
     if (client && typeof client.close === "function") await client.close().catch(() => {});
   }

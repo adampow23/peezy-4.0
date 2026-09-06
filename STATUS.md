@@ -1,6 +1,6 @@
 # STATUS — Phase 2 at the S3 close (2026-09-06)
 
-Authority: `docs/plans/PHASE2_CONTRACT.md` (sha256 `fb6a8bf63da7d0388229bcc8525f7333c51d544568506af37c66f19b18a94ce8`). Project state: `PEEZY_STATE.md`. Workflow: `PHASE2_WORKFLOW_v2.md`. This file is the one-page snapshot a reader needs before opening either; it is rewritten at every slice close.
+Authority: `docs/plans/PHASE2_CONTRACT.md` (sha256 `97ed60b758f3287a315c6cc4e07207527feaf4b6cb4347d6ce4be8054514b8b2`). Project state: `PEEZY_STATE.md`. Workflow: `PHASE2_WORKFLOW_v2.md`. This file is the one-page snapshot a reader needs before opening either; it is rewritten at every slice close.
 
 ## Where Phase 2 stands
 
@@ -43,7 +43,16 @@ Baseline failures (pre-existing, not Phase 2's): the whole unit target carries 1
 - `DailyDoseEngine.swift`: `DailyDoseLocalStore` epoch-r cleanup and the exact 0→1 bridge; `resetForRetake(authority:)`.
 - Frozen cross-language wires: `functions/tests/fixtures/resetWiresV1.json` (produced by the real handler, byte-asserted from Node, decoded by the Swift mirrors).
 
-## Contract gaps surfaced by the close-out review (owner decisions, recorded in the ledger)
+## Amendments adopted after the close-out review (S3-CD5..CD9, owner directions 2026-09-06)
+
+- C9.1.20 branch (5): a deletion-fenced candidate settles past the cursor with zero writes beneath the owner (never a refusal).
+- C9.2.2 audit exit: MIG-EVENT audit exits zero only when the C9.2.9 criterion holds; a complete pass with failing or out-of-scope rows exits nonzero.
+- C9.4.1: a NEW_UID found during confirmation is nominated as a pending candidate in the failure transaction before reduction resumes.
+- C9.3.11 (with C10.1 rows): the policy-present wake branches belong to S6, effective when C9.3 defines the policy-state, deadline-evidence, and handoff shapes. Until S6 lands, scheduler wakes for policy-bearing tasks do not fire: a policy-present row settles with zero writes (no task byte, no refusal record, no intent) and is counted as `policyPresent`; the claim requires the present policy state's epoch and fingerprint; PC linkage is not validated until its referent is defined.
+- C9.5.16: a malformed dose store preserves every byte and every legacy key, blocks the reset's dose cleanup, and is marked for durable-store recovery (S4); a later reset removes legacy keys only after an accepted cleanup.
+- Trust anchor: the owner's Ed25519 public key and its SHA-256 are the reviewed literals in the fence and the sealer (Build B is armed; the evidence artifact is produced by the owner-run sealer, on the S7 pre-ship gate's owner action list).
+
+## Contract gaps surfaced by the close-out review (now amended above; kept for the record)
 
 - C9.1.20: whether a deletion-fenced candidate settles the lane cursor (the code settles it without a write).
 - C9.2.1/C9.2.2: no audit-mode exit criterion for MIG-EVENT; L1256's second-pass sequencing wording.
@@ -54,9 +63,8 @@ Baseline failures (pre-existing, not Phase 2's): the whole unit target carries 1
 
 ## Owner inputs outstanding (input only the owner has)
 
-1. Trust anchor: the base64url Ed25519 public key and its SHA-256, inserted in one commit into `PROVIDER_EVIDENCE_TRUST_ANCHOR_V1` (`functions/accountDeletionFence.js`) and `SEALER_TRUST_ANCHOR_V1` (the sealer). Until then Build A holds and no Build-B artifact can be produced.
-2. Build-B operational wiring, outside any slice: the evidence artifact (owner-run sealer invocation) and the historical-migration observers (barrier, gate, Firestore config, global zero proof) that refuse by default in production.
-3. Live deploys at the S7 pre-ship gate: the C7 index file, the rules, and any arming; none happens from inside a task.
+1. Trust anchor: supplied and inserted (2026-09-06); Build B is armed in the fence and the sealer.
+2. S7 pre-ship gate owner action list: run the sealer to produce the evidence artifact (Build B); wire the historical-migration observers (barrier, gate, Firestore config, global zero proof) from the Build-B evidence/ops artifacts; deploy the C7 index file and the rules; any arming. None happens from inside a task.
 
 ## Carried to later slices
 

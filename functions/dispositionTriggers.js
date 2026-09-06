@@ -1577,13 +1577,16 @@ function ordinaryQuery(db, lane, run) {
   return query.select(...laneMask(lane));
 }
 
+class PolicyPresentSignal extends Error {
+  constructor() { super("policy present"); }
+}
+
 /**
- * C9.3.11: a policy-present row (`taskInteractionState`) belongs to the intent-producing branches this build cannot
- * fire (they need the live policy state, deadline evidence, and handoff surfaces); it is refused fail-closed —
- * a durable, backed-off VALIDATION_REFUSAL — rather than settled as a silent no-op.
+ * C9.3.11 interim (S3-CD8): a policy-present row settles past the cursor with zero writes — no task byte, no refusal
+ * record, no intent — and is counted as `policyPresent`; the intent-producing branches are S6's.
  */
 function requirePolicyAbsent(snapshot) {
-  if (snapshot.get("taskInteractionState") !== undefined) throw new RefusalSignal("VALIDATION_REFUSAL");
+  if (snapshot.get("taskInteractionState") !== undefined) throw new PolicyPresentSignal();
 }
 
 /** H55 branch (C9.3.11 policy-absent rows): Snoozed lanes wake through the Phase 1 reducers; other policy-absent rows are definitive no-ops. */
@@ -1827,6 +1830,7 @@ async function admitFresh(deps, run, lane, candidate, reducer) {
   } catch (error) {
     if (error instanceof SchedulerInvariant) throw error;
     if (isDeletionFence(error)) return { kind: "fenced" };
+    if (error instanceof PolicyPresentSignal) return { kind: "policy_present" };
     return recordRefusal(deps, run, lane, candidate.ref, refusalReasonOf(error));
   }
 }
@@ -1886,6 +1890,7 @@ async function retryRefusal(deps, run, lane, refusalDoc, reducer) {
   } catch (error) {
     if (error instanceof SchedulerInvariant) throw error;
     if (isDeletionFence(error)) return { kind: "fenced" };
+    if (error instanceof PolicyPresentSignal) return { kind: "policy_present" };
     return recordRefusal(deps, run, lane, ref, refusalReasonOf(error));
   }
 }
@@ -1912,6 +1917,7 @@ function tally(outcomes, items, pathOf, settled, result, source) {
     const kind = outcome.value.kind;
     if (source === "retried") result.retried += 1;
     if (kind === "fenced") { result.fenced += 1; settled.set(path, null); }
+    else if (kind === "policy_present") { result.policyPresent += 1; settled.set(path, null); }
     else if (kind === "woke" || kind === "noop" || kind === "absent") {
       settled.set(path, null);
       if (kind === "woke") { result.woke += 1; if (outcome.value.thresholdAt) result.committed = [...result.committed, { path, thresholdAt: outcome.value.thresholdAt }]; }
@@ -1923,7 +1929,7 @@ function tally(outcomes, items, pathOf, settled, result, source) {
 }
 
 function laneResult(lane, eligibleRefusalCount, retryReserve) {
-  return { lane: lane.lane, eligibleRefusalCount, retryReserve, retried: 0, admitted: 0, examined: 0, extant: 0, refused: 0, fenced: 0, woke: 0, committed: [], settled: false };
+  return { lane: lane.lane, eligibleRefusalCount, retryReserve, retried: 0, admitted: 0, examined: 0, extant: 0, refused: 0, fenced: 0, policyPresent: 0, woke: 0, committed: [], settled: false };
 }
 
 function isSettled(settled, path, fingerprint) {

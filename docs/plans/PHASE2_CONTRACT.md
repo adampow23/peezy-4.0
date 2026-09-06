@@ -876,6 +876,7 @@ refusal page     = run-local 50/51; no persisted refusal cursor
 | (2) | exact refusal create/update after rereading candidate identity | none | create/update | committed refusal |
 | (3) | candidate absent | none | delete obsolete refusal | committed deletion |
 | (4) | lease-fenced reread proves extant deterministic refusal with exact ID/content and same fingerprint (ineligible or eligible beyond selected retry prefix) | none | none | still-queryable refusal + replayed fresh row |
+| (5) | the owner root carries `accountDeletion` when read before any refusal or reducer write (fresh admission, retry, or refusal bookkeeping; the threshold lane's run-local cursor included) | none | none; a deletion fence is never translated into a refusal | nothing committed; the cursor settles past the candidate with zero writes beneath the owner (run-local outcome `fenced`; no durable metric); not a C9.1.18 abort |
 
 | Rule | Exact statement |
 |---|---|
@@ -1209,6 +1210,8 @@ spec-5.2 event-state map (users/{uid}/eventState/{canonicalEventStateId}):
 | (not named) | prospective high-water document, per-entry, total-index-byte, entry-count limits at equal/+1 |
 | (not named) | `PAYLOAD_TOO_LARGE` attempt `1→2→qev1`; stale/duplicate/version-conflict source-only terminal transitions retaining size-skip |
 | (not named) | production/oracle disagreement failure; exact fixed messages with no raw bytes |
+| `functions/tests/dispositionTriggers.test.js` | branch (5): a deleting owner's candidate on the fresh, retry, threshold, and nested-event paths settles with zero writes beneath the owner and no refusal record (S3-CD5) |
+| `functions/tests/dispositionTriggers.test.js` | "C9.3.11 interim (S3-CD8): policy-present rows produce zero writes in every lane" (S3-CD8) |
 
 ### C9.2 MIG-EVENT-V1 and the index delta (D10, MIG-EVENT-V1)
 
@@ -1269,6 +1272,7 @@ arming triple (same invocation): --apply --project-id peezy-1ecrdl --confirm-pro
 | default mode | audit/read-only; cannot acquire a lease or issue a write |
 | write mode | requires literal arming triple AND no unknown argument AND public-v1 client resolves to project `peezy-1ecrdl` / database `(default)` AND `FIRESTORE_EMULATOR_HOST` absent AND normalized rules/index hashes match the accepted rollout tuple AND fenced lease acquired |
 | fail closed | missing/mismatched confirmation, different resolved project/database, emulator variable, hash mismatch, unknown argument, or lease refusal exits nonzero before the first write |
+| audit exit | audit mode exits zero only when the C9.2.9 pass criterion holds (two consecutive complete passes with zero failing sources, zero out-of-scope sources, and the same total pending-source count); any other outcome — a complete pass with failing or out-of-scope rows, an incomplete pass, or an insertion/change observed by the confirmation pass — ends the run nonzero; the C9.2.1 restart is a new invocation |
 | drains | external rollout authorization gate proved by platform evidence; script neither infers nor claims to prove them from a caller-supplied file |
 | production run report | exact command, resolved project/database, tuple hashes, captured platform drain evidence, owner token/generation, counts, result |
 
@@ -1811,6 +1815,7 @@ Frozen index base (byte-exact; the 4,432-byte file is this block plus one traili
 | mandatory migration fixtures (file not named) | exact query via pinned `StructuredQuery.fromObject` to injected `FirestoreClient.runQuery` spy observing `limit.value == 100`; rejection of absent/unwrapped/out-of-range wrappers; enumeration at 0/1/100/101 documents counting documents only; ordinary document+readTime; final document+readTime+`done:true`; midstream and final readTime-only progress; no-document `done:true` with absent and valid readTime; normal EOF with/without documents; empty EOF requiring prior progress readTime; bindings exposing defaults without presence; surfaced unknown own-property rejection; separately encoded unknown wire tag discarded without changing known fields; present `done:false`; empty response; missing/invalid required readTime; duplicate, nonascending, mixed/unknown, nonzero skipped-results, explain-metrics, transaction, post-terminal, stream-error responses; same-leaf `events` document at wrong ancestry |
 | mandatory migration fixtures (file not named) | source deletion/change between query and getDocument; insertion caught by uncursored confirmation pass; stable two-pass pending count; chunk lengths at `P-1/P/P+1/2P` and maximum; every crash boundary; absent/live/expired lease; readTime clock; renewal; generation overflow; process death; two workers with takeover before every mutation and stale commit/release rejection; update-time-only retry-map change; unknown-field change; deletion; matching/mismatching terminal source; every collision/missing chunk; new-version orphan and cleanup crash/takeover; referenced archive protection; exact budget boundaries; generic `chunks` index unaffected; rules/account deletion; H57 without raw data |
 | deletion fixtures (file not named) | nested recursive deletion after migration; attempted deletion at every archive/terminal boundary while invocation disabled |
+| `functions/tests/dispositionTriggers.test.js` | two-pass audit exit code: a failing first pass is one pass, unstable, nonzero; a clean two-pass audit exits zero; an insertion between passes exits nonzero (S3-CD6) |
 
 ### C9.3 Notification intents, route inbox, and claimTaskIntent
 
@@ -1866,7 +1871,7 @@ server read path = users/{auth.uid}/notificationIntents/{intentId}
 | Absent document | Returns `permission-denied/AUTH_FORBIDDEN` with zero operation or intent write; nondisclosing |
 | Expiry wire | Never a Firestore Timestamp/map, offset form, seconds-only string, or additional precision |
 | Route `sessionId` | `row` forbids `sessionId`; `outcome` requires it exactly for a returned handoff and forbids it for a direct waiting transition |
-| Claim validation | Rejects if instance/epoch/fingerprint, optional returned session, wake cause, state, expiry, or PC linkage no longer matches; never downgrades an invalid outcome route |
+| Claim validation | Rejects if instance/epoch/fingerprint, optional returned session, wake cause, state, expiry, or — once C9.3.11 defines its referent — PC linkage no longer matches; until then the C9.3.11 interim claim rule applies; never downgrades an invalid outcome route |
 | Scheduler revision | Scheduler-only revision is diagnostic; claim validates live instance/epoch/fingerprint/wake cause/state/session, so escalation does not stale a pending or claimed route |
 | Stale normalization | All stale task/session/cause cases normalize to `INTENT_STALE` |
 
@@ -2016,6 +2021,12 @@ PersistedTaskRouteV1 = {schemaVersion:1,kind:"task_route",claimOperationId,repla
 
 #### C9.3.11 Scheduler wake contract (intent-producing branches)
 
+| Rule | Exact statement |
+|---|---|
+| Live policy state | The live policy state a task carries (`taskInteractionState`), the deadline-evidence and handoff shapes the firing branches read, and the PC-linkage referent the intent's `row` route is validated against are defined by S6 in this section before any policy-present branch below is coded; the shapes are open until then |
+| Interim (before S6) | S3's fail-closed interim: a policy-present row (any `taskInteractionState`) reaching an ordinary or threshold reducer settles past the cursor with zero writes (no task byte, no refusal record, no intent; run-local outcome `policyPresent`, no durable metric), proved by `functions/tests/dispositionTriggers.test.js` "C9.3.11 interim (S3-CD8): policy-present rows produce zero writes in every lane"; scheduler wakes for policy-bearing tasks do not fire until S6 lands; policy-absent rows keep the H55 behavior |
+| Interim claim | `claimTaskIntent` requires the present `taskInteractionState` to carry the intent's `interaction_epoch` and `policy_fingerprint` (absent or partial state is `INTENT_STALE`); PC linkage is validated once C9.3 defines its referent (C9.3.2) |
+
 | Condition | Result/Write |
 |---|---|
 | `Snoozed + DEFERRED` trigger fires | Move fired trigger to wake evidence; clear active trigger; `Upcoming`; one row intent |
@@ -2096,6 +2107,7 @@ PersistedTaskRouteV1 = {schemaVersion:1,kind:"task_route",claimOperationId,repla
 | functions/rules-tests/firestoreRules.test.js | all-client intent denial (get/list/create/update/delete) |
 | Peezy 4.0Tests/TaskRouteTests.swift | exact 60-second refresh lease; three crash boundaries; UTC-wire→epoch-ms parity/min/expiry matrix (leap-day/epoch boundary/offset/lowercase z/fractional-digit/invalid-calendar/overflow/min-selection/equal±1ms); A-dispatch→B-current AUTH_REQUIRED; same-UID refresh without observer callback; repeated AUTH_REQUIRED no overlap; A→B/B→A; late completion after replacement; file write/fsync/rename/quarantine boundaries; outer/payload/hash byte tamper; existing quarantine; zero dispatch while blocked; item recovery; explicit discard; exact expiry reacquisition; failure then expiry; every lease/member/CAS boundary; simultaneous ingress; queue-behind; acknowledgement; account switch/reset boundaries; URL/push/account/scene/reset cases |
 | (not named) | overflow during live refresh/in-flight claim; lost response; crash after CLAIM_DISPATCHED; relaunch replay; returned-session claim from opening installation, second installation, same installation after rotation |
+| `functions/tests/notificationIntents.test.js` | claim under the C9.3.11 interim: absent or partial `taskInteractionState` → `INTENT_STALE`; terminal task → `INTENT_STALE` (S3-CD8) |
 | (not named) | TasksStore urgent-recovery projection: empty production registry; injected two-rank mixed classified/unclassified ordering; equal ranks/times/IDs; zero/one/many; Home/Tasks parity; PC precedence; U/A/W/D line routes; one-line mutation leaving siblings; stale evidence removal |
 
 ### C9.4 Historical account migration, purge and sealer CLIs, and the client legacy-reset migration
@@ -2219,7 +2231,8 @@ cleanup query:       document-ID-ordered pages of <= 100 excluded_live candidate
 | `waiting_guards` (adopted) | any earlier root state | `waiting_guards` | candidate retained |
 | `waiting_guards` | complete sweep with no adopted or pending candidate | `confirming` (`confirmation_zero_passes:0`) | checkpoint |
 | `confirming` | pass from row 0 `{kind:"start"}`: zero new, zero pending/ambiguous, zero adopted, every excluded-live reason still true | `confirming` (count +1, max 2) | checkpoint |
-| `confirming` | any failure | `reducing` (both cursors reset, count 0) | checkpoint |
+| `confirming` | a UID with no candidate row and no residue-free ACCOUNT_DELETED tombstone (`NEW_UID`) | `reducing` (both cursors reset, count 0, `pass_ordinal` +1) | the same checkpoint transaction nominates the UID as a `pending/unexamined` candidate whose `first_pass_ordinal` equals the incremented `pass_ordinal`, before returning to reduction; an existing row at that path carrying another account's identity is `ACCOUNT_DELETION_LEGACY_MIGRATION_INVARIANT` with zero writes |
+| `confirming` | any other failure | `reducing` (both cursors reset, count 0) | checkpoint |
 | `confirming` (count 2) | cleanup transaction: reread each nominated candidate + current Auth/root exclusion authority | `confirming` | delete only rows whose complete bytes and reason still match (<= 100 per transaction) |
 | `confirming` (cleanup) | drifted row | `reducing` (count 0) | row retained |
 | `confirming` (cleanup) | crash between committed pages | `confirming` | restart same bounded query |
@@ -2514,6 +2527,7 @@ closure replacement: deleteAssessments/deleteUserKnowledge/resetDose accept Rese
 | `Peezy 4.0Tests/DurableStoreRecoveryTests.swift` | authority-consuming transitions: row/gesture/`initiatingAuthority` disappear atomically; no APPLYING row retains it; finalized-compat `replayed:false` posts once, `replayed:true` after loss posts zero, key reappearance/server replay posts zero; ordinary-reset kills before/after final-receipt durability, APPLYING durability, posting; `replayed:true` after server commit/response loss; loaded FINAL_RECEIPT/APPLYING; zero pre-durability or duplicate notification; upgraded-with-gesture fixture (root `e` → `r=e+1`; materialization adopts receipt epoch `e`; no epoch-authority read or pre-durability reset dispatch; every continuation addresses only canonical `r`, never `r→r+1`; kills before/after RECEIPT and `receipt→applying`; gesture survives RECEIPT; loaded APPLYING accepts only exact reset-row equality) |
 | `Peezy 4.0Tests/DurableStoreRecoveryTests.swift` | coordinator (D30/D14/B2): exact same-process trace recorder; preimage/replacement boundary mutation; direct UID-only delete; duplicate/remove/reorder every inspect or callback; every `ResetReserveOutcome` and `ResetInvocationOutcome`; every server code/details member, surplus/missing/wrong-code rejection, every local mapping |
 | Production/oracle | exact 5,872-byte index registry; direct-client denial for every operation on `legacyResetMigrations` |
+| `functions/tests/accountDeletionFence.test.js` | confirming NEW_UID nomination: the pending candidate and the failure transition commit together; `pass_ordinal` +1 (S3-CD7) |
 
 ### C9.5 Reset envelope and gesture binding, terminal-child reuse, superseded presentation (B2, D12–D15, D18–D21, D24)
 
@@ -2827,9 +2841,9 @@ lastDate, firstLaunchDate     : null | exact YYYY-MM-DD
 |---|---|
 | Owner | Sole process-wide actor inside `DailyDoseEngine.swift`; all `PeezyHomeViewModel` dose reads/writes go through it |
 | Mutation | CAS exact epoch/revision; increments revision; unknown/surplus/malformed blocks and is never removed |
-| Cleanup at result epoch `r` | older → exact empty epoch-r, revision+1; equal → preserve; newer → preserve and report drift; absent → empty epoch-r floor; malformed → preserve/block |
+| Cleanup at result epoch `r` | older → exact empty epoch-r, revision+1 (`cleaned`); equal → preserve (`preserved`); newer → preserve and report drift (`localDoseDrift`); absent → empty epoch-r floor (`cleaned`); malformed → preserve every byte and every legacy key, block the reset's dose cleanup (`localDoseMalformed`), and mark the store for durable-store recovery (S4 classifies and presents it); a parse failure never destroys the last copy of user state |
 | 0→1 bridge | Write v2 floor first, then remove all three legacy keys; crash with both → v2 authority |
-| Later reset | Never infers a legacy key epoch |
+| Later reset | Never infers a legacy key epoch; removes the three legacy keys only after an accepted cleanup transition (`cleaned`/`preserved`), never over a malformed or drifted store |
 | Account deletion | Removes v2 key plus all legacy keys |
 
 #### C9.5.17 `.retakeAssessment` notification
@@ -2850,6 +2864,8 @@ lastDate, firstLaunchDate     : null | exact YYYY-MM-DD
 {schemaVersion:1,reason:"RESET_OPERATION_STALE",uid,handleId}
 {schemaVersion:1,reason:"RECOVERY_ACTION_UNAVAILABLE",store:"reset"}
 {schemaVersion:1,reason:"LEGACY_RESET_MIGRATION_REGISTRY_FULL",capacity:4,occupants:[{uid,phase,recoveryAction}]}
+localDoseMalformed                       // C9.5.16: malformed v2 dose bytes; every byte and legacy key preserved; the reset's dose cleanup is blocked
+localDoseDrift(currentEpoch)             // C9.5.16: the local dose store is at a newer epoch than the result epoch; preserved and reported
 
 recoveryStateDigest = lowercase SHA-256(TaskCanonicalV1({schemaVersion:1,store:"reset",baseState:"reset_epoch_conflict",
   uid,authEpochUUID,credentialRevision,envelopeGeneration,envelopeSHA256,
@@ -2990,6 +3006,7 @@ rollup        : firstDate = formatter(first_at); lastDate = formatter(last_at)
 | `Peezy 4.0Tests/DurableStoreRecoveryTests.swift` | Daily-dose local: two scenes; stale-writer epoch/revision CAS; process reload; empty floor; bridge order/crash; malformed preservation; equal/newer preservation |
 | `functions/rules-tests/firestoreRules.test.js` | Reject fresh missing/stale stamps, stamp change/removal, cleanup outside awaiting, cleanup of current/newer bytes, root cleanup changing anything except `dailyDose` |
 | `Peezy 4.0Tests/TaskPlanDispositionTests.swift` | D15 deterministic UID/epoch point path, no alias collection scan |
+| `Peezy 4.0Tests/DurableStoreRecoveryTests.swift` | reset dose cleanup over malformed and newer local bytes: `localDoseMalformed` / `localDoseDrift` thrown, v2 bytes and every legacy key preserved (S3-CD9) |
 | `Peezy 4.0Tests/TaskSupersessionTests.swift` | D18 byte-exact v1 fixture; every malformed shape → `malformedPresent`; D19 golden strings with injected values incl. locale/time-zone day rollover; D20 undo eligibility; D21 golden POSIX/UTC: same-local-day/different-time, different-day, all branches, order |
 
 ### C9.6 Evidence roots, pointer registries, and H54 capacity escrow (D25–D27)
@@ -3986,7 +4003,9 @@ final class CompletionOnce: @unchecked Sendable { NSLock-protected optional raw 
 | spec | S2 | `functions/taskPlan.js` | existing | base owner/H54 plus copied confirmation evidence and deterministic per-epoch reset/tombstone |
 | spec | S2 | `functions/getWorkflowQualifying.js` | existing | — |
 | spec | S3 | `functions/notificationIntents.js` | new | — |
-| spec | S3 | `functions/dispositionTriggers.js` | existing | persisted ordered phase-0 cursor, three-identical-failure quarantine, valid-envelope high-water, plus seven scans including independent threshold scan |
+| spec | S3 | `functions/dispositionTriggers.js` | existing | persisted ordered phase-0 cursor, three-identical-failure quarantine, valid-envelope high-water, plus seven scans including independent threshold scan; policy-present rows settle with zero writes (C9.3.11 interim) |
+| S3-CD8 | S6 | `functions/dispositionTriggers.js` | existing | the C9.3.11 policy-present wake branches (wake evidence, `ATTENTION_NOW`, urgency upgrade, attended projection, intent production), effective when C9.3 defines the policy-state, deadline-evidence, and handoff shapes |
+| S3-CD8 | S6 | C9.3 live policy-state, deadline-evidence, handoff, and PC-linkage shapes (`taskInteractionState`, the firing branches' evidence, and the intent's PC referent) | new | shapes open; S6 defines them in C9.3 before coding the policy-present branches and the claim's PC-linkage validation |
 | spec | S3 | `functions/taskPlan.js` | existing | intent-claim/task-route expiry follow-on |
 | spec | S3 | `firestore.indexes.json` | existing | exact §7.4 |
 | spec | S3 | `firestore.rules` | existing | final scheduler/intent/quarantine-denial integration and whole-file re-review |
@@ -4723,6 +4742,11 @@ phase2_no_index_diff() {
 | S3-CD2 | Reconciled 12 rule | C9.1.23 gains the Standard-edition base equations, the frozen-registry index policy, and the `FirestoreWriteBudgetV1(transition)` formula and bounds that C9.1.27 and C9.2.7 consume by name. | `functions/dispositionTriggers.js` production sizing and its independent oracle; `functions/tests/dispositionTriggers.test.js` |
 | S3-CD3 | Reconciled 12 rule | C9.1.26 gains the `phase0ValidationFailure` attempt rule, the `qev1_` quarantine id, and the exact schema-v1 record with its replay rule. | `functions/dispositionTriggers.js`; `functions/tests/dispositionTriggers.test.js` attempt `1→2→qev1` family |
 | S3-CD4 | Reconciled 12 rule | C9.1.29 gains the exact spec-5.2 event-state map that the size predicate and the advance write name. | `functions/dispositionTriggers.js`; retained high-water tests |
+| S3-CD5 | S3 close-out review (Sol F1; owner direction 2026-09-06) | C9.1.20 gains branch (5): a deletion fence observed before any refusal or reducer write settles the cursor past the candidate with zero writes beneath the owner and is never a refusal. | `functions/dispositionTriggers.js`; `functions/tests/dispositionTriggers.test.js` fenced fresh/retry/threshold/nested-event family |
+| S3-CD6 | S3 close-out review (Sol F8; owner direction) | C9.2.2 gains the audit exit rule: zero only when the C9.2.9 criterion holds; a complete pass with failing or out-of-scope rows exits nonzero. | `functions/scripts/migrateOversizeEvents.js`; `functions/tests/dispositionTriggers.test.js` two-pass audit exit-code test |
+| S3-CD7 | S3 close-out review (Sol F10b; owner direction) | C9.4.1 `confirming`/NEW_UID nominates the UID as a `pending/unexamined` candidate (`pass_ordinal` +1; the row's `first_pass_ordinal` equals the incremented `pass_ordinal`) in the failure transaction before reducing. | `functions/scripts/purgeLegacyDeletedAccounts.js`; `functions/tests/accountDeletionFence.test.js` confirming NEW_UID nomination case |
+| S3-CD8 | S3 close-out review (Sol F4/F12; owner direction) | C9.3.11 gains the live policy-state rule (shape S6's, open), the interim zero-write settle for policy-present rows, and the interim claim rule; C10.1 gains the S6 rows for the policy-present branches and the shapes. | `functions/dispositionTriggers.js`, `functions/notificationIntents.js`, `functions/taskPlan.js`; `functions/tests/dispositionTriggers.test.js` "C9.3.11 interim (S3-CD8)" zero-write test; `functions/tests/notificationIntents.test.js` absent/partial `taskInteractionState` → `INTENT_STALE` cases |
+| S3-CD9 | S3 close-out review (Sol F15; owner direction) | C9.5.16 malformed dose store: every byte and every legacy key preserved, cleanup blocked, store marked for durable-store recovery (S4); later resets remove legacy keys only after an accepted cleanup. | `Peezy 4.0/MainInterface/Models/DailyDoseEngine.swift` (S1 core/reset path, S3 client-reset-driver edit per the S3 brief); `Peezy 4.0Tests/DurableStoreRecoveryTests.swift` `dailyDoseLocalStorePreservesMalformedBytesAndBlocksMutation` and the reset malformed/drift cases |
 | P1-A | Amendment §A | §4.5 freezes durable policy workflow request/receipt/application, conditional trigger, and policy-ineligible Supplies gate. | `WorkflowService.swift`, RentTruck/SetupInternet/Supplies and six §8.2 callers; `getWorkflowQualifying.test.js`, `callableAuth.test.js`, `ConversationFlowTests.swift`, `TaskDispositionSurfaceTests.swift`. |
 | P1-B | Amendment §A | §§4.2/5.5 replace H56 with instance+attempt-generation+write-revision callable CAS, atomic proof clear, and content revisions. | `FlowProgressSession.swift`, TaskAction/FlowEngine/FlowExit, Movers model pair; `taskDisposition.test.js`, rules, `ConversationFlowTests.swift`, `MoversChainCoordinatorTests.swift`. |
 | P1-C | Amendment §A | §§2.2/3.1/4.6/4.7/7 apply all-owner generation, root move-event authority, strict producer projection, server packing persistence/clear, and reset fencing. | TaskGeneration/TaskAction/Spawn/taskDisposition/rules; 53-task rules fixture plus legacy packing/reset fence matrices. |

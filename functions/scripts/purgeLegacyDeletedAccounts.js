@@ -786,7 +786,7 @@ async function confirmationPage(deps, checkpoint) {
     // a permanent ACCOUNT_DELETED tombstone is the migration's own terminal residue: acceptable only with a zero residue proof
     const root = await rootState(deps, uid);
     if (root.kind === "marker" && root.phase === "ACCOUNT_DELETED" && (await residueProof(deps, uid)) === 0) continue;
-    return { ok: false, reason: "NEW_UID" };
+    return { ok: false, reason: "NEW_UID", uid };
   }
   const lastRow = ordinal === ACCOUNT_DELETION_LEGACY_SOURCES_V1.length - 1;
   if (!(page.done && lastRow)) return { ok: true, complete: false, advance: page.done ? { source_ordinal: ordinal + 1, source_cursor: { kind: "start" } } : { source_ordinal: ordinal, source_cursor: page.next } };
@@ -834,6 +834,21 @@ async function cleanupExcluded(deps, checkpoint) {
 async function confirmStep(deps, checkpoint) {
   const page = await confirmationPage(deps, checkpoint);
   await requireBarrier(deps, checkpoint); // re-read before every confirmation-page commit (failure, advance, or count)
+  if (!page.ok && page.reason === "NEW_UID") {
+    // C9.4.1: the new UID is nominated as a pending candidate in the failure transaction (first_pass_ordinal = pass_ordinal + 1) before reduction resumes
+    const nominated = await checkpointTransaction(deps, checkpoint, async (transaction, current, readTime) => {
+      const ref = candidateRef(deps, page.uid);
+      const snapshot = await transaction.get(ref);
+      if (snapshot.exists) { validateCandidate(snapshot.data(), ref.id); if (snapshot.data().account_uid !== page.uid) throw invariant("ACCOUNT_DELETION_LEGACY_MIGRATION_INVARIANT", "candidate collision"); }
+      else {
+        const row = { schema_version: 1, kind: "ACCOUNT_DELETION_LEGACY_CANDIDATE", candidate_id: ref.id, account_uid: page.uid, first_pass_ordinal: current.pass_ordinal + 1, created_at: readTime, updated_at: readTime, disposition: "pending", last_check_result: "unexamined", last_checked_at: null };
+        validateCandidate(row, ref.id);
+        transaction.create(ref, row);
+      }
+      return { ...confirmationFailure(), pass_ordinal: current.pass_ordinal + 1, pass_candidate_count: current.pass_candidate_count + (snapshot.exists ? 0 : 1) };
+    });
+    return { checkpoint: nominated, done: false, outcome: "NEW_UID" };
+  }
   if (!page.ok) return { checkpoint: await checkpointTransaction(deps, checkpoint, async () => confirmationFailure()), done: false, outcome: page.reason };
   if (!page.complete) return { checkpoint: await checkpointTransaction(deps, checkpoint, async () => page.advance), done: false, outcome: "PAGE" };
   const counted = await checkpointTransaction(deps, checkpoint, async () => ({ source_ordinal: 0, source_cursor: { kind: "start" }, confirmation_zero_passes: checkpoint.confirmation_zero_passes + 1 }));

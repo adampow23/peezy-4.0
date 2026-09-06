@@ -92,7 +92,9 @@ test("C9.3.1 identities are instance-bound and deterministic: wake_id and intent
     ["wake resume destination drift", (db) => { db.__docs.get(`users/${UID}/tasks/t1`).wakeEvidence.resume_destination = "flow:other"; }],
     ["wake fired_at malformed", (db) => { db.__docs.get(`users/${UID}/tasks/t1`).wakeEvidence.fired_at = "bad"; }],
     ["wake urgency malformed", (db) => { db.__docs.get(`users/${UID}/tasks/t1`).wakeEvidence.urgency = "bogus"; }],
-    ["wake urgency basis without urgency", (db) => { db.__docs.get(`users/${UID}/tasks/t1`).wakeEvidence.urgency_basis = { deadline_evidence_id: "de1", threshold_id: "th1" }; }]
+    ["wake urgency basis without urgency", (db) => { db.__docs.get(`users/${UID}/tasks/t1`).wakeEvidence.urgency_basis = { deadline_evidence_id: "de1", threshold_id: "th1" }; }],
+    ["urgent wake with an empty basis", (db) => { const w = db.__docs.get(`users/${UID}/tasks/t1`).wakeEvidence; w.urgency = "urgent_recovery"; w.urgency_basis = {}; }],
+    ["urgent wake with a basis missing its threshold", (db) => { const w = db.__docs.get(`users/${UID}/tasks/t1`).wakeEvidence; w.urgency = "urgent_recovery"; w.urgency_basis = { deadline_evidence_id: "de1" }; }]
   ]) {
     const driftCtx = await seeded();
     mutate(driftCtx.db, driftCtx.intentId);
@@ -112,7 +114,7 @@ test("C9.3.1 identities are instance-bound and deterministic: wake_id and intent
   await assert.rejects(fencedCtx.db.runTransaction(async (transaction) => intents.cancelPendingIntent(transaction, fencedCtx.db, UID, fencedCtx.taskRef, fencedTask())), isFenced, "cancelPendingIntent");
   assert.equal(fencedCtx.db.__writes.length, fencedWrites, "fenced writers write nothing");
   // producer rejects a malformed route, cause, or urgent wake without a basis
-  for (const [label, params] of [["row with session", { route: { kind: "row", session_id: "s" } }], ["bad cause", { cause: { kind: "OTHER" } }], ["urgent without basis", { urgency: "urgent_recovery" }]]) {
+  for (const [label, params] of [["row with session", { route: { kind: "row", session_id: "s" } }], ["bad cause", { cause: { kind: "OTHER" } }], ["urgent without basis", { urgency: "urgent_recovery" }], ["urgent with an empty basis", { urgency: "urgent_recovery", urgencyBasis: {} }]]) {
     await assert.rejects(db.runTransaction(async (transaction) => intents.produceWake(transaction, db, { uid: UID, taskRef, task: baseTask(), cause: cause(), route: { kind: "row" }, resumeDestination: "flow:due", urgency: "normal", interactionEpoch: 2, interactionRevision: 5, policyFingerprint: "p".repeat(64), now: Timestamp.fromDate(NOW), ...params })), label);
   }
 });
@@ -242,6 +244,7 @@ test("C9.3.2/C9.3.3 request validation and record reuse: surplus or missing memb
     ["response route malformed with a recomputed digest", (r) => { r.response = { ...r.response, route: { kind: "row", sessionId: "s" } }; r.response_sha256 = fence.sha256Hex(fence.TaskCanonicalV1(r.response)); }],
     ["response expiry malformed with a recomputed digest", (r) => { r.response = { ...r.response, expiresAt: "2026-09-07" }; r.response_sha256 = fence.sha256Hex(fence.TaskCanonicalV1(r.response)); }],
     ["response expiry non-calendar with a recomputed digest", (r) => { r.response = { ...r.response, expiresAt: "2026-99-99T99:99:99.999Z" }; r.response_sha256 = fence.sha256Hex(fence.TaskCanonicalV1(r.response)); }],
+    ["response expiry outside the Firestore timestamp domain with a recomputed digest", (r) => { r.response = { ...r.response, expiresAt: "0000-01-01T00:00:00.000Z" }; r.response_sha256 = fence.sha256Hex(fence.TaskCanonicalV1(r.response)); }],
     ["surplus member", (r) => { r.extra = 1; }],
     ["missing member", (r) => { delete r.prior_snapshots; }],
     ["malformed timestamp", (r) => { r.committed_at = "yesterday"; }],

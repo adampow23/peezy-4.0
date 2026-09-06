@@ -16,7 +16,7 @@ const { createHash, createPublicKey, verify: cryptoVerify } = require("node:cryp
 const fence = require("../accountDeletionFence");
 
 /** Reviewed literal trust anchor (C9.4.4). Absent until the owner supplies the offline Ed25519 public key and its SHA-256. */
-const SEALER_TRUST_ANCHOR_V1 = Object.freeze({ publicKeyBase64URL: null, sha256: null });
+const SEALER_TRUST_ANCHOR_V1 = Object.freeze({ publicKeyBase64URL: "XrVZI4yKjMEcWGfdssd0-F1gsHaYu8UGj_F8JgneyZU", sha256: "46914a3246af53851d3cbee5226a32fe3dd15f5f000e6157818cf0ff48e0bce3" });
 const ARTIFACT_RELATIVE_PATH = "functions/accountDeletionProviderEvidenceV1.json";
 const AUTHORITY_DOMAIN = "peezy.account_deletion_provider_evidence.v1\0";
 const IMPLEMENTATION_DOMAIN = "account_deletion_provider_implementation.v1";

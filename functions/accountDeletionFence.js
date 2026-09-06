@@ -1465,8 +1465,8 @@ function parseStrictJSON(text) {
 // Provider evidence authority (§11.2:1648–1658; §11.3:1698 partition)
 // ---------------------------------------------------------------------------
 
-/** Trust anchor: the literal lands in S3's sealer commit. null = Build A (not activated). */
-const PROVIDER_EVIDENCE_TRUST_ANCHOR_V1 = Object.freeze({ publicKeyBase64URL: null, sha256: null });
+/** Trust anchor (owner input, S3 brief Decision 2; reviewed literal, identical in the sealer): the Ed25519 public key that signs the provider-evidence authority and its SHA-256. */
+const PROVIDER_EVIDENCE_TRUST_ANCHOR_V1 = Object.freeze({ publicKeyBase64URL: "XrVZI4yKjMEcWGfdssd0-F1gsHaYu8UGj_F8JgneyZU", sha256: "46914a3246af53851d3cbee5226a32fe3dd15f5f000e6157818cf0ff48e0bce3" });
 const PROVIDER_EVIDENCE_NOT_ACTIVATED = Object.freeze({ ok: false, code: "PROVIDER_EVIDENCE_NOT_ACTIVATED" });
 const PROVIDER_EVIDENCE_INVARIANT = "ACCOUNT_DELETION_PROVIDER_EVIDENCE_INVARIANT";
 const AUTHORITY_BYTES_CAP = 131072;

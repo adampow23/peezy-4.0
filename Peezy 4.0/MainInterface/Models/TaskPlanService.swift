@@ -1470,11 +1470,12 @@ extension ResetOperationRegistry {
     /// revision is at or above the baseline; a foreign caller waits for the slot,
     /// discards its result, rereads auth, and restarts.
     func drive(handle: ResetOperationHandle, remote: any ResetRemoteProviding, cleanup: ResetCleanupCallbacks) async throws -> ResetDriveOutcome {
-        let tuple = try await signedAuth()
+        // the nonthrowing read: a signed-out caller is still a foreign caller of an occupied slot (C9.5.8) and must wait
+        let authority = await auth.currentSignedAuth()
         if let slot = inflightResetOperation[handle] {
             // an occupied slot is consulted before the handle is judged: a foreign caller (different account, epoch,
             // or signed out) waits for slot retirement, discards the prior result, rereads auth, and restarts
-            if slot.uid == tuple.uid && slot.authEpochUUID == tuple.authEpochUUID {
+            if case let .signedIn(tuple) = authority, slot.uid == tuple.uid, slot.authEpochUUID == tuple.authEpochUUID {
                 guard tuple.credentialRevision >= slot.credentialBaseline else { throw RegistryError.credentialRevisionRegressed }
                 // post-task reread: every joiner rereads signed auth after the task settles (outcome or error) and
                 // exposes the outcome only when UID/epoch match and the revision is at or above the baseline
@@ -1489,6 +1490,7 @@ extension ResetOperationRegistry {
             await Task.yield()
             return try await drive(handle: handle, remote: remote, cleanup: cleanup)
         }
+        guard case let .signedIn(tuple) = authority else { throw RegistryError.authRequired }
         guard tuple.uid == handle.uid else { throw RegistryError.operationStale(uid: handle.uid, handleId: handle.handleId) }
         let task = Task { try await self.runDrive(handle: handle, remote: remote, cleanup: cleanup, baseline: tuple) }
         inflightResetOperation[handle] = (uid: tuple.uid, authEpochUUID: tuple.authEpochUUID, credentialBaseline: tuple.credentialRevision, task: task)

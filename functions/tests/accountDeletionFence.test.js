@@ -1186,7 +1186,11 @@ test("provider evidence authority: an exact sealed artifact activates; every mem
   for (const [label, bytes] of rejects) {
     assert.deepEqual(fence.loadProviderEvidenceAuthority(bytes, { trustAnchor: anchor }), { ok: false, code: "ACCOUNT_DELETION_PROVIDER_EVIDENCE_INVARIANT" }, label);
   }
-  assert.deepEqual(fence.PROVIDER_EVIDENCE_TRUST_ANCHOR_V1, { publicKeyBase64URL: null, sha256: null });
+  // Build B trust anchor (owner input, S3 brief Decision 2): a 32-byte Ed25519 key whose SHA-256 is the literal, identical in the fence and the sealer
+  const anchor32 = fence.PROVIDER_EVIDENCE_TRUST_ANCHOR_V1;
+  const decoded = Buffer.from(anchor32.publicKeyBase64URL, "base64url");
+  assert.deepEqual([decoded.length, decoded.toString("base64url"), sha256Bytes(decoded)], [32, anchor32.publicKeyBase64URL, anchor32.sha256], "the reviewed trust anchor decodes to 32 bytes whose digest is the literal");
+  assert.deepEqual(anchor32, { publicKeyBase64URL: "XrVZI4yKjMEcWGfdssd0-F1gsHaYu8UGj_F8JgneyZU", sha256: "46914a3246af53851d3cbee5226a32fe3dd15f5f000e6157818cf0ff48e0bce3" });
 });
 
 test("bucket configuration projection: absent members project to null, present maps are copied and key-sorted, and any drift from the accepted map is ACCOUNT_DELETION_BUCKET_CONFIG_DRIFT", () => {
@@ -3104,7 +3108,8 @@ test("C9.4.4 sealer refusals precede artifact creation: absent trust anchor (Bui
   const base = sealerRepository();
   const good = sealingInput();
   const cases = [
-    ["absent trust anchor", good, { trustAnchor: sealer.SEALER_TRUST_ANCHOR_V1 }, "TRUST_ANCHOR_ABSENT"],
+    ["absent trust anchor", good, { trustAnchor: { publicKeyBase64URL: null, sha256: null } }, "TRUST_ANCHOR_ABSENT"],
+    ["trust anchor digest mismatch", good, { trustAnchor: { ...sealer.SEALER_TRUST_ANCHOR_V1, sha256: "0".repeat(64) } }, "TRUST_ANCHOR_INVALID"],
     ["nonzero postCutoff", sealingInput({ postCutoffMatchCount: 1 }), {}, "SEALER_POST_CUTOFF_MATCHES"],
     ["nonzero backlog", sealingInput({ backlogCount: 3 }), {}, "SEALER_BACKLOG_NONZERO"],
     ["nonfinite retention", sealingInput({ authResidualRetentionSeconds: Infinity }), {}, "SEALER_RETENTION_NONFINITE"],
@@ -3149,9 +3154,10 @@ test("C9.4.4 sealer refusals precede artifact creation: absent trust anchor (Bui
   assert.equal(cli.written.size, 0);
 });
 
-test("C9.4.4 Build A and the static module graph: the fence trust-anchor literal and the sealer literal are both absent and equal; the artifact is absent in the repository; with no artifact the fence reports PROVIDER_EVIDENCE_NOT_ACTIVATED and unrelated exports load; the artifact path is named only by accountDeletionFence.js and the sealer, and no module writes it", () => {
-  assert.deepEqual(fence.PROVIDER_EVIDENCE_TRUST_ANCHOR_V1, sealer.SEALER_TRUST_ANCHOR_V1, "the two reviewed literals agree (Build A: absent)");
-  assert.equal(fs.existsSync(path.join(__dirname, "..", "accountDeletionProviderEvidenceV1.json")), false, "Build A carries no authority JSON");
+test("C9.4.4 Build B trust anchor and the static module graph: the fence literal and the sealer literal are the owner's reviewed key and are equal; the artifact is absent in the repository (Build B not yet sealed); with no artifact the fence reports PROVIDER_EVIDENCE_NOT_ACTIVATED and unrelated exports load; the artifact path is named only by accountDeletionFence.js and the sealer, and no module writes it", () => {
+  assert.deepEqual(fence.PROVIDER_EVIDENCE_TRUST_ANCHOR_V1, sealer.SEALER_TRUST_ANCHOR_V1, "the two reviewed literals agree (the owner's Build B key)");
+  assert.equal(typeof sealer.SEALER_TRUST_ANCHOR_V1.publicKeyBase64URL, "string", "the anchor is present: Build B awaits the owner-run sealer");
+  assert.equal(fs.existsSync(path.join(__dirname, "..", "accountDeletionProviderEvidenceV1.json")), false, "no authority JSON is committed before the owner runs the sealer");
   assert.deepEqual(fence.loadProviderEvidenceAuthority(undefined, { trustAnchor: sealer.SEALER_TRUST_ANCHOR_V1 }), { ok: false, code: "PROVIDER_EVIDENCE_NOT_ACTIVATED" });
   const functionsDir = path.join(__dirname, "..");
   const names = [];
@@ -3432,9 +3438,15 @@ test("C9.4.1 confirming is paged and barrier-checked: one source page per step a
   assert.equal(JSON.stringify(checkpointDoc(db)), before, "barrier drift before the confirmation-page commit writes nothing");
   // a failure (a new UID appearing in a later source) returns to reducing with source_ordinal 23 and the cursor at start
   db.__docs.set("userKnowledge/uid-new", { k: 1 });
+  const passBefore = step.checkpoint.pass_ordinal;
   step = await legacyMigration.confirmStep(deps, step.checkpoint);
-  assert.deepEqual([step.outcome, step.checkpoint.status, step.checkpoint.source_ordinal, step.checkpoint.source_cursor, step.checkpoint.confirmation_zero_passes], ["NEW_UID", "reducing", 23, { kind: "start" }, 0]);
+  assert.deepEqual([step.outcome, step.checkpoint.status, step.checkpoint.source_ordinal, step.checkpoint.source_cursor, step.checkpoint.confirmation_zero_passes, step.checkpoint.pass_ordinal], ["NEW_UID", "reducing", 23, { kind: "start" }, 0, passBefore + 1]);
+  // C9.4.1 (S3-CD7): the new UID is nominated as a pending candidate in the same failure transaction before reduction resumes
+  const nominated = candidateDoc(db, "uid-new");
+  assert.deepEqual([nominated && nominated.disposition, nominated && nominated.last_check_result, nominated && nominated.first_pass_ordinal], ["pending", "unexamined", passBefore + 1], "NEW_UID is nominated, not merely reported");
+  assert.equal(db.__writes.findLast((w) => w.path === legacyMigration.CHECKPOINT_PATH).batch, db.__writes.findLast((w) => w.path.endsWith(legacyMigration.candidateId("uid-new"))).batch, "nomination and the failure transition commit together");
   db.__docs.delete("userKnowledge/uid-new");
+  db.__docs.delete(`accountDeletionLegacyCandidates/${legacyMigration.candidateId("uid-new")}`);
   // drive back to confirming and run a complete pass: 23 rows → count 1 and the position returns to row 0
   checkpoint = step.checkpoint;
   for (let i = 0; i < 400 && checkpoint.status !== "confirming"; i += 1) {

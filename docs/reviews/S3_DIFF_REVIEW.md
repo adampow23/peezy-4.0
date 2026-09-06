@@ -171,3 +171,30 @@ Round 3 accepted 3, 4 (as owner scope), 8, N1, N2 and left 11, 12, 13, N3 open. 
 | N3 | `expiresAt` must round-trip byte-identically through `Date.parse` → `toISOString()`; a non-calendar wire with a recomputed digest is `OPERATION_REUSED`. The record-reuse test loop was also made independent per case (it had carried the previous case's defect forward). | C9.3.2 UTC wire, C9.3.3 |
 
 Envelope at the final head: offline Node 369 / 364 / 5 emulator-gated skips / 0 fail; Swift 72 tests in 3 suites on the emulator; emulator Node subset and rules recorded in the ledger. Whether to spend a fourth Sol round on these four fixes is the owner's budget decision.
+
+## Round 4 — Sol (owner-scoped fresh thread on the four post-cap fixes; verbatim)
+
+Review pinned to `e31db84`; later commits do not alter the four scoped files.
+
+- **11 — UNCERTAIN.** The three named tests do fail without the fix, and malformed timestamp/urgency/presence combinations are now rejected. However, [notificationIntents.js:121](</Users/adampowell/Desktop/Peezy 4.0/functions/notificationIntents.js:121>) accepts any non-array object—including `{}`—as an urgent basis. C9.3.11 requires an “exact basis/class” and malformed wakes to fail closed ([contract:2025](</Users/adampowell/Desktop/Peezy 4.0/docs/plans/PHASE2_CONTRACT.md:2025>), [contract:2034](</Users/adampowell/Desktop/Peezy 4.0/docs/plans/PHASE2_CONTRACT.md:2034>)), but the scoped contract sections do not define the basis’s closed shape sufficiently to classify this conclusively.
+
+- **12 — ADDRESSED.** [notificationIntents.js:291](</Users/adampowell/Desktop/Peezy 4.0/functions/notificationIntents.js:291>) rejects both terminal states before route-specific handling, so it applies to every route. Both named cases would be accepted without this check. This matches C9.3.2 claim validation ([contract:1869](</Users/adampowell/Desktop/Peezy 4.0/docs/plans/PHASE2_CONTRACT.md:1869>)); no legitimate route in C9.3.12 is terminal.
+
+- **13 — STILL OPEN.** [TaskPlanService.swift:1473](</Users/adampowell/Desktop/Peezy 4.0/Peezy 4.0/MainInterface/Models/TaskPlanService.swift:1473>) calls throwing `signedAuth()` before inspecting the slot. Counterexample: A’s drive occupies the slot, auth becomes `.signedOut`, and another caller invokes A’s handle; `signedAuth()` immediately throws `authRequired`, answering the foreign caller before retirement. C9.5.8 explicitly includes signed-out callers in wait/discard/reread/restart ([contract:2665](</Users/adampowell/Desktop/Peezy 4.0/docs/plans/PHASE2_CONTRACT.md:2665>)); C9.5.12 requires mismatches to wait ([contract:2735](</Users/adampowell/Desktop/Peezy 4.0/docs/plans/PHASE2_CONTRACT.md:2735>). The named signed-in-B test would fail without the patch but does not exercise signed-out. **Fix:** read the nonthrowing `SignedAuthAuthority`, consult/await an occupied slot for `.signedOut` or identity mismatch, and only then emit the auth/stale branch.
+
+- **N3 — STILL OPEN.** [notificationIntents.js:278](</Users/adampowell/Desktop/Peezy 4.0/functions/notificationIntents.js:278>) still accepts `0000-01-01T00:00:00.000Z`: `Date.parse` and `toISOString` round-trip it byte-identically, but Firebase `Timestamp.fromMillis` rejects year 0000, so it cannot be the required projection of `intent.expires_at`. A recomputed-digest record containing that value passes `validateClaimRecord`. This violates C9.3.2’s exact stored-timestamp projection ([contract:1858](</Users/adampowell/Desktop/Peezy 4.0/docs/plans/PHASE2_CONTRACT.md:1858>)) and C9.3.3 altered-response rejection ([contract:1894](</Users/adampowell/Desktop/Peezy 4.0/docs/plans/PHASE2_CONTRACT.md:1894>)). The named non-calendar test does fail without the fix, but misses this domain boundary. **Fix:** round-trip through `Timestamp.fromMillis(parsed)` plus `timestampWire`, rejecting values outside the Firestore timestamp domain.
+
+NEW findings: None beyond the scoped defects above.
+
+VERDICT: ITERATE
+
+## Round 4 — builder disposition (cap: one round, per the owner)
+
+| # | Disposition |
+|---|---|
+| 11 | UNCERTAIN → tightened: an urgent basis must carry non-blank `deadline_evidence_id` and `threshold_id` (the exact basis the firing transaction carries per C9.3.11); `{}` and a basis missing its threshold are rejected by the producer, the upgrade, and the exact-retry validation. Named cases added. |
+| 12 | ADDRESSED. |
+| 13 | STILL OPEN → fixed: `drive` reads the nonthrowing `SignedAuthAuthority` first; a signed-out caller of an occupied slot waits for retirement, discards, rereads, and restarts (then returns the auth branch); the signed-in-B case is unchanged. The foreign-caller test is parameterized over `.signedIn(B)` and `.signedOut`. |
+| N3 | STILL OPEN → fixed: `expiresAt` must also be the `timestampWire` projection of `Timestamp.fromMillis(parsed)`, so a wire outside the Firestore timestamp domain (`0000-01-01T00:00:00.000Z`) is `OPERATION_REUSED`. Named case added. |
+
+RED then GREEN: `logs/S3-r4-node-red.log` / `logs/S3-r4-node-green.log`; `logs/S3-r4-swift-red.log` / `logs/S3-r4-swift-green.log`. No further round (owner cap).

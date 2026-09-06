@@ -1,12 +1,12 @@
 # HANDOFF — from the S3 close to the next session (2026-09-06)
 
-Read first, in this order and by section only: `PEEZY_STATE.md` §4, the last entry of `tasks/todo.md`, the current brief under `briefs/`, then `STATUS.md`. The contract (`docs/plans/PHASE2_CONTRACT.md`, sha256 `fb6a8bf6…`) is the sole executable authority; the manifest v9 and spec v5 are archived under `docs/archive/phase2/` and are never read again (Reconciled 12: a missing shape is a contract defect to fix in the contract).
+Read first, in this order and by section only: `PEEZY_STATE.md` §4, the last entry of `tasks/todo.md`, the current brief under `briefs/`, then `STATUS.md`. The contract (`docs/plans/PHASE2_CONTRACT.md`, sha256 `97ed60b7…`) is the sole executable authority; the manifest v9 and spec v5 are archived under `docs/archive/phase2/` and are never read again (Reconciled 12: a missing shape is a contract defect to fix in the contract).
 
 ## Next work
 
-1. Finish the S3 rule-4 checkpoint if it is still open in the ledger: the Sol diff review (`~/Downloads/peezy-reports/S3_DIFF_REVIEW.md`, committed at the root as `S3_DIFF_REVIEW.md` after the owner reads it) and the `/swiftui-pro` + `/swift-concurrency-pro` pass; every finding fixed or dispositioned in `tasks/todo.md` before S3 is reported closed.
+1. S3 is closed: the diff review is at `docs/reviews/S3_DIFF_REVIEW.md` (four Sol rounds and the Swift pass, every finding fixed or dispositioned in `tasks/todo.md`); the close-out amendments S3-CD5..CD9 are in the contract (sha256 `97ed60b7…`).
 2. S4 brief (recovery / privacy UI + durable deletion orchestration), written per the `PHASE2_WORKFLOW_v2.md` template with a Codex gate at the brief. S4 inherits from S3: the C9.4.5 client legacy-migration rows, the Settings `deleteAccount()` hunk (needs `Phase2ProductionRuntime.accountDeletionCoordinator`), `FirestoreRuntimeOwner` replacing `TransitionalFirestoreRuntime`, and the client halves of the C2 residual rows the S3 brief lists as "client halves remain S4's". S4 is a deletion slice: diff-reviewed at close.
-3. Owner inputs (see `STATUS.md`): trust anchor, Build-B wiring, S7 deploys.
+3. Owner actions at the S7 pre-ship gate (see `STATUS.md`): the owner-run sealer (Build B artifact), the observer wiring, the deploys.
 
 ## Commands and environment
 
@@ -14,7 +14,7 @@ Read first, in this order and by section only: `PEEZY_STATE.md` §4, the last en
 - Offline Node envelope: the C10.9 command in the contract, restricted to the files that exist today, plus `functions/tests/accountDeletionFence.test.js`. There is no `npm test` script.
 - Emulator runs (`demo-peezy-phase1` only; never production): `scripts/test-emulator.sh node | rules | swift`. Runs share the emulator ports, so chain them in one background script with a `.done` marker and wait once; do not run two at a time.
 - Swift: one `xcodebuild build-for-testing` per session with project signing (simulator `DC0CC10C-6DB0-496A-8B0E-51E60D958A27`, iPhone 17 Pro); the test script's summary line is `Test run with N tests in M suites passed`. Disk is chronically low: one DerivedData at a time.
-- `PHASE_MANIFEST` is enforced by `.claude/hooks/pre_tool_use.py`: a new file must be listed before it is written. `STATUS.md`, `HANDOFF.md`, `S3_DIFF_REVIEW.md`, `functions/tests/support/*.js`, `functions/scripts/*.js`, and `logs/*` are listed.
+- `PHASE_MANIFEST` is enforced by `.claude/hooks/pre_tool_use.py`: a new file must be listed before it is written. `STATUS.md`, `HANDOFF.md`, `docs/reviews/S3_DIFF_REVIEW.md`, `functions/tests/support/*.js`, `functions/scripts/*.js`, and `logs/*` are listed.
 - Logs live under `logs/` (gitignored); the S3 RED, deliberate-break, GREEN, offline, and emulator logs are indexed in `~/Downloads/peezy-reports/S3_GATE/S3_LOG_INDEX.txt`.
 
 ## Rules that decided S3 boundary questions (apply the same way)
