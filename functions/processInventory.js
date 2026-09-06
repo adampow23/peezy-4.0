@@ -7,6 +7,7 @@
 const { createHash } = require('node:crypto');
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { onDocumentWritten } = require('firebase-functions/v2/firestore');
+const { assertDeletionAbsent } = require('./accountDeletionFence');
 const admin = require('firebase-admin');
 const Anthropic = require('@anthropic-ai/sdk');
 const { getAIConfig } = require('./aiConfig');
@@ -603,6 +604,7 @@ async function persistMovePackingAggregate(db, userId, packingSim) {
       data: document.data()
     }));
     const aggregate = recomputeMovePackingAggregate(roomDocuments, packingSim);
+    await assertDeletionAbsent(transaction, db, [userId]); // C6.1 root fence (onInventoryRoomWritten)
     transaction.set(aggregateRef, aggregate);
     return aggregate;
   });
@@ -630,16 +632,23 @@ async function handleInventoryRoomWrite(event) {
           config,
           { roomId, inventoryRevision, generatedAt: event.time }
         );
-        await roomRef.set(artifacts, { merge: true });
+        await db.runTransaction(async (transaction) => {
+          await assertDeletionAbsent(transaction, db, [userId]); // C6.1 root fence (onInventoryRoomWritten)
+          transaction.set(roomRef, artifacts, { merge: true });
+        });
       } catch (error) {
+        if (error?.details?.reason === 'ACCOUNT_DELETION_FENCED') throw error;
         console.error('inventory room packing failed', { userId, roomId, error });
-        await roomRef.set({
-          packMeta: failedPackMeta(
-            inventoryRevision,
-            config.packingSim.configVersion,
-            error
-          )
-        }, { merge: true });
+        await db.runTransaction(async (transaction) => {
+          await assertDeletionAbsent(transaction, db, [userId]); // C6.1 root fence (onInventoryRoomWritten)
+          transaction.set(roomRef, {
+            packMeta: failedPackMeta(
+              inventoryRevision,
+              config.packingSim.configVersion,
+              error
+            )
+          }, { merge: true });
+        });
       }
     }
   }
@@ -956,11 +965,14 @@ Return only a valid JSON array with no markdown, explanation, preamble, or backt
 
       // 9. Critical room write. The legacy inventory remains complete even if
       // the additive packing output above failed.
-      await sessionRef.update({
-        status: 'complete',
-        items: items,
-        ...roomPackingWrite,
-        completedAt: admin.firestore.FieldValue.serverTimestamp()
+      await db.runTransaction(async (transaction) => {
+        await assertDeletionAbsent(transaction, db, [userId]); // C6.1 root fence (process success)
+        transaction.update(sessionRef, {
+          status: 'complete',
+          items: items,
+          ...roomPackingWrite,
+          completedAt: admin.firestore.FieldValue.serverTimestamp()
+        });
       });
 
       // 10. Best-effort cleanup is independently guarded and deliberately
@@ -983,10 +995,16 @@ Return only a valid JSON array with no markdown, explanation, preamble, or backt
       console.error('processInventory error:', error);
 
       // Update session with error status
-      await sessionRef.update({
-        status: 'error',
-        errorMessage: error.message || 'Unknown processing error'
-      }).catch(e => console.error('Failed to update error status:', e));
+      await db.runTransaction(async (transaction) => {
+        await assertDeletionAbsent(transaction, db, [userId]); // C6.1 root fence (process error)
+        transaction.update(sessionRef, {
+          status: 'error',
+          errorMessage: error.message || 'Unknown processing error'
+        });
+      }).catch((e) => {
+        if (e?.details?.reason === 'ACCOUNT_DELETION_FENCED') throw e;
+        console.error('Failed to update error status:', e);
+      });
 
       throw new HttpsError('internal', error.message || 'Processing failed');
     }

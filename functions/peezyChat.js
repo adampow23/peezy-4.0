@@ -4,6 +4,7 @@ const Anthropic = require("@anthropic-ai/sdk");
 const { getAIConfig } = require("./aiConfig");
 const { buildChatSystemPrompt } = require("./systemPrompt");
 const { requireMovePass } = require("./entitlement");
+const { assertDeletionAbsent } = require("./accountDeletionFence");
 
 const HISTORY_LIMIT = 20;
 const MAX_MESSAGE_LENGTH = 8000;
@@ -389,10 +390,14 @@ const peezyChat = onCall(
       .get();
 
     const userMessageRef = messagesRef.doc();
-    await userMessageRef.set({
-      text: message,
-      sender: "user",
-      timestamp: admin.firestore.FieldValue.serverTimestamp()
+    // C6.1 root fence: every committing branch reads the owner root and requires accountDeletion absent.
+    await db.runTransaction(async (transaction) => {
+      await assertDeletionAbsent(transaction, db, [request.auth.uid]);
+      transaction.set(userMessageRef, {
+        text: message,
+        sender: "user",
+        timestamp: admin.firestore.FieldValue.serverTimestamp()
+      });
     });
 
     try {
@@ -412,10 +417,13 @@ const peezyChat = onCall(
       });
 
       const assistantMessageRef = messagesRef.doc();
-      await assistantMessageRef.set({
-        text,
-        sender: "assistant",
-        timestamp: admin.firestore.FieldValue.serverTimestamp()
+      await db.runTransaction(async (transaction) => {
+        await assertDeletionAbsent(transaction, db, [request.auth.uid]); // C6.1 root fence
+        transaction.set(assistantMessageRef, {
+          text,
+          sender: "assistant",
+          timestamp: admin.firestore.FieldValue.serverTimestamp()
+        });
       });
 
       return {

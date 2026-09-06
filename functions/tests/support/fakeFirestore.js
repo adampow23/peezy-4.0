@@ -97,15 +97,20 @@ function fakeFirestore({ docs: initial = {}, clock } = {}) {
         throw new Error(`fake query operator unsupported: ${op}`);
       });
     }
-    if (spec.orderBy && spec.orderBy !== "__name__") throw new Error("fake orderBy supports only documentId()");
-    rows.sort(([a], [b]) => compareBytes(a.split("/").at(-1), b.split("/").at(-1)));
+    if (spec.orderBy && spec.orderBy !== "__name__") {
+      // S3: field ordering (Timestamp/Date/number/string), ties by document id.
+      const key = (data) => { const v = data[spec.orderBy]; return v instanceof Timestamp ? v.toMillis() : v instanceof Date ? v.getTime() : v; };
+      rows.sort(([pa, a], [pb, b]) => { const ka = key(a), kb = key(b); if (ka < kb) return -1; if (ka > kb) return 1; return compareBytes(pa.split("/").at(-1), pb.split("/").at(-1)); });
+    } else {
+      rows.sort(([a], [b]) => compareBytes(a.split("/").at(-1), b.split("/").at(-1)));
+    }
     if (spec.direction === "desc") rows.reverse();
     if (spec.startAfter !== undefined && spec.startAfter !== "") {
       rows = rows.filter(([p]) => compareBytes(p.split("/").at(-1), spec.startAfter) > 0);
     }
     if (spec.limit !== undefined) rows = rows.slice(0, spec.limit);
     const list = rows.map(([p, data]) => snapshot(docRef(p), data));
-    return { empty: list.length === 0, size: list.length, docs: list, readTime: now() };
+    return { empty: list.length === 0, size: list.length, docs: list, readTime: now(), forEach: (fn) => list.forEach(fn) };
   }
 
   function resolveSentinels(value) {

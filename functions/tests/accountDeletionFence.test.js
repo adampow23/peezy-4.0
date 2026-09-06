@@ -2208,6 +2208,27 @@ test("emulator: Phase 2 reset protocol on real Firestore — rso1_ record, Recon
 // dispositionTriggers.js committing transactions (briefs/S3_BRIEF.md)
 // ---------------------------------------------------------------------------
 
+// Provider boundaries for the handler-level families: the Anthropic SDK and nodemailer are replaced
+// at the module boundary before index.js loads; Auth and Storage are stubbed on the admin namespace.
+const Module = require("node:module");
+const providerCalls = { anthropic: [], mail: [] };
+let anthropicScript = () => ({ content: [{ type: "text", text: "Hello" }], stop_reason: "end_turn", usage: { input_tokens: 1, output_tokens: 1 } });
+class FakeAnthropic {
+  constructor(options) { this.options = options; this.messages = { create: async (request) => { providerCalls.anthropic.push(request); return anthropicScript(request); } }; }
+}
+const fakeMailer = { createTransport: () => ({ sendMail: async (message) => { providerCalls.mail.push(message); return { accepted: [message.to] }; } }) };
+const originalModuleLoad = Module._load;
+Module._load = function loadWithProviderStubs(request, parent, isMain) {
+  if (request === "@anthropic-ai/sdk") return FakeAnthropic;
+  if (request === "nodemailer") return fakeMailer;
+  return originalModuleLoad.call(this, request, parent, isMain);
+};
+process.env.ANTHROPIC_API_KEY = "test-key";
+process.env.GMAIL_APP_PASSWORD = "test-password";
+delete process.env.SUPPORT_NOTIFY_EMAIL; delete process.env.SUPPORT_NOTIFY_SMS; delete process.env.ADAM_NOTIFY_NUMBER;
+Object.defineProperty(admin, "auth", { configurable: true, value: () => ({ getUser: async (uid) => ({ uid, email: "user@example.com" }) }) });
+Object.defineProperty(admin, "storage", { configurable: true, value: () => ({ bucket: () => ({ getFiles: async () => [[]] }) }) });
+
 const indexExports = require("../index");
 const { executeSpawn } = require("../spawnTasks");
 const dispositionTriggers = require("../dispositionTriggers");
@@ -2404,6 +2425,92 @@ test("check-in review transaction is root-fenced through submitCheckInCore and t
   activeDb = fakeFirestore({ docs: { "users/uid-J": { accountDeletion: dataDeletedMarker(caps) } } });
   await expectDeletionError(() => indexExports.submitCheckIn.run(USER_REQUEST("uid-J", { answers: { arrivedInWindow: true, crewWorkedSteadily: true, costMoreThanQuoted: false, damaged: true } })), "failed-precondition", FENCED);
   assert.equal(activeDb.__writes.length, 0);
+});
+
+// ---------------------------------------------------------------------------
+// S3 I1c — C6.1 fence integration: peezyChat.js, researchTask.js, packageInventory.js,
+// processInventory.js (process success, process error, onInventoryRoomWritten)
+// ---------------------------------------------------------------------------
+
+const AI_CONFIG = { researchModel: "claude-test", chatModel: "claude-test", inventoryModel: "claude-test", resolverModel: "claude-test", maxSearchesPerBrief: 2, briefMaxTokens: 1000 };
+const MOVE_PASS = { productId: "peezy.plus.move", expirationDate: "2099-01-01T00:00:00.000Z", isActive: true };
+const PACKING_CONFIG = Object.fromEntries(require("../seedCubeSheet").buildConfigDocuments().map((document) => [document.path, document.data]));
+
+function providerDb(uid, marker, extra = {}) {
+  const root = { name: "P", subscription: MOVE_PASS };
+  if (marker) root.accountDeletion = marker;
+  return fakeFirestore({ docs: { [`users/${uid}`]: root, "appConfig/ai": AI_CONFIG, ...PACKING_CONFIG, ...extra } });
+}
+
+test("peezyChat is root-fenced: a deleting account is refused at the user-message write with zero writes and zero provider calls; an open account commits both messages", async () => {
+  const caps = [capability("uid-L", freshOperationId(), freshProofNonce())];
+  providerCalls.anthropic.length = 0;
+  activeDb = providerDb("uid-L", sweepingMarker(caps));
+  await expectDeletionError(() => indexExports.peezyChat.run(USER_REQUEST("uid-L", { surface: "support", message: "hi" })), "failed-precondition", FENCED);
+  assert.equal(activeDb.__writes.length, 0);
+  assert.equal(providerCalls.anthropic.length, 0);
+
+  activeDb = providerDb("uid-M", null);
+  const reply = await indexExports.peezyChat.run(USER_REQUEST("uid-M", { surface: "support", message: "hi" }));
+  assert.equal(reply.text, "Hello");
+  const messages = [...activeDb.__docs.entries()].filter(([p]) => p.startsWith("users/uid-M/chats/support/messages/")).map(([, d]) => d.sender).sort();
+  assert.deepEqual(messages, ["assistant", "user"]);
+  assert.equal(providerCalls.anthropic.length, 1);
+});
+
+test("researchTask is root-fenced: a deleting account is refused at the generating write with zero writes; an open account commits generating and failed records through the fence", async () => {
+  const caps = [capability("uid-N", freshOperationId(), freshProofNonce())];
+  activeDb = providerDb("uid-N", guardingMarker(caps));
+  await expectDeletionError(() => indexExports.researchTask.run(USER_REQUEST("uid-N", { taskId: "TASK_X", flowAnswers: { provider: ["Acme"] } })), "failed-precondition", FENCED);
+  assert.equal(activeDb.__writes.length, 0);
+
+  activeDb = providerDb("uid-O", null); // no catalog row: the context loader fails after the generating record commits
+  await assert.rejects(() => indexExports.researchTask.run(USER_REQUEST("uid-O", { taskId: "TASK_X", flowAnswers: { provider: ["Acme"] } })), (e) => e.code === "not-found");
+  const research = activeDb.__docs.get("users/uid-O/research/TASK_X");
+  assert.equal(research.status, "failed");
+  assert.equal(research.entityNameUsed, null);
+  assert.ok(activeDb.__writes.length >= 2);
+});
+
+test("packageInventory is root-fenced: a deleting account is refused at the package record with zero writes; an open account commits the package", async () => {
+  const caps = [capability("uid-P", freshOperationId(), freshProofNonce())];
+  providerCalls.mail.length = 0;
+  activeDb = providerDb("uid-P", dataDeletedMarker(caps), { "users/uid-P/user_assessments/a": { userName: "Pat" }, "users/uid-P/inventory/kitchen": { name: "Kitchen", items: [] } });
+  await expectDeletionError(() => indexExports.packageInventory.run(USER_REQUEST("uid-P", {})), "failed-precondition", FENCED);
+  assert.equal(activeDb.__writes.length, 0);
+
+  providerCalls.mail.length = 0;
+  activeDb = providerDb("uid-Q", null, { "users/uid-Q/user_assessments/a": { userName: "Quinn" }, "users/uid-Q/inventory/kitchen": { name: "Kitchen", items: [] } });
+  const result = await indexExports.packageInventory.run(USER_REQUEST("uid-Q", {}));
+  assert.equal(result.success, true);
+  const packages = [...activeDb.__docs.entries()].filter(([p]) => p.startsWith("admin/inventoryPackages/packages/"));
+  assert.equal(packages.length, 1);
+  assert.equal(packages[0][1].userId, "uid-Q");
+  assert.equal(providerCalls.mail.length, 1);
+});
+
+test("processInventory is root-fenced at process error and onInventoryRoomWritten: a deleting owner commits nothing; an open owner commits the error status and the packing aggregate", async () => {
+  const caps = [capability("uid-R", freshOperationId(), freshProofNonce())];
+  activeDb = providerDb("uid-R", sweepingMarker(caps), { "users/uid-R/inventorySessions/s1": { status: "processing" } });
+  await expectDeletionError(() => indexExports.processInventory.run(USER_REQUEST("uid-R", { userId: "uid-R", sessionId: "s1", roomName: "Kitchen", frameCount: 0 })), "failed-precondition", FENCED);
+  assert.equal(activeDb.__writes.length, 0);
+
+  activeDb = providerDb("uid-S", null, { "users/uid-S/inventorySessions/s1": { status: "processing" } });
+  await assert.rejects(() => indexExports.processInventory.run(USER_REQUEST("uid-S", { userId: "uid-S", sessionId: "s1", roomName: "Kitchen", frameCount: 0 })), (e) => e.code === "internal");
+  assert.equal(activeDb.__docs.get("users/uid-S/inventorySessions/s1").status, "error");
+
+  const roomEvent = (db, uid) => ({ params: { userId: uid, roomId: "kitchen" }, time: "2026-09-06T00:00:00.000Z", data: { after: { exists: true, ref: db.doc(`users/${uid}/inventory/kitchen`), data: () => ({ name: "Kitchen" }) } } });
+  activeDb = providerDb("uid-R", sweepingMarker(caps), { "users/uid-R/inventory/kitchen": { name: "Kitchen" } });
+  await expectDeletionError(() => indexExports.onInventoryRoomWritten.run(roomEvent(activeDb, "uid-R")), "failed-precondition", FENCED);
+  assert.equal(activeDb.__writes.length, 0);
+
+  activeDb = providerDb("uid-S", null, { "users/uid-S/inventory/kitchen": { name: "Kitchen" } });
+  await indexExports.onInventoryRoomWritten.run(roomEvent(activeDb, "uid-S"));
+  assert.ok([...activeDb.__docs.keys()].some((p) => p.startsWith("users/uid-S/packingAggregate/")), JSON.stringify([...activeDb.__docs.keys()]));
+
+  const source = fs.readFileSync(path.join(__dirname, "..", "processInventory.js"), "utf8");
+  const success = source.slice(source.indexOf("// 9. Critical room write"), source.indexOf("// 10. Best-effort cleanup"));
+  assert.ok(success.includes("assertDeletionAbsent"), "the process-success write is fenced");
 });
 
 module.exports = { fakeFirestore, FakeClock, capability, sweepingMarker, guardingMarker, dataDeletedMarker, authGuardingMarker, accountDeletedMarker, freshOperationId, freshProofNonce, ts, UID, STARTED, GUARD_AFTER };

@@ -84,5 +84,6 @@ test("empty input is stable and production persists the merged array", () => {
 
   const source = fs.readFileSync(path.resolve(__dirname, "../processInventory.js"), "utf8");
   assert.match(source, /const items = mergeExactInventoryItems\(normalizedItems\);/);
-  assert.match(source, /sessionRef\.update\(\{\s*status: 'complete',\s*items: items,/s);
+  // S3 (briefs/S3_BRIEF.md, C6.1): the completion write now commits inside a root-fenced transaction.
+  assert.match(source, /transaction\.update\(sessionRef, \{\s*status: 'complete',\s*items: items,/s);
 });

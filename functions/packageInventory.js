@@ -16,6 +16,7 @@
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
 const nodemailer = require('nodemailer');
+const { assertDeletionAbsent } = require('./accountDeletionFence');
 
 const ADMIN_EMAIL = 'adam@peezymove.com';
 
@@ -204,13 +205,18 @@ exports.packageInventory = onCall(
         createdAt: admin.firestore.FieldValue.serverTimestamp()
       };
 
-      await db.collection('admin').doc('inventoryPackages')
-        .collection('packages').add(packageData);
+      // C6.1 root fence: the committing transaction reads the owner root and requires accountDeletion absent.
+      const packageRef = db.collection('admin').doc('inventoryPackages').collection('packages').doc();
+      await db.runTransaction(async (transaction) => {
+        await assertDeletionAbsent(transaction, db, [userId]);
+        transaction.create(packageRef, packageData);
+      });
 
       console.log(`packageInventory: sent package for user ${userId} (${assessment.userName})`);
       return { success: true };
 
     } catch (error) {
+      if (error instanceof HttpsError) throw error;
       console.error('packageInventory error:', error);
       throw new HttpsError('internal', error.message || 'Failed to package inventory');
     }

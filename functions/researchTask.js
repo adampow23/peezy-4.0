@@ -3,6 +3,7 @@ const admin = require("firebase-admin");
 const Anthropic = require("@anthropic-ai/sdk");
 const { getAIConfig } = require("./aiConfig");
 const { requireMovePass } = require("./entitlement");
+const { assertDeletionAbsent } = require("./accountDeletionFence");
 
 const RESEARCH_SYSTEM_PROMPT = `You are Peezy's research engine. You produce one practical, verified action
 brief for one task and one user's answered flow. Write like a sharp friend who
@@ -787,12 +788,16 @@ const researchTask = onCall(
         return cachedSnapshot.data();
       }
 
-      await researchRef.set({
-        status: "generating",
-        startedAt: admin.firestore.FieldValue.serverTimestamp(),
-        flowAnswersUsed: flowAnswers,
-        entityNameUsed: entityName
-      }, { merge: true });
+      // C6.1 root fence: every committing branch reads the owner root and requires accountDeletion absent.
+      await db.runTransaction(async (transaction) => {
+        await assertDeletionAbsent(transaction, db, [request.auth.uid]);
+        transaction.set(researchRef, {
+          status: "generating",
+          startedAt: admin.firestore.FieldValue.serverTimestamp(),
+          flowAnswersUsed: flowAnswers,
+          entityNameUsed: entityName
+        }, { merge: true });
+      });
 
       const { researchScope, context } = await loadResearchContext(
         db,
@@ -811,25 +816,32 @@ const researchTask = onCall(
         context
       });
 
-      await researchRef.set({
-        status: "ready",
-        generatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        modelUsed: aiConfig.researchModel,
-        degraded: generated.degraded,
-        regenerationCount: generated.regenerationCount,
-        brief: generated.brief,
-        prefsUsed: prefs,
-        flowAnswersUsed: flowAnswers,
-        entityNameUsed: entityName
-      }, { merge: true });
+      await db.runTransaction(async (transaction) => {
+        await assertDeletionAbsent(transaction, db, [request.auth.uid]); // C6.1 root fence
+        transaction.set(researchRef, {
+          status: "ready",
+          generatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          modelUsed: aiConfig.researchModel,
+          degraded: generated.degraded,
+          regenerationCount: generated.regenerationCount,
+          brief: generated.brief,
+          prefsUsed: prefs,
+          flowAnswersUsed: flowAnswers,
+          entityNameUsed: entityName
+        }, { merge: true });
+      });
 
       const readySnapshot = await researchRef.get();
       return readySnapshot.data();
     } catch (error) {
       const message = errorMessage(error);
       try {
-        await researchRef.set({ status: "failed", error: message }, { merge: true });
+        await db.runTransaction(async (transaction) => {
+          await assertDeletionAbsent(transaction, db, [request.auth.uid]); // C6.1 root fence
+          transaction.set(researchRef, { status: "failed", error: message }, { merge: true });
+        });
       } catch (writeError) {
+        if (writeError?.details?.reason === "ACCOUNT_DELETION_FENCED") throw writeError;
         console.error("researchTask could not persist its failed state", writeError);
       }
 
