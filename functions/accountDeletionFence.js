@@ -914,7 +914,7 @@ async function deleteObject(bucket, { name, generation }) {
 }
 
 /** Sweeps one prefix: returns {hit, empty}; throws the fixed invariants. */
-async function sweepStoragePrefix(deps, bucket, prefix, { limit, pages }) {
+async function sweepStoragePrefix(deps, bucket, prefix, { limit, pages, admit }) {
   let hit = false;
   for (let page = 0; page < pages; page += 1) {
     const listing = await bucket.getFiles({ prefix, maxResults: limit, autoPaginate: false, versions: true });
@@ -929,6 +929,7 @@ async function sweepStoragePrefix(deps, bucket, prefix, { limit, pages }) {
     hit = true;
     for (let start = 0; start < files.length; start += 10) {
       const chunk = files.slice(start, start + 10);
+      if (typeof admit === "function") await admit();
       await Promise.all(chunk.map((file) => deleteObject(bucket, file)));
     }
     // discard the tuple and restart the prefix from an absent token
@@ -1092,8 +1093,9 @@ async function ensurePendingAuthWork(deps, ctx, expectedMarker, authority) {
   });
 }
 
-async function recordAuthFailure(deps, { uid, work }) {
+async function recordAuthFailure(deps, { uid, work, scheduleOrdinal, guard }) {
   await deps.db.runTransaction(async (transaction) => {
+    if (typeof guard === "function") await guard(transaction);
     const ref = authWorkRef(deps, uid);
     const snapshot = await transaction.get(ref);
     if (!snapshot.exists) return;
@@ -1101,10 +1103,11 @@ async function recordAuthFailure(deps, { uid, work }) {
     if (TaskCanonicalV1(current) !== TaskCanonicalV1(work)) return;
     const readTime = readTimeOf(snapshot, deps);
     const failureCount = Math.min(current.failure_count + 1, FAILURE_COUNT_MAX);
+    const baseOrdinal = Number.isSafeInteger(scheduleOrdinal) ? scheduleOrdinal : currentAuthOrdinal(readTime);
     const next = {
       ...current,
       failure_count: failureCount,
-      next_eligible_run: currentAuthOrdinal(readTime) + Math.min(2 ** failureCount, 16),
+      next_eligible_run: baseOrdinal + Math.min(2 ** failureCount, 16),
       updated_at: readTime
     };
     validateAuthWork(next, { uid });
@@ -1119,13 +1122,13 @@ async function recordAuthFailure(deps, { uid, work }) {
  * DATA_DELETED → AUTH_GUARDING and pending → guarding at one read time.
  * Transport, timeout, or unknown failure retains pending under fenced backoff.
  */
-async function runAuthPendingReducer(deps, { uid, marker, work, authority }) {
+async function runAuthPendingReducer(deps, { uid, marker, work, authority, scheduleOrdinal, guard }) {
   let absent = false;
   try {
     await withDeadline(deps.auth.getUser(uid), deps.timeouts.getUserMs, "ACCOUNT_DELETION_AUTH_TIMEOUT");
   } catch (error) {
     if (isUserNotFound(error)) absent = true;
-    else return recordAuthFailure(deps, { uid, work });
+    else return recordAuthFailure(deps, { uid, work, scheduleOrdinal, guard });
   }
   if (!absent) {
     try {
@@ -1133,12 +1136,13 @@ async function runAuthPendingReducer(deps, { uid, marker, work, authority }) {
       absent = true;
     } catch (error) {
       if (isUserNotFound(error)) absent = true;
-      else return recordAuthFailure(deps, { uid, work });
+      else return recordAuthFailure(deps, { uid, work, scheduleOrdinal, guard });
     }
   }
   const rootRef = deps.db.doc(`users/${uid}`);
   const workRef = authWorkRef(deps, uid);
   const transitioned = await deps.db.runTransaction(async (transaction) => {
+    if (typeof guard === "function") await guard(transaction);
     const rootSnapshot = await transaction.get(rootRef);
     const root = rootSnapshot.exists ? rootSnapshot.data() : undefined;
     const current = validateAccountDeletionMarker(root?.accountDeletion);
@@ -1735,6 +1739,477 @@ function productionProviderHTTP() {
 }
 
 // ---------------------------------------------------------------------------
+// Scheduled reconcilers (§11.3): state grammar, acquisition, cursor, reducers
+// ---------------------------------------------------------------------------
+
+const RECONCILER_LEASE_SECONDS = 270;
+const RECONCILER_PAGE_SIZE = 50;
+const STATE_KEYS = ["schema_version", "kind", "last_started_ordinal", "last_completed_ordinal", "cursor_id", "lease", "heartbeat"];
+const RECONCILERS = Object.freeze({
+  storage: Object.freeze({
+    kind: "ACCOUNT_DELETION_STORAGE_RECONCILER", statePath: "phase2System/accountDeletionStorageReconcilerV1",
+    workCollection: "accountDeletionStorageWork", workIdRe: /^adsw1_[0-9a-f]{40}$/, boundaryOffset: 0,
+    invariant: "ACCOUNT_DELETION_STORAGE_RECONCILER_INVARIANT", workInvariant: "ACCOUNT_DELETION_STORAGE_WORK_INVARIANT",
+    metric: "phase2/account_deletion_storage_reconciler_completed_count"
+  }),
+  auth: Object.freeze({
+    kind: "ACCOUNT_DELETION_AUTH_RECONCILER", statePath: "phase2System/accountDeletionAuthReconcilerV1",
+    workCollection: "accountDeletionAuthWork", workIdRe: /^adaw1_[0-9a-f]{40}$/, boundaryOffset: 120,
+    invariant: "ACCOUNT_DELETION_AUTH_RECONCILER_INVARIANT", workInvariant: "ACCOUNT_DELETION_AUTH_WORK_INVARIANT",
+    metric: "phase2/account_deletion_auth_reconciler_completed_count"
+  })
+});
+/** Codes that leave the run `running` (no settlement, no completion metric). */
+const SYSTEMIC_CODES = new Set([
+  "ACCOUNT_DELETION_BUCKET_CONFIG_DRIFT", PROVIDER_EVIDENCE_INVARIANT, "ACCOUNT_DELETION_RECONCILER_LEASE_LOST",
+  "ACCOUNT_DELETION_STORAGE_RECONCILER_INVARIANT", "ACCOUNT_DELETION_AUTH_RECONCILER_INVARIANT", "ACCOUNT_DELETION_SCHEDULE_BOUNDARY_INVALID"
+]);
+
+function validateReconcilerState(state, which) {
+  const spec = RECONCILERS[which];
+  const invariant = (detail) => new InvariantError(spec.invariant, detail);
+  if (!exactKeys(state, STATE_KEYS)) throw invariant("members");
+  if (state.schema_version !== 1 || state.kind !== spec.kind) throw invariant("kind");
+  if (!isSafeNonNegativeInteger(state.last_started_ordinal) || !isSafeNonNegativeInteger(state.last_completed_ordinal)) throw invariant("ordinals");
+  if (state.last_completed_ordinal > state.last_started_ordinal) throw invariant("ordinal order");
+  if (state.cursor_id !== "" && !(typeof state.cursor_id === "string" && spec.workIdRe.test(state.cursor_id))) throw invariant("cursor");
+  const lease = state.lease;
+  if (lease !== null) {
+    if (!exactKeys(lease, ["owner_token", "schedule_ordinal", "scheduled_at", "started_at", "expires_at"])) throw invariant("lease members");
+    if (typeof lease.owner_token !== "string" || !LOWERCASE_UUID_RE.test(lease.owner_token)) throw invariant("lease owner");
+    if (!isSafeNonNegativeInteger(lease.schedule_ordinal) || lease.schedule_ordinal !== state.last_started_ordinal) throw invariant("lease ordinal");
+    for (const key of ["scheduled_at", "started_at", "expires_at"]) if (!isMillisecondTimestamp(lease[key])) throw invariant(`lease ${key}`);
+    if (millis(lease.scheduled_at) > millis(lease.started_at)) throw invariant("lease time order");
+    if (!sameInstant(lease.expires_at, plusSeconds(lease.started_at, RECONCILER_LEASE_SECONDS))) throw invariant("lease expiry relation");
+  }
+  const heartbeat = state.heartbeat;
+  if (heartbeat !== null) {
+    const completed = heartbeat.status === "completed";
+    if (heartbeat.status !== "running" && !completed) throw invariant("heartbeat status");
+    if (!exactKeys(heartbeat, completed ? ["schedule_ordinal", "status", "started_at", "completed_at"] : ["schedule_ordinal", "status", "started_at"])) throw invariant("heartbeat members");
+    if (!isSafeNonNegativeInteger(heartbeat.schedule_ordinal) || !isMillisecondTimestamp(heartbeat.started_at)) throw invariant("heartbeat values");
+    if (completed) {
+      if (!isMillisecondTimestamp(heartbeat.completed_at) || millis(heartbeat.completed_at) < millis(heartbeat.started_at)) throw invariant("completed_at");
+      if (lease !== null) throw invariant("completed with lease");
+    }
+  }
+  if (lease !== null && (heartbeat === null || heartbeat.status !== "running" || heartbeat.schedule_ordinal !== lease.schedule_ordinal)) throw invariant("lease without running heartbeat");
+  return state;
+}
+
+const SCHEDULE_TIME_RE = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(\.\d{1,9})?Z$/;
+
+function parseScheduleBoundary(event, offsetSeconds) {
+  const invalid = () => new InvariantError("ACCOUNT_DELETION_SCHEDULE_BOUNDARY_INVALID");
+  const raw = event && typeof event.scheduleTime === "string" ? event.scheduleTime : null;
+  const match = raw === null ? null : SCHEDULE_TIME_RE.exec(raw);
+  if (!match) throw invalid();
+  if (match[2] && /[1-9]/.test(match[2])) throw invalid();
+  const ms = Date.parse(`${match[1]}Z`);
+  if (!Number.isFinite(ms) || new Date(ms).toISOString() !== `${match[1]}.000Z`) throw invalid();
+  const epochSeconds = ms / 1000;
+  if ((epochSeconds - offsetSeconds) % 300 !== 0 || epochSeconds < offsetSeconds) throw invalid();
+  return { ordinal: (epochSeconds - offsetSeconds) / 300, scheduledAt: Timestamp.fromMillis(ms) };
+}
+
+function stateRefOf(deps, spec) {
+  return deps.db.doc(spec.statePath);
+}
+
+/** Reads the state inside `transaction` and requires the run's live lease (owner, ordinal, unexpired). */
+async function assertLeaseLive(transaction, deps, run) {
+  const snapshot = await transaction.get(stateRefOf(deps, run.spec));
+  if (!snapshot.exists) throw new InvariantError(run.spec.invariant, "absent");
+  const state = validateReconcilerState(snapshot.data(), run.which);
+  const readTime = readTimeOf(snapshot, deps);
+  const lease = state.lease;
+  if (lease === null || lease.owner_token !== run.lease.owner_token || lease.schedule_ordinal !== run.lease.schedule_ordinal || millis(lease.expires_at) <= millis(readTime)) {
+    throw new InvariantError("ACCOUNT_DELETION_RECONCILER_LEASE_LOST");
+  }
+  return { state, readTime, snapshot };
+}
+
+function fencedTransaction(deps, run, fn) {
+  return deps.db.runTransaction(async (transaction) => {
+    const context = await assertLeaseLive(transaction, deps, run);
+    return fn(transaction, context);
+  });
+}
+
+function writeCursor(deps, run, cursorId) {
+  return fencedTransaction(deps, run, async (transaction, { state }) => {
+    const next = { ...state, cursor_id: cursorId };
+    validateReconcilerState(next, run.which);
+    transaction.set(stateRefOf(deps, run.spec), next);
+  });
+}
+
+async function acquireReconciler(deps, which, boundary) {
+  const spec = RECONCILERS[which];
+  const ref = stateRefOf(deps, spec);
+  return deps.db.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(ref);
+    if (!snapshot.exists) throw new InvariantError(spec.invariant, "absent");
+    const state = validateReconcilerState(snapshot.data(), which);
+    const readTime = readTimeOf(snapshot, deps);
+    if (boundary.ordinal <= state.last_started_ordinal) return null;
+    if (state.lease !== null && millis(state.lease.expires_at) > millis(readTime)) return null;
+    const lease = { owner_token: randomUUID(), schedule_ordinal: boundary.ordinal, scheduled_at: boundary.scheduledAt, started_at: readTime, expires_at: plusSeconds(readTime, RECONCILER_LEASE_SECONDS) };
+    const next = { ...state, last_started_ordinal: boundary.ordinal, lease, heartbeat: { schedule_ordinal: boundary.ordinal, status: "running", started_at: readTime } };
+    validateReconcilerState(next, which);
+    transaction.set(ref, next);
+    return lease;
+  });
+}
+
+async function settleReconciler(deps, run) {
+  await fencedTransaction(deps, run, async (transaction, { state, readTime }) => {
+    const next = {
+      ...state,
+      last_completed_ordinal: run.ordinal,
+      lease: null,
+      heartbeat: { schedule_ordinal: run.ordinal, status: "completed", started_at: state.heartbeat.started_at, completed_at: readTime }
+    };
+    validateReconcilerState(next, run.which);
+    transaction.set(stateRefOf(deps, run.spec), next);
+  });
+  if (typeof deps.metric === "function") deps.metric(run.spec.metric, 1);
+}
+
+function validateWorkRow(which, id, data) {
+  const spec = RECONCILERS[which];
+  const row = which === "storage" ? validateStorageWork(data) : validateAuthWork(data);
+  if (row.work_id !== id) throw new InvariantError(spec.workInvariant, "work_id");
+  return row;
+}
+
+/** One acquired run: page, select (cursor before await), reduce at most one row. */
+async function runReconcilerBody(deps, run) {
+  const spec = run.spec;
+  const page = await fencedTransaction(deps, run, async (transaction, { state }) => {
+    let query = deps.db.collection(spec.workCollection).orderBy(FieldPath.documentId());
+    if (state.cursor_id !== "") query = query.startAfter(state.cursor_id);
+    const snapshot = await transaction.get(query.limit(RECONCILER_PAGE_SIZE));
+    if (snapshot.docs.length > RECONCILER_PAGE_SIZE) throw new InvariantError(spec.invariant, "page");
+    const seen = new Set();
+    for (const row of snapshot.docs) {
+      if (!spec.workIdRe.test(row.id)) throw new InvariantError(spec.invariant, "invalid work id");
+      if (seen.has(row.id) || (state.cursor_id !== "" && compareUTF8(row.id, state.cursor_id) <= 0)) throw new InvariantError(spec.invariant, "query drift");
+      seen.add(row.id);
+    }
+    return { cursor: state.cursor_id, rows: snapshot.docs.map((row) => ({ id: row.id, data: row.data() })) };
+  });
+  if (page.rows.length === 0) {
+    if (page.cursor !== "") await writeCursor(deps, run, "");
+    return;
+  }
+  let selected = null;
+  for (const row of page.rows) {
+    let work;
+    try {
+      work = validateWorkRow(run.which, row.id, row.data);
+    } catch (error) {
+      emit(deps, spec.workInvariant);
+      await writeCursor(deps, run, row.id);
+      continue;
+    }
+    if (work.next_eligible_run <= run.ordinal) { selected = { id: row.id, work }; break; }
+  }
+  if (selected === null) {
+    await writeCursor(deps, run, page.rows[page.rows.length - 1].id);
+    return;
+  }
+  await writeCursor(deps, run, selected.id);
+  if (deps.hooks && typeof deps.hooks.beforeReducer === "function") deps.hooks.beforeReducer(selected.work.account_uid, selected.id);
+  if (run.which === "storage") await reduceStorageRow(deps, run, selected);
+  else await reduceAuthRow(deps, run, selected);
+}
+
+async function runReconciler(which, event, deps) {
+  const spec = RECONCILERS[which];
+  let boundary;
+  try {
+    boundary = parseScheduleBoundary(event, spec.boundaryOffset);
+  } catch (error) {
+    emit(deps, error.code);
+    return;
+  }
+  const evidence = deps.evidence();
+  if (!evidence || evidence.ok !== true) { emit(deps, (evidence && evidence.code) || "PROVIDER_EVIDENCE_NOT_ACTIVATED"); return; }
+  let fenceResult;
+  try {
+    fenceResult = await deps.evidenceFence(evidence.authority);
+  } catch (error) {
+    emit(deps, error instanceof InvariantError ? error.code : PROVIDER_EVIDENCE_INVARIANT);
+    return;
+  }
+  let lease;
+  try {
+    lease = await acquireReconciler(deps, which, boundary);
+  } catch (error) {
+    emit(deps, error instanceof InvariantError ? error.code : spec.invariant);
+    return;
+  }
+  if (lease === null) return;
+  const run = { which, spec, lease, ordinal: boundary.ordinal, authority: evidence.authority, fence: fenceResult };
+  try {
+    await runReconcilerBody(deps, run);
+    await settleReconciler(deps, run);
+  } catch (error) {
+    emit(deps, error instanceof InvariantError ? error.code : spec.invariant);
+  }
+}
+
+function runStorageReconciler(event, deps) { return runReconciler("storage", event, deps); }
+function runAuthReconciler(event, deps) { return runReconciler("auth", event, deps); }
+
+async function recordWorkBackoff(deps, run, { workRef, work, code }) {
+  emit(deps, code);
+  await fencedTransaction(deps, run, async (transaction, { readTime }) => {
+    const snapshot = await transaction.get(workRef);
+    if (!snapshot.exists || TaskCanonicalV1(snapshot.data()) !== TaskCanonicalV1(work)) return;
+    const count = Math.min(work.failure_count + 1, FAILURE_COUNT_MAX);
+    const next = { ...work, failure_count: count, next_eligible_run: run.ordinal + Math.min(2 ** count, 16), updated_at: readTime };
+    if (run.which === "storage") validateStorageWork(next); else validateAuthWork(next);
+    transaction.set(workRef, next);
+  });
+}
+
+// ---- Storage row reducer (§11.3:1672–1682)
+
+async function reduceStorageRow(deps, run, selected) {
+  const uid = selected.work.account_uid;
+  const rootRef = deps.db.doc(`users/${uid}`);
+  const workRef = deps.db.doc(`accountDeletionStorageWork/${selected.id}`);
+  const view = await fencedTransaction(deps, run, async (transaction) => {
+    const rootSnapshot = await transaction.get(rootRef);
+    const workSnapshot = await transaction.get(workRef);
+    if (!workSnapshot.exists || TaskCanonicalV1(workSnapshot.data()) !== TaskCanonicalV1(selected.work)) return null;
+    const root = rootSnapshot.exists ? rootSnapshot.data() : undefined;
+    let validated;
+    try { validated = validateAccountDeletionMarker(root?.accountDeletion); } catch { return null; }
+    if (validated.phase !== "DELETING_SWEEPING" && validated.phase !== "DELETING_GUARDING") return null;
+    try { validateStorageWork(selected.work, { uid, marker: validated.marker }); } catch { return null; }
+    return { marker: validated.marker, phase: validated.phase };
+  });
+  if (view === null) { emit(deps, run.spec.workInvariant); return; }
+  try {
+    await verifyBucketGate(deps, deps.bucket);
+    const admit = () => fencedTransaction(deps, run, async () => {});
+    let progressed = false;
+    let emptyBoth = true;
+    for (const prefix of [`inventory/${uid}/`, `users/${uid}/`]) {
+      const result = await sweepStoragePrefix(deps, deps.bucket, prefix, { limit: 20, pages: 1, admit });
+      if (result.hit) { progressed = true; emptyBoth = false; break; }
+      if (!result.empty) { emptyBoth = false; break; }
+    }
+    await fencedTransaction(deps, run, async (transaction, { readTime }) => {
+      const rootSnapshot = await transaction.get(rootRef);
+      const workSnapshot = await transaction.get(workRef);
+      if (!workSnapshot.exists || TaskCanonicalV1(workSnapshot.data()) !== TaskCanonicalV1(selected.work)) throw new InvariantError(run.spec.workInvariant, "drift");
+      const current = validateAccountDeletionMarker(rootSnapshot.data()?.accountDeletion).marker;
+      if (TaskCanonicalV1(current) !== TaskCanonicalV1(view.marker)) throw new InvariantError("ACCOUNT_DELETION_MARKER_DRIFT");
+      let marker = current;
+      if (emptyBoth && view.phase === "DELETING_GUARDING") {
+        if (marker.storageGuardCompletedAt === undefined && millis(readTime) > millis(marker.storageGuardAfter)) {
+          marker = { ...marker, storageGuardCompletedAt: readTime };
+        }
+        if (marker.firestoreVersionGuardCompletedAt === undefined && run.fence && isTimestampLike(run.fence.earliestVersionTime) &&
+            millis(run.fence.earliestVersionTime) > millis(marker.firestoreCleanupAt)) {
+          marker = { ...marker, firestoreVersionGuardCompletedAt: readTime };
+        }
+        if (marker.storageGuardCompletedAt !== undefined && marker.firestoreVersionGuardCompletedAt !== undefined) {
+          const leases = await transaction.get(leasesQuery(deps.db, uid));
+          requireZeroLeaseDocuments(leases);
+          const done = { ...marker, state: "DATA_DELETED", dataDeletedAt: readTime };
+          validateAccountDeletionMarker(done);
+          transaction.update(rootRef, { accountDeletion: done });
+          transaction.delete(workRef);
+          return;
+        }
+      }
+      if (marker !== current) {
+        validateAccountDeletionMarker(marker);
+        transaction.update(rootRef, { accountDeletion: marker });
+      }
+      const next = { ...selected.work, failure_count: 0, next_eligible_run: run.ordinal + 1, updated_at: readTime };
+      validateStorageWork(next, { uid, marker });
+      transaction.set(workRef, next);
+    });
+    if (progressed) emit(deps, "ACCOUNT_DELETION_STORAGE_PROGRESS");
+  } catch (error) {
+    if (error instanceof InvariantError && SYSTEMIC_CODES.has(error.code)) throw error;
+    const code = error instanceof InvariantError ? error.code : "ACCOUNT_DELETION_STORAGE_PROVIDER_FAILURE";
+    await recordWorkBackoff(deps, run, { workRef, work: selected.work, code });
+  }
+}
+
+// ---- Auth row reducer (§11.3:1700–1704)
+
+function substituteUID(template, uid, encoding) {
+  const value = encoding === "percent_utf8" ? encodeURIComponent(uid) : sha256Hex(TaskCanonicalV1({ account_uid: uid }));
+  return template.split("{{UID}}").join(value);
+}
+
+/** Runs every residual check for `uid`; the Firebase branch is proved by the caller's fresh user-not-found. */
+async function runResidualChecks(deps, authority, uid, readTime) {
+  for (const check of authority.authResidualChecks) {
+    if (check.adapterId === "firebase_admin_get_user_v1") continue;
+    if (check.kind === "absence_retention") {
+      if (Date.parse(check.observedAbsentAt) + check.retentionSeconds * 1000 > millis(readTime)) throw new InvariantError("ACCOUNT_DELETION_RESIDUAL_RETENTION_PENDING");
+      continue;
+    }
+    const request = {
+      url: substituteUID(check.resourceURLTemplate, uid, check.uidEncoding), method: check.method,
+      headers: check.method === "POST" ? { accept: "application/json", "content-type": "application/json" } : { accept: "application/json" },
+      deadlineMs: deps.timeouts.providerMs, maxBytes: PROVIDER_RESPONSE_CAP, redirects: 0
+    };
+    if (check.method === "POST") request.body = substituteUID(check.bodyTemplate, uid, check.uidEncoding);
+    let response;
+    try {
+      response = await withDeadline(deps.providerHTTP.request(request), deps.timeouts.providerMs, "ACCOUNT_DELETION_RESIDUAL_TRANSPORT");
+    } catch { throw new InvariantError("ACCOUNT_DELETION_RESIDUAL_TRANSPORT"); }
+    if (!response || response.status !== 200) throw new InvariantError("ACCOUNT_DELETION_RESIDUAL_MALFORMED", "status");
+    const media = headerValue(response.headers, "content-type");
+    if (typeof media !== "string" || !media.toLowerCase().startsWith("application/json")) throw new InvariantError("ACCOUNT_DELETION_RESIDUAL_MALFORMED", "media");
+    if (!Buffer.isBuffer(response.body) || response.body.length > PROVIDER_RESPONSE_CAP) throw new InvariantError("ACCOUNT_DELETION_RESIDUAL_MALFORMED", "size");
+    let parsed;
+    try { parsed = parseStrictJSON(response.body.toString("utf8")); } catch { throw new InvariantError("ACCOUNT_DELETION_RESIDUAL_MALFORMED", "json"); }
+    if (!isPlainMap(parsed)) throw new InvariantError("ACCOUNT_DELETION_RESIDUAL_MALFORMED", "object");
+    const count = parsed[check.zeroCountField];
+    if (!Number.isSafeInteger(count)) throw new InvariantError("ACCOUNT_DELETION_RESIDUAL_MALFORMED", "count");
+    if (count !== 0) throw new InvariantError("ACCOUNT_DELETION_RESIDUAL_NONZERO");
+  }
+}
+
+async function reduceAuthRow(deps, run, selected) {
+  const uid = selected.work.account_uid;
+  const authority = run.authority;
+  const rootRef = deps.db.doc(`users/${uid}`);
+  const workRef = deps.db.doc(`accountDeletionAuthWork/${selected.id}`);
+  const guard = (transaction) => assertLeaseLive(transaction, deps, run);
+  const view = await fencedTransaction(deps, run, async (transaction, { readTime }) => {
+    const rootSnapshot = await transaction.get(rootRef);
+    const workSnapshot = await transaction.get(workRef);
+    if (!workSnapshot.exists || TaskCanonicalV1(workSnapshot.data()) !== TaskCanonicalV1(selected.work)) return null;
+    let validated;
+    try { validated = validateAccountDeletionMarker(rootSnapshot.data()?.accountDeletion); } catch { return null; }
+    return { marker: validated.marker, phase: validated.phase, readTime };
+  });
+  if (view === null) { emit(deps, run.spec.workInvariant); return; }
+  const work = selected.work;
+  if (work.authority_generation_id !== authority.generationId || work.authority_sha256 !== authority.authoritySHA256) {
+    emit(deps, run.spec.workInvariant);
+    return;
+  }
+  if (work.state === "delete_pending") {
+    if (view.phase !== "DATA_DELETED" || !sameInstant(work.data_deleted_at, view.marker.dataDeletedAt)) { emit(deps, run.spec.workInvariant); return; }
+    await runAuthPendingReducer(deps, { uid, marker: view.marker, work, authority, scheduleOrdinal: run.ordinal, guard });
+    return;
+  }
+  // guarding
+  if (view.phase !== "AUTH_GUARDING" || !sameInstant(view.marker.authGuardAfter, work.auth_guard_after)) { emit(deps, run.spec.workInvariant); return; }
+  try { validateAuthWork(work, { uid, authResidualRetentionSeconds: authority.authResidualRetentionSeconds }); } catch { emit(deps, run.spec.workInvariant); return; }
+  if (millis(view.readTime) <= millis(work.auth_guard_after)) {
+    await fencedTransaction(deps, run, async (transaction, { readTime }) => {
+      const snapshot = await transaction.get(workRef);
+      if (!snapshot.exists || TaskCanonicalV1(snapshot.data()) !== TaskCanonicalV1(work)) return;
+      const next = { ...work, next_eligible_run: firstAuthOrdinalAfter(work.auth_guard_after), updated_at: readTime };
+      validateAuthWork(next, { uid });
+      transaction.set(workRef, next);
+    });
+    return;
+  }
+  try {
+    let absent = false;
+    try {
+      await withDeadline(deps.auth.getUser(uid), deps.timeouts.getUserMs, "ACCOUNT_DELETION_AUTH_TIMEOUT");
+    } catch (error) {
+      if (isUserNotFound(error)) absent = true;
+      else throw new InvariantError("ACCOUNT_DELETION_AUTH_TRANSPORT");
+    }
+    if (!absent) throw new InvariantError("ACCOUNT_DELETION_AUTH_PRESENT");
+    await runResidualChecks(deps, authority, uid, view.readTime);
+    await fencedTransaction(deps, run, async (transaction, { readTime }) => {
+      const rootSnapshot = await transaction.get(rootRef);
+      const workSnapshot = await transaction.get(workRef);
+      if (!workSnapshot.exists || TaskCanonicalV1(workSnapshot.data()) !== TaskCanonicalV1(work)) throw new InvariantError(run.spec.workInvariant, "drift");
+      const current = validateAccountDeletionMarker(rootSnapshot.data()?.accountDeletion).marker;
+      if (TaskCanonicalV1(current) !== TaskCanonicalV1(view.marker)) throw new InvariantError("ACCOUNT_DELETION_MARKER_DRIFT");
+      if (millis(readTime) <= millis(current.authGuardAfter)) throw new InvariantError("ACCOUNT_DELETION_RESIDUAL_RETENTION_PENDING");
+      const done = { ...current, state: "ACCOUNT_DELETED", authGuardCompletedAt: readTime, accountDeletedAt: readTime };
+      validateAccountDeletionMarker(done);
+      transaction.update(rootRef, { accountDeletion: done });
+      transaction.delete(workRef);
+    });
+    emit(deps, "ACCOUNT_DELETION_ACCOUNT_DELETED");
+  } catch (error) {
+    if (error instanceof InvariantError && SYSTEMIC_CODES.has(error.code)) throw error;
+    const code = error instanceof InvariantError ? error.code : "ACCOUNT_DELETION_AUTH_PROVIDER_FAILURE";
+    await recordWorkBackoff(deps, run, { workRef, work, code });
+  }
+}
+
+// ---- Historical migration entry (§11.3:1704, §11.4) — the core the S3 CLI drives
+
+async function createMigrationMarker(deps, { uid }) {
+  if (!isUID(uid)) throw new Error("createMigrationMarker: invalid uid");
+  const operationId = `adel1_${randomUUID()}`;
+  const proofNonce = Buffer.from(randomUUID().replace(/-/g, "") + randomUUID().replace(/-/g, ""), "hex").toString("base64url");
+  const data = { uid, operationId, proofNonce };
+  const ctx = { uid, operationId, rootRef: deps.db.doc(`users/${uid}`) };
+  const marker = await deps.db.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(ctx.rootRef);
+    const root = snapshot.exists ? snapshot.data() : undefined;
+    if (root && root.accountDeletion !== undefined) throw new InvariantError("ACCOUNT_DELETION_MARKER_PRESENT");
+    await pruneLeasesForBegin(transaction, deps, ctx);
+    return createMarkerAndWork(transaction, deps, ctx, snapshot, data);
+  });
+  return { operationId, proofSHA256: marker.capabilities[0].proofSHA256 };
+}
+
+/** After data-final: a fresh canonical user-not-found enters guarding without an Auth delete. */
+async function enterHistoricalGuarding(deps, { uid }) {
+  const authority = requireEvidence(deps);
+  const rootRef = deps.db.doc(`users/${uid}`);
+  const marker = await deps.db.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(rootRef);
+    const validated = validateAccountDeletionMarker(snapshot.data()?.accountDeletion);
+    if (validated.phase !== "DATA_DELETED") throw new InvariantError("ACCOUNT_DELETION_MARKER_MALFORMED", "phase");
+    return validated.marker;
+  });
+  try {
+    await withDeadline(deps.auth.getUser(uid), deps.timeouts.getUserMs, "ACCOUNT_DELETION_AUTH_TIMEOUT");
+    throw new InvariantError("LEGACY_ACCOUNT_AUTH_RACE");
+  } catch (error) {
+    if (!isUserNotFound(error)) throw error instanceof InvariantError ? error : new InvariantError("LEGACY_ACCOUNT_AUTH_RACE");
+  }
+  const workRef = authWorkRef(deps, uid);
+  const guarding = await deps.db.runTransaction(async (transaction) => {
+    const rootSnapshot = await transaction.get(rootRef);
+    const current = validateAccountDeletionMarker(rootSnapshot.data()?.accountDeletion).marker;
+    if (TaskCanonicalV1(current) !== TaskCanonicalV1(marker)) throw new InvariantError("ACCOUNT_DELETION_MARKER_DRIFT");
+    const workSnapshot = await transaction.get(workRef);
+    if (workSnapshot.exists) throw new InvariantError("ACCOUNT_DELETION_AUTH_WORK_INVARIANT", "present");
+    const readTime = readTimeOf(rootSnapshot, deps);
+    const authGuardAfter = plusSeconds(readTime, authority.authResidualRetentionSeconds);
+    const next = { ...current, state: "AUTH_GUARDING", authAbsenceObservedAt: readTime, authGuardAfter };
+    validateAccountDeletionMarker(next);
+    const work = {
+      schema_version: 1, kind: "ACCOUNT_DELETION_AUTH_WORK", work_id: authWorkId(uid), account_uid: uid, state: "guarding",
+      data_deleted_at: current.dataDeletedAt, authority_generation_id: authority.generationId, authority_sha256: authority.authoritySHA256,
+      failure_count: 0, next_eligible_run: firstAuthOrdinalAfter(authGuardAfter), created_at: readTime, updated_at: readTime,
+      auth_absence_observed_at: readTime, auth_guard_after: authGuardAfter
+    };
+    validateAuthWork(work, { uid, authResidualRetentionSeconds: authority.authResidualRetentionSeconds });
+    transaction.update(rootRef, { accountDeletion: next });
+    transaction.create(workRef, work);
+    return next;
+  });
+  return { transitioned: true, marker: guarding };
+}
+
+// ---------------------------------------------------------------------------
 // Production dependencies (lazy; the only place Firebase Admin is touched)
 // ---------------------------------------------------------------------------
 
@@ -1754,6 +2229,7 @@ function productionDependencies() {
     bucket: admin.storage().bucket(),
     now: () => Timestamp.fromMillis(Date.now()),
     log: (code, counts) => logger.info(code, counts || {}),
+    metric: (name, value) => logger.info("phase2_metric", { metric: name, value }),
     firestore: { client: new v1.FirestoreClient(), documentsRoot: `projects/${projectId}/databases/(default)/documents` },
     firestoreAdmin: new v1.FirestoreAdminClient(),
     providerHTTP: productionProviderHTTP(),
@@ -1814,6 +2290,9 @@ module.exports = {
   // provider evidence authority and the bounded fence
   PROVIDER_EVIDENCE_TRUST_ANCHOR_V1, parseStrictJSON, loadProviderEvidenceAuthority, validateAuthResidualChecks,
   projectBucketDeletionConfig, verifyBucketConfiguration, verifyFirestoreConfiguration, runPolicyChecks, runEvidenceFence,
+  // reconcilers and the historical entry
+  validateReconcilerState, parseScheduleBoundary, runStorageReconciler, runAuthReconciler, runResidualChecks,
+  createMigrationMarker, enterHistoricalGuarding,
   // misc
   withDeadline, readTimeOf, requireEvidence, emit, productionDependencies, loadedEvidence
 };

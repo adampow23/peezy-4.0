@@ -698,6 +698,7 @@ function testEvidence(overrides = {}) {
       generationId: "11111111-1111-4111-8111-111111111111",
       authoritySHA256: sha256("authority"),
       authResidualRetentionSeconds: 86400,
+      authResidualChecks: residualChecks(),
       ...overrides
     }
   };
@@ -1214,9 +1215,12 @@ test("index.js exports deleteAccount as the fence callable with the pinned optio
   const fs = require("node:fs");
   const path = require("node:path");
   const source = fs.readFileSync(path.join(__dirname, "..", "index.js"), "utf8");
-  assert.match(source, /const \{ handleAccountDeletionRequest, productionDependencies \} = require\('\.\/accountDeletionFence'\);/);
+  assert.match(source, /const \{ handleAccountDeletionRequest, productionDependencies, runStorageReconciler, runAuthReconciler \} = require\('\.\/accountDeletionFence'\);/);
   assert.match(source, /exports\.deleteAccount = onCall\(\s*\{ region: 'us-central1', timeoutSeconds: 60, memory: '512MiB' \},\s*\(request\) => handleAccountDeletionRequest\(request, productionDependencies\(\)\)\s*\);/);
   assert.ok(source.includes("exports.changeTaskPlan = changeTaskPlan;"));
+  assert.match(source, /const \{ onSchedule \} = require\('firebase-functions\/v2\/scheduler'\);/);
+  assert.match(source, /exports\.reconcileAccountDeletionStorage = onSchedule\(\s*\{ schedule: '\*\/5 \* \* \* \*', timeZone: 'UTC', region: 'us-central1', timeoutSeconds: 270, memory: '512MiB', maxInstances: 1, retryCount: 0 \},\s*\(event\) => runStorageReconciler\(event, productionDependencies\(\)\)\s*\);/);
+  assert.match(source, /exports\.reconcileAccountDeletionAuth = onSchedule\(\s*\{ schedule: '2-57\/5 \* \* \* \*', timeZone: 'UTC', region: 'us-central1', timeoutSeconds: 270, memory: '512MiB', maxInstances: 1, retryCount: 0 \},\s*\(event\) => runAuthReconciler\(event, productionDependencies\(\)\)\s*\);/);
   for (const forbidden of ["recursiveDelete", "deleteUser(", "onObjectFinalized", "firebase-functions/v2/storage", "onInventoryObjectFinalized", "handleInventoryObjectFinalized", "admin.storage()"]) {
     assert.equal(source.includes(forbidden), false, forbidden);
   }
@@ -1527,6 +1531,457 @@ test("the bounded evidence fence runs the bucket RPC, the Firestore RPC, and eve
   assert.equal(auth.calls.length + db.__writes.length, 0);
   assert.ok(failing.logs.some(([c]) => c === "ACCOUNT_DELETION_PROVIDER_EVIDENCE_INVARIANT"));
   assert.equal(fence.validateAccountDeletionMarker(markerOf(db)).phase, "DATA_DELETED");
+});
+
+// ---------------------------------------------------------------------------
+// I3b — the two scheduled reconcilers (§11.3) and their index exports
+// ---------------------------------------------------------------------------
+
+const STORAGE_STATE_PATH = "phase2System/accountDeletionStorageReconcilerV1";
+const AUTH_STATE_PATH = "phase2System/accountDeletionAuthReconcilerV1";
+
+function reconcilerState(kind, overrides = {}) {
+  return { schema_version: 1, kind, last_started_ordinal: 100, last_completed_ordinal: 100, cursor_id: "", lease: null, heartbeat: null, ...overrides };
+}
+
+function storageWorkRow(uid, marker, overrides = {}) {
+  return {
+    schema_version: 1, kind: "ACCOUNT_DELETION_STORAGE_WORK", work_id: fence.storageWorkId(uid), account_uid: uid,
+    marker_started_at: marker.startedAt, storage_guard_after: marker.storageGuardAfter, failure_count: 0, next_eligible_run: 0,
+    created_at: marker.startedAt, updated_at: marker.startedAt, ...overrides
+  };
+}
+
+function authWorkRow(uid, marker, overrides = {}) {
+  return {
+    schema_version: 1, kind: "ACCOUNT_DELETION_AUTH_WORK", work_id: fence.authWorkId(uid), account_uid: uid, state: "delete_pending",
+    data_deleted_at: marker.dataDeletedAt, authority_generation_id: "11111111-1111-4111-8111-111111111111", authority_sha256: sha256("authority"),
+    failure_count: 0, next_eligible_run: 0, created_at: marker.dataDeletedAt, updated_at: marker.dataDeletedAt, ...overrides
+  };
+}
+
+function scheduleEvent(iso) { return { scheduleTime: iso, jobName: "test" }; }
+
+function reconcilerDeps(options) {
+  const deps = makeDeps(options);
+  deps.metrics = [];
+  deps.metric = (name, value) => deps.metrics.push([name, value]);
+  return deps;
+}
+
+test("reconciler state grammar: exact members and lease/heartbeat relations; absent or malformed state is the fixed invariant and is never synthesized", async () => {
+  const clock = new FakeClock("2026-09-06T12:00:00.000Z");
+  const good = reconcilerState("ACCOUNT_DELETION_STORAGE_RECONCILER");
+  fence.validateReconcilerState(good, "storage");
+  const lease = { owner_token: randomUUID(), schedule_ordinal: 101, scheduled_at: clock.now(), started_at: clock.now(), expires_at: Timestamp.fromMillis(clock.millis + 270_000) };
+  fence.validateReconcilerState({ ...good, last_started_ordinal: 101, lease, heartbeat: { schedule_ordinal: 101, status: "running", started_at: clock.now() } }, "storage");
+  fence.validateReconcilerState({ ...good, last_started_ordinal: 101, last_completed_ordinal: 101, heartbeat: { schedule_ordinal: 101, status: "completed", started_at: clock.now(), completed_at: clock.now() } }, "storage");
+  const bad = [
+    ["kind", { ...good, kind: "ACCOUNT_DELETION_AUTH_RECONCILER" }],
+    ["surplus", { ...good, extra: 1 }],
+    ["completed beyond started", { ...good, last_completed_ordinal: 101 }],
+    ["cursor grammar", { ...good, cursor_id: "adsw1_x" }],
+    ["lease expiry relation", { ...good, last_started_ordinal: 101, lease: { ...lease, expires_at: clock.now() }, heartbeat: { schedule_ordinal: 101, status: "running", started_at: clock.now() } }],
+    ["running with completed_at", { ...good, last_started_ordinal: 101, lease, heartbeat: { schedule_ordinal: 101, status: "running", started_at: clock.now(), completed_at: clock.now() } }],
+    ["completed with lease", { ...good, last_started_ordinal: 101, last_completed_ordinal: 101, lease, heartbeat: { schedule_ordinal: 101, status: "completed", started_at: clock.now(), completed_at: clock.now() } }],
+    ["completed without completed_at", { ...good, last_started_ordinal: 101, last_completed_ordinal: 101, heartbeat: { schedule_ordinal: 101, status: "completed", started_at: clock.now() } }],
+    ["owner token", { ...good, last_started_ordinal: 101, lease: { ...lease, owner_token: "nope" }, heartbeat: { schedule_ordinal: 101, status: "running", started_at: clock.now() } }]
+  ];
+  for (const [label, state] of bad) {
+    assert.throws(() => fence.validateReconcilerState(state, "storage"), (e) => e.code === "ACCOUNT_DELETION_STORAGE_RECONCILER_INVARIANT", label);
+  }
+  for (const seed of [{}, { [STORAGE_STATE_PATH]: { junk: true } }]) {
+    const db = fakeFirestore({ docs: seed, clock });
+    const deps = reconcilerDeps({ db, clock });
+    await fence.runStorageReconciler(scheduleEvent("2026-09-06T12:00:00Z"), deps);
+    assert.equal(db.__writes.length, 0);
+    assert.ok(deps.logs.some(([c]) => c === "ACCOUNT_DELETION_STORAGE_RECONCILER_INVARIANT"));
+  }
+});
+
+test("schedule boundaries and acquisition: exact 300 s boundaries (auth: +120 s) derive ordinals; stale, duplicate, or non-boundary deliveries mutate nothing; expired leases are replaced and live foreign leases refused; completion settles the heartbeat and metric", async () => {
+  const clock = new FakeClock("2026-09-06T12:00:00.000Z");
+  const boundary = "2026-09-06T12:00:00Z";
+  const ordinal = Math.floor(Date.parse(boundary) / 1000 / 300);
+  const db = fakeFirestore({ docs: { [STORAGE_STATE_PATH]: reconcilerState("ACCOUNT_DELETION_STORAGE_RECONCILER", { last_started_ordinal: ordinal - 1, last_completed_ordinal: ordinal - 1 }) }, clock });
+  const deps = reconcilerDeps({ db, clock });
+  for (const bad of ["2026-09-06T12:01:00Z", "2026-09-06T12:00:00.500Z", "not-a-time", undefined]) {
+    await fence.runStorageReconciler(scheduleEvent(bad), deps);
+    assert.equal(db.__writes.length, 0, String(bad));
+    assert.ok(deps.logs.some(([c]) => c === "ACCOUNT_DELETION_SCHEDULE_BOUNDARY_INVALID"));
+  }
+  await fence.runStorageReconciler(scheduleEvent(boundary), deps);
+  const settled = db.__docs.get(STORAGE_STATE_PATH);
+  assert.equal(settled.last_started_ordinal, ordinal);
+  assert.equal(settled.last_completed_ordinal, ordinal);
+  assert.equal(settled.lease, null);
+  assert.deepEqual({ ...settled.heartbeat, started_at: null, completed_at: null }, { schedule_ordinal: ordinal, status: "completed", started_at: null, completed_at: null });
+  assert.equal(settled.cursor_id, "");
+  assert.deepEqual(deps.metrics, [["phase2/account_deletion_storage_reconciler_completed_count", 1]]);
+  // duplicate and stale deliveries are zero-mutation
+  const before = JSON.stringify(db.__docs.get(STORAGE_STATE_PATH));
+  await fence.runStorageReconciler(scheduleEvent(boundary), deps);
+  await fence.runStorageReconciler(scheduleEvent("2026-09-06T11:55:00Z"), deps);
+  assert.equal(JSON.stringify(db.__docs.get(STORAGE_STATE_PATH)), before);
+
+  // a live foreign lease refuses; an expired one is replaced
+  const foreign = { owner_token: randomUUID(), schedule_ordinal: ordinal + 1, scheduled_at: clock.now(), started_at: clock.now(), expires_at: Timestamp.fromMillis(clock.millis + 270_000) };
+  const liveDb = fakeFirestore({ docs: { [STORAGE_STATE_PATH]: reconcilerState("ACCOUNT_DELETION_STORAGE_RECONCILER", { last_started_ordinal: ordinal + 1, last_completed_ordinal: ordinal, lease: foreign, heartbeat: { schedule_ordinal: ordinal + 1, status: "running", started_at: clock.now() } }) }, clock });
+  const liveDeps = reconcilerDeps({ db: liveDb, clock });
+  clock.millis = Date.parse("2026-09-06T12:03:00.000Z");
+  await fence.runStorageReconciler(scheduleEvent("2026-09-06T12:10:00Z"), liveDeps);
+  assert.equal(liveDb.__writes.length, 0);
+  clock.millis = Date.parse("2026-09-06T12:10:00.000Z");
+  await fence.runStorageReconciler(scheduleEvent("2026-09-06T12:10:00Z"), liveDeps);
+  assert.equal(liveDb.__docs.get(STORAGE_STATE_PATH).last_started_ordinal, ordinal + 2);
+  assert.equal(liveDb.__docs.get(STORAGE_STATE_PATH).lease, null);
+
+  // the auth schedule accepts only boundary + 120 s
+  const authOrdinal = fence.authScheduleOrdinal(Math.floor(Date.parse("2026-09-06T12:02:00Z") / 1000));
+  const authDb = fakeFirestore({ docs: { [AUTH_STATE_PATH]: reconcilerState("ACCOUNT_DELETION_AUTH_RECONCILER", { last_started_ordinal: authOrdinal - 1, last_completed_ordinal: authOrdinal - 1 }) }, clock });
+  const authDeps = reconcilerDeps({ db: authDb, clock });
+  await fence.runAuthReconciler(scheduleEvent("2026-09-06T12:00:00Z"), authDeps);
+  assert.equal(authDb.__writes.length, 0);
+  clock.millis = Date.parse("2026-09-06T12:02:00.000Z");
+  await fence.runAuthReconciler(scheduleEvent("2026-09-06T12:02:00Z"), authDeps);
+  assert.equal(authDb.__docs.get(AUTH_STATE_PATH).last_completed_ordinal, authOrdinal);
+  assert.deepEqual(authDeps.metrics, [["phase2/account_deletion_auth_reconciler_completed_count", 1]]);
+
+  // evidence not activated or a failing fence performs zero mutation
+  clock.millis = Date.parse("2026-09-06T12:15:00.000Z");
+  const inactive = reconcilerDeps({ db: fakeFirestore({ docs: { [STORAGE_STATE_PATH]: reconcilerState("ACCOUNT_DELETION_STORAGE_RECONCILER") }, clock }), clock, evidence: { ok: false, code: "PROVIDER_EVIDENCE_NOT_ACTIVATED" } });
+  await fence.runStorageReconciler(scheduleEvent("2026-09-06T12:15:00Z"), inactive);
+  assert.equal(inactive.db.__writes.length, 0);
+  const drifting = reconcilerDeps({ db: fakeFirestore({ docs: { [STORAGE_STATE_PATH]: reconcilerState("ACCOUNT_DELETION_STORAGE_RECONCILER") }, clock }), clock, evidenceFence: async () => { throw new fence.InvariantError("ACCOUNT_DELETION_PROVIDER_EVIDENCE_INVARIANT"); } });
+  await fence.runStorageReconciler(scheduleEvent("2026-09-06T12:15:00Z"), drifting);
+  assert.equal(drifting.db.__writes.length, 0);
+});
+
+test("cursor advances before the provider await, never skips a later eligible row, wraps on an empty page, and steps past malformed rows with the fixed invariant", async () => {
+  const clock = new FakeClock("2026-09-01T00:00:00.000Z");
+  const ordinal = Math.floor(Date.parse("2026-09-01T00:00:00Z") / 1000 / 300);
+  const users = ["uid-1", "uid-2", "uid-3"];
+  const docs = { [STORAGE_STATE_PATH]: reconcilerState("ACCOUNT_DELETION_STORAGE_RECONCILER", { last_started_ordinal: ordinal - 1, last_completed_ordinal: ordinal - 1 }) };
+  const markers = {};
+  for (const uid of users) {
+    const credentials = { operationId: freshOperationId(), proofNonce: freshProofNonce() };
+    markers[uid] = guardingMarker([capability(uid, credentials.operationId, credentials.proofNonce)]);
+    docs[`users/${uid}`] = { accountDeletion: markers[uid] };
+    docs[`accountDeletionStorageWork/${fence.storageWorkId(uid)}`] = storageWorkRow(uid, markers[uid], { next_eligible_run: uid === "uid-2" ? ordinal + 5 : 0 });
+  }
+  const malformedId = `adsw1_${"f".repeat(40)}`;
+  docs[`accountDeletionStorageWork/${malformedId}`] = { junk: true };
+  const ids = users.map((uid) => fence.storageWorkId(uid)).sort();
+  const db = fakeFirestore({ docs, clock });
+  const bucket = fakeBucket({ objects: users.map((uid) => ({ name: `users/${uid}/a.bin` })) });
+  const visited = [];
+  const deps = reconcilerDeps({ db, clock, bucket, hooks: { beforeReducer: (uid) => visited.push([uid, db.__docs.get(STORAGE_STATE_PATH).cursor_id]) } });
+  const eligible = ids.filter((id) => id !== fence.storageWorkId("uid-2"));
+
+  await fence.runStorageReconciler(scheduleEvent("2026-09-01T00:00:00Z"), deps);
+  assert.equal(visited.length, 1);
+  assert.equal(visited[0][1], fence.storageWorkId(visited[0][0]), "cursor advanced to the selected row before the await");
+  assert.equal(visited[0][1], eligible[0]);
+  assert.equal(db.__docs.get(STORAGE_STATE_PATH).cursor_id, eligible[0]);
+
+  clock.millis = Date.parse("2026-09-01T00:05:00.000Z");
+  await fence.runStorageReconciler(scheduleEvent("2026-09-01T00:05:00Z"), deps);
+  assert.equal(visited.length, 2);
+  assert.equal(visited[1][1], eligible[1]);
+
+  clock.millis = Date.parse("2026-09-01T00:10:00.000Z");
+  await fence.runStorageReconciler(scheduleEvent("2026-09-01T00:10:00Z"), deps);
+  clock.millis = Date.parse("2026-09-01T00:15:00.000Z");
+  await fence.runStorageReconciler(scheduleEvent("2026-09-01T00:15:00Z"), deps);
+  const state = db.__docs.get(STORAGE_STATE_PATH);
+  assert.equal(state.cursor_id, "", "empty page after the last row wraps the cursor");
+  assert.equal(visited.length, 2, "the ineligible row was never reduced");
+  assert.ok(deps.logs.some(([c]) => c === "ACCOUNT_DELETION_STORAGE_WORK_INVARIANT"));
+  assert.deepEqual(db.__docs.get(`accountDeletionStorageWork/${malformedId}`), { junk: true });
+  assert.ok(ids.every((id) => compareBytes(id, malformedId) < 0), "the malformed row sorts last");
+  assert.equal(bucket.live.length, 1, "the deferred row's object survives");
+  for (const uid of ["uid-1", "uid-3"]) {
+    const work = db.__docs.get(`accountDeletionStorageWork/${fence.storageWorkId(uid)}`);
+    assert.equal(work.failure_count, 0);
+    assert.ok(work.next_eligible_run > ordinal);
+  }
+});
+
+test("Storage reconciler: 20/21 objects per run, guard boundary exact/equal/+1, firestore version guard exact/equal/+1, atomic DATA_DELETED with work deletion, soft-deleted backoff, saturation at 8/16", async () => {
+  const uid = "uid-A";
+  const credentials = { operationId: freshOperationId(), proofNonce: freshProofNonce() };
+  const startedAt = "2026-09-01T00:00:00.000Z";
+  const marker = { ...guardingMarker([capability(uid, credentials.operationId, credentials.proofNonce)]) };
+  const seed = (extraDocs = {}, ordinalIso = "2026-09-08T00:00:00Z") => {
+    const ordinal = Math.floor(Date.parse(ordinalIso) / 1000 / 300);
+    return {
+      [STORAGE_STATE_PATH]: reconcilerState("ACCOUNT_DELETION_STORAGE_RECONCILER", { last_started_ordinal: ordinal - 1, last_completed_ordinal: ordinal - 1 }),
+      [`users/${uid}`]: { accountDeletion: marker },
+      [`accountDeletionStorageWork/${fence.storageWorkId(uid)}`]: storageWorkRow(uid, marker),
+      ...extraDocs
+    };
+  };
+
+  // 21 objects: first run deletes 20, second the last one
+  {
+    const clock = new FakeClock("2026-09-02T00:00:00.000Z");
+    const bucket = fakeBucket({ objects: Array.from({ length: 21 }, (_, i) => ({ name: `inventory/${uid}/f${String(i).padStart(2, "0")}.jpg`, generation: String(10 + i) })) });
+    const db = fakeFirestore({ docs: seed({}, "2026-09-02T00:00:00Z"), clock });
+    const deps = reconcilerDeps({ db, clock, bucket });
+    await fence.runStorageReconciler(scheduleEvent("2026-09-02T00:00:00Z"), deps);
+    assert.equal(bucket.live.length, 1);
+    assert.ok(bucket.calls.filter(([k]) => k === "getFiles").every(([, q]) => q.maxResults === 20 || q.maxResults === 1));
+    clock.millis = Date.parse("2026-09-02T00:05:00.000Z");
+    await fence.runStorageReconciler(scheduleEvent("2026-09-02T00:05:00Z"), deps);
+    assert.equal(bucket.live.length, 1, "the run after a selection continues past the cursor and wraps");
+    assert.equal(db.__docs.get(STORAGE_STATE_PATH).cursor_id, "");
+    clock.millis = Date.parse("2026-09-02T00:10:00.000Z");
+    await fence.runStorageReconciler(scheduleEvent("2026-09-02T00:10:00Z"), deps);
+    assert.equal(bucket.live.length, 0);
+    assert.equal(fence.validateAccountDeletionMarker(markerOf(db, uid)).phase, "DELETING_GUARDING");
+    assert.equal(markerOf(db, uid).storageGuardCompletedAt, undefined, "the storage guard has not passed");
+  }
+
+  // guard boundary: read time at storageGuardAfter refuses, one tick later completes
+  for (const [label, iso, expectCompletion] of [["exact", GUARD_AFTER, false], ["+1 ms", "2026-09-08T00:00:00.001Z", true]]) {
+    const clock = new FakeClock(iso);
+    const db = fakeFirestore({ docs: seed({}, "2026-09-08T00:00:00Z"), clock });
+    const deps = reconcilerDeps({ db, clock, evidenceFence: async () => ({ earliestVersionTime: ts("2026-09-01T00:30:00.000Z") }) });
+    await fence.runStorageReconciler(scheduleEvent("2026-09-08T00:00:00Z"), deps);
+    const after = markerOf(db, uid);
+    assert.equal(after.storageGuardCompletedAt !== undefined, expectCompletion, label);
+    if (expectCompletion) assert.equal(after.storageGuardCompletedAt.toMillis(), Date.parse(iso));
+    assert.equal(after.firestoreVersionGuardCompletedAt, undefined, "version guard requires earliestVersionTime after cleanup");
+  }
+
+  // firestore version guard: earliestVersionTime equal to firestoreCleanupAt refuses; strictly later completes; both → DATA_DELETED atomically with work deletion
+  const cleanup = marker.firestoreCleanupAt;
+  for (const [label, earliest, expectDone] of [["equal", cleanup, false], ["+1 ms", Timestamp.fromMillis(cleanup.toMillis() + 1), true]]) {
+    const clock = new FakeClock("2026-09-08T00:05:00.000Z");
+    const db = fakeFirestore({ docs: seed({}, "2026-09-08T00:05:00Z"), clock });
+    const deps = reconcilerDeps({ db, clock, evidenceFence: async () => ({ earliestVersionTime: earliest }) });
+    await fence.runStorageReconciler(scheduleEvent("2026-09-08T00:05:00Z"), deps);
+    const after = markerOf(db, uid);
+    if (!expectDone) {
+      assert.equal(after.state, "DELETING", label);
+      assert.ok(after.storageGuardCompletedAt);
+      assert.equal(after.firestoreVersionGuardCompletedAt, undefined, label);
+      assert.ok(db.__docs.has(`accountDeletionStorageWork/${fence.storageWorkId(uid)}`));
+    } else {
+      assert.equal(fence.validateAccountDeletionMarker(after).phase, "DATA_DELETED", label);
+      assert.equal(after.dataDeletedAt.toMillis(), clock.millis);
+      assert.equal(db.__docs.has(`accountDeletionStorageWork/${fence.storageWorkId(uid)}`), false, "work row deleted with DATA_DELETED");
+      assert.ok(deps.metrics.some(([n]) => n === "phase2/account_deletion_storage_reconciler_completed_count"));
+    }
+  }
+
+  // a lease observed at the final transaction blocks DATA_DELETED and survives
+  {
+    const clock = new FakeClock("2026-09-08T00:05:00.000Z");
+    const leaseId = `uol1_${randomUUID()}`;
+    const lease = { schema_version: 1, kind: "USER_OUTBOUND_LEASE", account_uid: uid, delivery_id: "d", channel: "fcm", state: "sending", created_at: clock.now(), expires_at: Timestamp.fromMillis(clock.millis + 600_000) };
+    const db = fakeFirestore({ docs: seed({ [`users/${uid}/outboundLeases/${leaseId}`]: lease }, "2026-09-08T00:05:00Z"), clock });
+    const deps = reconcilerDeps({ db, clock, evidenceFence: async () => ({ earliestVersionTime: Timestamp.fromMillis(cleanup.toMillis() + 1) }) });
+    await fence.runStorageReconciler(scheduleEvent("2026-09-08T00:05:00Z"), deps);
+    assert.equal(markerOf(db, uid).state, "DELETING");
+    assert.deepEqual(db.__docs.get(`users/${uid}/outboundLeases/${leaseId}`), lease);
+    assert.ok(deps.logs.some(([c]) => c === "OUTBOUND_LEASE_INVARIANT"));
+  }
+
+  // soft-deleted object: fenced backoff, saturation at 8 / +16
+  {
+    const clock = new FakeClock("2026-09-08T00:05:00.000Z");
+    const bucket = fakeBucket({ softDeleted: [{ name: `users/${uid}/old.bin`, timeDeleted: "2026-09-01T00:00:00.000Z" }] });
+    const db = fakeFirestore({ docs: seed({}, "2026-09-08T00:05:00Z"), clock });
+    const deps = reconcilerDeps({ db, clock, bucket });
+    let ordinal = Math.floor(Date.parse("2026-09-08T00:05:00Z") / 1000 / 300);
+    const expected = [];
+    for (let run = 1; run <= 10; run += 1) {
+      const iso = new Date(ordinal * 300 * 1000).toISOString().replace(".000Z", "Z");
+      clock.millis = ordinal * 300 * 1000;
+      db.__docs.get(`accountDeletionStorageWork/${fence.storageWorkId(uid)}`).next_eligible_run = 0;
+      db.__docs.get(STORAGE_STATE_PATH).cursor_id = "";
+      await fence.runStorageReconciler(scheduleEvent(iso), deps);
+      const work = db.__docs.get(`accountDeletionStorageWork/${fence.storageWorkId(uid)}`);
+      const count = Math.min(run, 8);
+      expected.push([count, ordinal + Math.min(2 ** count, 16)]);
+      assert.deepEqual([work.failure_count, work.next_eligible_run], expected.at(-1), `run ${run}`);
+      assert.equal(db.__docs.get(STORAGE_STATE_PATH).last_completed_ordinal, ordinal, "a fenced backoff write settles the run");
+      ordinal += 1;
+    }
+    assert.ok(deps.logs.some(([c]) => c === "ACCOUNT_DELETION_SOFT_DELETED_OBJECT_PRESENT"));
+    assert.equal(markerOf(db, uid).state, "DELETING");
+  }
+
+  // lease loss: a stale owner after takeover cannot mutate state, work, root, or completion
+  {
+    const clock = new FakeClock("2026-09-08T00:05:00.000Z");
+    const db = fakeFirestore({ docs: seed({}, "2026-09-08T00:05:00Z"), clock });
+    const bucket = fakeBucket({ objects: [{ name: `users/${uid}/a.bin` }] });
+    const deps = reconcilerDeps({ db, clock, bucket, hooks: { beforeReducer: () => {
+      const state = db.__docs.get(STORAGE_STATE_PATH);
+      state.lease = { ...state.lease, owner_token: randomUUID() };
+    } } });
+    await fence.runStorageReconciler(scheduleEvent("2026-09-08T00:05:00Z"), deps);
+    const state = db.__docs.get(STORAGE_STATE_PATH);
+    assert.equal(state.heartbeat.status, "running", "lease loss leaves running");
+    assert.equal(state.last_completed_ordinal, Math.floor(Date.parse("2026-09-08T00:05:00Z") / 1000 / 300) - 1);
+    assert.equal(bucket.live.length, 1, "no provider delete without a live lease");
+    assert.equal(deps.metrics.length, 0);
+    assert.ok(deps.logs.some(([c]) => c === "ACCOUNT_DELETION_RECONCILER_LEASE_LOST"));
+  }
+});
+
+test("Auth reconciler: pending rows transition at one read time (not-found or accepted delete); guarding rows wait for the deadline, then require fresh not-found, zero residual checks, and unchanged authority to write ACCOUNT_DELETED and delete the work; residual guard exact/equal/+1", async () => {
+  const uid = "uid-A";
+  const credentials = { operationId: freshOperationId(), proofNonce: freshProofNonce() };
+  const caps = [capability(uid, credentials.operationId, credentials.proofNonce)];
+  const pendingMarker = dataDeletedMarker(caps);
+  const authOrdinalOf = (iso) => fence.authScheduleOrdinal(Math.floor(Date.parse(iso) / 1000));
+  const seed = (marker, work, iso, extra = {}) => ({
+    [AUTH_STATE_PATH]: reconcilerState("ACCOUNT_DELETION_AUTH_RECONCILER", { last_started_ordinal: authOrdinalOf(iso) - 1, last_completed_ordinal: authOrdinalOf(iso) - 1 }),
+    [`users/${uid}`]: { accountDeletion: marker },
+    [`accountDeletionAuthWork/${fence.authWorkId(uid)}`]: work,
+    ...extra
+  });
+
+  // pending → guarding (user-not-found)
+  {
+    const iso = "2026-09-08T00:12:00Z";
+    const clock = new FakeClock("2026-09-08T00:12:00.000Z");
+    const db = fakeFirestore({ docs: seed(pendingMarker, authWorkRow(uid, pendingMarker), iso), clock });
+    const auth = fakeAuth();
+    const deps = reconcilerDeps({ db, clock, auth });
+    await fence.runAuthReconciler(scheduleEvent(iso), deps);
+    const after = markerOf(db, uid);
+    assert.equal(fence.validateAccountDeletionMarker(after).phase, "AUTH_GUARDING");
+    assert.equal(after.authAbsenceObservedAt.toMillis(), clock.millis);
+    assert.equal(after.authGuardAfter.toMillis(), clock.millis + 86400_000);
+    const work = db.__docs.get(`accountDeletionAuthWork/${fence.authWorkId(uid)}`);
+    assert.equal(work.state, "guarding");
+    assert.equal(work.next_eligible_run, fence.firstAuthOrdinalAfter(after.authGuardAfter));
+    assert.deepEqual(auth.calls, [["getUser", uid]]);
+  }
+
+  // pending with a present user: one accepted deleteUser
+  {
+    const iso = "2026-09-08T00:12:00Z";
+    const clock = new FakeClock("2026-09-08T00:12:00.000Z");
+    const db = fakeFirestore({ docs: seed(pendingMarker, authWorkRow(uid, pendingMarker), iso), clock });
+    const auth = fakeAuth({ getUser: () => "present" });
+    await fence.runAuthReconciler(scheduleEvent(iso), reconcilerDeps({ db, clock, auth }));
+    assert.deepEqual(auth.calls, [["getUser", uid], ["deleteUser", uid]]);
+    assert.equal(markerOf(db, uid).state, "AUTH_GUARDING");
+  }
+
+  // pending transport failure: fenced backoff keyed by the schedule ordinal, run settles
+  {
+    const iso = "2026-09-08T00:12:00Z";
+    const clock = new FakeClock("2026-09-08T00:12:00.000Z");
+    const db = fakeFirestore({ docs: seed(pendingMarker, authWorkRow(uid, pendingMarker), iso), clock });
+    const transport = new Error("ECONNRESET"); transport.code = "ECONNRESET";
+    const deps = reconcilerDeps({ db, clock, auth: fakeAuth({ getUser: () => transport }) });
+    await fence.runAuthReconciler(scheduleEvent(iso), deps);
+    const work = db.__docs.get(`accountDeletionAuthWork/${fence.authWorkId(uid)}`);
+    assert.equal(work.state, "delete_pending");
+    assert.deepEqual([work.failure_count, work.next_eligible_run], [1, authOrdinalOf(iso) + 2]);
+    assert.equal(db.__docs.get(AUTH_STATE_PATH).last_completed_ordinal, authOrdinalOf(iso));
+    assert.equal(markerOf(db, uid).state, "DATA_DELETED");
+  }
+
+  // guarding: deadline exact/equal → only next_eligible_run advances; +1 → completion
+  const guardingMarkerA = authGuardingMarker(caps); // authGuardAfter 2026-09-09T00:11:00.000Z
+  const guardingWork = (extra = {}) => authWorkRow(uid, guardingMarkerA, { state: "guarding", auth_absence_observed_at: guardingMarkerA.authAbsenceObservedAt, auth_guard_after: guardingMarkerA.authGuardAfter, next_eligible_run: 0, created_at: guardingMarkerA.dataDeletedAt, updated_at: guardingMarkerA.authAbsenceObservedAt, ...extra });
+  {
+    const iso = "2026-09-09T00:07:00Z"; // boundary + 120 s before the deadline
+    const clock = new FakeClock("2026-09-09T00:11:00.000Z"); // read time exactly at the deadline
+    const db = fakeFirestore({ docs: seed(guardingMarkerA, guardingWork(), iso), clock });
+    const auth = fakeAuth();
+    const deps = reconcilerDeps({ db, clock, auth });
+    await fence.runAuthReconciler(scheduleEvent(iso), deps);
+    const work = db.__docs.get(`accountDeletionAuthWork/${fence.authWorkId(uid)}`);
+    assert.equal(work.state, "guarding");
+    assert.equal(work.next_eligible_run, fence.firstAuthOrdinalAfter(guardingMarkerA.authGuardAfter));
+    assert.equal(auth.calls.length, 0, "no provider call at or before the deadline");
+    assert.equal(markerOf(db, uid).state, "AUTH_GUARDING");
+  }
+  {
+    const iso = "2026-09-09T00:07:00Z";
+    const clock = new FakeClock("2026-09-09T00:11:00.001Z");
+    const db = fakeFirestore({ docs: seed(guardingMarkerA, guardingWork(), iso), clock });
+    const auth = fakeAuth();
+    const http = fakeProviderHTTP((options) => {
+      assert.ok(options.url.includes(encodeURIComponent(uid)) || options.url.includes(uid));
+      return jsonResponse({ matchCount: 0 });
+    });
+    const deps = reconcilerDeps({ db, clock, auth });
+    deps.providerHTTP = http;
+    deps.timeouts.providerMs = 3000;
+    await fence.runAuthReconciler(scheduleEvent(iso), deps);
+    const after = markerOf(db, uid);
+    assert.equal(fence.validateAccountDeletionMarker(after).phase, "ACCOUNT_DELETED", JSON.stringify(deps.logs));
+    assert.equal(after.authGuardCompletedAt.toMillis(), clock.millis);
+    assert.equal(after.accountDeletedAt.toMillis(), clock.millis);
+    assert.equal(db.__docs.has(`accountDeletionAuthWork/${fence.authWorkId(uid)}`), false);
+    assert.deepEqual(auth.calls, [["getUser", uid]]);
+    assert.equal(http.requests.length, 1, "one residual query per google_authenticated_uid_zero_v1 check");
+    assert.ok(deps.metrics.some(([n]) => n === "phase2/account_deletion_auth_reconciler_completed_count"));
+  }
+  // Auth present, nonzero residual, or authority drift retains guarding with backoff and never claims completion
+  const retainers = [
+    ["auth present", fakeAuth({ getUser: () => "present" }), () => jsonResponse({ matchCount: 0 }), {}],
+    ["nonzero residual", fakeAuth(), () => jsonResponse({ matchCount: 1 }), {}],
+    ["malformed residual", fakeAuth(), () => jsonResponse({ totalSize: 0 }), {}],
+    ["authority drift", fakeAuth(), () => jsonResponse({ matchCount: 0 }), { authority_sha256: sha256("other") }]
+  ];
+  for (const [label, auth, respond, workOverrides] of retainers) {
+    const iso = "2026-09-09T00:07:00Z";
+    const clock = new FakeClock("2026-09-09T00:11:00.001Z");
+    const db = fakeFirestore({ docs: seed(guardingMarkerA, guardingWork(workOverrides), iso), clock });
+    const deps = reconcilerDeps({ db, clock, auth });
+    deps.providerHTTP = fakeProviderHTTP(() => respond());
+    deps.timeouts.providerMs = 3000;
+    await fence.runAuthReconciler(scheduleEvent(iso), deps);
+    assert.equal(markerOf(db, uid).state, "AUTH_GUARDING", label);
+    const work = db.__docs.get(`accountDeletionAuthWork/${fence.authWorkId(uid)}`);
+    assert.equal(work.state, "guarding", label);
+    if (label !== "authority drift") {
+      assert.equal(work.failure_count, 1, label);
+      assert.equal(work.next_eligible_run, authOrdinalOf(iso) + 2, label);
+    } else {
+      assert.deepEqual(work, guardingWork(workOverrides), "invariant rows are never rewritten");
+    }
+  }
+});
+
+test("historical entry: a migration-only marker carries one server-generated capability, and the guarding branch is entered without an Auth delete", async () => {
+  const clock = new FakeClock("2026-09-01T00:00:00.000Z");
+  const db = fakeFirestore({ docs: {}, clock });
+  const deps = reconcilerDeps({ db, clock });
+  const created = await fence.createMigrationMarker(deps, { uid: "uid-H" });
+  assert.match(created.operationId, /^adel1_[0-9a-f-]{36}$/);
+  assert.equal(created.proofSHA256.length, 64);
+  const marker = markerOf(db, "uid-H");
+  assert.equal(fence.validateAccountDeletionMarker(marker).phase, "DELETING_SWEEPING");
+  assert.deepEqual(marker.capabilities, [{ operationId: created.operationId, proofSHA256: created.proofSHA256 }]);
+  fence.validateStorageWork(db.__docs.get(`accountDeletionStorageWork/${fence.storageWorkId("uid-H")}`), { uid: "uid-H", marker });
+  assert.deepEqual(Object.keys(db.__docs.get("users/uid-H")), ["accountDeletion"]);
+  await assert.rejects(fence.createMigrationMarker(deps, { uid: "uid-H" }), (e) => e.code === "ACCOUNT_DELETION_MARKER_PRESENT");
+
+  const dataMarker = dataDeletedMarker([capability("uid-H", created.operationId, "n")]);
+  clock.millis = Date.parse("2026-09-08T00:20:00.000Z");
+  const hdb = fakeFirestore({ docs: { "users/uid-H": { accountDeletion: dataMarker } }, clock });
+  const auth = fakeAuth();
+  const hdeps = reconcilerDeps({ db: hdb, clock, auth });
+  const outcome = await fence.enterHistoricalGuarding(hdeps, { uid: "uid-H" });
+  assert.equal(outcome.transitioned, true);
+  assert.equal(fence.validateAccountDeletionMarker(markerOf(hdb, "uid-H")).phase, "AUTH_GUARDING");
+  assert.deepEqual(auth.calls, [["getUser", "uid-H"]]);
+  const present = fakeAuth({ getUser: () => "present" });
+  const pdb = fakeFirestore({ docs: { "users/uid-H": { accountDeletion: dataMarker } }, clock });
+  await assert.rejects(fence.enterHistoricalGuarding(reconcilerDeps({ db: pdb, clock, auth: present }), { uid: "uid-H" }), (e) => e.code === "LEGACY_ACCOUNT_AUTH_RACE");
+  assert.deepEqual(present.calls, [["getUser", "uid-H"]]);
+  assert.equal(markerOf(pdb, "uid-H").state, "DATA_DELETED");
 });
 
 module.exports = { fakeFirestore, FakeClock, capability, sweepingMarker, guardingMarker, dataDeletedMarker, authGuardingMarker, accountDeletedMarker, freshOperationId, freshProofNonce, ts, UID, STARTED, GUARD_AFTER };

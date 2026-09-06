@@ -3,6 +3,7 @@
  */
 
 const { onRequest, onCall, HttpsError } = require('firebase-functions/v2/https');
+const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { setGlobalOptions } = require('firebase-functions/v2');
 const admin = require('firebase-admin');
 const { peezyChat } = require('./peezyChat');
@@ -16,7 +17,7 @@ const { submitCheckIn } = require('./submitCheckIn');
 const { redeemGiftCode } = require('./entitlement');
 const { spawnTasks } = require('./spawnTasks');
 const { changeTaskPlan } = require('./taskPlan');
-const { handleAccountDeletionRequest, productionDependencies } = require('./accountDeletionFence');
+const { handleAccountDeletionRequest, productionDependencies, runStorageReconciler, runAuthReconciler } = require('./accountDeletionFence');
 const { evaluateDispositionTriggers } = require('./dispositionTriggers');
 const { notifySupport } = require('./notifySupport');
 const {
@@ -214,6 +215,19 @@ exports.submitSupportMessage = onCall(
 exports.deleteAccount = onCall(
   { region: 'us-central1', timeoutSeconds: 60, memory: '512MiB' },
   (request) => handleAccountDeletionRequest(request, productionDependencies())
+);
+
+/**
+ * Scheduled Storage/Firestore and Auth guards (PHASE2_CONTRACT.md C3). Sole deployed export site.
+ */
+exports.reconcileAccountDeletionStorage = onSchedule(
+  { schedule: '*/5 * * * *', timeZone: 'UTC', region: 'us-central1', timeoutSeconds: 270, memory: '512MiB', maxInstances: 1, retryCount: 0 },
+  (event) => runStorageReconciler(event, productionDependencies())
+);
+
+exports.reconcileAccountDeletionAuth = onSchedule(
+  { schedule: '2-57/5 * * * *', timeZone: 'UTC', region: 'us-central1', timeoutSeconds: 270, memory: '512MiB', maxInstances: 1, retryCount: 0 },
+  (event) => runAuthReconciler(event, productionDependencies())
 );
 
 /**
