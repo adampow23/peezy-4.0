@@ -16,3 +16,9 @@
 - Never sign the simulator test host ad-hoc (`CODE_SIGN_IDENTITY=-`) or unsigned (`CODE_SIGNING_ALLOWED=NO`): both strip entitlements, so Firebase Auth's keychain write fails (-34018) and the XCTest runner cannot attach (launch denied, xcodebuild idles forever). The project's automatic signing produced the green runs.
 - A named falsifier file must be executable before its slice starts: `functions/rules-tests/firestoreRules.test.js` needed `npm install` in functions/ for its declared dev dependency; nothing had ever run it.
 - Foreground Bash caps at 10 minutes; a full app rebuild plus test run exceeds it. Warm the build first (`build-for-testing`), then run the emulator script, or run it in the background and wait with an `until` loop.
+
+## 2026-09-06 — I6 registry
+- Seed conflict fixtures as envelope bytes, not through `reserve`: the registry refuses to create a second same-UID row by design, so a fixture that goes through the API can only prove the refusal.
+- The simulator reports no file-protection class; assert `.protectionKey` on device builds only and say so in the test.
+- Inside `#expect`, `await` may only lead the expression; hoist any awaited operand that sits to the right of `&&` or `==`.
+- When a slice must leave a user path identical, keep the legacy identity (here the UserDefaults operation id) as the server-facing one and let the new durable identity ride alongside; the spec forbids importing the legacy id as the new alias (v9:569).
