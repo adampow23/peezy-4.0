@@ -406,7 +406,9 @@ final class PeezyHomeViewModel {
                 } catch {
                     // Packing-plan reconciliation must not block the rest of
                     // the user's daily work from loading.
+                    #if DEBUG
                     print("⚠️ Packing-plan sync failed: \(error.localizedDescription)")
+                    #endif
                 }
             }
 

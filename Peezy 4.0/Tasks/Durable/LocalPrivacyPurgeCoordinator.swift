@@ -1,5 +1,6 @@
 import FirebaseFirestore
 import Foundation
+import Security
 import SwiftUI
 
 // S4 (C10.2 L4119): the Firestore runtime owner, the client-telemetry privacy authority, the
@@ -952,5 +953,31 @@ extension EnvironmentValues {
     var roomCaptureArtifactOwner: RoomCaptureArtifactOwner? {
         get { self[RoomCaptureArtifactOwnerKey.self] }
         set { self[RoomCaptureArtifactOwnerKey.self] = newValue }
+    }
+}
+
+// MARK: - Firebase Auth keychain scrub (C2.2 Keychain/provider credentials: the Auth user item is absent after the terminal detach)
+
+/// Removes every generic-password item Firebase Auth persisted for this bundle (`firebase_auth_*`, any app name), so a
+/// user item of an earlier app configuration cannot outlive the account. The installation identity item (its own
+/// service, C9.7.10) is never touched. Returns the number of items removed.
+enum FirebaseAuthKeychainScrub {
+    static let servicePrefix = "firebase_auth_"
+
+    static func userItemServices() -> [String] {
+        let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecReturnAttributes as String: true, kSecMatchLimit as String: kSecMatchLimitAll]
+        var result: AnyObject?
+        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess, let items = result as? [[String: Any]] else { return [] }
+        return items.compactMap { $0[kSecAttrService as String] as? String }.filter { $0.hasPrefix(servicePrefix) }
+    }
+
+    @discardableResult
+    static func removeUserItems() -> Int {
+        var removed = 0
+        for service in Set(userItemServices()) {
+            let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service]
+            if SecItemDelete(query as CFDictionary) == errSecSuccess { removed += 1 }
+        }
+        return removed
     }
 }

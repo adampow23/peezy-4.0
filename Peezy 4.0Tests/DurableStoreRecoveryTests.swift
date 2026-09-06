@@ -1,5 +1,7 @@
+import FirebaseAuth
 import FirebaseFirestore
 import Foundation
+import Security
 import Testing
 @testable import Peezy_4_0
 
@@ -1106,7 +1108,7 @@ struct DurableStoreRecoveryTests {
         #expect(h.gate.gates.last == .clear && h.gate.terminals.last! == nil)
         let trace = await h.coordinator.trace
         let consumption = trace.filter { $0.hasPrefix("consume:") }
-        #expect(consumption == ["consume:sign_out", "consume:purge:cleared", "consume:intent_unlinked", "consume:journal_unlinked"])
+        #expect(consumption.count == 5 && consumption.first == "consume:sign_out" && consumption[1].hasPrefix("consume:keychain_scrub:") && Array(consumption.suffix(3)) == ["consume:purge:cleared", "consume:intent_unlinked", "consume:journal_unlinked"])
         h.auth.set(.signedOut)
         #expect(await h.coordinator.discoverAtStartup() == .clear)
         // a sign-out that leaves a matching user blocks the consumption with everything retained
@@ -2214,6 +2216,132 @@ struct DurableStoreRecoveryTests {
         let afterRevoke = await owner.lease(withId: issued.leaseId)
         let reissued = await owner.acquire(uid: "A", sessionId: "Kitchen")
         #expect(afterRevoke == nil && reissued == nil, "after revocation no lease resolves or is issued")
+    }
+
+    // MARK: - S4 I11 — the named static tests (C10 D29), the Open 3 fixture, the S4 Firestore gate
+
+    @Test("UID-interpolated preference keys are registry-complete") func uidInterpolatedPreferenceKeysAreRegistryComplete() throws {
+        let registry = PreferenceBarrier.uidScopedTemplates
+        #expect(registry == ["phase1.pendingRetakeOperation.{uid}", "peezy.{uid}.dailyDose.completedCount", "peezy.{uid}.dailyDose.lastDate", "peezy.{uid}.dailyDose.firstLaunchDate", "peezy.{uid}.dailyDose.v2", "peezy.{uid}.hasSeenFirstTimeWelcome", "peezy.{uid}.lastGreetingDate", "peezy.{uid}.totalCompletedCount", "inventory.scanCoaching.seen.{uid}", "inventory.narrationOffer.seen.{uid}", "peezy.{uid}.dailyDose.v2.quarantine"])
+        // every string literal in the app source that interpolates a UID-like expression and names a preference prefix must be a registry key
+        let literal = try NSRegularExpression(pattern: #""([^"\n]*\\\([^)]*\)[^"\n]*)""#)
+        let uidLike = try NSRegularExpression(pattern: #"\\\((?:[^)]*)(uid|userId|userID|accountID|resolvedUserId)"#, options: [.caseInsensitive])
+        var offenders: [String] = []
+        var found: Set<String> = []
+        for file in try appSourceFiles() {
+            let source = try String(contentsOf: file, encoding: .utf8)
+            let range = NSRange(source.startIndex..., in: source)
+            for match in literal.matches(in: source, range: range) {
+                guard let inner = Range(match.range(at: 1), in: source) else { continue }
+                let text = String(source[inner])
+                guard uidLike.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) != nil,
+                      text.hasPrefix("peezy.") || text.hasPrefix("phase1.") || text.hasPrefix("inventory.") else { continue }
+                // normalize the UID-like interpolation; any other interpolation parameterizes the tail
+                var normalized = ""
+                var rest = Substring(text)
+                while let open = rest.range(of: "\\(") {
+                    normalized += rest[..<open.lowerBound]
+                    guard let close = rest[open.upperBound...].firstIndex(of: ")") else { break }
+                    let expression = rest[open.upperBound..<close]
+                    normalized += uidLike.firstMatch(in: "\\(" + expression, range: NSRange(location: 0, length: expression.utf16.count + 2)) != nil ? "{uid}" : "{param}"
+                    rest = rest[rest.index(after: close)...]
+                }
+                normalized += rest
+                found.insert(normalized)
+                if normalized.contains("{param}") {
+                    let prefix = String(normalized[..<normalized.range(of: "{param}")!.lowerBound])
+                    if !registry.contains(where: { $0.hasPrefix(prefix) }) { offenders.append("\(file.lastPathComponent): \(text)") }
+                } else if !registry.contains(normalized) {
+                    offenders.append("\(file.lastPathComponent): \(text)")
+                }
+            }
+        }
+        #expect(offenders.isEmpty, Comment(rawValue: "UID-interpolated keys outside the eleven-key registry: \(offenders)"))
+        #expect(found.contains("peezy.{uid}.dailyDose.v2") && found.contains("inventory.narrationOffer.seen.{uid}"), "the scan sees the app's keys")
+        // Open 3 fixture: the global first name goes with a UID deletion only while Firebase still names that UID or no different UID is established
+        let defaults = try isolatedDefaults()
+        defaults.set("Adam", forKey: PreferenceBarrier.globalFirstNameKey)
+        #expect(PreferenceBarrier.run(scope: .uid("A"), defaults: defaults, currentFirebaseUID: "B") == .acknowledged && defaults.string(forKey: PreferenceBarrier.globalFirstNameKey) == "Adam")
+        #expect(PreferenceBarrier.run(scope: .uid("A"), defaults: defaults, currentFirebaseUID: "A") == .acknowledged && defaults.string(forKey: PreferenceBarrier.globalFirstNameKey) == nil)
+        defaults.set("Adam", forKey: PreferenceBarrier.globalFirstNameKey)
+        #expect(PreferenceBarrier.run(scope: .uid("A"), defaults: defaults, currentFirebaseUID: nil) == .acknowledged && defaults.string(forKey: PreferenceBarrier.globalFirstNameKey) == nil)
+    }
+
+    @Test("Release call graph and adversarial NSError are sink-free") func releaseCallGraphAndAdversarialNSErrorAreSinkFree() async throws {
+        // the Release product of every S4-owned file has no unguarded print/debugPrint/dump/NSLog/os_log with a dynamic argument
+        let sink = try NSRegularExpression(pattern: #"\b(print|debugPrint|dump|NSLog|os_log)\("#)
+        var offenders: [String] = []
+        for relative in s4OwnedProductionFiles {
+            let source = try String(contentsOf: repositoryRoot().appendingPathComponent(relative), encoding: .utf8)
+            var debugDepth = 0
+            for (index, line) in source.components(separatedBy: "\n").enumerated() {
+                let trimmed = line.trimmingCharacters(in: .whitespaces)
+                if trimmed.hasPrefix("#if DEBUG") { debugDepth += 1; continue }
+                if trimmed.hasPrefix("#endif"), debugDepth > 0 { debugDepth -= 1; continue }
+                guard debugDepth == 0, !trimmed.hasPrefix("//"), sink.firstMatch(in: line, range: NSRange(line.startIndex..., in: line)) != nil, line.contains("\\(") else { continue }
+                offenders.append("\(relative):\(index + 1)")
+            }
+        }
+        #expect(offenders.isEmpty, Comment(rawValue: "Release sinks with dynamic arguments: \(offenders)"))
+        // an adversarial NSError (UID and path in its domain and description) never reaches a trace, a log, or an analytics parameter
+        let directory = try temporaryDirectory()
+        let owners = RecordingPurgeOwners()
+        let purge = LocalPrivacyPurgeCoordinator(directory: directory, clock: ResetClockStub(), owners: owners.owners, defaults: try isolatedDefaults(), currentUID: UIDProbe(nil), telemetry: TelemetryStub())
+        let completion = AccountDeletionCompletionPresentation(directory: directory, clock: ResetClockStub(), consume: { _ in true }, opener: { _ in true })
+        let coordinator = DurableStoreRecoveryCoordinator(DurableStoreRecoveryCoordinator.Dependencies(directory: directory, clock: ResetClockStub(), auth: SignedAuthStub(signedInA), remote: AdversarialDeletionRemote(), providerContext: DispositionsStub(value: AccountDeletionProviderDispositions(appleRevocation: .notRequired, googleRevocation: .notRequired, googleProviderUid: nil)), purge: purge, completion: completion, gate: GateSpy(), signOutMatchingUser: { _ in true }))
+        #expect(await coordinator.startDeletion(uid: "A") == .settled(.blocked(.remoteUnavailable)))
+        let trace = await coordinator.trace
+        #expect(trace.contains("error:unknown") && !trace.joined().contains(AdversarialDeletionRemote.secret) && !trace.joined().contains("users/"))
+        let purgeLog = await purge.log
+        #expect(!purgeLog.joined().contains(AdversarialDeletionRemote.secret))
+        let adversarial = NSError(domain: "users/\(AdversarialDeletionRemote.secret)", code: 1)
+        #expect(AnalyticsEvents.sanitized(["dayNumber": 1, "error": adversarial, "uid": AdversarialDeletionRemote.secret])?.keys.sorted() == ["dayNumber"])
+        // every trace entry of the deletion coordinator is a fixed code path: no path separators, no UUIDs beyond the fixed grammar
+        #expect(trace.allSatisfy { !$0.contains("/") })
+    }
+
+    @Test("Firebase Auth keychain item is absent after terminal detach", .enabled(if: FirebaseEmulator.isConfigured))
+    func firebaseAuthKeychainItemIsAbsentAfterTerminalDetach() async throws {
+        _ = try FirebaseEmulator.firestore()
+        let signedIn = try await Auth.auth().signInAnonymously()
+        let uid = signedIn.user.uid
+        // a user item persisted by an earlier app configuration (a different Firebase app name) must not outlive the account either
+        let stale: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: "firebase_auth_1:stale:ios:test", kSecAttrAccount as String: "firebase_auth_stale_firebase_user", kSecValueData as String: Data("stale-user".utf8)]
+        SecItemDelete(stale as CFDictionary)
+        #expect(SecItemAdd(stale as CFDictionary, nil) == errSecSuccess)
+        #expect(Auth.auth().currentUser?.uid == uid && firebaseAuthKeychainServices().count >= 2, "the emulator user and the stale item are persisted in the keychain")
+        // the coordinator's terminal consumption signs out only a matching Firebase user through the S7-wired closure
+        let directory = try temporaryDirectory()
+        let owners = RecordingPurgeOwners()
+        let purge = LocalPrivacyPurgeCoordinator(directory: directory, clock: ResetClockStub(), owners: owners.owners, defaults: try isolatedDefaults(), currentUID: UIDProbe(uid), telemetry: TelemetryStub())
+        let box = ConsumeBox()
+        let completion = AccountDeletionCompletionPresentation(directory: directory, clock: ResetClockStub(), consume: { snapshot in await box.coordinator?.consumeTerminal(snapshot) ?? false }, opener: { _ in true })
+        let remote = ScriptedDeletionRemote()
+        remote.always("begin", .success(DeletionWires.dataFinal("x")))
+        remote.script("finalize", .success(DeletionWires.guarding("x")), .success(DeletionWires.deleted("x")))
+        let auth = SignedAuthStub(.signedIn(SignedAuthTuple(uid: uid, authEpochUUID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", credentialRevision: 1)))
+        let coordinator = DurableStoreRecoveryCoordinator(DurableStoreRecoveryCoordinator.Dependencies(directory: directory, clock: ResetClockStub(), auth: auth, remote: remote, providerContext: DispositionsStub(value: AccountDeletionProviderDispositions(appleRevocation: .notRequired, googleRevocation: .notRequired, googleProviderUid: nil)), purge: purge, completion: completion, gate: GateSpy(), signOutMatchingUser: { expected in
+            guard Auth.auth().currentUser?.uid == expected else { return Auth.auth().currentUser == nil }
+            try? Auth.auth().signOut()
+            return Auth.auth().currentUser == nil
+        }))
+        box.coordinator = coordinator
+        #expect(await coordinator.startDeletion(uid: uid) == .settled(.guarding(authGuardAfter: DeletionWires.authGuardAfter)))
+        guard case .settled(.completion(let snapshot)) = await coordinator.retry() else { Issue.record("completed"); return }
+        #expect(await completion.acknowledge(expectedGenerationId: snapshot.generationId, expectedSHA256: snapshot.sha256) == .acknowledged)
+        let survivors = firebaseAuthKeychainServices()
+        #expect(Auth.auth().currentUser == nil && survivors.isEmpty, Comment(rawValue: "no Firebase Auth keychain item survives the terminal detach: \(survivors)"))
+    }
+
+    @Test func s4OwnedFilesAcquireFirestoreOnlyThroughTheRuntimeSeam() throws {
+        var hits: [String] = []
+        for relative in s4OwnedProductionFiles where !relative.hasSuffix("LocalPrivacyPurgeCoordinator.swift") {
+            let source = try String(contentsOf: repositoryRoot().appendingPathComponent(relative), encoding: .utf8)
+            for (index, line) in source.components(separatedBy: "\n").enumerated() where line.contains("Firestore.firestore()") && !line.trimmingCharacters(in: .whitespaces).hasPrefix("//") {
+                hits.append("\(relative):\(index + 1)")
+            }
+        }
+        #expect(hits.isEmpty, Comment(rawValue: "production Firestore.firestore() in S4-owned files: \(hits)"))
     }
 
     // MARK: - Epoch stamps (I4, stamps only; manifest §5:540-546). Cleanup belongs to S3.
@@ -3775,6 +3903,50 @@ final class HoldableInventoryClient: InventoryProcessingCalling, @unchecked Send
         let shouldHold: Bool = lock.withLock { recorded.append("\(request.userId)/\(request.sessionId)"); return holding }
         if shouldHold { await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in lock.withLock { held = c } } }
         if lock.withLock({ denies }) { throw InventoryError.movePassRequired }
+    }
+}
+
+/// A remote whose failure is an arbitrary `NSError` carrying a UID and a path in its description (the adversarial sink case).
+struct AdversarialDeletionRemote: AccountDeletionRemoteProviding {
+    static let secret = "UID-SECRET-7f3a"
+    func perform(_ request: AccountDeletionRequestV1) async throws -> AccountDeletionRemoteResultV1 {
+        throw NSError(domain: "users/\(Self.secret)/tasks", code: 7, userInfo: [NSLocalizedDescriptionKey: "failed for users/\(Self.secret)/tasks/t1 with payload {\"uid\":\"\(Self.secret)\"}"])
+    }
+}
+
+/// The S4-owned production files (the C10.2 rows S4 writes), relative to the repository root.
+let s4OwnedProductionFiles = [
+    "Peezy 4.0/Tasks/Durable/DurableStoreRecoveryCoordinator.swift", "Peezy 4.0/Tasks/Durable/DurableStoreRecoveryView.swift",
+    "Peezy 4.0/Tasks/Durable/LocalPrivacyPurgeCoordinator.swift", "Peezy 4.0/Tasks/Disposition/TaskDispositionSurface.swift",
+    "Peezy 4.0/Tasks/Store/TasksStore.swift", "Peezy 4.0/MainInterface/Views/AppRootView.swift", "Peezy 4.0/MainInterface/Views/PeezyMainContainer.swift",
+    "Peezy 4.0/MainInterface/Models/PeezyHomeViewModel.swift", "Peezy 4.0/MainInterface/Views/PeezyHomeView.swift", "Peezy 4.0/MainInterface/Models/AnalyticsEvents.swift",
+    "Peezy 4.0/Assessment/AssessmentModels/AssessmentCoordinator.swift", "Peezy 4.0/Tasks/Views/TasksTabView.swift", "Peezy 4.0/Tasks/Views/TasksList.swift",
+    "Peezy 4.0/Tasks/Views/TaskRow.swift", "Peezy 4.0/Tasks/Views/TaskRowButtons.swift", "Peezy 4.0/Inventory/Models/InventorySessionManager.swift",
+    "Peezy 4.0/Inventory/Views/InventoryCameraView.swift", "Peezy 4.0/Inventory/Services/NarrationService.swift", "Peezy 4.0/Inventory/Views/InventoryItemConfirmView.swift",
+    "Peezy 4.0/Inventory/ViewModels/RoomCaptureViewModel.swift"
+]
+
+func repositoryRoot() -> URL { URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent() }
+
+/// Every `.swift` file under the app source tree (never the test target).
+func appSourceFiles() throws -> [URL] {
+    let app = repositoryRoot().appendingPathComponent("Peezy 4.0")
+    var files: [URL] = []
+    guard let enumerator = FileManager.default.enumerator(at: app, includingPropertiesForKeys: nil) else { return [] }
+    for case let url as URL in enumerator where url.pathExtension == "swift" { files.append(url) }
+    return files.sorted { $0.path < $1.path }
+}
+
+/// The generic-password keychain items whose service names Firebase Auth (the persisted user).
+func firebaseAuthKeychainServices() -> [String] {
+    let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecReturnAttributes as String: true, kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitAll]
+    var result: AnyObject?
+    guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess, let items = result as? [[String: Any]] else { return [] }
+    return items.compactMap { item -> String? in
+        guard let service = item[kSecAttrService as String] as? String, service.lowercased().contains("firebase_auth") else { return nil }
+        let account = item[kSecAttrAccount as String] as? String ?? "-"
+        let length = (item[kSecValueData as String] as? Data)?.count ?? 0
+        return "\(service)|\(account)|\(length)"
     }
 }
 

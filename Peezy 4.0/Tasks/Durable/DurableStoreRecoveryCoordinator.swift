@@ -446,6 +446,8 @@ actor DurableStoreRecoveryCoordinator {
             guard Self.isTerminal(intent) else { trace.append("consume:not_terminal"); return false }
             trace.append("consume:sign_out")
             guard await dependencies.signOutMatchingUser(intent.uid) else { _ = await blockGate(.localPrivacyPurgeFailed); return false }
+            // no Firebase Auth user item of any app configuration outlives the account (the installation item is untouched)
+            trace.append("consume:keychain_scrub:\(FirebaseAuthKeychainScrub.removeUserItems())")
             let link = TerminalDeletionLinkV1(deletionOperationId: intent.operationId, deletionProofSHA256: intent.proofSHA256)
             return await runSingleflight(uid: intent.uid) { await self.finishConsumption(link: link, intentIdentity: identity) } == .clear
         case .absent:
