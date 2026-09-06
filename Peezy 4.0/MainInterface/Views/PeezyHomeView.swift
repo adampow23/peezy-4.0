@@ -143,7 +143,7 @@ struct PeezyHomeView: View {
             if let flowId = viewModel.taskFlowWorkflowId {
                 TaskFlowRouter.flow(
                     for: flowId,
-                    userId: Auth.auth().currentUser?.uid ?? "",
+                    userId: viewModel.currentUserId ?? "",
                     taskId: viewModel.currentTask?.id,
                     userState: viewModel.userState,
                     onComplete: { viewModel.completeTaskFlow() },
@@ -164,7 +164,7 @@ struct PeezyHomeView: View {
                 )
             } else if let task = viewModel.currentTask {
                 TaskFlowRouter.detail(
-                    userId: Auth.auth().currentUser?.uid ?? "",
+                    userId: viewModel.currentUserId ?? "",
                     taskId: task.id,
                     fallbackFlowId: (task.taskId ?? task.id).lowercased(),
                     onComplete: { viewModel.completeTaskFlow() },

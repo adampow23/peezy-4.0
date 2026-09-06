@@ -1,17 +1,168 @@
-import FirebaseAuth
 import FirebaseFirestore
 import FirebaseFunctions
 import Observation
 import SwiftUI
 
+// S4 (briefs/S4_BRIEF.md; P1-Q): the store's namespace, readiness, and revision are qualified by the UID and a fresh
+// listener token minted by every `start`; every callback and mutation is guarded by that namespace. Firestore is reached
+// only through the seams below (production: the installed `FirestoreRuntime`; no direct Firestore acquisition here, C10.2 L4141).
+
+// MARK: - Namespace and seams
+
+/// The identity every listener callback and mutation is checked against: the UID plus the token of the listener that
+/// is currently installed. A late callback from an earlier listener carries a stale token and is dropped.
+struct TasksStoreNamespace: Equatable, Sendable {
+    let uid: String
+    let listenerToken: UUID
+}
+
+protocol TasksListenerHandle: Sendable {
+    func remove()
+}
+
+/// One live snapshot listener over `users/{uid}/tasks`; the callback delivers decoded cards or an error.
+protocol TasksSnapshotSource: Sendable {
+    func listen(uid: String, onChange: @escaping @Sendable (Result<[PeezyCard], Error>) -> Void) -> any TasksListenerHandle
+}
+
+/// The write seam: one document update under the namespace's UID.
+protocol TasksWriter: Sendable {
+    func update(uid: String, taskId: String, fields: [String: Any]) async throws
+}
+
+/// Production listener over the installed Firestore runtime (acquired only when a listener starts, so constructing
+/// the store never touches Firestore).
+struct FirestoreTasksSource: TasksSnapshotSource {
+    private struct Handle: TasksListenerHandle, @unchecked Sendable {
+        let registration: ListenerRegistration
+        func remove() { registration.remove() }
+    }
+
+    func listen(uid: String, onChange: @escaping @Sendable (Result<[PeezyCard], Error>) -> Void) -> any TasksListenerHandle {
+        let registration = FirestoreRuntime.firestore().collection("users").document(uid).collection("tasks")
+            .addSnapshotListener(includeMetadataChanges: false) { snapshot, error in
+                if let error { onChange(.failure(error)); return }
+                guard let snapshot else { return }
+                onChange(.success(snapshot.documents.compactMap { PeezyCardFirestoreMapper.card(from: $0) }))
+            }
+        return Handle(registration: registration)
+    }
+}
+
+struct FirestoreTasksWriter: TasksWriter {
+    func update(uid: String, taskId: String, fields: [String: Any]) async throws {
+        try await FirestoreRuntime.firestore().collection("users").document(uid).collection("tasks").document(taskId).updateData(fields)
+    }
+}
+
+// MARK: - C9.3.14 urgent-recovery projection (over injected evidence; the production registry is `{}`)
+
+/// The client's view of one urgent-recovery wake: the retained evidence the projection keys on. Produced by the
+/// listener's owner from `wakeEvidence`/`taskInteractionState`; injected as fixtures until S6 writes wake evidence.
+struct UrgentRecoveryEvidence: Equatable, Sendable {
+    enum LiveState: Equatable, Sendable {
+        /// A/W with `ATTENTION_NOW` pointing at this wake.
+        case attentionNow(wakeId: String)
+        /// Upcoming with the exact threshold/DEFER wake history.
+        case upcomingThreshold
+        case other
+    }
+
+    let taskDocumentId: String
+    let taskInstanceId: String
+    let wakeId: String
+    let urgency: String
+    let thresholdId: String
+    let thresholdAt: String
+    let consequenceClass: String?
+    let deadlineEvidenceId: String
+    /// The mapped policy is valid and `urgency_basis` resolves byte-for-byte to the retained evidence.
+    let policyValid: Bool
+    let basisResolves: Bool
+    let liveState: LiveState
+}
+
+/// Consequence classes → ranks. Every production line uses deadline order until one reviewed Phase 3 source+policy
+/// change activates classes; no catalog percentage or label invents a rank.
+struct UrgentRecoveryRegistry: Equatable, Sendable {
+    let ranks: [String: Int]
+    nonisolated static let production = UrgentRecoveryRegistry(ranks: [:])
+}
+
+/// One line of the "Needs attention now" group: the policy threshold label and the line's route.
+struct UrgentRecoveryLine: Equatable, Identifiable, Sendable {
+    enum Route: Equatable, Sendable {
+        case row
+        case outcome
+    }
+
+    let taskDocumentId: String
+    let title: String
+    let thresholdId: String
+    let thresholdAt: String
+    let consequenceRank: Int?
+    let route: Route
+
+    var id: String { taskDocumentId }
+}
+
+enum UrgentRecoveryProjection {
+    static let groupTitle = "Needs attention now"
+
+    /// Eligible lines in the C9.3.14 comparison order: classified `(0,rank,threshold_at,threshold_id,task_document_id)`
+    /// before unclassified `(1,threshold_at,threshold_id,task_document_id)`; string ties in unsigned UTF-8 order.
+    static func lines(cards: [PeezyCard], evidence: [UrgentRecoveryEvidence], registry: UrgentRecoveryRegistry) -> [UrgentRecoveryLine] {
+        let candidates: [(line: UrgentRecoveryLine, key: [String])] = evidence.compactMap { item in
+            guard item.policyValid, item.basisResolves, item.urgency == "urgent_recovery", CanonicalInstant.isCanonical(item.thresholdAt), !item.thresholdId.isEmpty,
+                  let card = cards.first(where: { $0.id == item.taskDocumentId }) else { return nil }
+            switch item.liveState {
+            case let .attentionNow(wakeId): guard wakeId == item.wakeId else { return nil }
+            case .upcomingThreshold: break
+            case .other: return nil
+            }
+            var rank: Int?
+            if let consequenceClass = item.consequenceClass {
+                guard let mapped = registry.ranks[consequenceClass] else { return nil } // an unregistered class is excluded, never downgraded
+                rank = mapped
+            }
+            let route: UrgentRecoveryLine.Route = card.dispositionContract?.disposition == .waitingOnExternal ? .outcome : .row
+            let line = UrgentRecoveryLine(taskDocumentId: card.id, title: card.title, thresholdId: item.thresholdId, thresholdAt: item.thresholdAt, consequenceRank: rank, route: route)
+            let key = rank.map { ["0", String(format: "%020d", $0), item.thresholdAt, item.thresholdId, card.id] } ?? ["1", item.thresholdAt, item.thresholdId, card.id]
+            return (line, key)
+        }
+        return candidates.sorted { lhs, rhs in
+            for (l, r) in zip(lhs.key, rhs.key) where l != r { return Array(l.utf8).lexicographicallyPrecedes(Array(r.utf8)) }
+            return lhs.key.count < rhs.key.count
+        }.map(\.line)
+    }
+
+    /// Zero lines: group hidden (nil). One: the task's own header. Many: one "Needs attention now" group.
+    static func header(for lines: [UrgentRecoveryLine]) -> String? {
+        switch lines.count {
+        case 0: return nil
+        case 1: return lines[0].title
+        default: return groupTitle
+        }
+    }
+}
+
+// MARK: - The store
+
 @Observable
 @MainActor
 final class TasksStore {
-    static let shared = TasksStore()
+    static let shared = TasksStore(source: FirestoreTasksSource(), writer: FirestoreTasksWriter())
 
     private(set) var tasks: [PeezyCard] = []
     private(set) var loadState: LoadState = .idle
     private(set) var pendingResetTaskIds: Set<String> = []
+    /// The namespace of the installed listener; nil while stopped.
+    private(set) var namespace: TasksStoreNamespace?
+    /// Increments on every applied snapshot of the current namespace; resets to zero on `start`.
+    private(set) var revision: Int = 0
+    /// C9.3.14 evidence for the current namespace (injected by the listener's owner; empty in production until S6).
+    private(set) var urgentRecoveryEvidence: [UrgentRecoveryEvidence] = []
+    private(set) var urgentRecoveryRegistry: UrgentRecoveryRegistry = .production
 
     enum LoadState: Equatable {
         case idle
@@ -20,46 +171,65 @@ final class TasksStore {
         case failed(String)
     }
 
-    private var listener: ListenerRegistration?
-    private var currentUserId: String?
-    private let db = Firestore.firestore()
+    private let source: any TasksSnapshotSource
+    private let writer: any TasksWriter
+    private var listener: (any TasksListenerHandle)?
 
-    private init() {}
+    init(source: any TasksSnapshotSource, writer: any TasksWriter) {
+        self.source = source
+        self.writer = writer
+    }
+
+    /// The one shared urgent-recovery projection Home and Tasks consume byte-identically.
+    var urgentRecoveryLines: [UrgentRecoveryLine] {
+        UrgentRecoveryProjection.lines(cards: tasks, evidence: urgentRecoveryEvidence, registry: urgentRecoveryRegistry)
+    }
 
     // MARK: - Lifecycle
 
+    /// Reuse: the same UID with a live listener keeps it. Otherwise a fresh token is minted and the listener installed
+    /// under it; every callback checks the token before touching the store.
     func start(userId: String) {
-        if currentUserId == userId, listener != nil { return }
-
+        if namespace?.uid == userId, listener != nil { return }
         stop()
-
-        currentUserId = userId
+        let fresh = TasksStoreNamespace(uid: userId, listenerToken: UUID())
+        namespace = fresh
+        revision = 0
         loadState = .loading
-
-        listener = db.collection("users").document(userId).collection("tasks")
-            .addSnapshotListener(includeMetadataChanges: false) { [weak self] snap, err in
-                Task { @MainActor [weak self] in
-                    guard let self else { return }
-
-                    if let err {
-                        self.loadState = .failed(err.localizedDescription)
-                        return
-                    }
-
-                    guard let snap else { return }
-
-                    self.tasks = snap.documents.compactMap { PeezyCardFirestoreMapper.card(from: $0) }
-                    self.loadState = .loaded
-                }
+        listener = source.listen(uid: userId) { [weak self] result in
+            Task { @MainActor [weak self] in
+                self?.apply(result, for: fresh)
             }
+        }
+    }
+
+    private func apply(_ result: Result<[PeezyCard], Error>, for token: TasksStoreNamespace) {
+        guard namespace == token else { return } // a late callback of a retired listener changes nothing
+        switch result {
+        case let .failure(error):
+            loadState = .failed(error.localizedDescription)
+        case let .success(cards):
+            tasks = cards
+            revision += 1
+            loadState = .loaded
+        }
     }
 
     func stop() {
         listener?.remove()
         listener = nil
-        currentUserId = nil
+        namespace = nil
+        revision = 0
         tasks = []
+        urgentRecoveryEvidence = []
         loadState = .idle
+    }
+
+    /// Evidence and registry arrive under the namespace they were produced for; a different namespace is ignored.
+    func setUrgentRecovery(evidence: [UrgentRecoveryEvidence], registry: UrgentRecoveryRegistry = .production, for namespace: TasksStoreNamespace) {
+        guard self.namespace == namespace else { return }
+        urgentRecoveryEvidence = evidence
+        urgentRecoveryRegistry = registry
     }
 
     // MARK: - Dispatch
@@ -113,6 +283,8 @@ final class TasksStore {
         }
     }
 
+    /// Every mutation is bound to the namespace at entry: the write goes to that UID, and the optimistic state is
+    /// reverted only while the same namespace is still installed (a namespace change drops the late result).
     private func performWrite(
         taskId: String,
         optimistic: (inout PeezyCard) -> Void,
@@ -122,9 +294,7 @@ final class TasksStore {
         onSuccess: () -> Void,
         onFailure: () -> Void
     ) async {
-        guard let uid = Auth.auth().currentUser?.uid,
-              let idx = tasks.firstIndex(where: { $0.id == taskId })
-        else {
+        guard let bound = namespace, let idx = tasks.firstIndex(where: { $0.id == taskId }) else {
             onFailure()
             return
         }
@@ -132,11 +302,11 @@ final class TasksStore {
         optimistic(&tasks[idx])
 
         do {
-            try await db.collection("users").document(uid)
-                .collection("tasks").document(taskId)
-                .updateData(firestoreUpdate)
+            try await writer.update(uid: bound.uid, taskId: taskId, fields: firestoreUpdate)
+            guard namespace == bound else { return }
             onSuccess()
         } catch {
+            guard namespace == bound else { return }
             if let i = tasks.firstIndex(where: { $0.id == taskId }) {
                 tasks[i].status = revertStatus
                 tasks[i].completedAt = revertCompletedAt
@@ -146,7 +316,7 @@ final class TasksStore {
     }
 
     private func performInventoryReset(_ card: PeezyCard) async {
-        guard card.isScanInventory else { return }
+        guard card.isScanInventory, let bound = namespace else { return }
         pendingResetTaskIds.insert(card.id)
         defer { pendingResetTaskIds.remove(card.id) }
 
@@ -161,10 +331,12 @@ final class TasksStore {
         do {
             let manager = InventorySessionManager()
             try await manager.resetInventory()
+            guard namespace == bound else { return }
             ToastManager.shared.show("Inventory reset — ready to scan again", style: .success)
             PeezyHaptics.success()
             // No refetch. Listener reconciles.
         } catch {
+            guard namespace == bound else { return }
             if let i = tasks.firstIndex(where: { $0.id == card.id }) {
                 tasks[i].status = priorStatus
                 tasks[i].completedAt = priorCompletedAt

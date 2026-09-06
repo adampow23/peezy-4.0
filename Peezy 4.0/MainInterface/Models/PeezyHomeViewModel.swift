@@ -148,7 +148,9 @@ final class PeezyHomeViewModel {
 
     // MARK: - UserDefaults Keys
 
-    private var userId: String { Auth.auth().currentUser?.uid ?? "anon" }
+    private var userId: String { uidProvider() ?? "anon" }
+    /// S4 (P1-Q/P1-R consumers): the UID the view-model accounts against; the views never read Auth themselves.
+    var currentUserId: String? { uidProvider() }
     private var kDailyDoseCompletedCount: String { dailyDoseCompletedKey(for: userId) }
     private var kDailyDoseLastDate: String { dailyDoseLastDateKey(for: userId) }
     private var kDailyDoseFirstLaunchDate: String { dailyDoseFirstLaunchDateKey(for: userId) }
@@ -294,7 +296,7 @@ final class PeezyHomeViewModel {
     }
 
     var dayNumber: Int {
-        let firstLaunchStr = UserDefaults.standard.string(forKey: kDailyDoseFirstLaunchDate) ?? todayISOString()
+        let firstLaunchStr = doseDefaults.firstLaunchDate(for: userId) ?? todayISOString()
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withFullDate]
         guard let firstDate = formatter.date(from: firstLaunchStr) else { return 1 }
@@ -382,7 +384,7 @@ final class PeezyHomeViewModel {
     }
 
     func loadTasks() async {
-        guard let userId = Auth.auth().currentUser?.uid else {
+        guard let userId = uidProvider() else {
             await MainActor.run { self.state = .dailyGreeting }
             return
         }
@@ -408,7 +410,7 @@ final class PeezyHomeViewModel {
                 }
             }
 
-            let db = Firestore.firestore()
+            let db = FirestoreRuntime.firestore()
             let snapshot = try await db.collection("users")
                 .document(userId)
                 .collection("tasks")
@@ -950,18 +952,22 @@ final class PeezyHomeViewModel {
     }
 
     // MARK: - Daily Dose UserDefaults
+    // S4: every dose read and write goes through `HomeDoseDefaults` under the shipped key names (the three v0 keys
+    // S5's `PeezyNudgeAnswerTests` pins); the C9.5.16 v2 store is the reset path's and stays untouched here.
+
+    private let doseDefaults = HomeDoseDefaults()
 
     private var dailyDoseCompletedCount: Int {
-        get { UserDefaults.standard.integer(forKey: kDailyDoseCompletedCount) }
-        set { UserDefaults.standard.set(newValue, forKey: kDailyDoseCompletedCount) }
+        get { doseDefaults.completedCount(for: userId) }
+        set { doseDefaults.setCompletedCount(newValue, for: userId) }
     }
 
     private func dailyDoseCompletedCount(for userId: String) -> Int {
-        UserDefaults.standard.integer(forKey: dailyDoseCompletedKey(for: userId))
+        doseDefaults.completedCount(for: userId)
     }
 
     private func setDailyDoseCompletedCount(_ count: Int, for userId: String) {
-        UserDefaults.standard.set(count, forKey: dailyDoseCompletedKey(for: userId))
+        doseDefaults.setCompletedCount(count, for: userId)
     }
 
     private func totalCompletedCount(for userId: String) -> Int {
@@ -977,9 +983,7 @@ final class PeezyHomeViewModel {
     }
 
     private func dayNumber(for userId: String) -> Int {
-        let firstLaunchStr = UserDefaults.standard.string(
-            forKey: dailyDoseFirstLaunchDateKey(for: userId)
-        ) ?? todayISOString()
+        let firstLaunchStr = doseDefaults.firstLaunchDate(for: userId) ?? todayISOString()
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withFullDate]
         guard let firstDate = formatter.date(from: firstLaunchStr) else { return 1 }
@@ -1019,13 +1023,13 @@ final class PeezyHomeViewModel {
 
     private func resetDailyCountIfNeeded() {
         let today = todayISOString()
-        let lastDate = UserDefaults.standard.string(forKey: kDailyDoseLastDate) ?? ""
+        let lastDate = doseDefaults.lastDate(for: userId) ?? ""
         if today != lastDate {
             dailyDoseCompletedCount = 0
-            UserDefaults.standard.set(today, forKey: kDailyDoseLastDate)
+            doseDefaults.setLastDate(today, for: userId)
         }
-        if UserDefaults.standard.string(forKey: kDailyDoseFirstLaunchDate) == nil {
-            UserDefaults.standard.set(today, forKey: kDailyDoseFirstLaunchDate)
+        if doseDefaults.firstLaunchDate(for: userId) == nil {
+            doseDefaults.setFirstLaunchDate(today, for: userId)
         }
     }
 
@@ -1056,4 +1060,25 @@ final class PeezyHomeViewModel {
     }
     #endif
 
+}
+
+
+// MARK: - S4: the Home dose accessor (the three shipped v0 keys under `peezy.{uid}.dailyDose.`)
+
+/// Sole Home reader/writer of the shipped daily-dose keys; the key names are pinned by S5's `PeezyNudgeAnswerTests`.
+struct HomeDoseDefaults {
+    private let defaults: UserDefaults
+
+    init(defaults: UserDefaults = .standard) { self.defaults = defaults }
+
+    static func completedCountKey(for userId: String) -> String { "peezy.\(userId).dailyDose.completedCount" }
+    static func lastDateKey(for userId: String) -> String { "peezy.\(userId).dailyDose.lastDate" }
+    static func firstLaunchDateKey(for userId: String) -> String { "peezy.\(userId).dailyDose.firstLaunchDate" }
+
+    func completedCount(for userId: String) -> Int { defaults.integer(forKey: Self.completedCountKey(for: userId)) }
+    func setCompletedCount(_ count: Int, for userId: String) { defaults.set(count, forKey: Self.completedCountKey(for: userId)) }
+    func lastDate(for userId: String) -> String? { defaults.string(forKey: Self.lastDateKey(for: userId)) }
+    func setLastDate(_ value: String, for userId: String) { defaults.set(value, forKey: Self.lastDateKey(for: userId)) }
+    func firstLaunchDate(for userId: String) -> String? { defaults.string(forKey: Self.firstLaunchDateKey(for: userId)) }
+    func setFirstLaunchDate(_ value: String, for userId: String) { defaults.set(value, forKey: Self.firstLaunchDateKey(for: userId)) }
 }

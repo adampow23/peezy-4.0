@@ -2123,6 +2123,26 @@ struct DurableStoreRecoveryTests {
         #expect(await model.acknowledgeCompletion() == nil)
     }
 
+    // MARK: - S4 I8 — the analytics collection gate (C2.2 telemetry barrier) and the fixed-parameter sink rule
+
+    @Test func analyticsCollectionGateClosesOnTheTelemetryBarrierAndOnlyFixedScalarParametersReachTheSDK() async {
+        #expect(AnalyticsEvents.sanitized(nil) == nil)
+        let cleaned = AnalyticsEvents.sanitized(["dayNumber": 3, "uid": "A", "path": "users/A", "trigger": "book", "flagged": true, "cubicFeet": 1.5, "itemCount": ["nested": 1], "error": NSError(domain: "x", code: 1)])
+        #expect(Set(cleaned.map { Array($0.keys) } ?? []) == ["dayNumber", "trigger", "flagged", "cubicFeet"], "no UID, path, nested value, or error object leaves the process")
+        let gate = AnalyticsEvents.CollectionGate()
+        #expect(!gate.isSuspended)
+        gate.suspend()
+        #expect(gate.isSuspended)
+        // the client telemetry barrier closes the process-wide gate before its first SDK call
+        let sdk = RecordingTelemetrySDK()
+        let authority = ClientTelemetryPrivacyAuthority(sdk: sdk, lifetime: TelemetryPrivacyLifetime())
+        let purge = Task { await authority.purgeAll() }
+        while !sdk.calls.contains("checkForUnsentReports") { await Task.yield() }
+        #expect(AnalyticsEvents.isSuspended, "the gate closes before the first SDK call completes")
+        sdk.complete(false)
+        #expect(await purge.value == .cleared)
+    }
+
     // MARK: - Epoch stamps (I4, stamps only; manifest §5:540-546). Cleanup belongs to S3.
 
     @Test func dailyDoseLocalStoreWritesAStampedV2EnvelopeAndCASesRevision() async throws {

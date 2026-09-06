@@ -124,6 +124,16 @@ struct AppRootAuthRaceTests {
         #expect(h.signOut.calls == ["A"])
     }
 
+    @Test func assessmentAndUserStateCompletionsAreGuardedByCurrentUIDAndLoadToken() {
+        let token = UUID()
+        let started = AppRootLoadGuard(uid: "A", token: token)
+        #expect(started.admits(currentUID: "A", liveToken: token))
+        #expect(!started.admits(currentUID: nil, liveToken: token), "signed out during the load")
+        #expect(!started.admits(currentUID: "B", liveToken: token), "A→B during the load")
+        #expect(!started.admits(currentUID: "A", liveToken: UUID()), "a later load or auth transition retired the token")
+        #expect(AppRootLoadGuard(uid: "A", token: token) == started)
+    }
+
     @Test func appleCredentialStateRevokedOrNotFoundSignsOutAndResumesOnlyANamedDeletion() async throws {
         let h = try makeDeletionHarness(auth: signedInA)
         #expect(await h.coordinator.appleCredentialState(.authorized, uid: "A") == .noOp)

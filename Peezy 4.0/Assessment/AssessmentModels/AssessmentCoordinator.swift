@@ -644,6 +644,9 @@ class AssessmentCoordinator: ObservableObject {
         let assessmentData = dataManager.getAllAssessmentData()
         let moveDate = dataManager.moveDate
 
+        // S4 (P1-R): every async completion below is applied only while the UID that started it is still current
+        func stillCurrent() -> Bool { (Auth.auth().currentUser?.uid ?? "") == userId }
+
         // Save assessment to Firestore (non-blocking for task generation)
         do {
             try await dataManager.saveAssessment()
@@ -652,8 +655,10 @@ class AssessmentCoordinator: ObservableObject {
             #if DEBUG
             print("⚠️ Assessment save failed: \(error) — continuing with task generation")
             #endif
+            guard stillCurrent() else { return }
             saveError = error
         }
+        guard stillCurrent() else { return }
 
         // Generate tasks independently — don't let a save failure block this
         do {
@@ -671,6 +676,7 @@ class AssessmentCoordinator: ObservableObject {
             #if DEBUG
             print("❌ Task generation failed: \(error)")
             #endif
+            guard stillCurrent() else { return }
             saveError = error
         }
     }

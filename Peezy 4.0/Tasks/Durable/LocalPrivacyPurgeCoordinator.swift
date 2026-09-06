@@ -147,7 +147,8 @@ final class ClientTelemetryPrivacyAuthority: ClientTelemetryPrivacyPurging {
     }
 
     nonisolated func purgeAll() async -> ClientTelemetryPurgeOutcomeV1 {
-        await run()
+        AnalyticsEvents.suspend() // no event or property leaves this process after the barrier begins (C2.2)
+        return await run()
     }
 
     private func run() async -> ClientTelemetryPurgeOutcomeV1 {

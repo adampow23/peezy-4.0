@@ -18,14 +18,50 @@ enum AppState {
     case hasAssessment
 }
 
+/// S4 (P1-R): an assessment or `UserState` async completion is applied only while the UID that started it is still
+/// current and the load token minted for that start is still the live one.
+struct AppRootLoadGuard: Equatable, Sendable {
+    let uid: String
+    let token: UUID
+
+    func admits(currentUID: String?, liveToken: UUID) -> Bool { currentUID == uid && liveToken == token }
+}
+
+/// Renders the C2.5 completion surface over the root while the presenter holds a snapshot (S7 supplies the model).
+struct AccountDeletionCompletionHost: View {
+    @ObservedObject var model: DurableStoreRecoveryModel
+
+    var body: some View {
+        if let completion = model.completion {
+            List {
+                AccountDeletionCompletionSurface(content: CompletionSurfaceContent.content(for: completion.result), open: { provider in _ = await model.open(provider) }, done: { _ = await model.acknowledgeCompletion() })
+            }
+            .task { await model.refresh() }
+        }
+    }
+}
+
 struct AppRootView: View {
     @StateObject private var authViewModel = AuthViewModel()
     @State private var appState: AppState = .loading
     @State private var showAssessment = false
     @State private var userState: UserState?  // Holds user context for Peezy
     @State private var explainerSeen = UserDefaults.standard.bool(forKey: "peezy.explainer.seen")
-    
+    /// The live load token; every start of an assessment/UserState load mints a new one (P1-R).
+    @State private var loadToken = UUID()
+    /// The recovery model S7 mounts; nil keeps the root exactly as before (no completion surface).
+    var recoveryModel: DurableStoreRecoveryModel? = nil
+
     var body: some View {
+        ZStack {
+            rootContent
+            if let recoveryModel {
+                AccountDeletionCompletionHost(model: recoveryModel)
+            }
+        }
+    }
+
+    private var rootContent: some View {
         Group {
             #if DEBUG
             // Spec 04 validation harness — active only when launched with
@@ -56,6 +92,7 @@ struct AppRootView: View {
             checkAssessmentStatus()
         }
         .onChange(of: authViewModel.isAuthenticated) { _, isAuthenticated in
+            loadToken = UUID() // every auth transition retires the in-flight loads
             if isAuthenticated {
                 checkAssessmentStatus()
             } else {
@@ -129,16 +166,19 @@ struct AppRootView: View {
         #if DEBUG
         print("🔍 Checking assessment for userId: \(userId)")
         #endif
-        
-        let db = Firestore.firestore()
+        let token = UUID()
+        loadToken = token
+        let guardToken = AppRootLoadGuard(uid: userId, token: token)
+
+        let db = FirestoreRuntime.firestore()
         db.collection("users")
             .document(userId)
             .collection("user_assessments")
             .limit(to: 1)
             .getDocuments { snapshot, error in
                 DispatchQueue.main.async {
-                    // Guard against stale callback if user signed out during fetch
-                    guard Auth.auth().currentUser != nil else {
+                    // P1-R: a stale callback (sign-out, A→B, or a later load) is dropped before any state changes
+                    guard guardToken.admits(currentUID: Auth.auth().currentUser?.uid, liveToken: loadToken) else {
                         return
                     }
                     
@@ -159,7 +199,9 @@ struct AppRootView: View {
                         // (migrating the identity doc on first launch if absent)
                         let assessmentData = document.data()
                         Task { @MainActor in
-                            self.userState = await UserState.load(userId: userId, assessment: assessmentData)
+                            let loaded = await UserState.load(userId: userId, assessment: assessmentData)
+                            guard guardToken.admits(currentUID: Auth.auth().currentUser?.uid, liveToken: loadToken) else { return }
+                            self.userState = loaded
                             self.appState = .hasAssessment
                         }
                     } else {

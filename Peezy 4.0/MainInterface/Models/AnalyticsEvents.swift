@@ -3,6 +3,20 @@ import Foundation
 import StoreKit
 
 enum AnalyticsEvents {
+    /// S4 (C2.2 telemetry barrier): once the client telemetry purge runs, no further event or user property leaves
+    /// this process; only a fresh process collects again. Lock-guarded so any actor may close it.
+    final class CollectionGate: @unchecked Sendable {
+        private let lock = NSLock()
+        private var suspended = false
+        var isSuspended: Bool { lock.withLock { suspended } }
+        func suspend() { lock.withLock { suspended = true } }
+    }
+
+    nonisolated(unsafe) static let collection = CollectionGate()
+
+    static func suspend() { collection.suspend() }
+    static var isSuspended: Bool { collection.isSuspended }
+
     enum PaywallTrigger: String {
         case postAssessment = "post_assessment"
         case book
@@ -114,14 +128,23 @@ enum AnalyticsEvents {
     }
 
     static func setHasSubscription(_ hasSubscription: Bool) {
+        guard !isSuspended else { return }
         Analytics.setUserProperty(
             hasSubscription ? "true" : "false",
             forName: "has_subscription"
         )
     }
 
+    /// Only the fixed parameter keys with scalar values reach the SDK: no UID, path, payload, or error text (C3 sink rule).
+    static func sanitized(_ parameters: [String: Any]?) -> [String: Any]? {
+        guard let parameters else { return nil }
+        let allowed: Set<String> = [Parameter.questionCount, Parameter.dayNumber, Parameter.itemCount, Parameter.cubicFeet, Parameter.trigger, Parameter.productId, Parameter.vertical, Parameter.isQuoteRequest, Parameter.itemTotal, Parameter.flagged]
+        return parameters.filter { key, value in allowed.contains(key) && (value is Int || value is Double || value is Bool || value is String) }
+    }
+
     private static func log(_ name: Name, _ parameters: [String: Any]? = nil) {
-        Analytics.logEvent(name.rawValue, parameters: parameters)
+        guard !isSuspended else { return }
+        Analytics.logEvent(name.rawValue, parameters: sanitized(parameters))
 
         #if DEBUG
         let details = parameters?
