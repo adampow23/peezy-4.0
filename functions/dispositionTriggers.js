@@ -1135,9 +1135,7 @@ async function consumeEventEnvelopeInTransaction(db, eventRef, rawNow, run = nul
     try { userId = eventUserId(eventRef); } catch (error) { userId = null; }
     // C6.1 root fence (every committing branch): the exact owner, or the enclosing owner of a nested (invalid) events path
     const owner = userId !== null ? userId : enclosingOwner(eventRef.path);
-    if (owner !== null) {
-      try { await assertDeletionAbsent(transaction, db, [owner]); } catch (error) { if (isDeletionFence(error)) return "fenced"; throw error; }
-    }
+    if (owner !== null) await assertDeletionAbsent(transaction, db, [owner]);
 
     let digest;
     try {
@@ -1545,7 +1543,8 @@ async function runPhase0(deps, run) {
   if (cursor) query = query.startAfter(db.doc(cursor.path));
   const snapshot = await query.limit(PHASE0_SELECT + 1).get();
   const selected = snapshot.docs.slice(0, PHASE0_SELECT);
-  const outcomes = await runWaves(run, selected, PHASE0_DEADLINE, (candidate) => consumeEventEnvelopeInTransaction(db, candidate.ref, run.runNow, run));
+  // C6.1: a fenced source throws FENCED from its transaction (zero writes) and settles for this run; deletion removes it
+  const outcomes = await runWaves(run, selected, PHASE0_DEADLINE, (candidate) => consumeEventEnvelopeInTransaction(db, candidate.ref, run.runNow, run).catch((error) => { if (isDeletionFence(error)) return "fenced"; throw error; }));
   if (outcomes.some((o) => o !== undefined && !o.ok && o.code === "SCHEDULER_FENCE_LOST")) throw new SchedulerInvariant("SCHEDULER_FENCE_LOST");
   const emitted = new Set();
   for (const o of outcomes) {

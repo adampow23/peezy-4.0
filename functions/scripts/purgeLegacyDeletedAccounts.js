@@ -116,8 +116,14 @@ function validateCheckpoint(map) {
   if (map.project_id !== PRODUCTION_PROJECT || map.database_id !== PRODUCTION_DATABASE || map.bucket_name !== PRODUCTION_BUCKET) throw invariant("ACCOUNT_DELETION_LEGACY_MIGRATION_INVARIANT", "identity");
   if (!STATUSES.includes(map.status)) throw invariant("ACCOUNT_DELETION_LEGACY_MIGRATION_INVARIANT", "status");
   for (const k of ["pass_ordinal", "source_ordinal", "pass_candidate_count", "reduction_round", "reduction_deferred_count"]) if (!isSafeCount(map[k])) throw invariant("ACCOUNT_DELETION_LEGACY_MIGRATION_INVARIANT", k);
-  if (map.source_ordinal > ACCOUNT_DELETION_LEGACY_SOURCES_V1.length) throw invariant("ACCOUNT_DELETION_LEGACY_MIGRATION_INVARIANT", "source_ordinal");
   validateCursor(map.source_cursor);
+  // status-dependent grammar: 0...22 with a cursor matching the current row while discovering/confirming; exactly 23 with {kind:"start"} while reducing/waiting_guards
+  if (map.status === "reducing" || map.status === "waiting_guards") {
+    if (map.source_ordinal !== ACCOUNT_DELETION_LEGACY_SOURCES_V1.length || map.source_cursor.kind !== "start") throw invariant("ACCOUNT_DELETION_LEGACY_MIGRATION_INVARIANT", "source_ordinal");
+  } else {
+    if (map.source_ordinal >= ACCOUNT_DELETION_LEGACY_SOURCES_V1.length) throw invariant("ACCOUNT_DELETION_LEGACY_MIGRATION_INVARIANT", "source_ordinal");
+    if (map.source_cursor.kind !== "start" && map.source_cursor.kind !== ACCOUNT_DELETION_LEGACY_SOURCES_V1[map.source_ordinal].kind) throw invariant("ACCOUNT_DELETION_LEGACY_MIGRATION_INVARIANT", "source_cursor kind");
+  }
   if (map.reduction_cursor_id !== "" && !/^adlc1_[0-9a-f]{40}$/.test(map.reduction_cursor_id)) throw invariant("ACCOUNT_DELETION_LEGACY_MIGRATION_INVARIANT", "reduction_cursor_id");
   if (![0, 1, 2].includes(map.confirmation_zero_passes)) throw invariant("ACCOUNT_DELETION_LEGACY_MIGRATION_INVARIANT", "confirmation_zero_passes");
   for (const k of ["authority_sha256", "implementation_sha256", "source_registry_sha256", "package_lock_sha256", "script_sha256", "drain_evidence_sha256", "auth_freeze_evidence_sha256", "auth_blocker_config_sha256", "auth_blocker_prior_config_sha256"]) if (!HEX64_RE.test(String(map[k]))) throw invariant("ACCOUNT_DELETION_LEGACY_MIGRATION_INVARIANT", k);
@@ -498,9 +504,6 @@ function requireCheckpointBinding(checkpoint, deps, parsed, authority) {
 /** Discovering: one settled page per commit (candidate upserts + cursor) after a fresh barrier read. */
 async function discoverStep(deps, checkpoint) {
   const ordinal = checkpoint.source_ordinal;
-  if (ordinal >= ACCOUNT_DELETION_LEGACY_SOURCES_V1.length) {
-    return checkpointTransaction(deps, checkpoint, async () => ({ status: "reducing", reduction_cursor_id: "", source_ordinal: ordinal, source_cursor: { kind: "start" } }));
-  }
   await requireBarrier(deps, checkpoint);
   const page = await sourcePage(deps, ordinal, checkpoint.source_cursor, PAGE_SIZE);
   const uids = [...new Set(page.uids)];
@@ -515,7 +518,10 @@ async function discoverStep(deps, checkpoint) {
       transaction.create(refs[i], row);
       created += 1;
     });
-    const advance = page.done ? { source_ordinal: ordinal + 1, source_cursor: { kind: "start" } } : { source_ordinal: ordinal, source_cursor: page.next };
+    const lastRow = ordinal === ACCOUNT_DELETION_LEGACY_SOURCES_V1.length - 1;
+    const advance = page.done
+      ? (lastRow ? { status: "reducing", reduction_cursor_id: "", source_ordinal: ordinal + 1, source_cursor: { kind: "start" } } : { source_ordinal: ordinal + 1, source_cursor: { kind: "start" } })
+      : { source_ordinal: ordinal, source_cursor: page.next };
     return { ...advance, pass_candidate_count: current.pass_candidate_count + created };
   });
 }
@@ -700,7 +706,7 @@ async function waitingStep(deps, checkpoint, sweep) {
   if (page.empty) {
     const remaining = await deps.db.collection(CANDIDATES).orderBy(FieldPath.documentId(), "asc").get();
     const blocking = remaining.docs.map((d) => validateCandidate(d.data(), d.id)).some((c) => c.disposition !== "excluded_live");
-    if (!blocking) return { checkpoint: await checkpointTransaction(deps, checkpoint, async () => ({ status: "confirming", reduction_cursor_id: "", confirmation_zero_passes: 0 })), done: true };
+    if (!blocking) return { checkpoint: await checkpointTransaction(deps, checkpoint, async () => ({ status: "confirming", reduction_cursor_id: "", source_ordinal: 0, source_cursor: { kind: "start" }, confirmation_zero_passes: 0 })), done: true };
     sweep.sawAny = false;
     return { checkpoint: await checkpointTransaction(deps, checkpoint, async () => ({ reduction_cursor_id: "", reduction_round: checkpoint.reduction_round + 1 })), done: false };
   }
@@ -718,39 +724,62 @@ async function waitingStep(deps, checkpoint, sweep) {
   return { checkpoint: advanced, done: false, outcome: "DELETED" };
 }
 
-/** Confirming: a complete pass from row 0 proves zero new, zero pending/ambiguous, zero adopted, and every exclusion still true. */
-async function confirmationPass(deps, checkpoint) {
-  await requireGate(deps);
-  const known = new Map();
-  const all = await deps.db.collection(CANDIDATES).orderBy(FieldPath.documentId(), "asc").get();
-  for (const row of all.docs) {
-    const candidate = validateCandidate(row.data(), row.id);
-    if (candidate.disposition !== "excluded_live") return { ok: false, reason: "NON_EXCLUDED_CANDIDATE" };
-    known.set(candidate.account_uid, candidate);
-  }
-  const tombstones = new Set();
-  for (let ordinal = 0; ordinal < ACCOUNT_DELETION_LEGACY_SOURCES_V1.length; ordinal += 1) {
-    let cursor = { kind: "start" };
-    for (;;) {
-      const page = await sourcePage(deps, ordinal, cursor, PAGE_SIZE);
-      for (const uid of page.uids) {
-        if (known.has(uid) || tombstones.has(uid)) continue;
-        // a permanent ACCOUNT_DELETED tombstone is the migration's own terminal residue: acceptable only with a zero residue proof
-        const root = await rootState(deps, uid);
-        if (root.kind === "marker" && root.phase === "ACCOUNT_DELETED" && (await residueProof(deps, uid)) === 0) { tombstones.add(uid); continue; }
-        return { ok: false, reason: "NEW_UID" };
-      }
-      if (page.done) break;
-      cursor = page.next;
+/** The failure transition out of confirming: reducing at ordinal 23, both cursors reset, count 0. */
+function confirmationFailure() {
+  return { status: "reducing", reduction_cursor_id: "", source_ordinal: ACCOUNT_DELETION_LEGACY_SOURCES_V1.length, source_cursor: { kind: "start" }, confirmation_zero_passes: 0 };
+}
+
+/** Bounded walk over every candidate row (100 per page): a non-excluded row or a stale exclusion fails the pass. */
+async function excludedRowsStillTrue(deps) {
+  let after = null;
+  for (;;) {
+    let query = deps.db.collection(CANDIDATES).orderBy(FieldPath.documentId(), "asc");
+    if (after !== null) query = query.startAfter(after);
+    const page = await query.limit(CLEANUP_PAGE).get();
+    for (const row of page.docs) {
+      const candidate = validateCandidate(row.data(), row.id);
+      if (candidate.disposition !== "excluded_live") return "NON_EXCLUDED_CANDIDATE";
+      const auth = await authCheck(deps, candidate.account_uid);
+      const root = await rootState(deps, candidate.account_uid);
+      const stillTrue = candidate.exclusion_reason === "AUTH_PRESENT" ? auth === "present" : root.kind === "present";
+      if (!stillTrue) return "EXCLUSION_DRIFT";
     }
+    if (page.docs.length < CLEANUP_PAGE) return null;
+    after = page.docs[page.docs.length - 1];
   }
-  for (const candidate of known.values()) {
-    const auth = await authCheck(deps, candidate.account_uid);
-    const root = await rootState(deps, candidate.account_uid);
-    const stillTrue = candidate.exclusion_reason === "AUTH_PRESENT" ? auth === "present" : root.kind === "present";
-    if (!stillTrue) return { ok: false, reason: "EXCLUSION_DRIFT" };
+}
+
+/**
+ * Confirming: one source page per step from row 0 `{kind:"start"}`, the checkpoint's source position advancing under
+ * the confirming grammar; every UID on the page is a still-true excluded-live candidate or a residue-free ACCOUNT_DELETED
+ * tombstone, anything else fails the pass; the barrier is re-read before every confirmation-page commit; the last page of
+ * row 22 walks the candidate rows in bounded pages, counts the zero pass, and restarts at row 0 (two passes, then cleanup).
+ */
+async function confirmationPage(deps, checkpoint) {
+  await requireGate(deps);
+  const ordinal = checkpoint.source_ordinal;
+  const page = await sourcePage(deps, ordinal, checkpoint.source_cursor, PAGE_SIZE);
+  for (const uid of [...new Set(page.uids)]) {
+    const snapshot = await candidateRef(deps, uid).get();
+    if (snapshot.exists) {
+      const candidate = validateCandidate(snapshot.data(), snapshot.id);
+      if (candidate.disposition !== "excluded_live") return { ok: false, reason: "NON_EXCLUDED_CANDIDATE" };
+      const auth = await authCheck(deps, uid);
+      const root = await rootState(deps, uid);
+      const stillTrue = candidate.exclusion_reason === "AUTH_PRESENT" ? auth === "present" : root.kind === "present";
+      if (!stillTrue) return { ok: false, reason: "EXCLUSION_DRIFT" };
+      continue;
+    }
+    // a permanent ACCOUNT_DELETED tombstone is the migration's own terminal residue: acceptable only with a zero residue proof
+    const root = await rootState(deps, uid);
+    if (root.kind === "marker" && root.phase === "ACCOUNT_DELETED" && (await residueProof(deps, uid)) === 0) continue;
+    return { ok: false, reason: "NEW_UID" };
   }
-  return { ok: true };
+  const lastRow = ordinal === ACCOUNT_DELETION_LEGACY_SOURCES_V1.length - 1;
+  if (!(page.done && lastRow)) return { ok: true, complete: false, advance: page.done ? { source_ordinal: ordinal + 1, source_cursor: { kind: "start" } } : { source_ordinal: ordinal, source_cursor: page.next } };
+  const rows = await excludedRowsStillTrue(deps);
+  if (rows !== null) return { ok: false, reason: rows };
+  return { ok: true, complete: true };
 }
 
 /** Excluded-live cleanup: <= 100 rows per transaction rereading each row and its exclusion authority; drift returns to reducing. */
@@ -778,7 +807,7 @@ async function cleanupExcluded(deps, checkpoint) {
         if (before !== after || !stillTrue) { drifted = true; return; }
         transaction.delete(page.docs[i].ref);
       });
-      return drifted ? { status: "reducing", reduction_cursor_id: "", source_ordinal: 0, source_cursor: { kind: "start" }, confirmation_zero_passes: 0 } : {};
+      return drifted ? { status: "reducing", reduction_cursor_id: "", source_ordinal: ACCOUNT_DELETION_LEGACY_SOURCES_V1.length, source_cursor: { kind: "start" }, confirmation_zero_passes: 0 } : {};
     });
     if (drifted) return { checkpoint: current, drifted: true };
     if (page.docs.length < CLEANUP_PAGE) break;
@@ -790,9 +819,11 @@ async function cleanupExcluded(deps, checkpoint) {
 }
 
 async function confirmStep(deps, checkpoint) {
-  const pass = await confirmationPass(deps, checkpoint);
-  if (!pass.ok) return { checkpoint: await checkpointTransaction(deps, checkpoint, async () => ({ status: "reducing", reduction_cursor_id: "", source_ordinal: 0, source_cursor: { kind: "start" }, confirmation_zero_passes: 0 })), done: false, outcome: pass.reason };
-  const counted = await checkpointTransaction(deps, checkpoint, async () => ({ confirmation_zero_passes: checkpoint.confirmation_zero_passes + 1 }));
+  const page = await confirmationPage(deps, checkpoint);
+  await requireBarrier(deps, checkpoint); // re-read before every confirmation-page commit (failure, advance, or count)
+  if (!page.ok) return { checkpoint: await checkpointTransaction(deps, checkpoint, async () => confirmationFailure()), done: false, outcome: page.reason };
+  if (!page.complete) return { checkpoint: await checkpointTransaction(deps, checkpoint, async () => page.advance), done: false, outcome: "PAGE" };
+  const counted = await checkpointTransaction(deps, checkpoint, async () => ({ source_ordinal: 0, source_cursor: { kind: "start" }, confirmation_zero_passes: checkpoint.confirmation_zero_passes + 1 }));
   if (counted.confirmation_zero_passes < 2) return { checkpoint: counted, done: false, outcome: "ZERO_PASS" };
   const cleanup = await cleanupExcluded(deps, counted);
   if (cleanup.drifted) return { checkpoint: cleanup.checkpoint, done: false, outcome: "CLEANUP_DRIFT" };
@@ -877,5 +908,5 @@ module.exports = {
   ACCOUNT_DELETION_LEGACY_SOURCES_V1, SOURCE_REGISTRY_SHA256, CHECKPOINT_PATH, CANDIDATES, CHECKPOINT_KEYS, PAGE_SIZE, MigrationInvariant,
   candidateId, isCanonicalUid, validateCursor, validateCheckpoint, validateCandidate, extractUids, singletonUids, listPage, storagePage, sourcePage,
   parseArguments, argumentRefusal, environmentRefusal, requireBarrier, requireGate, runAudit, createCheckpoint, requireCheckpointBinding,
-  discoverStep, reduceStep, waitingStep, confirmationPass, cleanupExcluded, confirmStep, residueProof, runApply, reportOf, run
+  discoverStep, reduceStep, waitingStep, confirmationPage, excludedRowsStillTrue, cleanupExcluded, confirmStep, residueProof, runApply, reportOf, run
 };

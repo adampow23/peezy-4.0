@@ -3238,7 +3238,13 @@ test("C9.4.1 registry, identity, and grammar: the 23-row source registry in exec
   const now = ts("2026-09-06T00:00:00.000Z");
   const checkpoint = { schema_version: 1, kind: "ACCOUNT_DELETION_LEGACY_MIGRATION", generation_id: "33333333-3333-4333-8333-333333333333", project_id: "peezy-1ecrdl", database_id: "(default)", bucket_name: "peezy-1ecrdl.firebasestorage.app", status: "discovering", pass_ordinal: 0, source_ordinal: 0, source_cursor: { kind: "start" }, pass_candidate_count: 0, reduction_round: 0, reduction_cursor_id: "", reduction_deferred_count: 0, confirmation_zero_passes: 0, authority_generation_id: "11111111-1111-4111-8111-111111111111", authority_sha256: sha256("a"), implementation_sha256: sha256("i"), source_registry_sha256: legacyMigration.SOURCE_REGISTRY_SHA256, package_lock_sha256: sha256("l"), script_sha256: sha256("s"), drain_evidence_sha256: sha256("d"), auth_freeze_evidence_sha256: sha256("f"), auth_blocker_config_sha256: sha256("c"), auth_blocker_prior_config_sha256: sha256("p"), created_at: now, updated_at: now };
   assert.ok(legacyMigration.validateCheckpoint(checkpoint));
-  for (const [label, bad] of [["surplus", { ...checkpoint, mode: "apply" }], ["missing", (() => { const c = { ...checkpoint }; delete c.status; return c; })()], ["status", { ...checkpoint, status: "done" }], ["identity", { ...checkpoint, project_id: "demo" }], ["cursor", { ...checkpoint, source_cursor: { kind: "storage", page_token: "" } }], ["zero passes", { ...checkpoint, confirmation_zero_passes: 3 }], ["cursor id", { ...checkpoint, reduction_cursor_id: "x" }], ["times", { ...checkpoint, updated_at: ts("2026-09-05T00:00:00.000Z") }], ["digest", { ...checkpoint, script_sha256: "nope" }]]) {
+  // C9.4.1 checkpoint grammar: source_ordinal is 0...22 while discovering/confirming and exactly 23 (cursor start) while reducing/waiting_guards; the cursor kind matches the current source row
+  assert.ok(legacyMigration.validateCheckpoint({ ...checkpoint, status: "reducing", source_ordinal: 23 }));
+  assert.ok(legacyMigration.validateCheckpoint({ ...checkpoint, status: "waiting_guards", source_ordinal: 23 }));
+  assert.ok(legacyMigration.validateCheckpoint({ ...checkpoint, status: "confirming", source_ordinal: 22 }));
+  assert.ok(legacyMigration.validateCheckpoint({ ...checkpoint, status: "confirming", source_ordinal: 3, source_cursor: { kind: "firestore_raw", page_token: "t" } }));
+  for (const [label, bad] of [["confirming ordinal 23", { ...checkpoint, status: "confirming", source_ordinal: 23 }], ["discovering ordinal 23", { ...checkpoint, source_ordinal: 23 }], ["reducing ordinal 0", { ...checkpoint, status: "reducing", source_ordinal: 0 }], ["waiting_guards ordinal 22", { ...checkpoint, status: "waiting_guards", source_ordinal: 22 }], ["reducing with a page cursor", { ...checkpoint, status: "reducing", source_ordinal: 23, source_cursor: { kind: "firestore_raw", page_token: "t" } }], ["cursor kind mismatch", { ...checkpoint, status: "confirming", source_ordinal: 15, source_cursor: { kind: "firestore_raw", page_token: "t" } }], ["storage cursor on a firestore row", { ...checkpoint, source_ordinal: 1, source_cursor: { kind: "storage", page_token: "t" } }],
+    ["surplus", { ...checkpoint, mode: "apply" }], ["missing", (() => { const c = { ...checkpoint }; delete c.status; return c; })()], ["status", { ...checkpoint, status: "done" }], ["identity", { ...checkpoint, project_id: "demo" }], ["cursor", { ...checkpoint, source_cursor: { kind: "storage", page_token: "" } }], ["zero passes", { ...checkpoint, confirmation_zero_passes: 3 }], ["cursor id", { ...checkpoint, reduction_cursor_id: "x" }], ["times", { ...checkpoint, updated_at: ts("2026-09-05T00:00:00.000Z") }], ["digest", { ...checkpoint, script_sha256: "nope" }]]) {
     assert.throws(() => legacyMigration.validateCheckpoint(bad), (e) => e.code === "ACCOUNT_DELETION_LEGACY_MIGRATION_INVARIANT", label);
   }
   const pending = { schema_version: 1, kind: "ACCOUNT_DELETION_LEGACY_CANDIDATE", candidate_id: legacyMigration.candidateId("uid-A"), account_uid: "uid-A", first_pass_ordinal: 0, created_at: now, updated_at: now, disposition: "pending", last_check_result: "unexamined", last_checked_at: null };
@@ -3400,6 +3406,44 @@ test("C9.4.1 apply: discovery upserts deterministic candidates with page cursors
   assert.ok(db.__docs.has("users/uid-live") && db.__docs.has("userKnowledge/uid-authonly") && db.__docs.has("userKnowledge/uid-ambig"), "excluded-live data untouched");
   assert.ok(ambiguousCalls >= 3, "the ambiguous account was re-examined after its deferrals");
   assert.ok(result.outcomes.confirmed.includes("ZERO_PASS") && result.outcomes.confirmed.at(-1) === "COMPLETED");
+  assert.ok(result.outcomes.confirmed.filter((o) => o === "PAGE").length >= 2 * 22, "confirmation is one durable source page per step across both passes");
+});
+
+test("C9.4.1 confirming is paged and barrier-checked: one source page per step advances source_ordinal/source_cursor under the confirming grammar; a barrier drift is re-read before the confirmation-page commit and blocks with zero confirmation writes; a failure returns to reducing at ordinal 23; a completed pass counts once and restarts at row 0", async () => {
+  const clock = new FakeClock();
+  const db = fakeFirestore({ docs: { "users/uid-live": { name: "Live root" } }, clock });
+  const deps = migrationDeps({ db, clock });
+  // drive to confirming: discovery nominates the live root's UID (row 0), reducing excludes it, waiting_guards completes
+  let checkpoint = await legacyMigration.createCheckpoint(deps, legacyMigration.parseArguments(APPLY_ARGV), testEvidence().authority, await deps.observeBarrier());
+  const sweep = { sawAny: false };
+  for (let i = 0; i < 400 && checkpoint.status !== "confirming"; i += 1) {
+    if (checkpoint.status === "discovering") checkpoint = await legacyMigration.discoverStep(deps, checkpoint);
+    else if (checkpoint.status === "reducing") checkpoint = (await legacyMigration.reduceStep(deps, checkpoint, sweep)).checkpoint;
+    else checkpoint = (await legacyMigration.waitingStep(deps, checkpoint, sweep)).checkpoint;
+  }
+  assert.deepEqual([checkpoint.status, checkpoint.source_ordinal, checkpoint.source_cursor, checkpoint.confirmation_zero_passes], ["confirming", 0, { kind: "start" }, 0], "waiting_guards → confirming resets the source position to row 0");
+  // one step = one source page: row 0 is complete after its single page, so the next step reads row 1
+  let step = await legacyMigration.confirmStep(deps, checkpoint);
+  assert.deepEqual([step.outcome, step.checkpoint.status, step.checkpoint.source_ordinal, step.checkpoint.source_cursor], ["PAGE", "confirming", 1, { kind: "start" }], "the confirming checkpoint advances by one page");
+  // barrier drift observed by the re-read before the page commit: zero confirmation writes, the checkpoint keeps its position
+  const before = JSON.stringify(checkpointDoc(db));
+  const drifting = { ...deps, observeBarrier: async () => ({ activeConfigSha256: sha256("changed"), priorConfigSha256: sha256("prior"), etag: "etag-2" }) };
+  await assert.rejects(legacyMigration.confirmStep(drifting, step.checkpoint), (e) => e.code === "ACCOUNT_DELETION_LEGACY_BARRIER_DRIFT");
+  assert.equal(JSON.stringify(checkpointDoc(db)), before, "barrier drift before the confirmation-page commit writes nothing");
+  // a failure (a new UID appearing in a later source) returns to reducing with source_ordinal 23 and the cursor at start
+  db.__docs.set("userKnowledge/uid-new", { k: 1 });
+  step = await legacyMigration.confirmStep(deps, step.checkpoint);
+  assert.deepEqual([step.outcome, step.checkpoint.status, step.checkpoint.source_ordinal, step.checkpoint.source_cursor, step.checkpoint.confirmation_zero_passes], ["NEW_UID", "reducing", 23, { kind: "start" }, 0]);
+  db.__docs.delete("userKnowledge/uid-new");
+  // drive back to confirming and run a complete pass: 23 rows → count 1 and the position returns to row 0
+  checkpoint = step.checkpoint;
+  for (let i = 0; i < 400 && checkpoint.status !== "confirming"; i += 1) {
+    if (checkpoint.status === "reducing") checkpoint = (await legacyMigration.reduceStep(deps, checkpoint, sweep)).checkpoint;
+    else checkpoint = (await legacyMigration.waitingStep(deps, checkpoint, sweep)).checkpoint;
+  }
+  let outcome = null;
+  for (let i = 0; i < 100 && outcome !== "ZERO_PASS"; i += 1) { step = await legacyMigration.confirmStep(deps, checkpoint); checkpoint = step.checkpoint; outcome = step.outcome; }
+  assert.deepEqual([outcome, checkpoint.status, checkpoint.source_ordinal, checkpoint.source_cursor, checkpoint.confirmation_zero_passes], ["ZERO_PASS", "confirming", 0, { kind: "start" }, 1]);
 });
 
 test("C9.4.1 stops and drift: a third Auth check that finds the user is LEGACY_ACCOUNT_AUTH_RACE with the marker and candidate retained and zero Auth deletion; an adopted candidate whose marker disagrees fails closed; a barrier drift before a nomination is a zero-write invariant; a candidate collision blocks; the script has no reachable Auth-delete or provider-send call site", async () => {
