@@ -6,6 +6,19 @@ service cloud.firestore {
       return request.auth != null && request.auth.uid == userId;
     }
 
+    // S3 (briefs/S3_BRIEF.md; PHASE2_CONTRACT.md C3, C6.1): once the owner root carries an
+    // accountDeletion marker in any state (a malformed marker included) the owner is denied
+    // every read and write across user paths; descendant and userKnowledge writes exist only
+    // under marker absence. A missing root document is marker absence.
+    function deletionAbsent(userId) {
+      let root = get(/databases/$(database)/documents/users/$(userId));
+      return root == null || !('accountDeletion' in root.data);
+    }
+
+    function isLiveOwner(userId) {
+      return isOwner(userId) && deletionAbsent(userId);
+    }
+
     function taskResetInactive(userId) {
       let user = get(/databases/$(database)/documents/users/$(userId));
       return !('taskReset' in user.data)
@@ -150,14 +163,15 @@ service cloud.firestore {
     // owner writes may never create, modify, or remove it. Root-doc delete
     // is server-side only (deleteAccount, Admin SDK).
     match /users/{userId} {
-      allow read: if isOwner(userId);
+      allow read: if isOwner(userId) && !('accountDeletion' in resource.data);
       allow create: if isOwner(userId)
-        && !request.resource.data.keys().hasAny(['subscription', 'taskReset', 'taskGenerationEpoch'])
+        && !request.resource.data.keys().hasAny(['subscription', 'taskReset', 'taskGenerationEpoch', 'accountDeletion'])
         && (!('dailyDose' in request.resource.data)
           || stampedDailyDose(request.resource.data.dailyDose, 0));
       allow update: if isOwner(userId)
+        && !('accountDeletion' in resource.data)
         && !request.resource.data.diff(resource.data).affectedKeys()
-          .hasAny(['subscription', 'taskReset', 'taskGenerationEpoch'])
+          .hasAny(['subscription', 'taskReset', 'taskGenerationEpoch', 'accountDeletion'])
         && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['dailyDose'])
           || !('dailyDose' in request.resource.data)
           || stampedDailyDose(request.resource.data.dailyDose, effectiveEpoch(resource.data)));
@@ -167,11 +181,11 @@ service cloud.firestore {
     // Support messages are owner-readable, but support replies and metadata are
     // backend-owned. Owners may create user messages and mark support replies read.
     match /users/{userId}/supportChat/{messageId} {
-      allow read: if isOwner(userId);
-      allow create: if isOwner(userId)
+      allow read: if isLiveOwner(userId);
+      allow create: if isLiveOwner(userId)
         && messageId != '_meta'
         && request.resource.data.sender == 'user';
-      allow update: if isOwner(userId)
+      allow update: if isLiveOwner(userId)
         && messageId != '_meta'
         && resource.data.sender == 'support'
         && request.resource.data.read is bool
@@ -181,19 +195,19 @@ service cloud.firestore {
 
     // Read receipts are written only by Admin SDK support callables.
     match /users/{userId}/supportChat/_meta {
-      allow read: if isOwner(userId);
+      allow read: if isLiveOwner(userId);
       allow write: if false;
     }
 
     // Task lifecycle is client-writable only for contractless, audit-free rows.
     // Server-authored identity/provenance and generated flow rows are immutable.
     match /users/{userId}/tasks/{taskId} {
-      allow read: if isOwner(userId);
-      allow create: if isOwner(userId)
+      allow read: if isLiveOwner(userId);
+      allow create: if isLiveOwner(userId)
         && taskResetInactive(userId)
         && !isReservedTaskId(taskId)
         && !hasServerTaskCreateFields(request.resource.data);
-      allow update: if isOwner(userId)
+      allow update: if isLiveOwner(userId)
         && taskResetInactive(userId)
         && !taskId.matches('^a2_.*')
         && !hasDispositionContract(resource.data)
@@ -201,7 +215,7 @@ service cloud.firestore {
         && !hasPlanAudit(resource.data)
         && !hasPlanAudit(request.resource.data)
         && !changesServerTaskFields();
-      allow delete: if isOwner(userId)
+      allow delete: if isLiveOwner(userId)
         && taskResetInactive(userId)
         && !taskId.matches('^a2_.*')
         && !hasDispositionContract(resource.data)
@@ -209,57 +223,65 @@ service cloud.firestore {
     }
 
     // Inventoried client-owned user collections.
-    match /users/{userId}/fcmTokens/{document=**} {
-      allow read, write: if isOwner(userId);
+    // FCM tokens (C6.8): the client writes exactly {createdAt: <server Timestamp>, platform: "ios"};
+    // the token collection is never client-readable or listable; the owner may delete its token.
+    match /users/{userId}/fcmTokens/{token} {
+      allow read: if false;
+      allow create, update: if isLiveOwner(userId)
+        && request.resource.data.keys().hasOnly(['createdAt', 'platform'])
+        && request.resource.data.keys().hasAll(['createdAt', 'platform'])
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.platform == 'ios';
+      allow delete: if isLiveOwner(userId);
     }
     match /users/{userId}/packingPlan/{document=**} {
-      allow read, write: if isOwner(userId);
+      allow read, write: if isLiveOwner(userId);
     }
     match /users/{userId}/readiness/{document=**} {
-      allow read, write: if isOwner(userId);
+      allow read, write: if isLiveOwner(userId);
     }
     match /users/{userId}/user_assessments/{assessmentId} {
-      allow read: if isOwner(userId);
-      allow create: if isOwner(userId)
+      allow read: if isLiveOwner(userId);
+      allow create: if isLiveOwner(userId)
         && stampedCreate(userId, request.resource.data);
-      allow update: if isOwner(userId)
+      allow update: if isLiveOwner(userId)
         && stampedUpdate(userId, resource.data, request.resource.data);
-      allow delete: if isOwner(userId);
+      allow delete: if isLiveOwner(userId);
     }
 
     // Server-owned lifecycle and scheduler inputs are owner-readable only.
     match /users/{userId}/spawnTokens/{document=**} {
-      allow read: if isOwner(userId);
+      allow read: if isLiveOwner(userId);
       allow write: if false;
     }
     match /users/{userId}/events/{document=**} {
-      allow read: if isOwner(userId);
+      allow read: if isLiveOwner(userId);
       allow write: if false;
     }
     match /users/{userId}/eventState/{document=**} {
-      allow read: if isOwner(userId);
+      allow read: if isLiveOwner(userId);
       allow write: if false;
     }
     match /users/{userId}/taskPlanOperations/{document=**} {
-      allow read: if isOwner(userId);
+      allow read: if isLiveOwner(userId);
       allow write: if false;
     }
 
     // Existing server-owned output surfaces retain owner read access.
     match /users/{userId}/packingAggregate/{document=**} {
-      allow read: if isOwner(userId);
+      allow read: if isLiveOwner(userId);
       allow write: if false;
     }
     match /users/{userId}/research/{document=**} {
-      allow read: if isOwner(userId);
+      allow read: if isLiveOwner(userId);
       allow write: if false;
     }
     match /users/{userId}/workflowResponses/{document=**} {
-      allow read: if isOwner(userId);
+      allow read: if isLiveOwner(userId);
       allow write: if false;
     }
     match /users/{userId}/chats/{chatId}/messages/{messageId} {
-      allow read: if isOwner(userId);
+      allow read: if isLiveOwner(userId);
       allow write: if false;
     }
 
@@ -267,38 +289,62 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // Server-only Phase 2 state (C3): reconciler state, work rows, outbound leases, migration
+    // records, event archive chunks, and scheduler refusals are never client-accessible.
+    match /phase2System/{document=**} {
+      allow read, write: if false;
+    }
+    match /accountDeletionStorageWork/{document=**} {
+      allow read, write: if false;
+    }
+    match /accountDeletionAuthWork/{document=**} {
+      allow read, write: if false;
+    }
+    match /users/{userId}/outboundLeases/{document=**} {
+      allow read, write: if false;
+    }
+    match /users/{userId}/legacyResetMigrations/{document=**} {
+      allow read, write: if false;
+    }
+    match /{path=**}/eventArchiveChunks/{document} {
+      allow read, write: if false;
+    }
+    match /{path=**}/schedulerRefusals/{document} {
+      allow read, write: if false;
+    }
+
     // Inventory sessions (temporary processing data)
     match /users/{userId}/inventorySessions/{document=**} {
-      allow read, write: if isOwner(userId);
+      allow read, write: if isLiveOwner(userId);
     }
 
     // Permanent inventory storage
     match /users/{userId}/inventory/{document=**} {
-      allow read, write: if isOwner(userId);
+      allow read, write: if isLiveOwner(userId);
     }
 
     // Identity doc (users/{uid}/identity/identity) — written at assessment
     // completion, migrated on launch, edited from Settings. NOT DEPLOYED:
     // reconcile with the live waitlist rule before deploying (Adam's batch).
     match /users/{userId}/identity/{document=**} {
-      allow read, write: if isOwner(userId);
+      allow read, write: if isLiveOwner(userId);
     }
 
     // Per-user knowledge doc (assessment data keyed by uid) — written by
     // AssessmentDataManager.saveAssessment and edited from Settings
     match /userKnowledge/{userId} {
-      allow read: if isOwner(userId);
-      allow create: if isOwner(userId)
+      allow read: if isLiveOwner(userId);
+      allow create: if isLiveOwner(userId)
         && stampedCreate(userId, request.resource.data);
-      allow update: if isOwner(userId)
+      allow update: if isLiveOwner(userId)
         && knowledgeUpdate(userId, resource.data, request.resource.data);
-      allow delete: if isOwner(userId);
+      allow delete: if isLiveOwner(userId);
     }
 
     // Remembered conversation answers (users/{uid}/moveAnswers/answers) —
     // written only by the spawnTasks Cloud Function (Admin SDK). Owner read.
     match /users/{userId}/moveAnswers/{doc} {
-      allow read: if isOwner(userId);
+      allow read: if isLiveOwner(userId);
       allow write: if false;
     }
 

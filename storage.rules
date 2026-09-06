@@ -1,8 +1,14 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
+    // S3 (briefs/S3_BRIEF.md; PHASE2_CONTRACT.md C3): the owner reads and deletes its own frames;
+    // create/update additionally require an existing user root that carries no accountDeletion
+    // marker, so a late upload after deletion begins is denied.
     match /inventory/{userId}/{allPaths=**} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read, delete: if request.auth != null && request.auth.uid == userId;
+      allow create, update: if request.auth != null && request.auth.uid == userId
+        && firestore.exists(/databases/(default)/documents/users/$(userId))
+        && !('accountDeletion' in firestore.get(/databases/(default)/documents/users/$(userId)).data);
     }
   }
 }

@@ -23,6 +23,7 @@ const PROJECT_ID = "demo-peezy-phase1";
 const OWNER = "owner-uid";
 const OTHER = "other-uid";
 const rules = fs.readFileSync(path.resolve(__dirname, "../../firestore.rules"), "utf8");
+const storageRules = fs.readFileSync(path.resolve(__dirname, "../../storage.rules"), "utf8");
 
 let environment;
 
@@ -30,7 +31,8 @@ test.before(async () => {
   assert.match(process.env.FIRESTORE_EMULATOR_HOST || "", /^(127\.0\.0\.1|localhost):\d+$/);
   environment = await initializeTestEnvironment({
     projectId: PROJECT_ID,
-    firestore: { rules }
+    firestore: { rules },
+    storage: { rules: storageRules }
   });
 });
 
@@ -40,6 +42,7 @@ test.after(async () => {
 
 test.beforeEach(async () => {
   await environment.clearFirestore();
+  await environment.clearStorage();
   await seed({
     [`users/${OWNER}`]: { name: "Owner" },
     [`users/${OTHER}`]: { name: "Other" }
@@ -284,8 +287,9 @@ test("root profile stays writable while subscription and taskReset are server-ow
 });
 
 test("inventoried client-write collections retain owner CRUD", async () => {
+  // S3 (briefs/S3_BRIEF.md, C6.8): fcmTokens carries its own create/update grammar below.
   const collections = [
-    "user_assessments", "fcmTokens", "packingPlan", "readiness",
+    "user_assessments", "packingPlan", "readiness",
     "inventorySessions", "inventory", "identity"
   ];
   for (const collection of collections) {
@@ -423,4 +427,134 @@ test("root dailyDose writes carry the exact stamped map and the epoch field is s
   await seed({ [`users/${OWNER}`]: { name: "Owner", taskGenerationEpoch: 3 } });
   await assertSucceeds(updateDoc(root, { dailyDose: { schema_version: 1, task_generation_epoch: 3, date: "2026-09-03", taskIds: [] } }));
   await assertFails(updateDoc(root, { dailyDose: { schema_version: 1, task_generation_epoch: 2, date: "2026-09-03", taskIds: [] } }));
+});
+
+// ---------------------------------------------------------------------------
+// S3 (briefs/S3_BRIEF.md; PHASE2_CONTRACT.md C3, C5, C6.1, C6.8): account-deletion
+// boundaries, the fcmTokens grammar, server-only collections, and late Storage.
+// The §5 cleanup predicates, the historical-migration candidates collection, and the
+// access-budget rows wait for Reconciled 12.
+// ---------------------------------------------------------------------------
+
+const { serverTimestamp, getDocs, collection } = require("firebase/firestore");
+
+const CAPS = [{ operationId: "adel1_00000000-0000-4000-8000-000000000001", proofSHA256: "a".repeat(64) }];
+const at = (iso) => new Date(iso);
+const MARKERS = {
+  DELETING_SWEEPING: { schemaVersion: 1, state: "DELETING", capabilities: CAPS, startedAt: at("2026-09-01T00:00:00.000Z"), storageGuardAfter: at("2026-09-08T00:00:00.000Z") },
+  DELETING_GUARDING: { schemaVersion: 1, state: "DELETING", capabilities: CAPS, startedAt: at("2026-09-01T00:00:00.000Z"), storageGuardAfter: at("2026-09-08T00:00:00.000Z"), firestoreCleanupAt: at("2026-09-01T01:00:00.000Z") },
+  DATA_DELETED: { schemaVersion: 1, state: "DATA_DELETED", capabilities: CAPS, startedAt: at("2026-09-01T00:00:00.000Z"), storageGuardAfter: at("2026-09-08T00:00:00.000Z"), firestoreCleanupAt: at("2026-09-01T01:00:00.000Z"), storageGuardCompletedAt: at("2026-09-08T00:05:00.000Z"), firestoreVersionGuardCompletedAt: at("2026-09-01T02:00:00.000Z"), dataDeletedAt: at("2026-09-08T00:10:00.000Z") },
+  AUTH_GUARDING: { schemaVersion: 1, state: "AUTH_GUARDING", capabilities: CAPS, startedAt: at("2026-09-01T00:00:00.000Z"), storageGuardAfter: at("2026-09-08T00:00:00.000Z"), firestoreCleanupAt: at("2026-09-01T01:00:00.000Z"), storageGuardCompletedAt: at("2026-09-08T00:05:00.000Z"), firestoreVersionGuardCompletedAt: at("2026-09-01T02:00:00.000Z"), dataDeletedAt: at("2026-09-08T00:10:00.000Z"), authAbsenceObservedAt: at("2026-09-08T00:11:00.000Z"), authGuardAfter: at("2026-09-09T00:11:00.000Z") },
+  ACCOUNT_DELETED: { schemaVersion: 1, state: "ACCOUNT_DELETED", capabilities: CAPS, startedAt: at("2026-09-01T00:00:00.000Z"), storageGuardAfter: at("2026-09-08T00:00:00.000Z"), firestoreCleanupAt: at("2026-09-01T01:00:00.000Z"), storageGuardCompletedAt: at("2026-09-08T00:05:00.000Z"), firestoreVersionGuardCompletedAt: at("2026-09-01T02:00:00.000Z"), dataDeletedAt: at("2026-09-08T00:10:00.000Z"), authAbsenceObservedAt: at("2026-09-08T00:11:00.000Z"), authGuardAfter: at("2026-09-09T00:11:00.000Z"), authGuardCompletedAt: at("2026-09-09T00:12:00.000Z"), accountDeletedAt: at("2026-09-09T00:12:00.000Z") },
+  malformed: { state: "junk" }
+};
+
+function storageFor(uid) {
+  return environment.authenticatedContext(uid).storage();
+}
+
+function storageUpload(uid, objectPath) {
+  return storageFor(uid).ref(objectPath).put(new Uint8Array([1, 2, 3]));
+}
+
+test("owner is denied every read and write across user paths while the accountDeletion marker exists in any of its four states or malformed", async () => {
+  for (const [name, marker] of Object.entries(MARKERS)) {
+    await environment.clearFirestore();
+    await seed({
+      [`users/${OWNER}`]: { name: "Owner", accountDeletion: marker },
+      [`users/${OWNER}/tasks/T1`]: { status: "Upcoming" },
+      [`users/${OWNER}/user_assessments/a1`]: { task_generation_epoch: 0 },
+      [`users/${OWNER}/inventory/room-1`]: { name: "Kitchen" },
+      [`users/${OWNER}/supportChat/reply`]: { sender: "support", read: false },
+      [`userKnowledge/${OWNER}`]: { task_generation_epoch: 0 }
+    });
+    const owner = dbFor(OWNER);
+    await assertFails(getDoc(doc(owner, `users/${OWNER}`)), name);
+    await assertFails(updateDoc(doc(owner, `users/${OWNER}`), { name: "late" }));
+    await assertFails(getDoc(doc(owner, `users/${OWNER}/tasks/T1`)));
+    await assertFails(setDoc(doc(owner, `users/${OWNER}/tasks/T2`), { status: "Upcoming" }));
+    await assertFails(updateDoc(doc(owner, `users/${OWNER}/tasks/T1`), { status: "Completed" }));
+    await assertFails(deleteDoc(doc(owner, `users/${OWNER}/tasks/T1`)));
+    await assertFails(deleteDoc(doc(owner, `users/${OWNER}/user_assessments/a1`)));
+    await assertFails(setDoc(doc(owner, `users/${OWNER}/inventory/room-2`), { name: "Bath" }));
+    await assertFails(getDoc(doc(owner, `users/${OWNER}/inventory/room-1`)));
+    await assertFails(updateDoc(doc(owner, `users/${OWNER}/supportChat/reply`), { read: true }));
+    await assertFails(setDoc(doc(owner, `users/${OWNER}/supportChat/late`), { sender: "user", text: "late" }));
+    await assertFails(setDoc(doc(owner, `users/${OWNER}/fcmTokens/tok`), { createdAt: serverTimestamp(), platform: "ios" }));
+    await assertFails(getDoc(doc(owner, `userKnowledge/${OWNER}`)));
+    await assertFails(setDoc(doc(owner, `userKnowledge/${OWNER}`), { task_generation_epoch: 0 }, { merge: true }));
+    await assertFails(deleteDoc(doc(owner, `userKnowledge/${OWNER}`)));
+  }
+});
+
+test("descendant and userKnowledge writes require marker absence: a fresh owner without a root document still writes, and the root create/update can never carry accountDeletion", async () => {
+  const fresh = "fresh-owner-2";
+  const db = environment.authenticatedContext(fresh).firestore();
+  await assertSucceeds(setDoc(doc(db, `users/${fresh}/fcmTokens/tok`), { createdAt: serverTimestamp(), platform: "ios" }));
+  await assertSucceeds(setDoc(doc(db, `users/${fresh}/inventory/room-1`), { name: "Kitchen" }));
+  await assertFails(setDoc(doc(db, `users/${fresh}`), { name: "Fresh", accountDeletion: MARKERS.DELETING_SWEEPING }));
+  await assertSucceeds(setDoc(doc(db, `users/${fresh}`), { name: "Fresh" }));
+  await assertFails(updateDoc(doc(db, `users/${fresh}`), { accountDeletion: MARKERS.DELETING_SWEEPING }));
+  await assertSucceeds(setDoc(doc(db, `users/${fresh}/tasks/T1`), { status: "Upcoming" }));
+});
+
+test("fcmTokens: create and update accept exactly {createdAt: server time, platform: 'ios'}, delete stays owner-only, and read/list are denied even to the owner", async () => {
+  const owner = dbFor(OWNER);
+  const tok = doc(owner, `users/${OWNER}/fcmTokens/token-1`);
+  await assertSucceeds(setDoc(tok, { createdAt: serverTimestamp(), platform: "ios" }));
+  await assertSucceeds(setDoc(tok, { createdAt: serverTimestamp(), platform: "ios" }));
+  await assertFails(setDoc(doc(owner, `users/${OWNER}/fcmTokens/t2`), { platform: "ios" }));
+  await assertFails(setDoc(doc(owner, `users/${OWNER}/fcmTokens/t3`), { createdAt: serverTimestamp() }));
+  await assertFails(setDoc(doc(owner, `users/${OWNER}/fcmTokens/t4`), { createdAt: serverTimestamp(), platform: "android" }));
+  await assertFails(setDoc(doc(owner, `users/${OWNER}/fcmTokens/t5`), { createdAt: serverTimestamp(), platform: "ios", extra: 1 }));
+  await assertFails(setDoc(doc(owner, `users/${OWNER}/fcmTokens/t6`), { createdAt: new Date("2020-01-01T00:00:00Z"), platform: "ios" }));
+  await assertFails(updateDoc(tok, { platform: "android" }));
+  await assertFails(getDoc(tok));
+  await assertFails(getDocs(collection(owner, `users/${OWNER}/fcmTokens`)));
+  await assertFails(getDoc(doc(dbFor(OTHER), `users/${OWNER}/fcmTokens/token-1`)));
+  await assertFails(deleteDoc(doc(dbFor(OTHER), `users/${OWNER}/fcmTokens/token-1`)));
+  await assertSucceeds(deleteDoc(tok));
+});
+
+test("phase2System documents, both work-row collections, outboundLeases, legacyResetMigrations, quarantine rows, archive chunks, and refusal rows are denied to owner, other, and anonymous clients", async () => {
+  const paths = [
+    "phase2System/accountDeletionStorageReconcilerV1",
+    "accountDeletionStorageWork/adsw1_x",
+    "accountDeletionAuthWork/adaw1_x",
+    `users/${OWNER}/outboundLeases/uol1_00000000-0000-4000-8000-000000000001`,
+    `users/${OWNER}/legacyResetMigrations/rlm1_x`,
+    "phase1System/dispositionTriggerState/quarantinedEvents/q1",
+    "eventArchiveChunks/c1",
+    `users/${OWNER}/eventArchiveChunks/c1`,
+    "schedulerRefusals/r1",
+    `users/${OWNER}/schedulerRefusals/r1`
+  ];
+  await seed(Object.fromEntries(paths.map((documentPath) => [documentPath, { value: 1 }])));
+  for (const db of [dbFor(OWNER), dbFor(OTHER), anonymousDb()]) {
+    for (const documentPath of paths) {
+      const ref = doc(db, documentPath);
+      await assertFails(getDoc(ref), documentPath);
+      await assertFails(setDoc(ref, { value: 2 }), documentPath);
+      await assertFails(updateDoc(ref, { value: 3 }), documentPath);
+      await assertFails(deleteDoc(ref), documentPath);
+    }
+  }
+});
+
+test("Storage: inventory uploads require the owner, an existing root, and no marker; late uploads after the marker are denied; other users are denied", async () => {
+  const objectPath = `inventory/${OWNER}/session-1/frame_0.jpg`;
+  await environment.clearFirestore(); // no root document
+  await assertFails(storageUpload(OWNER, objectPath));
+  await seed({ [`users/${OWNER}`]: { name: "Owner" } });
+  await assertSucceeds(storageUpload(OWNER, objectPath));
+  await assertSucceeds(storageFor(OWNER).ref(objectPath).getDownloadURL());
+  await assertFails(storageUpload(OTHER, objectPath));
+  await assertFails(storageFor(OTHER).ref(objectPath).getDownloadURL());
+  for (const [name, marker] of Object.entries(MARKERS)) {
+    await seed({ [`users/${OWNER}`]: { name: "Owner", accountDeletion: marker } });
+    await assertFails(storageUpload(OWNER, `inventory/${OWNER}/session-1/frame_1.jpg`), name);
+    await assertFails(storageUpload(OWNER, objectPath), name);
+  }
+  await seed({ [`users/${OWNER}`]: { name: "Owner" } });
+  await assertSucceeds(storageFor(OWNER).ref(objectPath).delete());
 });
