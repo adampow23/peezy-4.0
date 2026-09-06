@@ -705,7 +705,7 @@ function testEvidence(overrides = {}) {
 
 const DOCUMENTS_ROOT = "projects/demo-peezy-phase1/databases/(default)/documents";
 
-function makeDeps({ db, clock, auth = fakeAuth(), bucket = fakeBucket(), evidence = testEvidence(), listCollectionIds, verifyBucketConfiguration, budget, hooks, timeouts } = {}) {
+function makeDeps({ db, clock, auth = fakeAuth(), bucket = fakeBucket(), evidence = testEvidence(), listCollectionIds, verifyBucketConfiguration, budget, hooks, timeouts, evidenceFence } = {}) {
   const logs = [];
   const firestoreClient = {
     async listCollectionIds(request, options) {
@@ -724,6 +724,7 @@ function makeDeps({ db, clock, auth = fakeAuth(), bucket = fakeBucket(), evidenc
     log: (code, counts) => logs.push([code, counts]),
     firestore: { client: firestoreClient, documentsRoot: DOCUMENTS_ROOT },
     verifyBucketConfiguration: verifyBucketConfiguration || (() => {}),
+    evidenceFence: evidenceFence || (async () => ({ earliestVersionTime: clock.now() })),
     budget: { sweeps: 4, storagePages: 4, deadlineMs: 42_000, ...budget },
     timeouts: { getUserMs: 3000, deleteUserMs: 10000, ...timeouts }
   };
@@ -1224,4 +1225,308 @@ test("index.js exports deleteAccount as the fence callable with the pinned optio
     assert.equal(fenceSource.includes(forbidden), false, forbidden);
   }
 });
+// ---------------------------------------------------------------------------
+// I3a — provider evidence authority, config projections, policy checks (§11.2), partition (§11.3)
+// ---------------------------------------------------------------------------
+
+const { generateKeyPairSync, sign: edSign } = require("node:crypto");
+
+function b64urlOf(buffer) { return Buffer.from(buffer).toString("base64url"); }
+
+function makeTrustAnchor() {
+  const { publicKey, privateKey } = generateKeyPairSync("ed25519");
+  const raw = publicKey.export({ type: "spki", format: "der" }).subarray(-32);
+  return { publicKeyBase64URL: b64urlOf(raw), sha256: sha256Bytes(raw), privateKey };
+}
+
+function sha256Bytes(buffer) { return createHash("sha256").update(buffer).digest("hex"); }
+
+const ACCEPTED_BUCKET_CONFIG = {
+  schemaVersion: 1, name: "peezy-1ecrdl.firebasestorage.app", metageneration: "3",
+  softDeletePolicy: { retentionDurationSeconds: "0" }, versioning: { enabled: false }, retentionPolicy: null,
+  defaultEventBasedHold: false, objectRetention: null, lifecycle: { rule: [] }, logging: null
+};
+
+const ACCEPTED_FIRESTORE_CONFIG = {
+  schemaVersion: 1, name: "projects/peezy-1ecrdl/databases/(default)", etag: "etag-1",
+  pointInTimeRecoveryEnablement: "POINT_IN_TIME_RECOVERY_DISABLED", versionRetentionPeriod: { seconds: "3600", nanos: 0 }
+};
+
+function digestMember(count = 0) {
+  return { count, canonicalBytes: count === 0 ? 2 : 100 * count, sha256: sha256(`array-${count}`) };
+}
+
+function policyCheck(ordinal, overrides = {}) {
+  return {
+    ordinal, domain: "storage_bucket", resourceName: `resource-${ordinal}`, adapterId: "google_json_get_v1",
+    resourceURL: `https://storage.googleapis.com/storage/v1/b/peezy-1ecrdl.firebasestorage.app/policy${ordinal}`,
+    etagSource: "header", expectedEtag: `etag-${ordinal}`, expectedPolicySHA256: sha256(fence.TaskCanonicalV1({ ok: ordinal })),
+    ...overrides
+  };
+}
+
+function residualChecks() {
+  return [
+    { ordinal: 0, destinationOrdinals: [0], adapterId: "firebase_admin_get_user_v1", retentionSeconds: 0 },
+    { ordinal: 1, destinationOrdinals: [1, 2], adapterId: "google_authenticated_uid_zero_v1", resourceURLTemplate: "https://identitytoolkit.googleapis.com/v1/projects/peezy-1ecrdl/accounts:query?uid={{UID}}", method: "GET", bodyTemplate: "", uidEncoding: "percent_utf8", zeroCountField: "matchCount", retentionSeconds: 3600 },
+    { ordinal: 2, kind: "absence_retention", destinationOrdinals: [3], observedAbsentAt: "2026-08-01T00:00:00.000Z", retentionSeconds: 86400 }
+  ];
+}
+
+function sealAuthority(anchor, overrides = {}, { sign = true } = {}) {
+  const base = {
+    schemaVersion: 1, kind: "ACCOUNT_DELETION_PROVIDER_EVIDENCE",
+    generationId: "11111111-1111-4111-8111-111111111111", projectId: "peezy-1ecrdl", databaseId: "(default)",
+    bucketName: "peezy-1ecrdl.firebasestorage.app", region: "us-central1",
+    implementationSHA256: sha256("implementation"), packageLockSHA256: sha256("lock"),
+    firestoreRulesSHA256: sha256("rules"), storageRulesSHA256: sha256("storage-rules"), firestoreIndexesSHA256: sha256("indexes"),
+    firestoreRulesetId: "ruleset-1", firestoreReleaseId: "release-1", storageRulesetId: "ruleset-2", storageReleaseId: "release-2",
+    bucketConfig: ACCEPTED_BUCKET_CONFIG, bucketConfigSHA256: sha256(fence.TaskCanonicalV1(ACCEPTED_BUCKET_CONFIG)),
+    firestoreConfig: ACCEPTED_FIRESTORE_CONFIG, firestoreConfigSHA256: sha256(fence.TaskCanonicalV1(ACCEPTED_FIRESTORE_CONFIG)),
+    storageDestinations: digestMember(0), firestoreDestinations: digestMember(0), authDestinations: digestMember(4),
+    cloudAuditDestinations: digestMember(0), providerCopyDestinations: digestMember(0),
+    copyProducerDenySHA256: sha256("deny"), policyChecks: [policyCheck(0), policyCheck(1, { adapterId: "google_iam_get_policy_v1", etagSource: "body.etag", resourceURL: "https://cloudresourcemanager.googleapis.com/v3/projects/peezy-1ecrdl:getIamPolicy" })],
+    authResidualRetentionSeconds: 86400, authResidualChecks: residualChecks(),
+    signatureAlgorithm: "ed25519", externalEvidenceBundleSHA256: sha256("bundle"),
+    externalEvidencePublicKeyBase64URL: anchor.publicKeyBase64URL, externalEvidenceSigningKeySHA256: anchor.sha256,
+    activatedAt: "2026-09-06T00:00:00.000Z",
+    ...overrides
+  };
+  const unsigned = { ...base };
+  delete unsigned.signedAuthorityPayloadSHA256; delete unsigned.externalEvidenceSignatureBase64URL; delete unsigned.authoritySHA256;
+  const payload = sha256(fence.TaskCanonicalV1(unsigned));
+  const message = Buffer.concat([
+    Buffer.from("peezy.account_deletion_provider_evidence.v1\0", "ascii"),
+    Buffer.from(payload, "hex"), Buffer.from(base.externalEvidenceBundleSHA256, "hex"), Buffer.from(base.implementationSHA256, "hex")
+  ]);
+  const signature = sign ? b64urlOf(edSign(null, message, anchor.privateKey)) : b64urlOf(Buffer.alloc(64));
+  const withSignature = { ...base, signedAuthorityPayloadSHA256: overrides.signedAuthorityPayloadSHA256 ?? payload, externalEvidenceSignatureBase64URL: overrides.externalEvidenceSignatureBase64URL ?? signature };
+  const authoritySHA256 = overrides.authoritySHA256 ?? sha256(fence.TaskCanonicalV1(withSignature));
+  return { ...withSignature, authoritySHA256 };
+}
+
+function artifactBytes(authority) { return Buffer.from(fence.TaskCanonicalV1(authority), "utf8"); }
+
+test("provider evidence authority: an exact sealed artifact activates; every member, digest, key, signature, and byte mismatch is the fixed invariant; absence is not activated", () => {
+  const anchor = makeTrustAnchor();
+  const authority = sealAuthority(anchor);
+  const loaded = fence.loadProviderEvidenceAuthority(artifactBytes(authority), { trustAnchor: anchor });
+  assert.equal(loaded.ok, true);
+  assert.deepEqual(loaded.authority, authority);
+  assert.deepEqual(fence.loadProviderEvidenceAuthority(undefined, { trustAnchor: anchor }), { ok: false, code: "PROVIDER_EVIDENCE_NOT_ACTIVATED" });
+  assert.deepEqual(fence.loadProviderEvidenceAuthority(artifactBytes(authority), { trustAnchor: { publicKeyBase64URL: null, sha256: null } }), { ok: false, code: "PROVIDER_EVIDENCE_NOT_ACTIVATED" });
+
+  const other = makeTrustAnchor();
+  const rejects = [
+    ["non-canonical bytes", Buffer.from(JSON.stringify(authority, null, 2))],
+    ["duplicate key", Buffer.from(fence.TaskCanonicalV1(authority).replace('"region":"us-central1"', '"region":"us-central1","region":"us-central1"'))],
+    ["surplus member", artifactBytes(sealAuthority(anchor, { extra: 1 }))],
+    ["missing member", artifactBytes((() => { const a = sealAuthority(anchor); delete a.storageReleaseId; return a; })())],
+    ["wrong project", artifactBytes(sealAuthority(anchor, { projectId: "other" }))],
+    ["bad signature", artifactBytes(sealAuthority(anchor, {}, { sign: false }))],
+    ["foreign key", artifactBytes(sealAuthority(other))],
+    ["key digest mismatch", artifactBytes(sealAuthority(anchor, { externalEvidenceSigningKeySHA256: sha256("nope") }))],
+    ["payload digest mismatch", artifactBytes(sealAuthority(anchor, { signedAuthorityPayloadSHA256: sha256("nope") }))],
+    ["authority digest mismatch", artifactBytes(sealAuthority(anchor, { authoritySHA256: sha256("nope") }))],
+    ["bucket digest mismatch", artifactBytes(sealAuthority(anchor, { bucketConfigSHA256: sha256("nope") }))],
+    ["firestore digest mismatch", artifactBytes(sealAuthority(anchor, { firestoreConfigSHA256: sha256("nope") }))],
+    ["retention over cap", artifactBytes(sealAuthority(anchor, { authResidualRetentionSeconds: 31536001 }))],
+    ["retention not the max", artifactBytes(sealAuthority(anchor, { authResidualRetentionSeconds: 90000 }))],
+    ["13 policy checks", artifactBytes(sealAuthority(anchor, { policyChecks: Array.from({ length: 13 }, (_, i) => policyCheck(i)) }))],
+    ["zero policy checks", artifactBytes(sealAuthority(anchor, { policyChecks: [] }))],
+    ["policy ordinal gap", artifactBytes(sealAuthority(anchor, { policyChecks: [policyCheck(0), policyCheck(2)] }))],
+    ["policy host", artifactBytes(sealAuthority(anchor, { policyChecks: [policyCheck(0, { resourceURL: "https://evil.example.com/x" })] }))],
+    ["policy etag empty with header", artifactBytes(sealAuthority(anchor, { policyChecks: [policyCheck(0, { expectedEtag: "" })] }))],
+    ["destination count 4097", artifactBytes(sealAuthority(anchor, { storageDestinations: digestMember(4097) }))],
+    ["algorithm", artifactBytes(sealAuthority(anchor, { signatureAlgorithm: "rsa" }))],
+    ["activatedAt", artifactBytes(sealAuthority(anchor, { activatedAt: "2026-09-06T00:00:00Z" }))],
+    ["generation id", artifactBytes(sealAuthority(anchor, { generationId: "not-a-uuid" }))],
+    ["mutated after signing", Buffer.from(fence.TaskCanonicalV1({ ...authority, region: "us-east1" }))]
+  ];
+  for (const [label, bytes] of rejects) {
+    assert.deepEqual(fence.loadProviderEvidenceAuthority(bytes, { trustAnchor: anchor }), { ok: false, code: "ACCOUNT_DELETION_PROVIDER_EVIDENCE_INVARIANT" }, label);
+  }
+  assert.deepEqual(fence.PROVIDER_EVIDENCE_TRUST_ANCHOR_V1, { publicKeyBase64URL: null, sha256: null });
+});
+
+test("bucket configuration projection: absent members project to null, present maps are copied and key-sorted, and any drift from the accepted map is ACCOUNT_DELETION_BUCKET_CONFIG_DRIFT", () => {
+  const anchor = makeTrustAnchor();
+  const authority = sealAuthority(anchor);
+  const metadata = {
+    name: "peezy-1ecrdl.firebasestorage.app", metageneration: "3", id: "ignored", location: "US",
+    softDeletePolicy: { retentionDurationSeconds: "0" }, versioning: { enabled: false }, defaultEventBasedHold: false, lifecycle: { rule: [] }
+  };
+  assert.deepEqual(fence.projectBucketDeletionConfig(metadata), ACCEPTED_BUCKET_CONFIG);
+  fence.verifyBucketConfiguration([metadata, { statusCode: 200 }], authority);
+  const drifts = [
+    ["versioning enabled", { ...metadata, versioning: { enabled: true } }],
+    ["retention policy present", { ...metadata, retentionPolicy: { retentionPeriod: "1" } }],
+    ["hold true", { ...metadata, defaultEventBasedHold: true }],
+    ["hold non-boolean", { ...metadata, defaultEventBasedHold: "false" }],
+    ["logging present", { ...metadata, logging: { logBucket: "x" } }],
+    ["metageneration", { ...metadata, metageneration: "4" }],
+    ["name", { ...metadata, name: "other" }],
+    ["versioning non-object", { ...metadata, versioning: "off" }],
+    ["nested nonfinite", { ...metadata, lifecycle: { rule: [Number.NaN] } }]
+  ];
+  for (const [label, drifted] of drifts) {
+    assert.throws(() => fence.verifyBucketConfiguration([drifted, { statusCode: 200 }], authority), (e) => e.code === "ACCOUNT_DELETION_BUCKET_CONFIG_DRIFT", label);
+  }
+  // key order of the provider object never changes the digest
+  const reordered = { lifecycle: { rule: [] }, defaultEventBasedHold: false, versioning: { enabled: false }, softDeletePolicy: { retentionDurationSeconds: "0" }, metageneration: "3", name: metadata.name };
+  fence.verifyBucketConfiguration([reordered, { statusCode: 200 }], authority);
+});
+
+test("Firestore configuration tuple: exact three-tuple with null next/raw, exact projection digest, and a millisecond earliestVersionTime", () => {
+  const anchor = makeTrustAnchor();
+  const authority = sealAuthority(anchor);
+  const database = {
+    name: "projects/peezy-1ecrdl/databases/(default)", etag: "etag-1", pointInTimeRecoveryEnablement: "POINT_IN_TIME_RECOVERY_DISABLED",
+    versionRetentionPeriod: { seconds: "3600", nanos: 0 }, earliestVersionTime: { seconds: "1788700800", nanos: 123456789 }, locationId: "nam5"
+  };
+  const observed = fence.verifyFirestoreConfiguration([database, null, null], authority);
+  assert.equal(observed.earliestVersionTime.toMillis(), 1788700800123);
+  const rejects = [
+    ["two-tuple", [database, null]],
+    ["four-tuple", [database, null, null, null]],
+    ["nonnull next", [database, {}, null]],
+    ["nonnull raw", [database, null, {}]],
+    ["etag drift", [{ ...database, etag: "etag-2" }, null, null]],
+    ["pitr enabled", [{ ...database, pointInTimeRecoveryEnablement: "POINT_IN_TIME_RECOVERY_ENABLED" }, null, null]],
+    ["retention drift", [{ ...database, versionRetentionPeriod: { seconds: "7200", nanos: 0 } }, null, null]],
+    ["name drift", [{ ...database, name: "projects/other/databases/(default)" }, null, null]],
+    ["missing earliestVersionTime", [(() => { const d = { ...database }; delete d.earliestVersionTime; return d; })(), null, null]]
+  ];
+  for (const [label, tuple] of rejects) {
+    assert.throws(() => fence.verifyFirestoreConfiguration(tuple, authority), (e) => e.code === "ACCOUNT_DELETION_PROVIDER_EVIDENCE_INVARIANT", label);
+  }
+});
+
+function fakeProviderHTTP(script) {
+  const requests = [];
+  return {
+    requests,
+    async request(options) {
+      requests.push(options);
+      const response = await script(options, requests.length);
+      if (response instanceof Error) throw response;
+      if (response === "hang") return new Promise(() => {});
+      return response;
+    }
+  };
+}
+
+function jsonResponse(object, { status = 200, etag, contentType = "application/json; charset=utf-8" } = {}) {
+  const headers = { "content-type": contentType };
+  if (etag !== undefined) headers.etag = etag;
+  return { status, headers, body: Buffer.from(JSON.stringify(object)) };
+}
+
+test("policy checks: both adapters send exact requests, honor the four etag sources, run in ordinal order at most four in flight, and every drift/timeout/oversize/duplicate/media/status defect is the fixed invariant", async () => {
+  const anchor = makeTrustAnchor();
+  const checks = [
+    policyCheck(0, { etagSource: "header", expectedEtag: "h0", expectedPolicySHA256: sha256(fence.TaskCanonicalV1({ b: 1, a: [1, 2] })) }),
+    policyCheck(1, { adapterId: "google_iam_get_policy_v1", etagSource: "body.etag", expectedEtag: "b1", resourceURL: "https://cloudresourcemanager.googleapis.com/v3/projects/peezy-1ecrdl:getIamPolicy", expectedPolicySHA256: sha256(fence.TaskCanonicalV1({ etag: "b1", bindings: [] })) }),
+    policyCheck(2, { etagSource: "body.policy.etag", expectedEtag: "p2", resourceURL: "https://firebaserules.googleapis.com/v1/projects/peezy-1ecrdl/releases/x", expectedPolicySHA256: sha256(fence.TaskCanonicalV1({ policy: { etag: "p2" } })) }),
+    policyCheck(3, { etagSource: "none", expectedEtag: "", resourceURL: "https://identitytoolkit.googleapis.com/admin/v2/projects/peezy-1ecrdl/config", expectedPolicySHA256: sha256(fence.TaskCanonicalV1({ signIn: {} })) }),
+    policyCheck(4, { etagSource: "header", expectedEtag: "h4", resourceURL: "https://orgpolicy.googleapis.com/v2/projects/peezy-1ecrdl/policies/x", expectedPolicySHA256: sha256(fence.TaskCanonicalV1({ spec: {} })) })
+  ];
+  const authority = sealAuthority(anchor, { policyChecks: checks });
+  const bodies = [{ b: 1, a: [1, 2] }, { etag: "b1", bindings: [] }, { policy: { etag: "p2" } }, { signIn: {} }, { spec: {} }];
+  let inFlight = 0;
+  let peak = 0;
+  const http = fakeProviderHTTP((options) => {
+    const index = checks.findIndex((c) => c.resourceURL === options.url);
+    inFlight += 1; peak = Math.max(peak, inFlight);
+    const etag = ["h0", undefined, undefined, undefined, "h4"][index];
+    return new Promise((resolve) => setTimeout(() => { inFlight -= 1; resolve(jsonResponse(bodies[index], { etag })); }, 2));
+  });
+  await fence.runPolicyChecks({ providerHTTP: http, timeouts: { providerMs: 3000 } }, authority);
+  assert.equal(http.requests.length, 5);
+  assert.ok(peak <= 4);
+  const get = http.requests.find((r) => r.url === checks[0].resourceURL);
+  assert.equal(get.method, "GET");
+  assert.equal(get.body, undefined);
+  assert.deepEqual(Object.keys(get.headers).sort(), ["accept"]);
+  assert.equal(get.headers.accept, "application/json");
+  assert.equal(get.maxBytes, 1048576);
+  assert.equal(get.redirects, 0);
+  const post = http.requests.find((r) => r.url === checks[1].resourceURL);
+  assert.equal(post.method, "POST");
+  assert.equal(post.body, '{"options":{"requestedPolicyVersion":3}}');
+  assert.equal(post.headers["content-type"], "application/json");
+  // ordinal order of admission
+  assert.deepEqual(http.requests.map((r) => checks.findIndex((c) => c.resourceURL === r.url)), [0, 1, 2, 3, 4]);
+
+  const defects = [
+    ["status", () => jsonResponse({ b: 1, a: [1, 2] }, { status: 403, etag: "h0" })],
+    ["media", () => jsonResponse({ b: 1, a: [1, 2] }, { etag: "h0", contentType: "text/plain" })],
+    ["etag drift", () => jsonResponse({ b: 1, a: [1, 2] }, { etag: "h9" })],
+    ["policy drift", () => jsonResponse({ b: 2, a: [1, 2] }, { etag: "h0" })],
+    ["duplicate key", () => ({ status: 200, headers: { "content-type": "application/json", etag: "h0" }, body: Buffer.from('{"b":1,"b":1,"a":[1,2]}') })],
+    ["oversize", () => ({ status: 200, headers: { "content-type": "application/json", etag: "h0" }, body: Buffer.alloc(1048577, 32) })],
+    ["transport", () => new Error("ECONNRESET")],
+    ["timeout", () => "hang"],
+    ["non-object", () => ({ status: 200, headers: { "content-type": "application/json", etag: "h0" }, body: Buffer.from("[1]") })]
+  ];
+  for (const [label, respond] of defects) {
+    const single = sealAuthority(anchor, { policyChecks: [checks[0]] });
+    const failing = fakeProviderHTTP(() => respond());
+    await assert.rejects(fence.runPolicyChecks({ providerHTTP: failing, timeouts: { providerMs: 5 } }, single), (e) => e.code === "ACCOUNT_DELETION_PROVIDER_EVIDENCE_INVARIANT", label);
+  }
+});
+
+test("Auth destination partition is completely falsifiable", () => {
+  const ok = residualChecks();
+  fence.validateAuthResidualChecks(ok, { authResidualRetentionSeconds: 86400, destinationCount: 4 });
+  const twelve = Array.from({ length: 12 }, (_, i) => ({ ordinal: i, kind: "absence_retention", destinationOrdinals: [i], observedAbsentAt: "2026-08-01T00:00:00.000Z", retentionSeconds: 10 }));
+  fence.validateAuthResidualChecks(twelve, { authResidualRetentionSeconds: 10, destinationCount: 12 });
+  const defects = [
+    ["13 checks", Array.from({ length: 13 }, (_, i) => ({ ordinal: i, kind: "absence_retention", destinationOrdinals: [i], observedAbsentAt: "2026-08-01T00:00:00.000Z", retentionSeconds: 10 })), { authResidualRetentionSeconds: 10, destinationCount: 13 }],
+    ["zero checks", [], { authResidualRetentionSeconds: 0, destinationCount: 0 }],
+    ["uncovered destination", ok, { authResidualRetentionSeconds: 86400, destinationCount: 5 }],
+    ["ordinal beyond destinations", ok, { authResidualRetentionSeconds: 86400, destinationCount: 3 }],
+    ["overlap", [ok[0], { ...ok[1], destinationOrdinals: [0, 1, 2] }, ok[2]], { authResidualRetentionSeconds: 86400, destinationCount: 4 }],
+    ["absence with two ordinals", [ok[0], ok[1], { ...ok[2], destinationOrdinals: [3, 4] }], { authResidualRetentionSeconds: 86400, destinationCount: 5 }],
+    ["absence with empty ordinals", [ok[0], ok[1], { ...ok[2], destinationOrdinals: [] }], { authResidualRetentionSeconds: 86400, destinationCount: 4 }],
+    ["absence missing ordinals", [ok[0], ok[1], (() => { const c = { ...ok[2] }; delete c.destinationOrdinals; return c; })()], { authResidualRetentionSeconds: 86400, destinationCount: 4 }],
+    ["non-contiguous ordinals", [ok[0], { ...ok[1], ordinal: 5 }, ok[2]], { authResidualRetentionSeconds: 86400, destinationCount: 4 }],
+    ["unsorted destinationOrdinals", [ok[0], { ...ok[1], destinationOrdinals: [2, 1] }, ok[2]], { authResidualRetentionSeconds: 86400, destinationCount: 4 }],
+    ["unknown adapter", [{ ...ok[0], adapterId: "custom_v1" }, ok[1], ok[2]], { authResidualRetentionSeconds: 86400, destinationCount: 4 }],
+    ["retention above authority max", [ok[0], { ...ok[1], retentionSeconds: 90000 }, ok[2]], { authResidualRetentionSeconds: 86400, destinationCount: 4 }],
+    ["template without UID", [ok[0], { ...ok[1], resourceURLTemplate: "https://identitytoolkit.googleapis.com/v1/x" }, ok[2]], { authResidualRetentionSeconds: 86400, destinationCount: 4 }],
+    ["template host", [ok[0], { ...ok[1], resourceURLTemplate: "https://example.com/{{UID}}" }, ok[2]], { authResidualRetentionSeconds: 86400, destinationCount: 4 }],
+    ["GET with body", [ok[0], { ...ok[1], bodyTemplate: "{\"uid\":\"{{UID}}\"}" }, ok[2]], { authResidualRetentionSeconds: 86400, destinationCount: 4 }],
+    ["surplus member", [{ ...ok[0], extra: 1 }, ok[1], ok[2]], { authResidualRetentionSeconds: 86400, destinationCount: 4 }],
+    ["uncheckable kind", [ok[0], ok[1], { ...ok[2], kind: "manual" }], { authResidualRetentionSeconds: 86400, destinationCount: 4 }]
+  ];
+  for (const [label, checks, options] of defects) {
+    assert.throws(() => fence.validateAuthResidualChecks(checks, options), (e) => e.code === "ACCOUNT_DELETION_PROVIDER_EVIDENCE_INVARIANT", label);
+  }
+});
+
+test("the bounded evidence fence runs the bucket RPC, the Firestore RPC, and every policy check; finalize refuses on any invariant with no Auth call and no write", async () => {
+  const anchor = makeTrustAnchor();
+  const authority = sealAuthority(anchor, { policyChecks: [policyCheck(0, { expectedPolicySHA256: sha256(fence.TaskCanonicalV1({ ok: true })) })] });
+  const metadata = { name: "peezy-1ecrdl.firebasestorage.app", metageneration: "3", softDeletePolicy: { retentionDurationSeconds: "0" }, versioning: { enabled: false }, defaultEventBasedHold: false, lifecycle: { rule: [] } };
+  const database = { name: "projects/peezy-1ecrdl/databases/(default)", etag: "etag-1", pointInTimeRecoveryEnablement: "POINT_IN_TIME_RECOVERY_DISABLED", versionRetentionPeriod: { seconds: "3600", nanos: 0 }, earliestVersionTime: { seconds: "1788700800", nanos: 0 } };
+  const bucket = fakeBucket({ metadataTuple: [metadata, { statusCode: 200 }] });
+  const http = fakeProviderHTTP(() => jsonResponse({ ok: true }, { etag: "etag-0" }));
+  const deps = { bucket, providerHTTP: http, firestoreAdmin: { getDatabase: async (request) => { assert.deepEqual(request, { name: "projects/peezy-1ecrdl/databases/(default)" }); return [database, null, null]; } }, timeouts: { providerMs: 3000 } };
+  const observed = await fence.runEvidenceFence(deps, authority);
+  assert.equal(observed.earliestVersionTime.toMillis(), 1788700800000);
+  assert.deepEqual(bucket.calls, [["getMetadata"]]);
+  assert.equal(http.requests.length, 1);
+
+  const clock = new FakeClock("2026-09-08T00:20:00.000Z");
+  const credentials = { operationId: freshOperationId(), proofNonce: freshProofNonce() };
+  const db = fakeFirestore({ docs: { "users/uid-A": { accountDeletion: dataDeletedMarker([capability(UID, credentials.operationId, credentials.proofNonce)]) } }, clock });
+  const auth = fakeAuth();
+  const failing = makeDeps({ db, clock, auth, evidenceFence: async () => { throw new fence.InvariantError("ACCOUNT_DELETION_PROVIDER_EVIDENCE_INVARIANT"); } });
+  await expectDeletionError(() => call(failing, "finalize", credentials), "unavailable", RETRY);
+  assert.equal(auth.calls.length + db.__writes.length, 0);
+  assert.ok(failing.logs.some(([c]) => c === "ACCOUNT_DELETION_PROVIDER_EVIDENCE_INVARIANT"));
+  assert.equal(fence.validateAccountDeletionMarker(markerOf(db)).phase, "DATA_DELETED");
+});
+
 module.exports = { fakeFirestore, FakeClock, capability, sweepingMarker, guardingMarker, dataDeletedMarker, authGuardingMarker, accountDeletedMarker, freshOperationId, freshProofNonce, ts, UID, STARTED, GUARD_AFTER };

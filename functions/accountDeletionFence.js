@@ -4,7 +4,7 @@
 // Import-safe: no Firebase app initialization and no provider client at load time.
 // Every Firestore, Auth, Storage, clock, and evidence dependency is injected.
 
-const { createHash, randomUUID } = require("node:crypto");
+const { createHash, createPublicKey, randomUUID, verify: cryptoVerify } = require("node:crypto");
 const { HttpsError } = require("firebase-functions/v2/https");
 const { Timestamp, FieldPath, FieldValue } = require("firebase-admin/firestore");
 const { accountabilityTransition, normalizeStrikes } = require("./accountabilityLadder");
@@ -1170,6 +1170,7 @@ async function runAuthPendingReducer(deps, { uid, marker, work, authority }) {
 
 async function runFinalize(deps, ctx, marker) {
   const authority = requireEvidence(deps);
+  await deps.evidenceFence(authority);
   const pending = await ensurePendingAuthWork(deps, ctx, marker, authority);
   if (pending.moved) return buildRootWire(pending.moved, { operationId: ctx.operationId, authorityKind: ctx.authorityKind, replayed: true });
   const outcome = await runAuthPendingReducer(deps, { uid: ctx.uid, marker: pending.marker, work: pending.work, authority });
@@ -1270,6 +1271,470 @@ async function handleAccountDeletionRequest(request, deps) {
 }
 
 // ---------------------------------------------------------------------------
+// Strict JSON (duplicate keys, trailing bytes, and invalid literals reject)
+// ---------------------------------------------------------------------------
+
+function parseStrictJSON(text) {
+  let i = 0;
+  const fail = (message) => { throw new Error(`strict JSON: ${message} at ${i}`); };
+  const ws = () => { while (i < text.length && " \t\n\r".includes(text[i])) i += 1; };
+  function string() {
+    const start = i;
+    i += 1;
+    while (i < text.length) {
+      if (text[i] === "\\") { i += 2; continue; }
+      if (text[i] === '"') { i += 1; return JSON.parse(text.slice(start, i)); }
+      i += 1;
+    }
+    return fail("unterminated string");
+  }
+  function number() {
+    const match = /^-?(0|[1-9]\d*)(\.\d+)?([eE][+-]?\d+)?/.exec(text.slice(i, i + 64));
+    if (!match) fail("number");
+    i += match[0].length;
+    return Number(match[0]);
+  }
+  function object() {
+    i += 1;
+    const out = {};
+    ws();
+    if (text[i] === "}") { i += 1; return out; }
+    for (;;) {
+      ws();
+      if (text[i] !== '"') fail("key");
+      const key = string();
+      if (Object.prototype.hasOwnProperty.call(out, key)) fail("duplicate key");
+      ws();
+      if (text[i] !== ":") fail("colon");
+      i += 1;
+      Object.defineProperty(out, key, { value: value(), enumerable: true, writable: true, configurable: true });
+      ws();
+      if (text[i] === ",") { i += 1; continue; }
+      if (text[i] === "}") { i += 1; return out; }
+      fail("object");
+    }
+  }
+  function array() {
+    i += 1;
+    const out = [];
+    ws();
+    if (text[i] === "]") { i += 1; return out; }
+    for (;;) {
+      out.push(value());
+      ws();
+      if (text[i] === ",") { i += 1; continue; }
+      if (text[i] === "]") { i += 1; return out; }
+      fail("array");
+    }
+  }
+  function value() {
+    ws();
+    const c = text[i];
+    if (c === "{") return object();
+    if (c === "[") return array();
+    if (c === '"') return string();
+    if (text.startsWith("true", i)) { i += 4; return true; }
+    if (text.startsWith("false", i)) { i += 5; return false; }
+    if (text.startsWith("null", i)) { i += 4; return null; }
+    return number();
+  }
+  const result = value();
+  ws();
+  if (i !== text.length) fail("trailing bytes");
+  return result;
+}
+
+// ---------------------------------------------------------------------------
+// Provider evidence authority (§11.2:1648–1658; §11.3:1698 partition)
+// ---------------------------------------------------------------------------
+
+/** Trust anchor: the literal lands in S3's sealer commit. null = Build A (not activated). */
+const PROVIDER_EVIDENCE_TRUST_ANCHOR_V1 = Object.freeze({ publicKeyBase64URL: null, sha256: null });
+const PROVIDER_EVIDENCE_NOT_ACTIVATED = Object.freeze({ ok: false, code: "PROVIDER_EVIDENCE_NOT_ACTIVATED" });
+const PROVIDER_EVIDENCE_INVARIANT = "ACCOUNT_DELETION_PROVIDER_EVIDENCE_INVARIANT";
+const AUTHORITY_BYTES_CAP = 131072;
+const AUTHORITY_DOMAIN = "peezy.account_deletion_provider_evidence.v1\0";
+const ED25519_SPKI_PREFIX = Buffer.from("302a300506032b6570032100", "hex");
+const ACCEPTED_PROJECT_ID = "peezy-1ecrdl";
+const ACCEPTED_DATABASE_NAME = "projects/peezy-1ecrdl/databases/(default)";
+const POLICY_HOSTS = Object.freeze(["storage.googleapis.com", "firestore.googleapis.com", "cloudresourcemanager.googleapis.com", "orgpolicy.googleapis.com", "identitytoolkit.googleapis.com", "firebaserules.googleapis.com"]);
+const POLICY_ADAPTERS = Object.freeze(["google_json_get_v1", "google_iam_get_policy_v1"]);
+const ETAG_SOURCES = Object.freeze(["header", "body.etag", "body.policy.etag", "none"]);
+const PROVIDER_RESPONSE_CAP = 1048576;
+const WIRE_INSTANT_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+
+const AUTHORITY_KEYS = Object.freeze([
+  "schemaVersion", "kind", "generationId", "projectId", "databaseId", "bucketName", "region",
+  "implementationSHA256", "packageLockSHA256",
+  "firestoreRulesSHA256", "storageRulesSHA256", "firestoreIndexesSHA256", "firestoreRulesetId", "firestoreReleaseId", "storageRulesetId", "storageReleaseId",
+  "bucketConfig", "bucketConfigSHA256", "firestoreConfig", "firestoreConfigSHA256",
+  "storageDestinations", "firestoreDestinations", "authDestinations", "cloudAuditDestinations", "providerCopyDestinations",
+  "copyProducerDenySHA256", "policyChecks",
+  "authResidualRetentionSeconds", "authResidualChecks",
+  "signatureAlgorithm", "externalEvidenceBundleSHA256", "externalEvidencePublicKeyBase64URL", "externalEvidenceSigningKeySHA256",
+  "signedAuthorityPayloadSHA256", "externalEvidenceSignatureBase64URL", "activatedAt", "authoritySHA256"
+]);
+const BUCKET_CONFIG_KEYS = Object.freeze(["schemaVersion", "name", "metageneration", "softDeletePolicy", "versioning", "retentionPolicy", "defaultEventBasedHold", "objectRetention", "lifecycle", "logging"]);
+const BUCKET_CONFIG_SELECTED = Object.freeze(["softDeletePolicy", "versioning", "retentionPolicy", "defaultEventBasedHold", "objectRetention", "lifecycle", "logging"]);
+const FIRESTORE_CONFIG_KEYS = Object.freeze(["schemaVersion", "name", "etag", "pointInTimeRecoveryEnablement", "versionRetentionPeriod"]);
+
+function evidenceInvariant(detail) {
+  return new InvariantError(PROVIDER_EVIDENCE_INVARIANT, detail);
+}
+
+function isHex64(value) { return typeof value === "string" && SHA256_HEX_RE.test(value); }
+function isValidUTF8String(value) { return typeof value === "string" && Buffer.from(value, "utf8").toString("utf8") === value; }
+function isOrdinaryString(value, max = 4096) { return isValidUTF8String(value) && Buffer.byteLength(value, "utf8") <= max; }
+function isNonblankString(value, max = 4096) { return isOrdinaryString(value, max) && value.trim().length > 0; }
+function isWireInstant(value) { return typeof value === "string" && WIRE_INSTANT_RE.test(value) && !Number.isNaN(Date.parse(value)) && new Date(value).toISOString() === value; }
+function isBase64URL(value, bytes) {
+  if (typeof value !== "string" || !/^[A-Za-z0-9_-]+$/.test(value)) return false;
+  const decoded = Buffer.from(value, "base64url");
+  return decoded.length === bytes && decoded.toString("base64url") === value;
+}
+
+function policyURLHost(url) {
+  let parsed;
+  try { parsed = new URL(url); } catch { return null; }
+  if (parsed.protocol !== "https:" || parsed.username || parsed.password || parsed.hash || parsed.port !== "") return null;
+  return POLICY_HOSTS.includes(parsed.hostname) ? parsed.hostname : null;
+}
+
+function validateArrayDigest(value, label) {
+  if (!exactKeys(value, ["count", "canonicalBytes", "sha256"])) throw evidenceInvariant(`${label} members`);
+  if (!Number.isSafeInteger(value.count) || value.count < 0 || value.count > 4096) throw evidenceInvariant(`${label} count`);
+  if (!Number.isSafeInteger(value.canonicalBytes) || value.canonicalBytes < 0 || value.canonicalBytes > 67108864) throw evidenceInvariant(`${label} bytes`);
+  if (!isHex64(value.sha256)) throw evidenceInvariant(`${label} sha256`);
+}
+
+function validatePolicyChecks(checks) {
+  if (!Array.isArray(checks) || checks.length < 1 || checks.length > 12) throw evidenceInvariant("policyChecks length");
+  checks.forEach((check, index) => {
+    if (!exactKeys(check, ["ordinal", "domain", "resourceName", "adapterId", "resourceURL", "etagSource", "expectedEtag", "expectedPolicySHA256"])) throw evidenceInvariant("policy check members");
+    if (check.ordinal !== index) throw evidenceInvariant("policy check ordinal");
+    if (!isNonblankString(check.domain) || !isNonblankString(check.resourceName)) throw evidenceInvariant("policy check strings");
+    if (!POLICY_ADAPTERS.includes(check.adapterId)) throw evidenceInvariant("policy check adapter");
+    if (!isNonblankString(check.resourceURL) || policyURLHost(check.resourceURL) === null) throw evidenceInvariant("policy check url");
+    if (!ETAG_SOURCES.includes(check.etagSource)) throw evidenceInvariant("policy check etagSource");
+    if (check.etagSource === "none" ? check.expectedEtag !== "" : !isNonblankString(check.expectedEtag, 1024)) throw evidenceInvariant("policy check etag");
+    if (!isHex64(check.expectedPolicySHA256)) throw evidenceInvariant("policy check digest");
+  });
+}
+
+/** §11.3:1698 — the closed residual-check union and the complete destination partition (D3). */
+function validateAuthResidualChecks(checks, { authResidualRetentionSeconds, destinationCount }) {
+  if (!Number.isSafeInteger(authResidualRetentionSeconds) || authResidualRetentionSeconds < 0 || authResidualRetentionSeconds > 31536000) throw evidenceInvariant("retention");
+  if (!Number.isSafeInteger(destinationCount) || destinationCount < 0) throw evidenceInvariant("destination count");
+  if (!Array.isArray(checks) || checks.length < 1 || checks.length > 12) throw evidenceInvariant("residual checks length");
+  const covered = new Set();
+  let maxRetention = 0;
+  checks.forEach((check, index) => {
+    if (!isPlainMap(check) || check.ordinal !== index) throw evidenceInvariant("residual ordinal");
+    const ordinals = check.destinationOrdinals;
+    if (!Array.isArray(ordinals) || ordinals.length === 0) throw evidenceInvariant("destinationOrdinals");
+    let previous = -1;
+    for (const ordinal of ordinals) {
+      if (!Number.isSafeInteger(ordinal) || ordinal <= previous || ordinal >= destinationCount || covered.has(ordinal)) throw evidenceInvariant("destination partition");
+      covered.add(ordinal);
+      previous = ordinal;
+    }
+    if (!Number.isSafeInteger(check.retentionSeconds) || check.retentionSeconds < 0 || check.retentionSeconds > authResidualRetentionSeconds) throw evidenceInvariant("check retention");
+    maxRetention = Math.max(maxRetention, check.retentionSeconds);
+    if (check.adapterId === "firebase_admin_get_user_v1") {
+      if (!exactKeys(check, ["ordinal", "destinationOrdinals", "adapterId", "retentionSeconds"])) throw evidenceInvariant("firebase check members");
+    } else if (check.adapterId === "google_authenticated_uid_zero_v1") {
+      if (!exactKeys(check, ["ordinal", "destinationOrdinals", "adapterId", "resourceURLTemplate", "method", "bodyTemplate", "uidEncoding", "zeroCountField", "retentionSeconds"])) throw evidenceInvariant("query check members");
+      if (!isOrdinaryString(check.resourceURLTemplate, 4096) || check.resourceURLTemplate.split("{{UID}}").length !== 2) throw evidenceInvariant("query template");
+      if (policyURLHost(check.resourceURLTemplate.replace("{{UID}}", "x")) === null) throw evidenceInvariant("query host");
+      if (check.method !== "GET" && check.method !== "POST") throw evidenceInvariant("query method");
+      if (!isOrdinaryString(check.bodyTemplate, 16384)) throw evidenceInvariant("query body");
+      if (check.method === "GET" && check.bodyTemplate !== "") throw evidenceInvariant("GET body");
+      if (check.method === "POST" && check.bodyTemplate.split("{{UID}}").length > 2) throw evidenceInvariant("POST body template");
+      if (check.uidEncoding !== "percent_utf8" && check.uidEncoding !== "taskcanonical_sha256_hex") throw evidenceInvariant("uidEncoding");
+      if (check.zeroCountField !== "matchCount" && check.zeroCountField !== "totalSize") throw evidenceInvariant("zeroCountField");
+    } else if (check.kind === "absence_retention") {
+      if (!exactKeys(check, ["ordinal", "kind", "destinationOrdinals", "observedAbsentAt", "retentionSeconds"])) throw evidenceInvariant("absence check members");
+      if (ordinals.length !== 1) throw evidenceInvariant("absence destinationOrdinals");
+      if (!isWireInstant(check.observedAbsentAt)) throw evidenceInvariant("observedAbsentAt");
+    } else {
+      throw evidenceInvariant("uncheckable destination kind");
+    }
+  });
+  if (covered.size !== destinationCount) throw evidenceInvariant("uncovered destination");
+  if (maxRetention !== authResidualRetentionSeconds) throw evidenceInvariant("retention maximum");
+}
+
+/** CanonicalProviderJSONV1 copy: null/Boolean/valid String/finite Number/Array/plain own-property Object. */
+function canonicalProviderJSON(value, depth = 0) {
+  if (depth > MAX_DEPTH) throw new InvariantError("ACCOUNT_DELETION_BUCKET_CONFIG_DRIFT", "depth");
+  if (value === null || typeof value === "boolean") return value;
+  if (typeof value === "string") { if (!isValidUTF8String(value)) throw new InvariantError("ACCOUNT_DELETION_BUCKET_CONFIG_DRIFT", "string"); return value; }
+  if (typeof value === "number") {
+    if (!Number.isFinite(value) || Math.abs(value) > Number.MAX_SAFE_INTEGER) throw new InvariantError("ACCOUNT_DELETION_BUCKET_CONFIG_DRIFT", "number");
+    return Object.is(value, -0) ? 0 : value;
+  }
+  if (Array.isArray(value)) return value.map((item) => canonicalProviderJSON(item, depth + 1));
+  if (!isPlainMap(value)) throw new InvariantError("ACCOUNT_DELETION_BUCKET_CONFIG_DRIFT", "type");
+  const out = {};
+  for (const key of Object.keys(value).sort(compareUTF8)) {
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (!descriptor || descriptor.get || descriptor.set) throw new InvariantError("ACCOUNT_DELETION_BUCKET_CONFIG_DRIFT", "accessor");
+    if (descriptor.value === undefined) throw new InvariantError("ACCOUNT_DELETION_BUCKET_CONFIG_DRIFT", "undefined");
+    out[key] = canonicalProviderJSON(descriptor.value, depth + 1);
+  }
+  return out;
+}
+
+/** §11.2:1626 — BucketDeletionConfigV1 projected from validated bucket metadata. */
+function projectBucketDeletionConfig(metadata) {
+  const drift = (detail) => new InvariantError("ACCOUNT_DELETION_BUCKET_CONFIG_DRIFT", detail);
+  if (!isPlainMap(metadata)) throw drift("metadata");
+  if (metadata.name !== ACCEPTED_BUCKET_NAME) throw drift("name");
+  if (!isGenerationToken(metadata.metageneration)) throw drift("metageneration");
+  const out = { schemaVersion: 1, name: metadata.name, metageneration: metadata.metageneration };
+  for (const key of BUCKET_CONFIG_SELECTED) {
+    const present = Object.prototype.hasOwnProperty.call(metadata, key) && metadata[key] !== undefined;
+    if (!present) { out[key] = null; continue; }
+    const value = metadata[key];
+    if (key === "defaultEventBasedHold") {
+      if (typeof value !== "boolean") throw drift("defaultEventBasedHold");
+      out[key] = value;
+    } else {
+      if (!isPlainMap(value)) throw drift(key);
+      out[key] = canonicalProviderJSON(value);
+    }
+  }
+  if (canonicalByteLength(out) > 65536) throw drift("bytes");
+  return out;
+}
+
+function validateBucketConfigMap(config) {
+  if (!exactKeys(config, BUCKET_CONFIG_KEYS)) throw evidenceInvariant("bucketConfig members");
+  if (config.schemaVersion !== 1 || config.name !== ACCEPTED_BUCKET_NAME || !isGenerationToken(config.metageneration)) throw evidenceInvariant("bucketConfig identity");
+  for (const key of BUCKET_CONFIG_SELECTED) {
+    const value = config[key];
+    if (value === null) continue;
+    if (key === "defaultEventBasedHold" ? typeof value !== "boolean" : !isPlainMap(value)) throw evidenceInvariant(`bucketConfig ${key}`);
+  }
+}
+
+function validateFirestoreConfigMap(config) {
+  if (!exactKeys(config, FIRESTORE_CONFIG_KEYS)) throw evidenceInvariant("firestoreConfig members");
+  if (config.schemaVersion !== 1 || config.name !== ACCEPTED_DATABASE_NAME || !isNonblankString(config.etag, 1024)) throw evidenceInvariant("firestoreConfig identity");
+  if (config.pointInTimeRecoveryEnablement !== "POINT_IN_TIME_RECOVERY_DISABLED") throw evidenceInvariant("pitr");
+  if (!exactKeys(config.versionRetentionPeriod, ["seconds", "nanos"]) || config.versionRetentionPeriod.seconds !== "3600" || config.versionRetentionPeriod.nanos !== 0) throw evidenceInvariant("versionRetentionPeriod");
+}
+
+function authorityDigest(map, omit) {
+  const copy = {};
+  for (const key of Object.keys(map)) if (!omit.includes(key)) copy[key] = map[key];
+  return sha256Hex(TaskCanonicalV1(copy));
+}
+
+function validateProviderEvidenceAuthority(a, trustAnchor) {
+  if (!exactKeys(a, AUTHORITY_KEYS)) throw evidenceInvariant("members");
+  if (a.schemaVersion !== 1 || a.kind !== "ACCOUNT_DELETION_PROVIDER_EVIDENCE") throw evidenceInvariant("kind");
+  if (typeof a.generationId !== "string" || !LOWERCASE_UUID_RE.test(a.generationId)) throw evidenceInvariant("generationId");
+  if (a.projectId !== ACCEPTED_PROJECT_ID || a.databaseId !== "(default)" || a.bucketName !== ACCEPTED_BUCKET_NAME || a.region !== "us-central1") throw evidenceInvariant("identity");
+  for (const key of ["implementationSHA256", "packageLockSHA256", "firestoreRulesSHA256", "storageRulesSHA256", "firestoreIndexesSHA256", "copyProducerDenySHA256", "externalEvidenceBundleSHA256", "bucketConfigSHA256", "firestoreConfigSHA256"]) {
+    if (!isHex64(a[key])) throw evidenceInvariant(key);
+  }
+  for (const key of ["firestoreRulesetId", "firestoreReleaseId", "storageRulesetId", "storageReleaseId"]) {
+    if (!isNonblankString(a[key], 1024)) throw evidenceInvariant(key);
+  }
+  validateBucketConfigMap(a.bucketConfig);
+  if (sha256Hex(TaskCanonicalV1(a.bucketConfig)) !== a.bucketConfigSHA256) throw evidenceInvariant("bucketConfigSHA256");
+  validateFirestoreConfigMap(a.firestoreConfig);
+  if (sha256Hex(TaskCanonicalV1(a.firestoreConfig)) !== a.firestoreConfigSHA256) throw evidenceInvariant("firestoreConfigSHA256");
+  for (const key of ["storageDestinations", "firestoreDestinations", "authDestinations", "cloudAuditDestinations", "providerCopyDestinations"]) {
+    validateArrayDigest(a[key], key);
+  }
+  validatePolicyChecks(a.policyChecks);
+  validateAuthResidualChecks(a.authResidualChecks, { authResidualRetentionSeconds: a.authResidualRetentionSeconds, destinationCount: a.authDestinations.count });
+  if (a.signatureAlgorithm !== "ed25519") throw evidenceInvariant("signatureAlgorithm");
+  if (!isBase64URL(a.externalEvidencePublicKeyBase64URL, 32)) throw evidenceInvariant("public key");
+  const keyBytes = Buffer.from(a.externalEvidencePublicKeyBase64URL, "base64url");
+  if (a.externalEvidencePublicKeyBase64URL !== trustAnchor.publicKeyBase64URL) throw evidenceInvariant("trust anchor key");
+  const keyDigest = createHash("sha256").update(keyBytes).digest("hex");
+  if (a.externalEvidenceSigningKeySHA256 !== keyDigest || keyDigest !== trustAnchor.sha256) throw evidenceInvariant("trust anchor digest");
+  if (!isWireInstant(a.activatedAt)) throw evidenceInvariant("activatedAt");
+  if (!isHex64(a.signedAuthorityPayloadSHA256) || !isHex64(a.authoritySHA256) || !isBase64URL(a.externalEvidenceSignatureBase64URL, 64)) throw evidenceInvariant("signature members");
+  const payload = authorityDigest(a, ["signedAuthorityPayloadSHA256", "externalEvidenceSignatureBase64URL", "authoritySHA256"]);
+  if (payload !== a.signedAuthorityPayloadSHA256) throw evidenceInvariant("payload digest");
+  const message = Buffer.concat([
+    Buffer.from(AUTHORITY_DOMAIN, "ascii"),
+    Buffer.from(payload, "hex"),
+    Buffer.from(a.externalEvidenceBundleSHA256, "hex"),
+    Buffer.from(a.implementationSHA256, "hex")
+  ]);
+  const publicKey = createPublicKey({ key: Buffer.concat([ED25519_SPKI_PREFIX, keyBytes]), format: "der", type: "spki" });
+  if (!cryptoVerify(null, message, publicKey, Buffer.from(a.externalEvidenceSignatureBase64URL, "base64url"))) throw evidenceInvariant("signature");
+  if (authorityDigest(a, ["authoritySHA256"]) !== a.authoritySHA256) throw evidenceInvariant("authoritySHA256");
+}
+
+/**
+ * Loads `functions/accountDeletionProviderEvidenceV1.json` bytes. Absent bytes or an
+ * unsupplied trust anchor is Build A (not activated); any defect is the fixed invariant.
+ */
+function loadProviderEvidenceAuthority(bytes, { trustAnchor } = {}) {
+  if (bytes === undefined || bytes === null) return PROVIDER_EVIDENCE_NOT_ACTIVATED;
+  if (!trustAnchor || typeof trustAnchor.publicKeyBase64URL !== "string" || typeof trustAnchor.sha256 !== "string") return PROVIDER_EVIDENCE_NOT_ACTIVATED;
+  try {
+    const text = Buffer.isBuffer(bytes) ? bytes.toString("utf8") : String(bytes);
+    if (Buffer.byteLength(text, "utf8") > AUTHORITY_BYTES_CAP || !isValidUTF8String(text)) throw evidenceInvariant("bytes cap");
+    const parsed = parseStrictJSON(text);
+    validateProviderEvidenceAuthority(parsed, trustAnchor);
+    if (TaskCanonicalV1(parsed) !== text) throw evidenceInvariant("non-canonical bytes");
+    return { ok: true, authority: parsed };
+  } catch (error) {
+    return { ok: false, code: PROVIDER_EVIDENCE_INVARIANT };
+  }
+}
+
+/** Fresh bucket observation must reproduce the accepted BucketDeletionConfigV1 bytes and digest. */
+function verifyBucketConfiguration(tuple, authority) {
+  const drift = (detail) => new InvariantError("ACCOUNT_DELETION_BUCKET_CONFIG_DRIFT", detail);
+  if (!Array.isArray(tuple) || tuple.length !== 2) throw drift("tuple");
+  const [metadata, apiResponse] = tuple;
+  if (apiResponse === null || typeof apiResponse !== "object" || apiResponse.statusCode !== 200) throw drift("response");
+  const projection = projectBucketDeletionConfig(metadata);
+  const bytes = TaskCanonicalV1(projection);
+  if (bytes !== TaskCanonicalV1(authority.bucketConfig) || sha256Hex(bytes) !== authority.bucketConfigSHA256) throw drift("digest");
+  return projection;
+}
+
+function protoSeconds(value) {
+  if (typeof value === "number" && Number.isSafeInteger(value)) return value;
+  if (typeof value === "string" && /^-?(0|[1-9][0-9]*)$/.test(value)) return Number(value);
+  if (value && typeof value.toString === "function" && /^-?(0|[1-9][0-9]*)$/.test(value.toString())) return Number(value.toString());
+  return null;
+}
+
+/** §11.2:1632 — FirestoreDeletionConfigV1 from the exact getDatabase three-tuple; returns the fresh earliestVersionTime. */
+function verifyFirestoreConfiguration(tuple, authority) {
+  if (!Array.isArray(tuple) || tuple.length !== 3) throw evidenceInvariant("database tuple");
+  const [database, next, raw] = tuple;
+  if (next !== null || raw !== null || !isPlainMap(database)) throw evidenceInvariant("database tuple members");
+  const period = database.versionRetentionPeriod;
+  if (!period || typeof period !== "object") throw evidenceInvariant("versionRetentionPeriod");
+  const seconds = protoSeconds(period.seconds);
+  const nanos = typeof period.nanos === "number" ? period.nanos : Number(period.nanos ?? 0);
+  if (seconds === null || !Number.isSafeInteger(nanos)) throw evidenceInvariant("versionRetentionPeriod");
+  const projection = {
+    schemaVersion: 1,
+    name: database.name,
+    etag: database.etag,
+    pointInTimeRecoveryEnablement: database.pointInTimeRecoveryEnablement,
+    versionRetentionPeriod: { seconds: String(seconds), nanos }
+  };
+  if (typeof projection.name !== "string" || typeof projection.etag !== "string" || typeof projection.pointInTimeRecoveryEnablement !== "string") throw evidenceInvariant("database projection");
+  const bytes = TaskCanonicalV1(projection);
+  if (bytes !== TaskCanonicalV1(authority.firestoreConfig) || sha256Hex(bytes) !== authority.firestoreConfigSHA256) throw evidenceInvariant("database digest");
+  const earliest = database.earliestVersionTime;
+  if (!earliest || typeof earliest !== "object") throw evidenceInvariant("earliestVersionTime");
+  const earliestSeconds = protoSeconds(earliest.seconds);
+  const earliestNanos = typeof earliest.nanos === "number" ? earliest.nanos : Number(earliest.nanos ?? 0);
+  if (earliestSeconds === null || !Number.isInteger(earliestNanos) || earliestNanos < 0 || earliestNanos > 999999999) throw evidenceInvariant("earliestVersionTime");
+  return { projection, earliestVersionTime: Timestamp.fromMillis(earliestSeconds * 1000 + Math.floor(earliestNanos / 1_000_000)) };
+}
+
+function headerValue(headers, name) {
+  if (!headers || typeof headers !== "object") return undefined;
+  for (const key of Object.keys(headers)) if (key.toLowerCase() === name) return headers[key];
+  return undefined;
+}
+
+function buildPolicyRequest(check, deps) {
+  const base = { url: check.resourceURL, headers: { accept: "application/json" }, deadlineMs: deps.timeouts.providerMs, maxBytes: PROVIDER_RESPONSE_CAP, redirects: 0 };
+  if (check.adapterId === "google_json_get_v1") return { ...base, method: "GET" };
+  return { ...base, method: "POST", headers: { ...base.headers, "content-type": "application/json" }, body: '{"options":{"requestedPolicyVersion":3}}' };
+}
+
+async function runPolicyCheck(deps, check) {
+  const request = buildPolicyRequest(check, deps);
+  let response;
+  try {
+    response = await withDeadline(deps.providerHTTP.request(request), deps.timeouts.providerMs, PROVIDER_EVIDENCE_INVARIANT);
+  } catch (error) {
+    throw evidenceInvariant("policy transport");
+  }
+  if (!response || response.status !== 200) throw evidenceInvariant("policy status");
+  const media = headerValue(response.headers, "content-type");
+  if (typeof media !== "string" || !media.toLowerCase().startsWith("application/json")) throw evidenceInvariant("policy media");
+  if (!Buffer.isBuffer(response.body) || response.body.length > PROVIDER_RESPONSE_CAP) throw evidenceInvariant("policy size");
+  const text = response.body.toString("utf8");
+  if (!isValidUTF8String(text)) throw evidenceInvariant("policy unicode");
+  let parsed;
+  try { parsed = parseStrictJSON(text); } catch { throw evidenceInvariant("policy json"); }
+  if (!isPlainMap(parsed)) throw evidenceInvariant("policy object");
+  let etag = "";
+  if (check.etagSource === "header") etag = headerValue(response.headers, "etag");
+  else if (check.etagSource === "body.etag") etag = parsed.etag;
+  else if (check.etagSource === "body.policy.etag") etag = isPlainMap(parsed.policy) ? parsed.policy.etag : undefined;
+  if (check.etagSource !== "none" && typeof etag !== "string") throw evidenceInvariant("policy etag missing");
+  if (etag !== check.expectedEtag) throw evidenceInvariant("policy etag drift");
+  if (sha256Hex(TaskCanonicalV1(parsed)) !== check.expectedPolicySHA256) throw evidenceInvariant("policy drift");
+}
+
+/** All policyChecks in ordinal order, at most four in flight, 3-second deadline each (§11.2:1646/1658). */
+async function runPolicyChecks(deps, authority) {
+  const checks = authority.policyChecks;
+  let next = 0;
+  const workers = Array.from({ length: Math.min(4, checks.length) }, async () => {
+    while (next < checks.length) {
+      const check = checks[next];
+      next += 1;
+      await runPolicyCheck(deps, check);
+    }
+  });
+  await Promise.all(workers);
+}
+
+/**
+ * The bounded fresh fence at reconciler acquisition and finalize: one bucket-config RPC, one
+ * Firestore-config RPC, every policy check. Returns the fresh earliestVersionTime.
+ */
+async function runEvidenceFence(deps, authority) {
+  let bucketTuple;
+  try { bucketTuple = await deps.bucket.getMetadata(); } catch { throw new InvariantError("ACCOUNT_DELETION_BUCKET_CONFIG_DRIFT", "call"); }
+  verifyBucketConfiguration(bucketTuple, authority);
+  let databaseTuple;
+  try { databaseTuple = await deps.firestoreAdmin.getDatabase({ name: ACCEPTED_DATABASE_NAME }); } catch { throw evidenceInvariant("database call"); }
+  const { earliestVersionTime } = verifyFirestoreConfiguration(databaseTuple, authority);
+  await runPolicyChecks(deps, authority);
+  return { earliestVersionTime };
+}
+
+/** Production transport: node https + GoogleAuth read-only scope, zero redirects, byte cap, deadline. */
+function productionProviderHTTP() {
+  const https = require("node:https");
+  const { GoogleAuth } = require("google-auth-library");
+  const auth = new GoogleAuth({ scopes: ["https://www.googleapis.com/auth/cloud-platform.read-only"] });
+  return {
+    async request({ url, method, headers, body, deadlineMs, maxBytes }) {
+      const client = await auth.getClient();
+      const authHeaders = await client.getRequestHeaders(url);
+      return new Promise((resolve, reject) => {
+        const request = https.request(url, { method, headers: { ...authHeaders, ...headers } }, (response) => {
+          const chunks = [];
+          let size = 0;
+          response.on("data", (chunk) => {
+            size += chunk.length;
+            if (size > maxBytes) { request.destroy(new Error("oversize")); return; }
+            chunks.push(chunk);
+          });
+          response.on("end", () => resolve({ status: response.statusCode, headers: response.headers, body: Buffer.concat(chunks) }));
+        });
+        request.setTimeout(deadlineMs, () => request.destroy(new Error("timeout")));
+        request.on("error", reject);
+        if (body !== undefined) request.write(body);
+        request.end();
+      });
+    }
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Production dependencies (lazy; the only place Firebase Admin is touched)
 // ---------------------------------------------------------------------------
 
@@ -1290,14 +1755,33 @@ function productionDependencies() {
     now: () => Timestamp.fromMillis(Date.now()),
     log: (code, counts) => logger.info(code, counts || {}),
     firestore: { client: new v1.FirestoreClient(), documentsRoot: `projects/${projectId}/databases/(default)/documents` },
-    // I3 replaces these two with the provider-evidence authority loader (§11.2).
-    evidence: () => ({ ok: false, code: "PROVIDER_EVIDENCE_NOT_ACTIVATED" }),
-    verifyBucketConfiguration: () => { throw new InvariantError("ACCOUNT_DELETION_BUCKET_CONFIG_DRIFT", "no accepted configuration"); },
+    firestoreAdmin: new v1.FirestoreAdminClient(),
+    providerHTTP: productionProviderHTTP(),
+    evidence: () => loadedEvidence(),
+    evidenceFence: (authority) => runEvidenceFence(productionCache, authority),
+    verifyBucketConfiguration: (tuple) => {
+      const evidence = loadedEvidence();
+      if (!evidence.ok) throw new InvariantError("ACCOUNT_DELETION_BUCKET_CONFIG_DRIFT", "no accepted configuration");
+      verifyBucketConfiguration(tuple, evidence.authority);
+    },
     budget: { sweeps: 4, storagePages: 4, deadlineMs: 42_000 },
-    timeouts: { getUserMs: 3000, deleteUserMs: 10000 },
+    timeouts: { getUserMs: 3000, deleteUserMs: 10000, providerMs: 3000 },
     hooks: {}
   };
   return productionCache;
+}
+
+let evidenceCache = null;
+
+/** Reads the sole runtime authority once; absent file or unsupplied trust anchor is Build A. */
+function loadedEvidence() {
+  if (evidenceCache) return evidenceCache;
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const artifactPath = path.join(__dirname, "accountDeletionProviderEvidenceV1.json");
+  const bytes = fs.existsSync(artifactPath) ? fs.readFileSync(artifactPath) : undefined;
+  evidenceCache = loadProviderEvidenceAuthority(bytes, { trustAnchor: PROVIDER_EVIDENCE_TRUST_ANCHOR_V1 });
+  return evidenceCache;
 }
 
 module.exports = {
@@ -1327,6 +1811,9 @@ module.exports = {
   // auth reducer and schedule ordinals
   runAuthPendingReducer, ensurePendingAuthWork, recordAuthFailure, isUserNotFound,
   storageScheduleOrdinal, authScheduleOrdinal, firstStorageOrdinalAfter, firstAuthOrdinalAfter, currentAuthOrdinal,
+  // provider evidence authority and the bounded fence
+  PROVIDER_EVIDENCE_TRUST_ANCHOR_V1, parseStrictJSON, loadProviderEvidenceAuthority, validateAuthResidualChecks,
+  projectBucketDeletionConfig, verifyBucketConfiguration, verifyFirestoreConfiguration, runPolicyChecks, runEvidenceFence,
   // misc
-  withDeadline, readTimeOf, requireEvidence, emit, productionDependencies
+  withDeadline, readTimeOf, requireEvidence, emit, productionDependencies, loadedEvidence
 };
