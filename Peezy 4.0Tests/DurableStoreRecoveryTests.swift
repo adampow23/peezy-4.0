@@ -332,6 +332,7 @@ struct DurableStoreRecoveryTests {
     @Test(.enabled(if: FirebaseEmulator.isConfigured))
     func productionRuntimeLeaseTargetsTheEmulator() async throws {
         _ = try FirebaseEmulator.firestore()
+        installSharedRuntimeIfNeeded() // S4-CD2: the registry holds an owner before any acquisition
         try await FirebaseEmulator.clearFirestore()
         let uid = try await FirebaseEmulator.signInFreshUser()
         let lease = try await FirestoreRuntime.provider.acquire()
@@ -461,6 +462,129 @@ struct DurableStoreRecoveryTests {
         #expect(lease != NarrationLease(leaseId: "11111111-1111-4111-8111-111111111111", uid: "A", gateGeneration: GateGeneration(rawValue: 4), sessionId: "s1"), "a lease is bound to one gate generation")
         let handle = TransferHandle(handleId: "h1", lease: lease)
         #expect(Set([handle, TransferHandle(handleId: "h1", lease: lease)]).count == 1)
+    }
+
+    // MARK: - S4 I2a — Firestore runtime owner and installation (S4-CD2), telemetry authority (C2.2), room-capture owner (S4-CD7)
+
+    @Test(.enabled(if: FirebaseEmulator.isConfigured))
+    func firestoreRuntimeInstallsOnceAndRefusesBeforeInstallation() async throws {
+        _ = try FirebaseEmulator.firestore()
+        let registry = FirestoreRuntime.Registry()
+        #expect(registry.isInstalled == false)
+        await #expect(throws: FirestoreRuntimeError.notInstalled) { _ = try await registry.provider.acquire() }
+        #expect(registry.provider.isCurrent(FirestoreRuntimeGeneration(rawValue: 1)) == false)
+        let owner = FirestoreRuntimeOwner(controller: RecordingInstanceController())
+        #expect(registry.install(owner) == .installed)
+        #expect(registry.isInstalled)
+        #expect(registry.install(FirestoreRuntimeOwner(controller: RecordingInstanceController())) == .alreadyInstalled, "a second install changes nothing")
+        let lease = try await registry.provider.acquire()
+        #expect(lease.generation == FirestoreRuntimeGeneration(rawValue: 1) && registry.provider.isCurrent(lease.generation))
+        #expect(registry.provider.published().generation == lease.generation)
+        installSharedRuntimeIfNeeded()
+        #expect(FirestoreRuntime.shared.isInstalled && FirestoreRuntime.install(owner) == .alreadyInstalled, "the process registry is installed exactly once")
+    }
+
+    @Test(.enabled(if: FirebaseEmulator.isConfigured))
+    func firestoreRuntimeOwnerPurgesInTheExactOrderAndPublishesAFreshGeneration() async throws {
+        _ = try FirebaseEmulator.firestore()
+        let controller = RecordingInstanceController()
+        let owner = FirestoreRuntimeOwner(controller: controller)
+        let stale = try await owner.acquire()
+        #expect(await owner.purgeForAccountDeletion(scope: .uid("A")) == .acknowledged)
+        #expect(controller.order == ["terminateAndClearPersistence", "fresh", "probe"], "terminate without waitForPendingWrites → clearPersistence → fresh instance → probe")
+        #expect(owner.isCurrent(stale.generation) == false, "the stale lease's results are discarded")
+        let fresh = try await owner.acquire()
+        #expect(fresh.generation.rawValue == stale.generation.rawValue + 1 && owner.isCurrent(fresh.generation))
+        // a failed probe: no new generation, the old one dead, acquisition refused until a later purge acks
+        let failing = RecordingInstanceController()
+        failing.failProbe = true
+        let broken = FirestoreRuntimeOwner(controller: failing)
+        let before = try await broken.acquire()
+        #expect(await broken.purgeForAccountDeletion(scope: .all) == .failed)
+        #expect(broken.isCurrent(before.generation) == false)
+        await #expect(throws: FirestoreRuntimeError.purging) { _ = try await broken.acquire() }
+        failing.failProbe = false
+        #expect(await broken.purgeForAccountDeletion(scope: .all) == .failed, "a purge already in flight or unacknowledged is not restarted concurrently")
+    }
+
+    @Test func telemetryBarrierRunsTheFiveCallsThenOneCheckAndSettlesStickyOutcomes() async {
+        // callback false → cleared, sticky with no further SDK call
+        let cleared = RecordingTelemetrySDK()
+        let authority = ClientTelemetryPrivacyAuthority(sdk: cleared, lifetime: TelemetryPrivacyLifetime())
+        async let first = authority.purgeAll()
+        while !cleared.hasPendingCallback { await Task.yield() }
+        cleared.complete(false)
+        cleared.complete(false) // a duplicate callback loses the CAS
+        #expect(await first == .cleared)
+        #expect(cleared.calls == ["setAnalyticsCollectionEnabled(false)", "setUserID(nil)", "setUserProperty(nil,has_subscription)", "resetAnalyticsData", "checkForUnsentReports"])
+        #expect(await authority.purgeAll() == .cleared)
+        #expect(cleared.calls.count == 5, "after cleared every same-process call returns cleared with no SDK check")
+        // callback true → deleteUnsentReports once → relaunchRequired, sticky
+        let unsent = RecordingTelemetrySDK()
+        let relaunch = ClientTelemetryPrivacyAuthority(sdk: unsent, lifetime: TelemetryPrivacyLifetime())
+        async let second = relaunch.purgeAll()
+        while !unsent.hasPendingCallback { await Task.yield() }
+        unsent.complete(true)
+        #expect(await second == .relaunchRequired)
+        #expect(unsent.calls.last == "deleteUnsentReports")
+        #expect(await relaunch.purgeAll() == .relaunchRequired)
+        #expect(unsent.calls.filter { $0 == "deleteUnsentReports" }.count == 1 && unsent.calls.filter { $0 == "checkForUnsentReports" }.count == 1)
+        // cancellation before the callback → failed, not sticky: a later call checks again
+        let silent = RecordingTelemetrySDK()
+        let lifetime = TelemetryPrivacyLifetime()
+        let cancelled = ClientTelemetryPrivacyAuthority(sdk: silent, lifetime: lifetime)
+        let task = Task { await cancelled.purgeAll() }
+        while !silent.hasPendingCallback { await Task.yield() }
+        task.cancel()
+        #expect(await task.value == .failed)
+        #expect(ClientTelemetryPrivacyAuthority.timeoutSeconds == 10)
+        async let again = ClientTelemetryPrivacyAuthority(sdk: silent, lifetime: lifetime).purgeAll()
+        while silent.calls.filter({ $0 == "checkForUnsentReports" }).count < 2 { await Task.yield() }
+        silent.complete(false)
+        #expect(await again == .cleared)
+    }
+
+    @Test func roomCaptureOwnerIssuesLeasesOnlyUnderAClearGateAndRevokesBeforeItsAck() async throws {
+        let gate = GateSnapshotStub()
+        let owner = RoomCaptureArtifactOwner(gateSnapshot: gate.snapshot)
+        let lease = try #require(await owner.acquire(uid: "A", sessionId: "s1"))
+        #expect(lease.uid == "A" && lease.gateGeneration == GateGeneration(rawValue: 1))
+        #expect(await owner.revalidate(lease))
+        gate.set(gate: .active(uid: "A"))
+        #expect(await owner.acquire(uid: "A", sessionId: "s2") == nil, "no lease under a nonclear gate")
+        #expect(await owner.revalidate(lease) == false)
+        gate.set(gate: .clear)
+        #expect(await owner.revalidate(lease))
+        gate.set(generation: 2)
+        #expect(await owner.revalidate(lease) == false, "a lease is bound to one gate generation")
+        #expect(await owner.deposit("hello", for: lease) == false)
+        #expect(await owner.materialize(for: lease) == nil)
+        // a fresh lease under the current generation carries a transcript once
+        let live = try #require(await owner.acquire(uid: "A", sessionId: "s3"))
+        #expect(await owner.deposit("hello", for: live))
+        #expect(await owner.materialize(for: live) == "hello")
+        #expect(await owner.materialize(for: live) == nil, "materialize clears")
+        // artifacts and an in-flight transfer; revokeAll cancels and awaits settlement before returning
+        let directory = try temporaryDirectory()
+        let artifact = directory.appendingPathComponent("peezy_room_test.mp4")
+        try Data("frame".utf8).write(to: artifact)
+        #expect(await owner.registerArtifact(artifact, lease: live))
+        let cancelled = NotificationCounter()
+        let handle = await owner.register(transfer: live, cancel: { Task { await cancelled.bump() } })
+        let settled = NotificationCounter()
+        let revocation = Task { await owner.revokeAll(); await settled.bump() }
+        while await cancelled.count == 0 { await Task.yield() }
+        for _ in 0..<20 { await Task.yield() }
+        #expect(await settled.count == 0, "revokeAll waits for the registered transfer to settle")
+        await owner.settle(handle)
+        await revocation.value
+        #expect(await settled.count == 1)
+        #expect(await owner.revalidate(live) == false)
+        #expect(await owner.acquire(uid: "A", sessionId: "s4") == nil, "no lease after revocation until reopen")
+        #expect(await owner.purgeForAccountDeletion(scope: .uid("A")) == .acknowledged)
+        #expect(FileManager.default.fileExists(atPath: artifact.path) == false, "registered artifacts are removed")
+        await owner.reopen()
+        #expect(await owner.acquire(uid: "A", sessionId: "s5") != nil)
     }
 
     // MARK: - Epoch stamps (I4, stamps only; manifest §5:540-546). Cleanup belongs to S3.
@@ -1474,6 +1598,7 @@ struct DurableStoreRecoveryTests {
     func assessmentKnowledgeAndDoseCleanupsRequireTheExactAwaitingMarker() async throws {
         let wires = try frozenResetWires()
         let firestore = try FirebaseEmulator.firestore()
+        installSharedRuntimeIfNeeded() // S4-CD2
         try await FirebaseEmulator.clearFirestore()
         let uid = try await FirebaseEmulator.signInFreshUser()
         defer { try? FirebaseEmulator.signOut() }
@@ -1544,6 +1669,63 @@ struct DurableStoreRecoveryTests {
         #expect(await driftStore.load(uid: uid) == .present(DailyDoseLocalStateV1(taskGenerationEpoch: 3, revision: 0, completedCount: 0, lastDate: nil, firstLaunchDate: nil)), "newer epoch preserved")
     }
 
+}
+
+/// S4-CD2: the shared registry must hold an owner before any acquisition; installs the production owner over the
+/// emulator once per test process (`alreadyInstalled` tolerated).
+func installSharedRuntimeIfNeeded() {
+    guard !FirestoreRuntime.shared.isInstalled else { return }
+    _ = FirestoreRuntime.install(FirestoreRuntimeOwner(controller: FirebaseFirestoreInstanceController()))
+}
+
+/// Records the owner's purge order over the real (emulator) instance without terminating it.
+final class RecordingInstanceController: FirestoreInstanceControlling, @unchecked Sendable {
+    private let lock = NSLock()
+    private var recorded: [String] = []
+    var failProbe = false
+    var failTerminate = false
+    var order: [String] { lock.withLock { recorded } }
+    private func record(_ step: String) { lock.withLock { recorded.append(step) } }
+    func initial() -> Firestore { Firestore.firestore() }
+    func terminateAndClearPersistence(_ firestore: Firestore) async throws {
+        record("terminateAndClearPersistence")
+        if failTerminate { throw DriveTraceError.failed }
+    }
+    func fresh() -> Firestore { record("fresh"); return Firestore.firestore() }
+    func probe(_ firestore: Firestore) async throws {
+        record("probe")
+        if failProbe { throw DriveTraceError.failed }
+    }
+}
+
+/// Records the telemetry barrier's SDK calls; the completion is driven by the test.
+final class RecordingTelemetrySDK: TelemetryPrivacySDK, @unchecked Sendable {
+    private let lock = NSLock()
+    private var recorded: [String] = []
+    private var pending: (@Sendable (Bool) -> Void)?
+    var calls: [String] { lock.withLock { recorded } }
+    private func record(_ call: String) { lock.withLock { recorded.append(call) } }
+    func setAnalyticsCollectionEnabled(_ enabled: Bool) { record("setAnalyticsCollectionEnabled(\(enabled))") }
+    func setUserID(_ userID: String?) { record("setUserID(\(userID ?? "nil"))") }
+    func setUserProperty(_ value: String?, forName name: String) { record("setUserProperty(\(value ?? "nil"),\(name))") }
+    func resetAnalyticsData() { record("resetAnalyticsData") }
+    func checkForUnsentReports(_ completion: @escaping @Sendable (Bool) -> Void) { record("checkForUnsentReports"); lock.withLock { pending = completion } }
+    func deleteUnsentReports() { record("deleteUnsentReports") }
+    /// Delivers the callback (possibly more than once) from the test.
+    func complete(_ hasUnsent: Bool) { let completion: (@Sendable (Bool) -> Void)? = lock.withLock { pending }; completion?(hasUnsent) }
+    var hasPendingCallback: Bool { lock.withLock { pending != nil } }
+}
+
+/// A mutable gate snapshot for the room-capture owner.
+final class GateSnapshotStub: @unchecked Sendable {
+    private let lock = NSLock()
+    private var gate: AccountDeletionGate
+    private var generation: GateGeneration
+    init(gate: AccountDeletionGate = .clear, generation: UInt64 = 1) { self.gate = gate; self.generation = GateGeneration(rawValue: generation) }
+    func set(gate: AccountDeletionGate? = nil, generation: UInt64? = nil) {
+        lock.withLock { if let gate { self.gate = gate }; if let generation { self.generation = GateGeneration(rawValue: generation) } }
+    }
+    var snapshot: RoomCaptureArtifactOwner.GateSnapshot { { [self] in self.lock.withLock { (self.gate, self.generation) } } }
 }
 
 /// Synchronous UID snapshot double for `CurrentFirebaseUIDProviding`.

@@ -916,23 +916,57 @@ protocol FirestoreRuntimeProviding: Sendable {
     func isCurrent(_ generation: FirestoreRuntimeGeneration) -> Bool
 }
 
-/// Transitional S1 conformer: one fixed generation over the default instance.
-/// S4 replaces it with `FirestoreRuntimeOwner`; every consumer already routes
-/// through `FirestoreRuntime`, so that swap touches no consumer.
-struct TransitionalFirestoreRuntime: FirestoreRuntimeProviding {
-    private static let generation = FirestoreRuntimeGeneration(rawValue: 1)
+/// The outcome of `FirestoreRuntime.install(_:)` (S4-CD2): registry states `empty | installed(owner)`.
+enum InstallOutcome: String, Sendable, Equatable {
+    case installed
+    case alreadyInstalled
+}
 
-    func acquire() async throws -> FirestoreRuntimeLease { published() }
-
-    func published() -> FirestoreRuntimeLease {
-        FirestoreRuntimeLease(firestore: Firestore.firestore(), generation: Self.generation)
-    }
-
-    func isCurrent(_ generation: FirestoreRuntimeGeneration) -> Bool { generation == Self.generation }
+/// Pre-install refusal (S4-CD2): `acquire()` throws the fixed `notInstalled`; the nonthrowing accessors trap with
+/// the fixed message, because S7 installs before `AppRootView` is created and tests install before any acquisition.
+private struct NotInstalledFirestoreRuntime: FirestoreRuntimeProviding {
+    static let message = "FIRESTORE_RUNTIME_NOT_INSTALLED"
+    func acquire() async throws -> FirestoreRuntimeLease { throw FirestoreRuntimeError.notInstalled }
+    func published() -> FirestoreRuntimeLease { preconditionFailure(Self.message) }
+    func isCurrent(_ generation: FirestoreRuntimeGeneration) -> Bool { false }
 }
 
 enum FirestoreRuntime {
-    static let provider: any FirestoreRuntimeProviding = TransitionalFirestoreRuntime()
+    /// One process registry; `install` succeeds exactly once (S4-CD2). Tests use one `Registry` per case.
+    final class Registry: @unchecked Sendable {
+        private let lock = NSLock()
+        private var owner: FirestoreRuntimeOwner?
+
+        init() {}
+
+        /// `installed` on an empty registry (the only state change); `alreadyInstalled` with zero state change otherwise.
+        func install(_ owner: FirestoreRuntimeOwner) -> InstallOutcome {
+            lock.withLock {
+                guard self.owner == nil else { return .alreadyInstalled }
+                self.owner = owner
+                return .installed
+            }
+        }
+
+        var isInstalled: Bool { lock.withLock { owner != nil } }
+
+        /// The installed owner, or the pre-install refusal.
+        var provider: any FirestoreRuntimeProviding {
+            lock.withLock { () -> any FirestoreRuntimeProviding in
+                if let owner { return owner }
+                return NotInstalledFirestoreRuntime()
+            }
+        }
+    }
+
+    static let shared = Registry()
+
+    /// Sole production caller: `Phase2ProductionRuntime.firestoreRuntimeOwner` (S7).
+    @discardableResult
+    static func install(_ owner: FirestoreRuntimeOwner) -> InstallOutcome { shared.install(owner) }
+
+    /// Registry-backed: every consumer keeps its `FirestoreRuntime.provider.*` call unchanged.
+    static var provider: any FirestoreRuntimeProviding { shared.provider }
 
     /// Mechanical substitution target for synchronous acquisition sites.
     static func firestore() -> Firestore { provider.published().firestore }
