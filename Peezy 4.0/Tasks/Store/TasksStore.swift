@@ -20,9 +20,21 @@ protocol TasksListenerHandle: Sendable {
     func remove()
 }
 
-/// One live snapshot listener over `users/{uid}/tasks`; the callback delivers decoded cards or an error.
+/// One snapshot: the decoded cards plus every stored `dispositionContract` map unmodified, keyed by task document ID
+/// (C9.5.24: the surface decodes the stored map, never the card mapper's projection).
+struct TasksSnapshot: Sendable {
+    let cards: [PeezyCard]
+    let rawContracts: [String: [String: Any]]
+
+    init(cards: [PeezyCard], rawContracts: [String: [String: Any]] = [:]) {
+        self.cards = cards
+        self.rawContracts = rawContracts
+    }
+}
+
+/// One live snapshot listener over `users/{uid}/tasks`; the callback delivers the snapshot or an error.
 protocol TasksSnapshotSource: Sendable {
-    func listen(uid: String, onChange: @escaping @Sendable (Result<[PeezyCard], Error>) -> Void) -> any TasksListenerHandle
+    func listen(uid: String, onChange: @escaping @Sendable (Result<TasksSnapshot, Error>) -> Void) -> any TasksListenerHandle
 }
 
 /// The write seam: one document update under the namespace's UID.
@@ -38,12 +50,16 @@ struct FirestoreTasksSource: TasksSnapshotSource {
         func remove() { registration.remove() }
     }
 
-    func listen(uid: String, onChange: @escaping @Sendable (Result<[PeezyCard], Error>) -> Void) -> any TasksListenerHandle {
+    func listen(uid: String, onChange: @escaping @Sendable (Result<TasksSnapshot, Error>) -> Void) -> any TasksListenerHandle {
         let registration = FirestoreRuntime.firestore().collection("users").document(uid).collection("tasks")
             .addSnapshotListener(includeMetadataChanges: false) { snapshot, error in
                 if let error { onChange(.failure(error)); return }
                 guard let snapshot else { return }
-                onChange(.success(snapshot.documents.compactMap { PeezyCardFirestoreMapper.card(from: $0) }))
+                var rawContracts: [String: [String: Any]] = [:]
+                for document in snapshot.documents {
+                    if let raw = document.data()["dispositionContract"] as? [String: Any] { rawContracts[document.documentID] = raw }
+                }
+                onChange(.success(TasksSnapshot(cards: snapshot.documents.compactMap { PeezyCardFirestoreMapper.card(from: $0) }, rawContracts: rawContracts)))
             }
         return Handle(registration: registration)
     }
@@ -154,6 +170,8 @@ final class TasksStore {
     static let shared = TasksStore(source: FirestoreTasksSource(), writer: FirestoreTasksWriter())
 
     private(set) var tasks: [PeezyCard] = []
+    /// The stored `dispositionContract` maps of the current snapshot, unmodified (C9.5.24 raw-input seam).
+    private(set) var rawContracts: [String: [String: Any]] = [:]
     private(set) var loadState: LoadState = .idle
     private(set) var pendingResetTaskIds: Set<String> = []
     /// The namespace of the installed listener; nil while stopped.
@@ -203,16 +221,22 @@ final class TasksStore {
         }
     }
 
-    private func apply(_ result: Result<[PeezyCard], Error>, for token: TasksStoreNamespace) {
+    private func apply(_ result: Result<TasksSnapshot, Error>, for token: TasksStoreNamespace) {
         guard namespace == token else { return } // a late callback of a retired listener changes nothing
         switch result {
         case let .failure(error):
             loadState = .failed(error.localizedDescription)
-        case let .success(cards):
-            tasks = cards
+        case let .success(snapshot):
+            tasks = snapshot.cards
+            rawContracts = snapshot.rawContracts
             revision += 1
             loadState = .loaded
         }
+    }
+
+    /// The shared surface state of one row (S4-CD3): the stored map, the row's status, the gate, and readiness.
+    func surfaceState(for card: PeezyCard, gateProjection: AccountDeletionGateProjection, readiness: ReadinessVector) -> TaskDispositionSurfaceState {
+        TaskDispositionSurface.state(rawContract: rawContracts[card.id], status: card.status, gateProjection: gateProjection, readiness: readiness)
     }
 
     func stop() {
@@ -221,6 +245,7 @@ final class TasksStore {
         namespace = nil
         revision = 0
         tasks = []
+        rawContracts = [:]
         urgentRecoveryEvidence = []
         loadState = .idle
     }

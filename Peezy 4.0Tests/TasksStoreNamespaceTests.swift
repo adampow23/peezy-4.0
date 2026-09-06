@@ -10,15 +10,15 @@ struct TasksStoreNamespaceTests {
     final class ScriptedTasksSource: TasksSnapshotSource, @unchecked Sendable {
         final class Handle: TasksListenerHandle, @unchecked Sendable {
             let uid: String
-            let onChange: @Sendable (Result<[PeezyCard], Error>) -> Void
+            let onChange: @Sendable (Result<TasksSnapshot, Error>) -> Void
             private(set) var removed = false
-            init(uid: String, onChange: @escaping @Sendable (Result<[PeezyCard], Error>) -> Void) { self.uid = uid; self.onChange = onChange }
+            init(uid: String, onChange: @escaping @Sendable (Result<TasksSnapshot, Error>) -> Void) { self.uid = uid; self.onChange = onChange }
             func remove() { removed = true }
         }
         private let lock = NSLock()
         private var handles: [Handle] = []
         var listeners: [Handle] { lock.withLock { handles } }
-        func listen(uid: String, onChange: @escaping @Sendable (Result<[PeezyCard], Error>) -> Void) -> any TasksListenerHandle {
+        func listen(uid: String, onChange: @escaping @Sendable (Result<TasksSnapshot, Error>) -> Void) -> any TasksListenerHandle {
             let handle = Handle(uid: uid, onChange: onChange)
             lock.withLock { handles.append(handle) }
             return handle
@@ -49,8 +49,8 @@ struct TasksStoreNamespaceTests {
     }
 
     /// Delivers a snapshot through the listener installed for `uid` and lets the main-actor hop settle.
-    func deliver(_ source: ScriptedTasksSource, index: Int, _ result: Result<[PeezyCard], Error>) async {
-        source.listeners[index].onChange(result)
+    func deliver(_ source: ScriptedTasksSource, index: Int, _ result: Result<[PeezyCard], Error>, rawContracts: [String: [String: Any]] = [:]) async {
+        source.listeners[index].onChange(result.map { TasksSnapshot(cards: $0, rawContracts: rawContracts) })
         for _ in 0..<5 { await Task.yield() }
     }
 
@@ -178,5 +178,13 @@ struct TasksStoreNamespaceTests {
         #expect(store.urgentRecoveryLines.map(\.taskDocumentId) == ["b"])
         store.start(userId: "B")
         #expect(store.urgentRecoveryLines.isEmpty && store.urgentRecoveryEvidence.isEmpty)
+        // the stored contract map is retained unmodified and handed to the surface; a namespace change drops it
+        await deliver(source, index: 1, .success([card("s")]), rawContracts: ["s": ["schema_version": 2, "terminal_kind": "superseded", "superseded_by": "inst_2", "superseded_at": Date(timeIntervalSince1970: 1_800_000_000), "visible_status_copy": "Replaced", "visible_status_detail": ["kind": "DATE", "at": Date(timeIntervalSince1970: 1_800_000_000)]]])
+        #expect(store.rawContracts["s"]?["schema_version"] as? Int == 2)
+        guard case .superseded(let presentation) = store.surfaceState(for: card("s"), gateProjection: .clear, readiness: ReadinessVector()) else { Issue.record("superseded"); return }
+        #expect(presentation.source == .v2 && presentation.supersededBy == "inst_2")
+        #expect(store.surfaceState(for: card("s"), gateProjection: .activeSameUID, readiness: ReadinessVector()) == .readOnly(reason: .gateNonclear, contractPresent: true))
+        store.stop()
+        #expect(store.rawContracts.isEmpty)
     }
 }

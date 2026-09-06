@@ -1,3 +1,4 @@
+import FirebaseFirestore
 import Foundation
 import Testing
 @testable import Peezy_4_0
@@ -213,6 +214,76 @@ struct TaskSupersessionTests {
             #expect(await registry.snapshot().records.isEmpty)
         }
     }
+
+    // MARK: - S4 contributions (S4-CD3; C9.5.20–C9.5.24): D18–D21. S2's cases above are never edited.
+
+    @Test func d18ByteExactV1FixtureAndEveryMalformedShape() throws {
+        let fixture = try #require(JSONSerialization.jsonObject(with: Data(TaskRowLegacySnapshotTests.legacyFixtureJSON.utf8)) as? [String: Any])
+        guard case let .superseded(legacy) = SupersededContractDecoder.decode(fixture) else { Issue.record("v1"); return }
+        #expect(legacy.source == .legacyV1 && legacy.supersededBy == "a2_b6c1f0d9" && legacy.copy == "Replaced by an updated task" && legacy.supersededAt == nil && legacy.detailAt == nil)
+        let at = Date(timeIntervalSince1970: 1_800_000_000)
+        let v2: [String: Any] = ["schema_version": 2, "terminal_kind": "superseded", "superseded_by": "inst_2", "superseded_at": Timestamp(date: at), "visible_status_copy": "Replaced", "visible_status_detail": ["kind": "DATE", "at": Timestamp(date: at)]]
+        guard case let .superseded(fresh) = SupersededContractDecoder.decode(v2) else { Issue.record("v2"); return }
+        #expect(fresh.source == .v2 && fresh.supersededBy == "inst_2" && fresh.supersededAt == at && fresh.detailAt == at && fresh.copy == "Replaced")
+        var missingDetail = v2; missingDetail["visible_status_detail"] = nil
+        var extra = v2; extra["profile_version"] = 1
+        var noAt = v2; noAt["superseded_at"] = nil
+        var badBy = v2; badBy["superseded_by"] = ""
+        var v1Extra = fixture; v1Extra["superseded_at"] = Timestamp(date: at)
+        var v1Schemaless = fixture; v1Schemaless["schema_version"] = nil
+        for (name, shape) in [("v2 missing detail", missingDetail), ("v2 surplus", extra), ("v2 no superseded_at", noAt), ("v2 blank by", badBy), ("v1 hybrid", v1Extra), ("schema-less", v1Schemaless)] {
+            #expect(SupersededContractDecoder.decode(shape) == .malformedPresent, Comment(rawValue: name))
+        }
+    }
+
+    @Test func d19GoldenStringsAcrossLocaleAndTimeZoneDayRollover() {
+        // 2027-01-15T23:30:00Z: still Jan 15 in UTC, already Jan 16 in Tokyo, Jan 15 in Los Angeles
+        let instant = Date(timeIntervalSince1970: 1_800_055_800)
+        let posix = Locale(identifier: "en_US_POSIX")
+        let presentation = SupersededPresentation(source: .v2, supersededBy: "inst", supersededAt: instant, copy: "Replaced", detailAt: instant)
+        #expect(presentation.renderedCopy(locale: posix, timeZone: TimeZone(identifier: "UTC")!) == "Replaced \u{2014} Jan 15, 2027")
+        #expect(presentation.renderedCopy(locale: posix, timeZone: TimeZone(identifier: "Asia/Tokyo")!) == "Replaced \u{2014} Jan 16, 2027")
+        #expect(presentation.renderedCopy(locale: posix, timeZone: TimeZone(identifier: "America/Los_Angeles")!) == "Replaced \u{2014} Jan 15, 2027")
+        #expect(presentation.renderedCopy(locale: Locale(identifier: "de_DE"), timeZone: TimeZone(identifier: "UTC")!) == "Replaced \u{2014} 15.01.2027")
+        let legacy = SupersededPresentation(source: .legacyV1, supersededBy: "doc", supersededAt: nil, copy: "Replaced by an updated task", detailAt: nil)
+        #expect(legacy.renderedCopy(locale: posix, timeZone: TimeZone(identifier: "Asia/Tokyo")!) == "Replaced by an updated task")
+        #expect(PlanChangeDateFormatter.string(from: instant, locale: posix, timeZone: TimeZone(identifier: "UTC")!) == "Jan 15, 2027")
+    }
+
+    @Test func d20UndoEligibilityIsDecidedOnlyByTheServerWriteTime() {
+        let until = Date(timeIntervalSince1970: 1_800_000_000)
+        let live = PlanChangeUndoDescriptor(firstConfirmationUndoUntil: until, used: false, inFirstConfirmation: true)
+        #expect(PlanChangeUndo.isAvailable(live, serverWriteTime: until.addingTimeInterval(-1)))
+        #expect(PlanChangeUndo.isAvailable(live, serverWriteTime: until), "equal survives")
+        #expect(!PlanChangeUndo.isAvailable(live, serverWriteTime: until.addingTimeInterval(0.001)), "past the deadline disappears")
+        #expect(!PlanChangeUndo.isAvailable(PlanChangeUndoDescriptor(firstConfirmationUndoUntil: until, used: true, inFirstConfirmation: true), serverWriteTime: until.addingTimeInterval(-60)), "used")
+        #expect(!PlanChangeUndo.isAvailable(PlanChangeUndoDescriptor(firstConfirmationUndoUntil: until, used: false, inFirstConfirmation: false), serverWriteTime: until.addingTimeInterval(-60)), "only the first CF")
+        #expect(!PlanChangeUndo.isAvailable(nil, serverWriteTime: until.addingTimeInterval(-60)), "a stale instance without a descriptor dismisses")
+    }
+
+    @Test func d21HistoryLinesRollupAndOrderAreGolden() {
+        let posix = Locale(identifier: "en_US_POSIX")
+        let utc = TimeZone(identifier: "UTC")!
+        let day = Date(timeIntervalSince1970: 1_800_000_000)
+        let rows = [
+            PlanChangeHistoryRow(action: .supersede, occurredAt: day),
+            PlanChangeHistoryRow(action: .replacementOutcome, occurredAt: day.addingTimeInterval(3600)),
+            PlanChangeHistoryRow(action: .confirmAmendment, occurredAt: day.addingTimeInterval(86_400)),
+            PlanChangeHistoryRow(action: .undoConfirmation, occurredAt: day.addingTimeInterval(90_000)),
+            PlanChangeHistoryRow(action: .reopen, occurredAt: day.addingTimeInterval(200_000))
+        ]
+        #expect(PlanChangeHistoryRow.Action.allCases.map(\.title) == ["Plan update started", "Updated task outcome recorded", "Plan update confirmed", "Confirmation undone", "Original task reopened"])
+        #expect(PlanChangeHistoryPresentation.line(rows[0], locale: posix, timeZone: utc) == "Plan update started \u{00B7} Jan 15, 2027")
+        #expect(PlanChangeHistoryPresentation.line(rows[1], locale: posix, timeZone: utc) == "Updated task outcome recorded \u{00B7} Jan 15, 2027", "same local day, different time")
+        #expect(PlanChangeHistoryPresentation.line(rows[2], locale: posix, timeZone: utc) == "Plan update confirmed \u{00B7} Jan 16, 2027", "different day")
+        let sameDay = PlanChangeHistoryRollup(count: 3, firstAt: day, lastAt: day.addingTimeInterval(7200))
+        #expect(PlanChangeHistoryPresentation.rollupLine(sameDay, locale: posix, timeZone: utc) == "Earlier plan changes (3) \u{00B7} Jan 15, 2027")
+        let span = PlanChangeHistoryRollup(count: 5, firstAt: day, lastAt: day.addingTimeInterval(86_400 * 3))
+        #expect(PlanChangeHistoryPresentation.rollupLine(span, locale: posix, timeZone: utc) == "Earlier plan changes (5) \u{00B7} Jan 15, 2027\u{2013}Jan 18, 2027")
+        let lines = PlanChangeHistoryPresentation.lines(rows: rows, rollup: span, locale: posix, timeZone: utc)
+        #expect(lines.count == 6 && lines.first == "Original task reopened \u{00B7} Jan 17, 2027" && lines[4] == "Plan update started \u{00B7} Jan 15, 2027" && lines.last?.hasPrefix("Earlier plan changes (5)") == true, "reverse append order, the sole rollup once as the final row")
+        #expect(PlanChangeHistoryPresentation.lines(rows: rows, rollup: nil, locale: posix, timeZone: utc).count == 5)
+    }
 }
 
 @MainActor
@@ -226,4 +297,5 @@ private final class CallableRecorder {
     }
 }
 
-private enum RetakeTestError: Swift.Error { case failed }
+private enum RetakeTestError: Swift.Error { case failed 
+}

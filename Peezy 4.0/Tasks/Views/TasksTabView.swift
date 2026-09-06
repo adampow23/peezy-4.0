@@ -6,6 +6,10 @@ struct TasksTabView: View {
     var userState: UserState?
     var onNavigateToTask: ((PeezyCard) -> Void)?
     var onNavigateHome: (() -> Void)?
+    /// S4-CD3: the deletion-gate projection and the readiness vector every row's surface state is derived from
+    /// (S7 feeds the live values; the defaults keep every row actionable).
+    var gateProjection: AccountDeletionGateProjection = .clear
+    var readiness: ReadinessVector = ReadinessVector()
 
     @State private var selectedTab: TaskTab = .todo
     @State private var expandedTaskId: String?
@@ -93,7 +97,8 @@ struct TasksTabView: View {
                     selectedTab: selectedTab,
                     groups: groups,
                     expandedTaskId: $expandedTaskId,
-                    onAction: handleAction
+                    onAction: handleAction,
+                    surfaceState: { card in store.surfaceState(for: card, gateProjection: gateProjection, readiness: readiness) }
                 )
             }
         }

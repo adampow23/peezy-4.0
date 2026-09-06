@@ -10,6 +10,14 @@ struct TaskRow: View {
     let isExpanded: Bool
     let onExpandToggle: () -> Void
     let onAction: (TaskAction) -> Void
+    /// S4-CD3: the shared surface state; nil (the pre-S4 call sites) keeps the row's committed behavior.
+    var surfaceState: TaskDispositionSurfaceState? = nil
+
+    /// Buttons only for an actionable row (or a row without a surface state); the layout resolver itself is unchanged.
+    var buttonLayout: TaskRowButtonLayout {
+        if let surfaceState, !surfaceState.isActionable { return .none }
+        return TaskRowButtons.layout(for: task, section: section)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -20,9 +28,18 @@ struct TaskRow: View {
                 onTap: onExpandToggle
             )
 
+            if let surfaceState, let line = TaskDispositionSurface.statusLine(for: surfaceState) {
+                Text(line)
+                    .font(PeezyTheme.Typography.captionMedium)
+                    .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.5))
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 12)
+                    .accessibilityIdentifier("taskRowStatusLine")
+            }
+
             if isExpanded {
                 TaskRowButtons(
-                    layout: TaskRowButtons.layout(for: task, section: section),
+                    layout: buttonLayout,
                     onAction: onAction
                 )
                 .padding(.horizontal, 20)

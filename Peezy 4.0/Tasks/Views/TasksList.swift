@@ -5,6 +5,8 @@ struct TasksList: View {
     let groups: TaskGrouping.Groups
     @Binding var expandedTaskId: String?
     let onAction: (TaskAction) -> Void
+    /// S4-CD3: the shared surface state per row; nil keeps the committed rows.
+    var surfaceState: ((PeezyCard) -> TaskDispositionSurfaceState)? = nil
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
@@ -70,7 +72,8 @@ struct TasksList: View {
             section: section,
             isExpanded: expandedTaskId == task.id,
             onExpandToggle: { toggle(task.id) },
-            onAction: onAction
+            onAction: onAction,
+            surfaceState: surfaceState?(task)
         )
     }
 
