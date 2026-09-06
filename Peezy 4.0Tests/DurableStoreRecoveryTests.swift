@@ -1702,6 +1702,313 @@ struct DurableStoreRecoveryTests {
         #expect(JSONObjectScanner.object(Data("[1]".utf8)) == nil)
     }
 
+    // MARK: - S4 I6 — C9.4.5 client legacy migration rows (`LegacyResetMigrationV1`, alias candidates, receipt→applying, invalid-alias inspection)
+
+    @Test func legacyMigrationRowGrammarAcceptsEveryMemberCrossProductAndRejectsTheRest() throws {
+        let uid = "A", legacy = LegacyFixtures.legacyA, alias = "rsa1_22222222-2222-4222-8222-222222222222"
+        let upgraded = LegacyFixtures.upgraded(uid: uid, legacy: legacy, alias: alias, epoch: 1)
+        let notDispatched = LegacyFixtures.notDispatched(uid: uid, legacy: legacy, alias: alias)
+        let migrationId = LegacyResetReconciliationV1.migrationId(uid: uid, legacyOperationId: legacy)
+        let rla = LegacyResetMigrationV1.applicationId(uid: uid, migrationId: migrationId, outcome: "not_dispatched")
+        let rows: [LegacyResetMigrationV1] = [
+            LegacyFixtures.exactRow(phase: .prepared), LegacyFixtures.exactRow(phase: .dispatched), LegacyFixtures.exactRow(phase: .receipt, receipt: upgraded),
+            LegacyFixtures.exactRow(phase: .applying, receipt: upgraded, authority: nil), LegacyFixtures.exactRow(phase: .applying, receipt: notDispatched, applicationId: rla, authority: nil),
+            LegacyFixtures.exactRow(phase: .blocked, errorCode: .legacyResetCorrupt), LegacyFixtures.exactRow(phase: .blocked, errorCode: .operationReused), LegacyFixtures.exactRow(phase: .blocked, errorCode: .aliasCollisionExhausted),
+            LegacyFixtures.exactRow(phase: .prepared, authority: .resetDispatched(expectedTaskGenerationEpoch: 1, suggestedOperationId: alias)), LegacyFixtures.exactRow(phase: .prepared, authority: nil),
+            LegacyFixtures.invalidRow(.nonString), LegacyFixtures.invalidRow(.invalidString, authority: .reservedGesture(gestureId: "rsg1_11111111-1111-4111-8111-111111111111", gestureGeneration: "g1", alias: alias))
+        ]
+        for row in rows {
+            let map = row.map()
+            #expect(row.isValid, Comment(rawValue: "\(row.phase) \(String(describing: row.errorCode)) exact"))
+            #expect(LegacyResetMigrationV1.from(map) == row, Comment(rawValue: "\(row.phase) round-trip"))
+            var surplus = map; surplus["extra"] = 1
+            #expect(LegacyResetMigrationV1.from(surplus) == nil)
+            var wrongPhase = map; wrongPhase["phase"] = "done"
+            #expect(LegacyResetMigrationV1.from(wrongPhase) == nil)
+            for key in ["uid", "authEpochUUID", "credentialRevision", "phase", "createdAt", "updatedAt"] { var missing = map; missing[key] = nil; #expect(LegacyResetMigrationV1.from(missing) == nil, Comment(rawValue: "missing \(key)")) }
+            if !row.isInvalidAliasMember {
+                #expect(map["requestFingerprint"] as? String == "rlmreq1_" + TaskCanonicalV1.sha256Hex(["account_uid": uid, "legacy_operation_id": legacy]))
+                #expect(map["requestCanonicalJSON"] as? String == "{\"action\":\"reconcileLegacyTaskReset\",\"legacyOperationId\":\"\(legacy)\",\"migrationAlias\":\"\(alias)\"}")
+                #expect(map["requestSHA256"] as? String == TaskCanonicalV1.sha256Hex(data: Data((map["requestCanonicalJSON"] as? String ?? "").utf8)))
+                var drifted = map; drifted["requestSHA256"] = String(repeating: "0", count: 64)
+                #expect(LegacyResetMigrationV1.from(drifted) == nil, "derived members must match")
+                for key in ["legacyOperationId", "migrationAlias", "aliasCandidateOrdinal", "legacyKeyGuard"] { var missing = map; missing[key] = nil; #expect(LegacyResetMigrationV1.from(missing) == nil, Comment(rawValue: "missing \(key)")) }
+                var ordinal = map; ordinal["aliasCandidateOrdinal"] = 5
+                #expect(LegacyResetMigrationV1.from(ordinal) == nil)
+            }
+        }
+        #expect(migrationId == "rlm1_" + String(TaskCanonicalV1.sha256Hex(["account_uid": uid, "legacy_operation_id": legacy]).prefix(40)))
+        #expect(rla == "rla1_" + String(TaskCanonicalV1.sha256Hex(["uid": uid, "migration_id": migrationId, "outcome": "not_dispatched"]).prefix(40)))
+        #expect(LegacyResetMigrationV1.clearApplicationId(uid: uid, legacyValueClass: .nonString, utf8Length: nil, sha256: nil, outcome: "none") == "rlic1_" + String(TaskCanonicalV1.sha256Hex(["uid": uid, "legacy_value_class": "non_string", "outcome": "none"]).prefix(40)))
+        // forbidden cross-member combinations
+        var receiptInPrepared = LegacyFixtures.exactRow(phase: .prepared); receiptInPrepared.receipt = TaskCanonicalV1.data(upgraded.map())
+        #expect(!receiptInPrepared.isValid)
+        var applicationForUpgraded = LegacyFixtures.exactRow(phase: .applying, receipt: upgraded, authority: nil); applicationForUpgraded.applicationId = rla
+        #expect(!applicationForUpgraded.isValid)
+        #expect(!LegacyFixtures.exactRow(phase: .applying, receipt: notDispatched, authority: nil).isValid, "not_dispatched requires the application ID")
+        #expect(!LegacyFixtures.exactRow(phase: .applying, receipt: upgraded).isValid, "APPLYING forbids the initiating authority")
+        #expect(!LegacyFixtures.exactRow(phase: .receipt).isValid && !LegacyFixtures.exactRow(phase: .blocked).isValid)
+        var blockedWithReceipt = LegacyFixtures.exactRow(phase: .blocked, errorCode: .operationReused); blockedWithReceipt.receipt = TaskCanonicalV1.data(upgraded.map())
+        #expect(!blockedWithReceipt.isValid)
+        #expect(!LegacyFixtures.invalidRow(.nonString, authority: .resetDispatched(expectedTaskGenerationEpoch: 1, suggestedOperationId: alias)).isValid, "the invalid-alias member permits only a reserved-gesture authority")
+        var nonStringWithMetadata = LegacyFixtures.invalidRow(.nonString); nonStringWithMetadata.legacyValueUtf8Length = 3
+        #expect(!nonStringWithMetadata.isValid)
+        var invalidWithoutDigest = LegacyFixtures.invalidRow(.invalidString); invalidWithoutDigest.legacyValueSHA256 = nil
+        #expect(!invalidWithoutDigest.isValid)
+        var invalidWithLegacyId = LegacyFixtures.invalidRow(.nonString); invalidWithLegacyId.legacyOperationId = legacy
+        #expect(!invalidWithLegacyId.isValid)
+        var foreignReceipt = LegacyFixtures.exactRow(phase: .receipt, receipt: LegacyFixtures.upgraded(uid: "B", legacy: legacy, alias: alias, epoch: 1))
+        #expect(!foreignReceipt.isValid)
+        foreignReceipt = LegacyFixtures.exactRow(phase: .receipt, receipt: LegacyFixtures.upgraded(uid: uid, legacy: LegacyFixtures.legacyB, alias: alias, epoch: 1))
+        #expect(!foreignReceipt.isValid, "the receipt names the row's legacy ID")
+        #expect(!LegacyResetMigrationV1.isValidLegacyOperationId(" \(legacy)") && !LegacyResetMigrationV1.isValidLegacyOperationId("a/b") && !LegacyResetMigrationV1.isValidLegacyOperationId(""))
+        #expect(LegacyKeyGuard.from(["kind": "valid_string", "value": "a/b"]) == nil && LegacyKeyGuard.from(["kind": "invalid_value", "valueClass": "non_string", "utf8Length": 1]) == nil)
+        // the inspection wire and the local-only surfaces
+        #expect(try LegacyResetInspectionV1.decode(["schemaVersion": 1, "kind": "legacy_reset_inspection", "outcome": "none", "accountUid": uid]) == .none(accountUid: uid))
+        #expect(try LegacyResetInspectionV1.decode(["schemaVersion": 1, "kind": "legacy_reset_inspection", "outcome": "legacy_active", "accountUid": uid, "legacyOperationId": legacy]) == .legacyActive(accountUid: uid, legacyOperationId: legacy))
+        #expect(try LegacyResetInspectionV1.decode(["schemaVersion": 1, "kind": "legacy_reset_inspection", "outcome": "phase2_active", "accountUid": uid, "canonicalOperationId": ResetFixtures.operationId, "expectedTaskGenerationEpoch": 3]) == .phase2Active(accountUid: uid, canonicalOperationId: ResetFixtures.operationId, expectedTaskGenerationEpoch: 3))
+        #expect(throws: ResetRemoteError.self) { try LegacyResetInspectionV1.decode(["schemaVersion": 1, "kind": "legacy_reset_inspection", "outcome": "none", "accountUid": uid, "legacyOperationId": legacy]) }
+        #expect(throws: ResetRemoteError.self) { try LegacyResetInspectionV1.decode(["schemaVersion": 1, "kind": "legacy_reset_inspection", "outcome": "phase2_active", "accountUid": uid, "canonicalOperationId": "x", "expectedTaskGenerationEpoch": 3]) }
+        #expect(TaskCanonicalV1.data(LegacyMigrationSurface.pending(uid: uid, phase: .dispatched).map) == TaskCanonicalV1.data(["schemaVersion": 1, "kind": "RESET_MIGRATION_PENDING", "uid": uid, "phase": "dispatched"]))
+        #expect(TaskCanonicalV1.data(LegacyMigrationSurface.blocked(uid: uid, errorCode: .aliasInvalid).map) == TaskCanonicalV1.data(["schemaVersion": 1, "reason": "RESET_MIGRATION_BLOCKED", "uid": uid, "errorCode": "LEGACY_ALIAS_INVALID"]))
+        #expect(TaskCanonicalV1.data(LegacyMigrationSurface.retryRequired(uid: uid, applicationId: rla).map) == TaskCanonicalV1.data(["schemaVersion": 1, "kind": "LEGACY_RESET_RETRY_REQUIRED", "uid": uid, "applicationId": rla]))
+        #expect(TaskCanonicalV1.data(LegacyMigrationSurface.completed(uid: uid, applicationId: rla).map) == TaskCanonicalV1.data(["schemaVersion": 1, "kind": "LEGACY_RESET_COMPLETED", "uid": uid, "applicationId": rla]))
+    }
+
+    @Test func legacyMigrationAliasCandidatesAdvanceOnOccupiedRedirectOnRequiredAndBlockOnExhaustedReusedAndCorrupt() async throws {
+        let directory = try temporaryDirectory()
+        let defaults = try isolatedDefaults()
+        defaults.set(LegacyFixtures.legacyA, forKey: LegacyResetMigrationV1.legacyKey(uid: "A"))
+        let (registry, _) = await LegacyFixtures.registry(directory, defaults: defaults)
+        let remote = LegacyRemote()
+        // a confirmed reserve with a valid key adopts a durable reserved gesture and creates PREPARED at ordinal 1 with the valid_string guard
+        #expect(try await registry.reserve(gestureId: LegacyFixtures.gestureId()) == .migrationPending(ResetMigrationPending(uid: "A", phase: .prepared)))
+        var row = try #require(await registry.legacyMigration(uid: "A"))
+        let gesture = try #require(await registry.snapshot().gesture)
+        #expect(row.phase == .prepared && row.aliasCandidateOrdinal == 1 && row.legacyOperationId == LegacyFixtures.legacyA && row.legacyKeyGuard == .validString(value: LegacyFixtures.legacyA))
+        #expect(row.initiatingAuthority == .reservedGesture(gestureId: gesture.gestureId, gestureGeneration: gesture.gestureGeneration, alias: gesture.alias) && gesture.phase == .reserved)
+        #expect(await registry.classification() == .ready, "a migration row never blocks the reset store")
+        // a reserve during every transient phase joins the pending surface; bind is stale while a migration exists
+        #expect(try await registry.reserve(gestureId: LegacyFixtures.gestureId()) == .migrationPending(ResetMigrationPending(uid: "A", phase: .prepared)))
+        await #expect(throws: ResetOperationRegistry.RegistryError.self) { try await registry.bind(reservation: ResetReservation(gestureId: gesture.gestureId, gestureGeneration: gesture.gestureGeneration)) }
+        // occupied candidates 1–3 advance the ordinal with a fresh alias, each committed before the next dispatch; transport ambiguity retains the candidate
+        var aliases: [String] = [row.migrationAlias ?? ""]
+        for ordinal in 1...3 {
+            remote.reconcile(.failure(.legacyResetAliasOccupied(legacyOperationId: LegacyFixtures.legacyA, migrationAlias: aliases.last ?? "")))
+            remote.reconcile(.failure(.transport))
+            await #expect(throws: ResetRemoteError.self) { try await registry.driveLegacyMigration(remote: remote) }
+            row = try #require(await registry.legacyMigration(uid: "A"))
+            #expect(row.phase == .dispatched && row.aliasCandidateOrdinal == ordinal + 1 && row.migrationAlias != aliases.last, Comment(rawValue: "ordinal \(ordinal) occupied → \(ordinal + 1)"))
+            aliases.append(row.migrationAlias ?? "")
+        }
+        #expect(remote.calls.count == 6, "each candidate dispatched once, each transport retry once")
+        #expect(Set(aliases).count == 4, "every draw consumes its ordinal with a fresh UUID")
+        // a collision detail that names another request is a protocol failure: the row is untouched
+        remote.reconcile(.failure(.legacyResetAliasOccupied(legacyOperationId: LegacyFixtures.legacyB, migrationAlias: aliases.last ?? "")))
+        await #expect(throws: ResetRemoteError.self) { try await registry.driveLegacyMigration(remote: remote) }
+        let untouched = await registry.legacyMigration(uid: "A")
+        #expect(untouched == row)
+        // ordinal 4 occupied → LEGACY_ALIAS_COLLISION_EXHAUSTED; a confirmed reserve draws ordinal 1 again; the drive never resets it
+        remote.reconcile(.failure(.legacyResetAliasOccupied(legacyOperationId: LegacyFixtures.legacyA, migrationAlias: aliases.last ?? "")))
+        await #expect(throws: ResetOperationRegistry.RegistryError.migrationBlocked(uid: "A", errorCode: "LEGACY_ALIAS_COLLISION_EXHAUSTED")) { try await registry.driveLegacyMigration(remote: remote) }
+        row = try #require(await registry.legacyMigration(uid: "A"))
+        #expect(row.phase == .blocked && row.errorCode == .aliasCollisionExhausted && row.aliasCandidateOrdinal == 4)
+        await #expect(throws: ResetOperationRegistry.RegistryError.migrationBlocked(uid: "A", errorCode: "LEGACY_ALIAS_COLLISION_EXHAUSTED")) { try await registry.driveLegacyMigration(remote: remote) }
+        #expect(try await registry.reserve(gestureId: LegacyFixtures.gestureId()) == .migrationPending(ResetMigrationPending(uid: "A", phase: .prepared)))
+        row = try #require(await registry.legacyMigration(uid: "A"))
+        #expect(row.aliasCandidateOrdinal == 1 && !aliases.contains(row.migrationAlias ?? "") && row.initiatingAuthority == .reservedGesture(gestureId: gesture.gestureId, gestureGeneration: gesture.gestureGeneration, alias: gesture.alias))
+        // MIGRATION_REQUIRED(B) redirects to PREPARED(B) at ordinal 1 preserving guard, authority, and createdAt; B == A is a protocol failure
+        let createdAt = row.createdAt
+        remote.reconcile(.failure(.legacyResetMigrationRequired(legacyOperationId: LegacyFixtures.legacyA)))
+        await #expect(throws: ResetRemoteError.self) { try await registry.driveLegacyMigration(remote: remote) }
+        #expect(await registry.legacyMigration(uid: "A")?.legacyOperationId == LegacyFixtures.legacyA)
+        remote.reconcile(.failure(.legacyResetMigrationRequired(legacyOperationId: LegacyFixtures.legacyB)))
+        remote.reconcile(.failure(.transport))
+        await #expect(throws: ResetRemoteError.self) { try await registry.driveLegacyMigration(remote: remote) }
+        row = try #require(await registry.legacyMigration(uid: "A"))
+        #expect(row.legacyOperationId == LegacyFixtures.legacyB && row.aliasCandidateOrdinal == 1 && row.legacyKeyGuard == .validString(value: LegacyFixtures.legacyA) && row.createdAt == createdAt && row.phase == .dispatched)
+        #expect(row.map()["requestFingerprint"] as? String == LegacyResetReconciliationV1.requestFingerprint(uid: "A", legacyOperationId: LegacyFixtures.legacyB))
+        // LEGACY_RESET_CORRUPT blocks; the confirmed reserve is the frozen same-request Retry to PREPARED (alias and ordinal kept)
+        let keptAlias = row.migrationAlias
+        remote.reconcile(.failure(.legacyResetCorrupt(context: "reconcile", legacyOperationId: LegacyFixtures.legacyB, recordClass: "deleting", markerClass: "absent")))
+        await #expect(throws: ResetOperationRegistry.RegistryError.migrationBlocked(uid: "A", errorCode: "LEGACY_RESET_CORRUPT")) { try await registry.driveLegacyMigration(remote: remote) }
+        #expect(try await registry.reserve(gestureId: LegacyFixtures.gestureId()) == .migrationPending(ResetMigrationPending(uid: "A", phase: .prepared)))
+        row = try #require(await registry.legacyMigration(uid: "A"))
+        #expect(row.errorCode == nil && row.migrationAlias == keptAlias && row.aliasCandidateOrdinal == 1)
+        // REQUEST_INVALID after local validation is LEGACY_RESET_CORRUPT; OPERATION_REUSED never transitions, even on reserve
+        remote.reconcile(.failure(.requestInvalid(field: "migrationAlias")))
+        await #expect(throws: ResetOperationRegistry.RegistryError.migrationBlocked(uid: "A", errorCode: "LEGACY_RESET_CORRUPT")) { try await registry.driveLegacyMigration(remote: remote) }
+        _ = try await registry.reserve(gestureId: LegacyFixtures.gestureId())
+        remote.reconcile(.failure(.operationReused(operationId: ResetFixtures.operationId)))
+        await #expect(throws: ResetOperationRegistry.RegistryError.migrationBlocked(uid: "A", errorCode: "OPERATION_REUSED")) { try await registry.driveLegacyMigration(remote: remote) }
+        await #expect(throws: ResetOperationRegistry.RegistryError.migrationBlocked(uid: "A", errorCode: "OPERATION_REUSED")) { try await registry.reserve(gestureId: LegacyFixtures.gestureId()) }
+        #expect(await registry.legacyMigration(uid: "A")?.errorCode == .operationReused)
+        #expect(defaults.string(forKey: LegacyResetMigrationV1.legacyKey(uid: "A")) == LegacyFixtures.legacyA, "the key is compare/remove authority only in APPLYING")
+    }
+
+    @Test func legacyMigrationReceiptToApplyingMaterializesUpgradedRetiresNotDispatchedAndComparesTheKey() async throws {
+        // upgraded under a reserved gesture: the progress receipt materializes the row under the bound alias, the gesture goes, the key is removed
+        let upgradedDirectory = try temporaryDirectory()
+        let defaults = try isolatedDefaults()
+        defaults.set(LegacyFixtures.legacyA, forKey: LegacyResetMigrationV1.legacyKey(uid: "A"))
+        let (registry, _) = await LegacyFixtures.registry(upgradedDirectory, defaults: defaults)
+        let remote = LegacyRemote()
+        _ = try await registry.reserve(gestureId: LegacyFixtures.gestureId())
+        let gesture = try #require(await registry.snapshot().gesture)
+        let prepared = try #require(await registry.legacyMigration(uid: "A"))
+        remote.reconcile(.success(LegacyFixtures.upgraded(uid: "A", legacy: LegacyFixtures.legacyA, alias: prepared.migrationAlias ?? "", epoch: 4)))
+        let outcome = try await registry.driveLegacyMigration(remote: remote)
+        let snapshot = await registry.snapshot()
+        let materialized = try #require(snapshot.records.first)
+        #expect(outcome == .operation(ResetOperationHandle(uid: "A", handleId: materialized.handleId)))
+        #expect(materialized.suggestedOperationId == gesture.alias && materialized.createdAt == gesture.reservedAt && materialized.expectedTaskGenerationEpoch == 4 && materialized.phase == .resetReceiptDeleting)
+        #expect(materialized.canonicalOperationId == "rso1_" + String(repeating: "d", count: 40) && materialized.progressReceipt != nil)
+        let migrationAfterUpgrade = await registry.legacyMigration(uid: "A")
+        #expect(snapshot.gesture == nil && migrationAfterUpgrade == nil)
+        #expect(defaults.object(forKey: LegacyResetMigrationV1.legacyKey(uid: "A")) == nil, "the exact valid_string value is removed in APPLYING")
+        #expect(try await registry.reserve(gestureId: LegacyFixtures.gestureId()) == .operation(ResetOperationHandle(uid: "A", handleId: materialized.handleId)), "a later reserve derives the same handle")
+        #expect(remote.calls == ["reconcile:\(LegacyFixtures.legacyA)|\(prepared.migrationAlias ?? "")"])
+        // a replayed response must not name a different alias only when it is not replayed
+        // not_dispatched: the gesture is retired, no reset row, the rla1_ application ID, LEGACY_RESET_RETRY_REQUIRED; a whitespace-changed key is not removed
+        let notDispatchedDirectory = try temporaryDirectory()
+        let defaults2 = try isolatedDefaults()
+        defaults2.set(LegacyFixtures.legacyA, forKey: LegacyResetMigrationV1.legacyKey(uid: "A"))
+        let (registry2, _) = await LegacyFixtures.registry(notDispatchedDirectory, defaults: defaults2)
+        _ = try await registry2.reserve(gestureId: LegacyFixtures.gestureId())
+        let prepared2 = try #require(await registry2.legacyMigration(uid: "A"))
+        defaults2.set(LegacyFixtures.legacyA + " ", forKey: LegacyResetMigrationV1.legacyKey(uid: "A"))
+        let remote2 = LegacyRemote()
+        remote2.reconcile(.success(LegacyFixtures.notDispatched(uid: "A", legacy: LegacyFixtures.legacyA, alias: prepared2.migrationAlias ?? "")))
+        let migrationId = LegacyResetReconciliationV1.migrationId(uid: "A", legacyOperationId: LegacyFixtures.legacyA)
+        #expect(try await registry2.driveLegacyMigration(remote: remote2) == .legacyRetryRequired(LegacyResetRetryRequired(uid: "A", applicationId: LegacyResetMigrationV1.applicationId(uid: "A", migrationId: migrationId, outcome: "not_dispatched"))))
+        let snapshot2 = await registry2.snapshot()
+        let migrationAfterNotDispatched = await registry2.legacyMigration(uid: "A")
+        #expect(snapshot2.records.isEmpty && snapshot2.gesture == nil && migrationAfterNotDispatched == nil)
+        #expect(defaults2.string(forKey: LegacyResetMigrationV1.legacyKey(uid: "A")) == LegacyFixtures.legacyA + " ", "a different value remains")
+        // finalized_compat: LEGACY_RESET_COMPLETED
+        let compatDirectory = try temporaryDirectory()
+        let defaults3 = try isolatedDefaults()
+        defaults3.set(LegacyFixtures.legacyA, forKey: LegacyResetMigrationV1.legacyKey(uid: "A"))
+        let (registry3, _) = await LegacyFixtures.registry(compatDirectory, defaults: defaults3)
+        _ = try await registry3.reserve(gestureId: LegacyFixtures.gestureId())
+        let prepared3 = try #require(await registry3.legacyMigration(uid: "A"))
+        let remote3 = LegacyRemote()
+        remote3.reconcile(.success(LegacyFixtures.finalizedCompat(uid: "A", legacy: LegacyFixtures.legacyA, alias: prepared3.migrationAlias ?? "")))
+        #expect(try await registry3.driveLegacyMigration(remote: remote3) == .legacyCompleted(LegacyResetCompleted(uid: "A", applicationId: LegacyResetMigrationV1.applicationId(uid: "A", migrationId: migrationId, outcome: "finalized_compat"))))
+        #expect(defaults3.object(forKey: LegacyResetMigrationV1.legacyKey(uid: "A")) == nil)
+        // phase2_active under a reset_dispatched authority (discovery without a local key): the durable row is transformed in place, handle stable
+        let dispatchedDirectory = try temporaryDirectory()
+        let defaults4 = try isolatedDefaults()
+        let (registry4, _) = await LegacyFixtures.registry(dispatchedDirectory, defaults: defaults4)
+        try ResetFixtures.envelope(records: [ResetFixtures.row(uid: "A", epoch: 1, phase: "reset_dispatched")]).write(to: ResetFixtures.target(dispatchedDirectory))
+        let dispatched = try #require(await registry4.snapshot().records.first)
+        let handle = ResetOperationHandle(uid: "A", handleId: dispatched.handleId)
+        #expect(try await registry4.noteMigrationRequired(handle: handle, legacyOperationId: LegacyFixtures.legacyB) == ResetMigrationPending(uid: "A", phase: .prepared))
+        let background = try #require(await registry4.legacyMigration(uid: "A"))
+        #expect(background.initiatingAuthority == .resetDispatched(expectedTaskGenerationEpoch: 1, suggestedOperationId: dispatched.suggestedOperationId) && background.legacyKeyGuard == .absent)
+        #expect(try await registry4.reserve(gestureId: LegacyFixtures.gestureId()) == .migrationPending(ResetMigrationPending(uid: "A", phase: .prepared)), "the migration precedes the reset row")
+        let remote4 = LegacyRemote()
+        remote4.reconcile(.success(LegacyFixtures.phase2Active(uid: "A", legacy: LegacyFixtures.legacyB, alias: "rsa1_99999999-9999-4999-8999-999999999999", epoch: 2)))
+        #expect(try await registry4.driveLegacyMigration(remote: remote4) == .operation(handle), "the handle survives the in-place transformation")
+        let transformed = try #require(await registry4.snapshot().records.first)
+        #expect(transformed.phase == .resetReceiptAwaitingLocalReset && transformed.expectedTaskGenerationEpoch == 2 && transformed.canonicalOperationId != nil && transformed.suggestedOperationId == dispatched.suggestedOperationId)
+        #expect(await registry4.legacyMigration(uid: "A") == nil)
+        await #expect(throws: ResetOperationRegistry.RegistryError.self) { try await registry4.noteMigrationRequired(handle: handle, legacyOperationId: LegacyFixtures.legacyB) }
+        // a present-authority mismatch at receipt→applying blocks with zero write
+        let mismatchDirectory = try temporaryDirectory()
+        let (registry5, _) = await LegacyFixtures.registry(mismatchDirectory, defaults: try isolatedDefaults())
+        var receiptRow = LegacyFixtures.exactRow(phase: .receipt, receipt: LegacyFixtures.upgraded(uid: "A", legacy: LegacyFixtures.legacyA, alias: "rsa1_22222222-2222-4222-8222-222222222222", epoch: 1), authority: .resetDispatched(expectedTaskGenerationEpoch: 1, suggestedOperationId: "rsa1_22222222-2222-4222-8222-222222222222"))
+        receiptRow.legacyKeyGuard = .absent
+        try LegacyFixtures.seed(mismatchDirectory, migration: receiptRow, records: [ResetFixtures.row(uid: "A", epoch: 1, phase: "final_receipt", finalReceipt: ResetFixtures.finalReceipt(uid: "A", epoch: 1), suggested: "rsa1_22222222-2222-4222-8222-222222222222")])
+        let before = try Data(contentsOf: ResetFixtures.target(mismatchDirectory))
+        await #expect(throws: ResetOperationRegistry.RegistryError.envelopeCorrupt) { try await registry5.driveLegacyMigration(remote: LegacyRemote()) }
+        let after = try Data(contentsOf: ResetFixtures.target(mismatchDirectory))
+        #expect(after == before)
+    }
+
+    @Test func legacyAliasInvalidRowsInspectUnderReservedConsentAndClearOrRedirect() async throws {
+        // a non-string key: the invalid-alias member with the reserved-gesture consent; without an inspection wire it stays byte-identical
+        let directory = try temporaryDirectory()
+        let defaults = try isolatedDefaults()
+        defaults.set(5, forKey: LegacyResetMigrationV1.legacyKey(uid: "A"))
+        let (registry, _) = await LegacyFixtures.registry(directory, defaults: defaults)
+        #expect(try await registry.reserve(gestureId: LegacyFixtures.gestureId()) == .migrationPending(ResetMigrationPending(uid: "A", phase: .blocked)))
+        let row = try #require(await registry.legacyMigration(uid: "A"))
+        #expect(row.isInvalidAliasMember && row.legacyValueClass == .nonString && row.legacyValueUtf8Length == nil && row.legacyOperationId == nil)
+        guard case .reservedGesture = row.initiatingAuthority else { Issue.record("consent attached"); return }
+        let bytes = try Data(contentsOf: ResetFixtures.target(directory))
+        let remote = LegacyRemote()
+        await #expect(throws: ResetOperationRegistry.RegistryError.migrationBlocked(uid: "A", errorCode: "LEGACY_ALIAS_INVALID")) { try await registry.driveLegacyMigration(remote: remote) }
+        remote.inspect(.failure(.legacyResetCorrupt(context: "inspect", legacyOperationId: nil, recordClass: "phase2", markerClass: "malformed")))
+        await #expect(throws: ResetOperationRegistry.RegistryError.migrationBlocked(uid: "A", errorCode: "LEGACY_ALIAS_INVALID")) { try await registry.driveLegacyMigration(remote: remote) }
+        let retained = try Data(contentsOf: ResetFixtures.target(directory))
+        #expect(retained == bytes && remote.calls == ["inspect", "inspect"], "a transport failure and a corrupt inspection each call once and write nothing")
+        // none with a non_string guard: the key is never auto-removed; migration and gesture retire; LEGACY_RESET_RETRY_REQUIRED with the rlic1_/none ID
+        remote.inspect(.success(.none(accountUid: "A")))
+        #expect(try await registry.driveLegacyMigration(remote: remote) == .legacyRetryRequired(LegacyResetRetryRequired(uid: "A", applicationId: LegacyResetMigrationV1.clearApplicationId(uid: "A", legacyValueClass: .nonString, utf8Length: nil, sha256: nil, outcome: "none"))))
+        let afterNone = await registry.legacyMigration(uid: "A")
+        let afterNoneGesture = await registry.snapshot().gesture
+        #expect(defaults.integer(forKey: LegacyResetMigrationV1.legacyKey(uid: "A")) == 5 && afterNone == nil && afterNoneGesture == nil)
+        // an invalid string: legacy_active(B) redirects to PREPARED(B) at ordinal 1 with the carried invalid guard; APPLYING then compare-removes by length and digest
+        let redirectDirectory = try temporaryDirectory()
+        let defaults2 = try isolatedDefaults()
+        defaults2.set("bad/id", forKey: LegacyResetMigrationV1.legacyKey(uid: "A"))
+        let (registry2, _) = await LegacyFixtures.registry(redirectDirectory, defaults: defaults2)
+        #expect(try await registry2.reserve(gestureId: LegacyFixtures.gestureId()) == .migrationPending(ResetMigrationPending(uid: "A", phase: .blocked)))
+        let invalid = try #require(await registry2.legacyMigration(uid: "A"))
+        #expect(invalid.legacyValueClass == .invalidString && invalid.legacyValueUtf8Length == 6 && invalid.legacyValueSHA256 == TaskCanonicalV1.sha256Hex(data: Data("bad/id".utf8)))
+        let remote2 = LegacyRemote()
+        remote2.inspect(.success(.legacyActive(accountUid: "A", legacyOperationId: LegacyFixtures.legacyB)))
+        #expect(try await registry2.driveLegacyMigration(remote: remote2) == .migrationPending(ResetMigrationPending(uid: "A", phase: .prepared)))
+        let redirected = try #require(await registry2.legacyMigration(uid: "A"))
+        #expect(redirected.legacyOperationId == LegacyFixtures.legacyB && redirected.aliasCandidateOrdinal == 1 && redirected.legacyKeyGuard == .invalidValue(valueClass: .invalidString, utf8Length: 6, sha256: TaskCanonicalV1.sha256Hex(data: Data("bad/id".utf8))) && redirected.initiatingAuthority == invalid.initiatingAuthority && redirected.legacyValueClass == nil)
+        remote2.reconcile(.success(LegacyFixtures.notDispatched(uid: "A", legacy: LegacyFixtures.legacyB, alias: redirected.migrationAlias ?? "")))
+        guard case .legacyRetryRequired = try await registry2.driveLegacyMigration(remote: remote2) else { Issue.record("not dispatched"); return }
+        #expect(defaults2.object(forKey: LegacyResetMigrationV1.legacyKey(uid: "A")) == nil, "the invalid string matching length and digest is removed")
+        // phase2_active(C) with the guard matching adopts a no-receipt reset_dispatched row under the stored reserved alias and clears the key
+        let adoptDirectory = try temporaryDirectory()
+        let defaults3 = try isolatedDefaults()
+        defaults3.set("bad/id", forKey: LegacyResetMigrationV1.legacyKey(uid: "A"))
+        let (registry3, _) = await LegacyFixtures.registry(adoptDirectory, defaults: defaults3)
+        _ = try await registry3.reserve(gestureId: LegacyFixtures.gestureId())
+        let reserved = try #require(await registry3.snapshot().gesture)
+        let remote3 = LegacyRemote()
+        remote3.inspect(.success(.phase2Active(accountUid: "A", canonicalOperationId: ResetFixtures.operationId, expectedTaskGenerationEpoch: 3)))
+        let adopted = try await registry3.driveLegacyMigration(remote: remote3)
+        let adoptedRow = try #require(await registry3.snapshot().records.first)
+        #expect(adopted == .operation(ResetOperationHandle(uid: "A", handleId: adoptedRow.handleId)))
+        #expect(adoptedRow.phase == .resetDispatched && adoptedRow.canonicalOperationId == nil && adoptedRow.progressReceipt == nil && adoptedRow.expectedTaskGenerationEpoch == 3 && adoptedRow.suggestedOperationId == reserved.alias && adoptedRow.createdAt == reserved.reservedAt)
+        let afterAdopt = await registry3.legacyMigration(uid: "A")
+        let afterAdoptGesture = await registry3.snapshot().gesture
+        #expect(defaults3.object(forKey: LegacyResetMigrationV1.legacyKey(uid: "A")) == nil && afterAdopt == nil && afterAdoptGesture == nil)
+        // a drifted guard retires everything, leaves the key untouched, and returns the rlic1_/legacy_value_changed ID
+        let driftDirectory = try temporaryDirectory()
+        let defaults4 = try isolatedDefaults()
+        defaults4.set("bad/id", forKey: LegacyResetMigrationV1.legacyKey(uid: "A"))
+        let (registry4, _) = await LegacyFixtures.registry(driftDirectory, defaults: defaults4)
+        _ = try await registry4.reserve(gestureId: LegacyFixtures.gestureId())
+        defaults4.set("worse/id", forKey: LegacyResetMigrationV1.legacyKey(uid: "A"))
+        let remote4 = LegacyRemote()
+        remote4.inspect(.success(.phase2Active(accountUid: "A", canonicalOperationId: ResetFixtures.operationId, expectedTaskGenerationEpoch: 3)))
+        let sha = TaskCanonicalV1.sha256Hex(data: Data("bad/id".utf8))
+        #expect(try await registry4.driveLegacyMigration(remote: remote4) == .legacyRetryRequired(LegacyResetRetryRequired(uid: "A", applicationId: LegacyResetMigrationV1.clearApplicationId(uid: "A", legacyValueClass: .invalidString, utf8Length: 6, sha256: sha, outcome: "legacy_value_changed"))))
+        let afterDriftRecords = await registry4.snapshot().records
+        let afterDrift = await registry4.legacyMigration(uid: "A")
+        #expect(defaults4.string(forKey: LegacyResetMigrationV1.legacyKey(uid: "A")) == "worse/id" && afterDriftRecords.isEmpty && afterDrift == nil)
+        // a background invalid-alias row (no consent) never inspects; a confirmed reserve attaches the consent
+        let backgroundDirectory = try temporaryDirectory()
+        let (registry5, _) = await LegacyFixtures.registry(backgroundDirectory, defaults: try isolatedDefaults())
+        try LegacyFixtures.seed(backgroundDirectory, migration: LegacyFixtures.invalidRow(.nonString))
+        let remote5 = LegacyRemote()
+        remote5.inspect(.success(.none(accountUid: "A")))
+        await #expect(throws: ResetOperationRegistry.RegistryError.migrationBlocked(uid: "A", errorCode: "LEGACY_ALIAS_INVALID")) { try await registry5.driveLegacyMigration(remote: remote5) }
+        #expect(remote5.calls.isEmpty)
+        #expect(try await registry5.reserve(gestureId: LegacyFixtures.gestureId()) == .migrationPending(ResetMigrationPending(uid: "A", phase: .blocked)))
+        guard case .reservedGesture = try #require(await registry5.legacyMigration(uid: "A")).initiatingAuthority else { Issue.record("consent"); return }
+        #expect(await registry5.snapshot().gesture?.phase == .reserved)
+    }
+
+
     // MARK: - Epoch stamps (I4, stamps only; manifest §5:540-546). Cleanup belongs to S3.
 
     @Test func dailyDoseLocalStoreWritesAStampedV2EnvelopeAndCASesRevision() async throws {
@@ -3169,6 +3476,74 @@ final class VerificationFailingDefaults: UserDefaults, @unchecked Sendable {
     override func array(forKey defaultName: String) -> [Any]? {
         if failQuarantineReads, defaultName.hasSuffix(".dailyDose.v2.quarantine") { return nil }
         return super.array(forKey: defaultName)
+    }
+}
+
+/// Scripted legacy reconciliation/inspection remote for the C9.4.5 families; the reset messages are refused.
+final class LegacyRemote: ResetRemoteProviding, @unchecked Sendable {
+    private let lock = NSLock()
+    private var reconciles: [Result<LegacyResetReconciliationV1, ResetRemoteError>] = []
+    private var inspections: [Result<LegacyResetInspectionV1, ResetRemoteError>] = []
+    private var recorded: [String] = []
+    var calls: [String] { lock.withLock { recorded } }
+    func reconcile(_ outcome: Result<LegacyResetReconciliationV1, ResetRemoteError>) { lock.withLock { reconciles.append(outcome) } }
+    func inspect(_ outcome: Result<LegacyResetInspectionV1, ResetRemoteError>) { lock.withLock { inspections.append(outcome) } }
+    func reset(_ action: ResetRemoteAction, alias: String, expectedTaskGenerationEpoch: Int) async throws -> ResetReceiptV1 { throw ResetRemoteError.protocolAmbiguity }
+    func inspectReset(uid: String, canonicalOperationId: String, expectedTaskGenerationEpoch: Int) async throws -> ResetInspectionV1 { throw ResetRemoteError.protocolAmbiguity }
+    func reconcileLegacyReset(legacyOperationId: String, migrationAlias: String) async throws -> LegacyResetReconciliationV1 {
+        let next: Result<LegacyResetReconciliationV1, ResetRemoteError>? = lock.withLock { recorded.append("reconcile:\(legacyOperationId)|\(migrationAlias)"); return reconciles.isEmpty ? nil : reconciles.removeFirst() }
+        guard let next else { throw ResetRemoteError.transport }
+        return try next.get()
+    }
+    func inspectLegacyReset() async throws -> LegacyResetInspectionV1 {
+        let next: Result<LegacyResetInspectionV1, ResetRemoteError>? = lock.withLock { recorded.append("inspect"); return inspections.isEmpty ? nil : inspections.removeFirst() }
+        guard let next else { throw ResetRemoteError.transport }
+        return try next.get()
+    }
+}
+
+enum LegacyFixtures {
+    static let legacyA = "20000000-0000-4000-8000-000000000001"
+    static let legacyB = "20000000-0000-4000-8000-000000000002"
+    static func base(uid: String, legacy: String, alias: String, replayed: Bool = false) -> LegacyResetReconciliationV1.Base {
+        LegacyResetReconciliationV1.Base(migrationId: LegacyResetReconciliationV1.migrationId(uid: uid, legacyOperationId: legacy), legacyOperationId: legacy, migrationAlias: alias, accountUid: uid, replayed: replayed)
+    }
+    static func progress(uid: String, epoch: Int, state: ResetReceiptState, replayed: Bool) -> ResetReceiptV1 {
+        ResetReceiptV1(kind: .progress, operationId: "rso1_" + String(repeating: "d", count: 40), replayed: replayed, accountUid: uid, expectedTaskGenerationEpoch: epoch, taskGenerationEpoch: epoch + 1,
+                       activeMoveEventId: "me1_" + String(repeating: "e", count: 40), deletedCount: 0,
+                       deletedCounts: ResetDeletedCountsV1(tasks: 0, notificationIntents: 0, taskDeadlineEvidence: 0, confirmationSnapshots: 0), state: state)
+    }
+    static func upgraded(uid: String, legacy: String, alias: String, epoch: Int) -> LegacyResetReconciliationV1 {
+        .upgraded(base(uid: uid, legacy: legacy, alias: alias), sourceState: "deleting", progress: progress(uid: uid, epoch: epoch, state: .deleting, replayed: false))
+    }
+    static func phase2Active(uid: String, legacy: String, alias: String, epoch: Int) -> LegacyResetReconciliationV1 {
+        .phase2Active(base(uid: uid, legacy: legacy, alias: alias, replayed: true), progress: progress(uid: uid, epoch: epoch, state: .awaitingLocalReset, replayed: true))
+    }
+    static func notDispatched(uid: String, legacy: String, alias: String) -> LegacyResetReconciliationV1 { .notDispatched(base(uid: uid, legacy: legacy, alias: alias)) }
+    static func finalizedCompat(uid: String, legacy: String, alias: String) -> LegacyResetReconciliationV1 {
+        .finalizedCompat(base(uid: uid, legacy: legacy, alias: alias), legacyFinal: LegacyResetFinalReceiptV1(operationId: legacy, accountUid: uid, deletedCount: 2))
+    }
+    static func gestureId() -> String { "rsg1_" + UUID().uuidString.lowercased() }
+    static func exactRow(phase: LegacyMigrationPhase, errorCode: LegacyMigrationErrorCode? = nil, receipt: LegacyResetReconciliationV1? = nil, applicationId: String? = nil, authority: LegacyInitiatingAuthority? = .reservedGesture(gestureId: "rsg1_11111111-1111-4111-8111-111111111111", gestureGeneration: "g1", alias: "rsa1_22222222-2222-4222-8222-222222222222")) -> LegacyResetMigrationV1 {
+        LegacyResetMigrationV1(uid: "A", authEpochUUID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", credentialRevision: 3, initiatingAuthority: authority, phase: phase,
+                               createdAt: "2026-09-06T12:00:00.000Z", updatedAt: "2026-09-06T12:00:00.000Z", legacyOperationId: legacyA, migrationAlias: "rsa1_22222222-2222-4222-8222-222222222222",
+                               aliasCandidateOrdinal: 1, legacyKeyGuard: .validString(value: legacyA), receipt: receipt.flatMap { TaskCanonicalV1.data($0.map()) }, applicationId: applicationId, errorCode: errorCode,
+                               legacyValueClass: nil, legacyValueUtf8Length: nil, legacyValueSHA256: nil)
+    }
+    static func invalidRow(_ valueClass: LegacyValueClass, authority: LegacyInitiatingAuthority? = nil) -> LegacyResetMigrationV1 {
+        LegacyResetMigrationV1(uid: "A", authEpochUUID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", credentialRevision: 3, initiatingAuthority: authority, phase: .blocked,
+                               createdAt: "2026-09-06T12:00:00.000Z", updatedAt: "2026-09-06T12:00:00.000Z", legacyOperationId: nil, migrationAlias: nil, aliasCandidateOrdinal: nil, legacyKeyGuard: nil,
+                               receipt: nil, applicationId: nil, errorCode: .aliasInvalid, legacyValueClass: valueClass,
+                               legacyValueUtf8Length: valueClass == .invalidString ? 6 : nil, legacyValueSHA256: valueClass == .invalidString ? TaskCanonicalV1.sha256Hex(data: Data("bad/id".utf8)) : nil)
+    }
+    static func registry(_ directory: URL, defaults: UserDefaults) async -> (ResetOperationRegistry, SignedAuthStub) {
+        let stub = SignedAuthStub(signedInA)
+        let registry = ResetOperationRegistry(directory: directory, clock: ResetClockStub(), auth: stub, epochAuthority: EpochStub(epoch: 1))
+        await registry.attachLegacyKeyStore(defaults)
+        return (registry, stub)
+    }
+    static func seed(_ directory: URL, migration: LegacyResetMigrationV1, records: [[String: Any]] = [], gesture: ResetGestureV1? = nil) throws {
+        try ResetFixtures.envelope(records: records, migrations: [migration.map()], gesture: gesture?.map()).write(to: ResetFixtures.target(directory))
     }
 }
 

@@ -671,6 +671,10 @@ actor ResetOperationRegistry {
     /// actor validated the exact response and durably committed the envelope; cleared on load and on any signed-auth change.
     fileprivate var validatedReceiptProvenance: [String: String] = [:]
     fileprivate var provenanceAuth: SignedAuthTuple?
+    /// S4 (C9.4.5): the store holding `phase1.pendingRetakeOperation.{uid}` (compare/remove authority only in APPLYING) and
+    /// the per-UID `inflightLegacyMigration` singleflight.
+    fileprivate var legacyKeyDefaults: UserDefaults = .standard
+    fileprivate var inflightLegacyMigration: [String: Task<ResetReserveOutcome, Error>] = [:]
     /// C9.5.8/C9.5.12 `inflightResetOperation`: one drive per handle; installed before the first suspension, cleared in
     /// `defer`; joiners with the same UID/auth epoch and a revision at or above the baseline receive the outcome only.
     fileprivate var inflightResetOperation: [ResetOperationHandle: (uid: String, authEpochUUID: String, credentialBaseline: Int, task: Task<ResetDriveOutcome, Error>)] = [:]
@@ -729,11 +733,8 @@ actor ResetOperationRegistry {
         var envelope = try read() ?? Envelope(generationId: "", sha256: "", records: [], migrations: [], gesture: nil)
         try normalize(&envelope, tuple: tuple)
 
-        if let migration = envelope.migrations.first(where: { $0["uid"] as? String == tuple.uid }) {
-            let phase = (migration["phase"] as? String).flatMap(LegacyMigrationPhase.init(rawValue:)) ?? .blocked
-            if phase == .blocked { throw RegistryError.migrationBlocked(uid: tuple.uid, errorCode: migration["errorCode"] as? String ?? "LEGACY_RESET_CORRUPT") }
-            return .migrationPending(ResetMigrationPending(uid: tuple.uid, phase: phase))
-        }
+        // S4 (C9.4.5, C9.5.9 step 2): same-UID migration rows precede any materialization or reset-row drive
+        if let outcome = try legacyMigrationOnReserve(&envelope, tuple: tuple, gestureId: gestureId) { return outcome }
 
         // A loaded bound gesture materializes its prepared row without rereading the epoch.
         if let gesture = envelope.gesture, gesture.uid == tuple.uid, gesture.phase == .bound, let epoch = gesture.expectedEpoch {
@@ -1279,6 +1280,47 @@ protocol ResetRemoteProviding: Sendable {
     func reset(_ action: ResetRemoteAction, alias: String, expectedTaskGenerationEpoch: Int) async throws -> ResetReceiptV1
     func inspectReset(uid: String, canonicalOperationId: String, expectedTaskGenerationEpoch: Int) async throws -> ResetInspectionV1
     func reconcileLegacyReset(legacyOperationId: String, migrationAlias: String) async throws -> LegacyResetReconciliationV1
+    /// S4 (C9.4.5): `{action:"inspectLegacyTaskReset"}`, authenticated and read-only; offered only by `LEGACY_ALIAS_INVALID`.
+    func inspectLegacyReset() async throws -> LegacyResetInspectionV1
+}
+
+extension ResetRemoteProviding {
+    func inspectLegacyReset() async throws -> LegacyResetInspectionV1 { throw ResetRemoteError.protocolAmbiguity }
+}
+
+/// `{schemaVersion:1,kind:"legacy_reset_inspection",outcome:"none"|"legacy_active"|"phase2_active",accountUid,legacyOperationId?,canonicalOperationId?,expectedTaskGenerationEpoch?}` (C9.4.5).
+enum LegacyResetInspectionV1: Equatable, Sendable {
+    case none(accountUid: String)
+    case legacyActive(accountUid: String, legacyOperationId: String)
+    case phase2Active(accountUid: String, canonicalOperationId: String, expectedTaskGenerationEpoch: Int)
+
+    var accountUid: String {
+        switch self {
+        case let .none(uid), let .legacyActive(uid, _), let .phase2Active(uid, _, _): return uid
+        }
+    }
+
+    static func decode(_ data: [String: Any]) throws -> LegacyResetInspectionV1 {
+        let common: Set<String> = ["schemaVersion", "kind", "outcome", "accountUid"]
+        guard TaskGenerationEpochStamp.safeInteger(data["schemaVersion"]) == 1, data["kind"] as? String == "legacy_reset_inspection",
+              let outcome = data["outcome"] as? String, let accountUid = data["accountUid"] as? String, !accountUid.isEmpty else { throw ResetRemoteError.protocolAmbiguity }
+        let keys = Set(data.keys)
+        switch outcome {
+        case "none":
+            guard keys == common else { throw ResetRemoteError.protocolAmbiguity }
+            return .none(accountUid: accountUid)
+        case "legacy_active":
+            guard keys == common.union(["legacyOperationId"]), let legacy = data["legacyOperationId"] as? String, LegacyResetMigrationV1.isValidLegacyOperationId(legacy) else { throw ResetRemoteError.protocolAmbiguity }
+            return .legacyActive(accountUid: accountUid, legacyOperationId: legacy)
+        case "phase2_active":
+            guard keys == common.union(["canonicalOperationId", "expectedTaskGenerationEpoch"]),
+                  let canonical = data["canonicalOperationId"] as? String, canonical.range(of: ResetReceiptV1.canonicalIdPattern, options: .regularExpression) != nil,
+                  let epoch = TaskGenerationEpochStamp.safeInteger(data["expectedTaskGenerationEpoch"]), epoch < TaskGenerationEpochStamp.maxSafeInteger else { throw ResetRemoteError.protocolAmbiguity }
+            return .phase2Active(accountUid: accountUid, canonicalOperationId: canonical, expectedTaskGenerationEpoch: epoch)
+        default:
+            throw ResetRemoteError.protocolAmbiguity
+        }
+    }
 }
 
 extension TaskPlanService {
@@ -1325,6 +1367,11 @@ extension TaskPlanService {
         func reconcileLegacyReset(legacyOperationId: String, migrationAlias: String) async throws -> LegacyResetReconciliationV1 {
             let payload: [String: Any] = ["action": "reconcileLegacyTaskReset", "legacyOperationId": legacyOperationId, "migrationAlias": migrationAlias]
             return try LegacyResetReconciliationV1.decode(try await invoke(payload))
+        }
+
+        /// S4 (C9.4.5): the `LEGACY_RESET_MIGRATION` inspection transport, exactly `{action:"inspectLegacyTaskReset"}`.
+        func inspectLegacyReset() async throws -> LegacyResetInspectionV1 {
+            try LegacyResetInspectionV1.decode(try await invoke(["action": "inspectLegacyTaskReset"]))
         }
 
         private func invoke(_ payload: [String: Any]) async throws -> [String: Any] {
@@ -2031,6 +2078,712 @@ extension ResetOperationRegistry: DurableStoreRecovering {
         switch key {
         case let .recover(d), let .merge(d), let .discard(d), let .cleanup(d), let .foreignReconcile(d), let .doseQuarantine(d), let .receiptReconcile(d, _), let .resolveForeign(d, _, _), let .recoverEpoch(d, _, _, _): return d
         case .unavailable: return nil
+        }
+    }
+}
+
+// MARK: - S4: C9.4.5 client per-UID legacy migration rows (S4-CD2 scope: the rows inside `ResetOperationRegistry`)
+
+enum LegacyMigrationErrorCode: String, CaseIterable, Sendable, Equatable {
+    case legacyResetCorrupt = "LEGACY_RESET_CORRUPT"
+    case operationReused = "OPERATION_REUSED"
+    case aliasCollisionExhausted = "LEGACY_ALIAS_COLLISION_EXHAUSTED"
+    case aliasInvalid = "LEGACY_ALIAS_INVALID"
+}
+
+enum LegacyValueClass: String, CaseIterable, Sendable, Equatable {
+    case nonString = "non_string"
+    case invalidString = "invalid_string"
+}
+
+/// `{kind:"absent"} | {kind:"valid_string",value} | {kind:"invalid_value",valueClass,utf8Length?,sha256?}`; immutable per row.
+enum LegacyKeyGuard: Equatable, Sendable {
+    case absent
+    case validString(value: String)
+    case invalidValue(valueClass: LegacyValueClass, utf8Length: Int?, sha256: String?)
+
+    func map() -> [String: Any] {
+        switch self {
+        case .absent: return ["kind": "absent"]
+        case let .validString(value): return ["kind": "valid_string", "value": value]
+        case let .invalidValue(valueClass, length, sha):
+            var map: [String: Any] = ["kind": "invalid_value", "valueClass": valueClass.rawValue]
+            if let length { map["utf8Length"] = length }
+            if let sha { map["sha256"] = sha }
+            return map
+        }
+    }
+
+    static func from(_ map: [String: Any]) -> LegacyKeyGuard? {
+        switch map["kind"] as? String {
+        case "absent": return Set(map.keys) == ["kind"] ? .absent : nil
+        case "valid_string":
+            guard Set(map.keys) == ["kind", "value"], let value = map["value"] as? String, LegacyResetMigrationV1.isValidLegacyOperationId(value) else { return nil }
+            return .validString(value: value)
+        case "invalid_value":
+            guard let valueClass = (map["valueClass"] as? String).flatMap(LegacyValueClass.init(rawValue:)) else { return nil }
+            let keys = Set(map.keys)
+            switch valueClass {
+            case .nonString:
+                return keys == ["kind", "valueClass"] ? .invalidValue(valueClass: .nonString, utf8Length: nil, sha256: nil) : nil
+            case .invalidString:
+                guard keys == ["kind", "valueClass", "utf8Length", "sha256"], let length = TaskGenerationEpochStamp.safeInteger(map["utf8Length"]),
+                      let sha = map["sha256"] as? String, sha.range(of: #"^[0-9a-f]{64}$"#, options: .regularExpression) != nil else { return nil }
+                return .invalidValue(valueClass: .invalidString, utf8Length: length, sha256: sha)
+            }
+        default: return nil
+        }
+    }
+}
+
+/// `{kind:"reserved_gesture",gestureId,gestureGeneration,alias} | {kind:"reset_dispatched",expectedTaskGenerationEpoch,suggestedOperationId}`.
+enum LegacyInitiatingAuthority: Equatable, Sendable {
+    case reservedGesture(gestureId: String, gestureGeneration: String, alias: String)
+    case resetDispatched(expectedTaskGenerationEpoch: Int, suggestedOperationId: String)
+
+    /// The alias the materialized row keeps (C9.4.5 materialization alias).
+    var alias: String {
+        switch self {
+        case let .reservedGesture(_, _, alias): return alias
+        case let .resetDispatched(_, suggested): return suggested
+        }
+    }
+
+    func map() -> [String: Any] {
+        switch self {
+        case let .reservedGesture(gestureId, generation, alias): return ["kind": "reserved_gesture", "gestureId": gestureId, "gestureGeneration": generation, "alias": alias]
+        case let .resetDispatched(epoch, suggested): return ["kind": "reset_dispatched", "expectedTaskGenerationEpoch": epoch, "suggestedOperationId": suggested]
+        }
+    }
+
+    static func from(_ map: [String: Any]) -> LegacyInitiatingAuthority? {
+        switch map["kind"] as? String {
+        case "reserved_gesture":
+            guard Set(map.keys) == ["kind", "gestureId", "gestureGeneration", "alias"], let gestureId = map["gestureId"] as? String, ResetOperationRegistry.isGestureId(gestureId),
+                  let generation = map["gestureGeneration"] as? String, !generation.isEmpty, let alias = map["alias"] as? String, ResetOperationRegistry.isAlias(alias) else { return nil }
+            return .reservedGesture(gestureId: gestureId, gestureGeneration: generation, alias: alias)
+        case "reset_dispatched":
+            guard Set(map.keys) == ["kind", "expectedTaskGenerationEpoch", "suggestedOperationId"], let epoch = TaskGenerationEpochStamp.safeInteger(map["expectedTaskGenerationEpoch"]),
+                  let suggested = map["suggestedOperationId"] as? String, ResetOperationRegistry.isAlias(suggested) else { return nil }
+            return .resetDispatched(expectedTaskGenerationEpoch: epoch, suggestedOperationId: suggested)
+        default: return nil
+        }
+    }
+}
+
+/// The exact C9.4.5 row (the reconciliation member and the invalid-alias member share one struct; `isValid` applies the member rules).
+struct LegacyResetMigrationV1: Equatable, Sendable {
+    static let legacyKeyPrefix = "phase1.pendingRetakeOperation."
+    static let maxLegacyOperationIdBytes = 1_500
+
+    let uid: String
+    var authEpochUUID: String
+    var credentialRevision: Int
+    var initiatingAuthority: LegacyInitiatingAuthority?
+    var phase: LegacyMigrationPhase
+    let createdAt: String
+    var updatedAt: String
+    var legacyOperationId: String?
+    var migrationAlias: String?
+    var aliasCandidateOrdinal: Int?
+    var legacyKeyGuard: LegacyKeyGuard?
+    /// Canonical bytes of the complete validated reconciliation response.
+    var receipt: Data?
+    var applicationId: String?
+    var errorCode: LegacyMigrationErrorCode?
+    var legacyValueClass: LegacyValueClass?
+    var legacyValueUtf8Length: Int?
+    var legacyValueSHA256: String?
+
+    static func legacyKey(uid: String) -> String { legacyKeyPrefix + uid }
+
+    /// A legacy Phase-1 operation ID: its own trimmed form, nonempty, without a path separator, at most 1,500 UTF-8 bytes.
+    static func isValidLegacyOperationId(_ value: String) -> Bool {
+        !value.isEmpty && value == value.trimmingCharacters(in: .whitespacesAndNewlines) && !value.contains("/") && value.utf8.count <= maxLegacyOperationIdBytes
+    }
+
+    static func requestCanonicalJSON(legacyOperationId: String, migrationAlias: String) -> String {
+        String(decoding: TaskCanonicalV1.data(["action": "reconcileLegacyTaskReset", "legacyOperationId": legacyOperationId, "migrationAlias": migrationAlias]) ?? Data(), as: UTF8.self)
+    }
+
+    static func applicationId(uid: String, migrationId: String, outcome: String) -> String {
+        "rla1_" + String(TaskCanonicalV1.sha256Hex(["uid": uid, "migration_id": migrationId, "outcome": outcome]).prefix(40))
+    }
+
+    static func clearApplicationId(uid: String, legacyValueClass: LegacyValueClass, utf8Length: Int?, sha256: String?, outcome: String) -> String {
+        var map: [String: Any] = ["uid": uid, "legacy_value_class": legacyValueClass.rawValue, "outcome": outcome]
+        if let utf8Length { map["legacy_value_utf8_length"] = utf8Length }
+        if let sha256 { map["legacy_value_sha256"] = sha256 }
+        return "rlic1_" + String(TaskCanonicalV1.sha256Hex(map).prefix(40))
+    }
+
+    var isInvalidAliasMember: Bool { errorCode == .aliasInvalid }
+    var requestFingerprint: String? { legacyOperationId.map { LegacyResetReconciliationV1.requestFingerprint(uid: uid, legacyOperationId: $0) } }
+    var migrationId: String? { legacyOperationId.map { LegacyResetReconciliationV1.migrationId(uid: uid, legacyOperationId: $0) } }
+    var decodedReceipt: LegacyResetReconciliationV1? {
+        guard let receipt, let object = try? JSONSerialization.jsonObject(with: receipt) as? [String: Any] else { return nil }
+        return try? LegacyResetReconciliationV1.decode(object)
+    }
+
+    var isValid: Bool {
+        guard !uid.isEmpty, !authEpochUUID.isEmpty, credentialRevision >= 0, CanonicalInstant.isCanonical(createdAt), CanonicalInstant.isCanonical(updatedAt) else { return false }
+        if isInvalidAliasMember {
+            guard phase == .blocked, let valueClass = legacyValueClass, legacyOperationId == nil, migrationAlias == nil, aliasCandidateOrdinal == nil, legacyKeyGuard == nil,
+                  receipt == nil, applicationId == nil else { return false }
+            switch initiatingAuthority {
+            case .none, .reservedGesture: break
+            case .resetDispatched: return false
+            }
+            switch valueClass {
+            case .nonString: return legacyValueUtf8Length == nil && legacyValueSHA256 == nil
+            case .invalidString: return legacyValueUtf8Length != nil && legacyValueSHA256?.range(of: #"^[0-9a-f]{64}$"#, options: .regularExpression) != nil
+            }
+        }
+        guard let legacyOperationId, Self.isValidLegacyOperationId(legacyOperationId), let migrationAlias, ResetOperationRegistry.isAlias(migrationAlias),
+              let ordinal = aliasCandidateOrdinal, (1...4).contains(ordinal), legacyKeyGuard != nil,
+              legacyValueClass == nil, legacyValueUtf8Length == nil, legacyValueSHA256 == nil else { return false }
+        switch phase {
+        case .prepared, .dispatched:
+            return receipt == nil && applicationId == nil && errorCode == nil
+        case .receipt:
+            guard let decoded = decodedReceipt, decoded.base.accountUid == uid, decoded.base.legacyOperationId == legacyOperationId else { return false }
+            return applicationId == nil && errorCode == nil
+        case .applying:
+            guard let decoded = decodedReceipt, decoded.base.accountUid == uid, decoded.base.legacyOperationId == legacyOperationId, initiatingAuthority == nil, errorCode == nil else { return false }
+            switch decoded {
+            case .notDispatched, .finalizedCompat: return applicationId != nil
+            case .upgraded, .phase2Active: return applicationId == nil
+            }
+        case .blocked:
+            guard let errorCode, errorCode != .aliasInvalid else { return false }
+            return receipt == nil && applicationId == nil
+        }
+    }
+
+    func map() -> [String: Any] {
+        var map: [String: Any] = ["schemaVersion": 1, "uid": uid, "authEpochUUID": authEpochUUID, "credentialRevision": credentialRevision, "phase": phase.rawValue, "createdAt": createdAt, "updatedAt": updatedAt]
+        if let initiatingAuthority { map["initiatingAuthority"] = initiatingAuthority.map() }
+        if let errorCode { map["errorCode"] = errorCode.rawValue }
+        if isInvalidAliasMember {
+            if let legacyValueClass { map["legacyValueClass"] = legacyValueClass.rawValue }
+            if let legacyValueUtf8Length { map["legacyValueUtf8Length"] = legacyValueUtf8Length }
+            if let legacyValueSHA256 { map["legacyValueSHA256"] = legacyValueSHA256 }
+            return map
+        }
+        if let legacyOperationId, let migrationAlias {
+            map["legacyOperationId"] = legacyOperationId
+            map["migrationAlias"] = migrationAlias
+            map["requestFingerprint"] = LegacyResetReconciliationV1.requestFingerprint(uid: uid, legacyOperationId: legacyOperationId)
+            let request = Self.requestCanonicalJSON(legacyOperationId: legacyOperationId, migrationAlias: migrationAlias)
+            map["requestCanonicalJSON"] = request
+            map["requestSHA256"] = TaskCanonicalV1.sha256Hex(data: Data(request.utf8))
+        }
+        if let aliasCandidateOrdinal { map["aliasCandidateOrdinal"] = aliasCandidateOrdinal }
+        if let legacyKeyGuard { map["legacyKeyGuard"] = legacyKeyGuard.map() }
+        if let receipt, let object = try? JSONSerialization.jsonObject(with: receipt) { map["receipt"] = object }
+        if let applicationId { map["applicationId"] = applicationId }
+        return map
+    }
+
+    static func from(_ map: [String: Any]) -> LegacyResetMigrationV1? {
+        let allowed: Set<String> = ["schemaVersion", "uid", "authEpochUUID", "credentialRevision", "initiatingAuthority", "phase", "createdAt", "updatedAt", "legacyOperationId", "migrationAlias",
+                                    "aliasCandidateOrdinal", "requestFingerprint", "legacyKeyGuard", "requestCanonicalJSON", "requestSHA256", "receipt", "applicationId", "errorCode",
+                                    "legacyValueClass", "legacyValueUtf8Length", "legacyValueSHA256"]
+        guard Set(map.keys).isSubset(of: allowed), TaskGenerationEpochStamp.safeInteger(map["schemaVersion"]) == 1,
+              let uid = map["uid"] as? String, let authEpochUUID = map["authEpochUUID"] as? String, let credentialRevision = TaskGenerationEpochStamp.safeInteger(map["credentialRevision"]),
+              let phase = (map["phase"] as? String).flatMap(LegacyMigrationPhase.init(rawValue:)), let createdAt = map["createdAt"] as? String, let updatedAt = map["updatedAt"] as? String else { return nil }
+        var authority: LegacyInitiatingAuthority?
+        if let raw = map["initiatingAuthority"] { guard let object = raw as? [String: Any], let parsed = LegacyInitiatingAuthority.from(object) else { return nil }; authority = parsed }
+        var errorCode: LegacyMigrationErrorCode?
+        if let raw = map["errorCode"] { guard let parsed = (raw as? String).flatMap(LegacyMigrationErrorCode.init(rawValue:)) else { return nil }; errorCode = parsed }
+        var keyGuard: LegacyKeyGuard?
+        if let raw = map["legacyKeyGuard"] { guard let object = raw as? [String: Any], let parsed = LegacyKeyGuard.from(object) else { return nil }; keyGuard = parsed }
+        var receipt: Data?
+        if let raw = map["receipt"] { guard let object = raw as? [String: Any], let data = TaskCanonicalV1.data(object) else { return nil }; receipt = data }
+        func string(_ key: String) -> String?? { guard let raw = map[key] else { return .some(nil) }; guard let value = raw as? String else { return nil }; return .some(value) }
+        func integer(_ key: String) -> Int?? { guard let raw = map[key] else { return .some(nil) }; guard let value = TaskGenerationEpochStamp.safeInteger(raw) else { return nil }; return .some(value) }
+        guard let legacyOperationId = string("legacyOperationId"), let migrationAlias = string("migrationAlias"), let ordinal = integer("aliasCandidateOrdinal"),
+              let applicationId = string("applicationId"), let valueClassRaw = string("legacyValueClass"), let valueLength = integer("legacyValueUtf8Length"), let valueSHA = string("legacyValueSHA256") else { return nil }
+        var valueClass: LegacyValueClass?
+        if let valueClassRaw { guard let parsed = LegacyValueClass(rawValue: valueClassRaw) else { return nil }; valueClass = parsed }
+        let row = LegacyResetMigrationV1(uid: uid, authEpochUUID: authEpochUUID, credentialRevision: credentialRevision, initiatingAuthority: authority, phase: phase, createdAt: createdAt, updatedAt: updatedAt,
+                                         legacyOperationId: legacyOperationId, migrationAlias: migrationAlias, aliasCandidateOrdinal: ordinal, legacyKeyGuard: keyGuard, receipt: receipt,
+                                         applicationId: applicationId, errorCode: errorCode, legacyValueClass: valueClass, legacyValueUtf8Length: valueLength, legacyValueSHA256: valueSHA)
+        guard row.isValid, TaskCanonicalV1.data(row.map()) == TaskCanonicalV1.data(map) else { return nil }
+        return row
+    }
+}
+
+extension LegacyResetReconciliationV1 {
+    /// The complete response map (the bytes the row's `receipt` member carries).
+    func map() -> [String: Any] {
+        var map: [String: Any] = ["schemaVersion": 1, "kind": "legacy_reset_reconciliation", "migrationId": base.migrationId, "legacyOperationId": base.legacyOperationId,
+                                  "migrationAlias": base.migrationAlias, "accountUid": base.accountUid, "replayed": base.replayed]
+        switch self {
+        case .notDispatched:
+            map["outcome"] = "not_dispatched"
+        case let .upgraded(_, sourceState, progress):
+            map["outcome"] = "upgraded"; map["sourceState"] = sourceState; map["progressReceipt"] = progress.map()
+        case let .phase2Active(_, progress):
+            map["outcome"] = "phase2_active"; map["progressReceipt"] = progress.map()
+        case let .finalizedCompat(_, legacyFinal):
+            map["outcome"] = "finalized_compat"; map["sourceState"] = "finalized"
+            map["legacyFinalReceipt"] = ["schemaVersion": 1, "kind": "legacy_reset_final", "operationId": legacyFinal.operationId, "replayed": false, "accountUid": legacyFinal.accountUid, "deletedCount": legacyFinal.deletedCount, "state": "finalized"]
+        }
+        return map
+    }
+
+    var outcomeName: String {
+        switch self {
+        case .notDispatched: return "not_dispatched"
+        case .upgraded: return "upgraded"
+        case .phase2Active: return "phase2_active"
+        case .finalizedCompat: return "finalized_compat"
+        }
+    }
+}
+
+/// The C9.4.5 local-only surfaces (never decoded as Firebase details).
+enum LegacyMigrationSurface: Equatable, Sendable {
+    case pending(uid: String, phase: LegacyMigrationPhase)
+    case completed(uid: String, applicationId: String)
+    case retryRequired(uid: String, applicationId: String)
+    case blocked(uid: String, errorCode: LegacyMigrationErrorCode)
+
+    var map: [String: Any] {
+        switch self {
+        case let .pending(uid, phase): return ["schemaVersion": 1, "kind": "RESET_MIGRATION_PENDING", "uid": uid, "phase": phase.rawValue]
+        case let .completed(uid, applicationId): return ["schemaVersion": 1, "kind": "LEGACY_RESET_COMPLETED", "uid": uid, "applicationId": applicationId]
+        case let .retryRequired(uid, applicationId): return ["schemaVersion": 1, "kind": "LEGACY_RESET_RETRY_REQUIRED", "uid": uid, "applicationId": applicationId]
+        case let .blocked(uid, errorCode): return ["schemaVersion": 1, "reason": "RESET_MIGRATION_BLOCKED", "uid": uid, "errorCode": errorCode.rawValue]
+        }
+    }
+}
+
+extension ResetOperationRegistry {
+    enum LegacyKeyClassification: Equatable, Sendable {
+        case absent
+        case valid(String)
+        case invalid(LegacyValueClass, utf8Length: Int?, sha256: String?)
+    }
+
+    /// Owner wiring (S7): the store holding the legacy key; `.standard` until attached.
+    func attachLegacyKeyStore(_ defaults: UserDefaults) { legacyKeyDefaults = defaults }
+
+    /// Classifies `phase1.pendingRetakeOperation.{uid}` once, at row creation.
+    func classifyLegacyKey(uid: String) -> LegacyKeyClassification {
+        guard let raw = legacyKeyDefaults.object(forKey: LegacyResetMigrationV1.legacyKey(uid: uid)) else { return .absent }
+        guard let value = raw as? String else { return .invalid(.nonString, utf8Length: nil, sha256: nil) }
+        if LegacyResetMigrationV1.isValidLegacyOperationId(value) { return .valid(value) }
+        return .invalid(.invalidString, utf8Length: value.utf8.count, sha256: TaskCanonicalV1.sha256Hex(data: Data(value.utf8)))
+    }
+
+    private static func keyGuard(_ classification: LegacyKeyClassification) -> LegacyKeyGuard {
+        switch classification {
+        case .absent: return .absent
+        case let .valid(value): return .validString(value: value)
+        case let .invalid(valueClass, length, sha): return .invalidValue(valueClass: valueClass, utf8Length: length, sha256: sha)
+        }
+    }
+
+    fileprivate func typedMigrations(_ envelope: Envelope) throws -> [LegacyResetMigrationV1] {
+        let rows = envelope.migrations.compactMap(LegacyResetMigrationV1.from)
+        guard rows.count == envelope.migrations.count, Set(rows.map(\.uid)).count == rows.count else { throw RegistryError.envelopeCorrupt }
+        return rows
+    }
+
+    fileprivate func setMigration(_ envelope: inout Envelope, uid: String, _ row: LegacyResetMigrationV1?) {
+        envelope.migrations.removeAll { ($0["uid"] as? String) == uid }
+        if let row { envelope.migrations.append(row.map()) }
+    }
+
+    func legacyMigration(uid: String) -> LegacyResetMigrationV1? {
+        guard let envelope = try? read(), let rows = try? typedMigrations(envelope) else { return nil }
+        return rows.first { $0.uid == uid }
+    }
+
+    private static func freshAlias() -> String { "rsa1_" + UUID().uuidString.lowercased() }
+
+    /// Same-UID auth normalization (C9.4.5 last rows): a new epoch rebinds the tuple and discards an old-epoch reserved
+    /// gesture with its member; a lower same-epoch revision is corruption; a higher one rebases.
+    private func normalizeMigration(_ row: inout LegacyResetMigrationV1, _ envelope: inout Envelope, tuple: SignedAuthTuple) throws -> Bool {
+        var changed = false
+        if row.authEpochUUID != tuple.authEpochUUID {
+            row.authEpochUUID = tuple.authEpochUUID
+            row.credentialRevision = tuple.credentialRevision
+            if case .reservedGesture = row.initiatingAuthority {
+                row.initiatingAuthority = nil
+                if let gesture = envelope.gesture, gesture.uid == row.uid { envelope.gesture = nil }
+            }
+            changed = true
+        } else if tuple.credentialRevision < row.credentialRevision {
+            throw RegistryError.credentialRevisionRegressed
+        } else if tuple.credentialRevision > row.credentialRevision {
+            row.credentialRevision = tuple.credentialRevision
+            changed = true
+        }
+        if changed { row.updatedAt = try writeTime(advancing: [row.updatedAt]) }
+        return changed
+    }
+
+    /// The reserved gesture a confirmed reserve adopts or writes (durable before any await), and its initiating member.
+    private func adoptReservedGesture(_ envelope: inout Envelope, tuple: SignedAuthTuple, gestureId: String) throws -> LegacyInitiatingAuthority {
+        if let gesture = envelope.gesture, gesture.uid == tuple.uid, gesture.phase == .reserved {
+            return .reservedGesture(gestureId: gesture.gestureId, gestureGeneration: gesture.gestureGeneration, alias: gesture.alias)
+        }
+        let generation = UUID().uuidString.lowercased()
+        let gesture = ResetGestureV1(gestureId: gestureId, uid: tuple.uid, authEpochUUID: tuple.authEpochUUID, credentialRevision: tuple.credentialRevision, phase: .reserved,
+                                     alias: Self.freshAlias(), expectedEpoch: nil, gestureGeneration: generation, reservedAt: try writeTime(advancing: []), boundAt: nil)
+        envelope.gesture = gesture
+        return .reservedGesture(gestureId: gesture.gestureId, gestureGeneration: generation, alias: gesture.alias)
+    }
+
+    /// C9.5.9 steps 2 and the confirmed-reserve transitions of a sole blocked migration; nil lets the ordinary S1 path continue.
+    fileprivate func legacyMigrationOnReserve(_ envelope: inout Envelope, tuple: SignedAuthTuple, gestureId: String) throws -> ResetReserveOutcome? {
+        let rows = try typedMigrations(envelope)
+        let mine = rows.filter { $0.uid == tuple.uid }
+        guard mine.count <= 1 else { throw RegistryError.envelopeCorrupt }
+        if var row = mine.first {
+            if let gesture = envelope.gesture, gesture.uid == tuple.uid, gesture.phase == .bound { throw RegistryError.envelopeCorrupt }
+            var changed = try normalizeMigration(&row, &envelope, tuple: tuple)
+            switch row.phase {
+            case .prepared, .dispatched, .receipt, .applying:
+                if changed { setMigration(&envelope, uid: row.uid, row); try write(&envelope) }
+                return .migrationPending(ResetMigrationPending(uid: row.uid, phase: row.phase))
+            case .blocked:
+                switch row.errorCode {
+                case .aliasInvalid?:
+                    switch row.initiatingAuthority {
+                    case .none:
+                        row.initiatingAuthority = try adoptReservedGesture(&envelope, tuple: tuple, gestureId: gestureId)
+                        changed = true
+                    case let .reservedGesture(id, generation, alias)?:
+                        guard let gesture = envelope.gesture, gesture.uid == tuple.uid, gesture.phase == .reserved, gesture.gestureId == id, gesture.gestureGeneration == generation, gesture.alias == alias else { throw RegistryError.envelopeCorrupt }
+                    case .resetDispatched?:
+                        throw RegistryError.envelopeCorrupt
+                    }
+                case .legacyResetCorrupt?:
+                    row.phase = .prepared
+                    row.errorCode = nil
+                    changed = true
+                case .aliasCollisionExhausted?:
+                    if row.initiatingAuthority == nil { row.initiatingAuthority = try adoptReservedGesture(&envelope, tuple: tuple, gestureId: gestureId) }
+                    row.migrationAlias = Self.freshAlias()
+                    row.aliasCandidateOrdinal = 1
+                    row.phase = .prepared
+                    row.errorCode = nil
+                    changed = true
+                case .operationReused?:
+                    throw RegistryError.migrationBlocked(uid: row.uid, errorCode: LegacyMigrationErrorCode.operationReused.rawValue)
+                case nil:
+                    throw RegistryError.envelopeCorrupt
+                }
+                if changed {
+                    row.updatedAt = try writeTime(advancing: [row.updatedAt])
+                    setMigration(&envelope, uid: row.uid, row)
+                    try write(&envelope)
+                }
+                return .migrationPending(ResetMigrationPending(uid: row.uid, phase: row.phase))
+            }
+        }
+        // no row: a bound gesture or an existing reset row keeps the ordinary path (a legacy marker surfaces as MIGRATION_REQUIRED on dispatch)
+        if let gesture = envelope.gesture, gesture.uid == tuple.uid, gesture.phase == .bound { return nil }
+        if envelope.records.contains(where: { $0.uid == tuple.uid }) { return nil }
+        let classification = classifyLegacyKey(uid: tuple.uid)
+        if case .absent = classification { return nil }
+        let authority = try adoptReservedGesture(&envelope, tuple: tuple, gestureId: gestureId)
+        let now = try writeTime(advancing: [])
+        var row = LegacyResetMigrationV1(uid: tuple.uid, authEpochUUID: tuple.authEpochUUID, credentialRevision: tuple.credentialRevision, initiatingAuthority: authority, phase: .prepared,
+                                         createdAt: now, updatedAt: now, legacyOperationId: nil, migrationAlias: nil, aliasCandidateOrdinal: nil, legacyKeyGuard: nil, receipt: nil,
+                                         applicationId: nil, errorCode: nil, legacyValueClass: nil, legacyValueUtf8Length: nil, legacyValueSHA256: nil)
+        switch classification {
+        case let .valid(value):
+            row.legacyOperationId = value
+            row.migrationAlias = Self.freshAlias()
+            row.aliasCandidateOrdinal = 1
+            row.legacyKeyGuard = .validString(value: value)
+        case let .invalid(valueClass, length, sha):
+            row.phase = .blocked
+            row.errorCode = .aliasInvalid
+            row.legacyValueClass = valueClass
+            row.legacyValueUtf8Length = length
+            row.legacyValueSHA256 = sha
+        case .absent:
+            return nil
+        }
+        guard row.isValid else { throw RegistryError.envelopeCorrupt }
+        setMigration(&envelope, uid: row.uid, row)
+        try write(&envelope)
+        return .migrationPending(ResetMigrationPending(uid: row.uid, phase: row.phase))
+    }
+
+    /// The drive's caller reports `LEGACY_RESET_MIGRATION_REQUIRED(B)` for a `reset_dispatched` row that carries no canonical
+    /// ID or receipt: the migration row is created with that row as its initiating authority (never before the error).
+    func noteMigrationRequired(handle: ResetOperationHandle, legacyOperationId: String) async throws -> ResetMigrationPending {
+        let tuple = try await signedAuth()
+        guard tuple.uid == handle.uid, LegacyResetMigrationV1.isValidLegacyOperationId(legacyOperationId) else { throw RegistryError.operationStale(uid: handle.uid, handleId: handle.handleId) }
+        guard var envelope = try read(), let row = envelope.records.first(where: { $0.uid == handle.uid && $0.handleId == handle.handleId }),
+              row.phase == .resetDispatched, row.canonicalOperationId == nil, row.progressReceipt == nil else { throw RegistryError.operationStale(uid: handle.uid, handleId: handle.handleId) }
+        if let existing = try typedMigrations(envelope).first(where: { $0.uid == tuple.uid }) { return ResetMigrationPending(uid: tuple.uid, phase: existing.phase) }
+        let now = try writeTime(advancing: [])
+        let migration = LegacyResetMigrationV1(uid: tuple.uid, authEpochUUID: tuple.authEpochUUID, credentialRevision: tuple.credentialRevision,
+                                               initiatingAuthority: .resetDispatched(expectedTaskGenerationEpoch: row.expectedTaskGenerationEpoch, suggestedOperationId: row.suggestedOperationId),
+                                               phase: .prepared, createdAt: now, updatedAt: now, legacyOperationId: legacyOperationId, migrationAlias: Self.freshAlias(), aliasCandidateOrdinal: 1,
+                                               legacyKeyGuard: Self.keyGuard(classifyLegacyKey(uid: tuple.uid)), receipt: nil, applicationId: nil, errorCode: nil,
+                                               legacyValueClass: nil, legacyValueUtf8Length: nil, legacyValueSHA256: nil)
+        guard migration.isValid else { throw RegistryError.envelopeCorrupt }
+        setMigration(&envelope, uid: tuple.uid, migration)
+        try write(&envelope)
+        return ResetMigrationPending(uid: tuple.uid, phase: .prepared)
+    }
+
+    /// Drives the current UID's migration row through the C9.4.5 machine to a rest state; one in-flight drive per UID.
+    func driveLegacyMigration(remote: any ResetRemoteProviding) async throws -> ResetReserveOutcome {
+        let tuple = try await signedAuth()
+        if let inflight = inflightLegacyMigration[tuple.uid] { return try await inflight.value }
+        let task = Task { try await self.runLegacyMigration(uid: tuple.uid, remote: remote) }
+        inflightLegacyMigration[tuple.uid] = task
+        defer { inflightLegacyMigration[tuple.uid] = nil }
+        return try await task.value
+    }
+
+    private func currentMigration(uid: String) throws -> (Envelope, LegacyResetMigrationV1) {
+        guard let envelope = try read(), let row = try typedMigrations(envelope).first(where: { $0.uid == uid }) else { throw RegistryError.operationStale(uid: uid, handleId: "migration") }
+        return (envelope, row)
+    }
+
+    private func storeMigration(_ row: LegacyResetMigrationV1, in envelope: inout Envelope) throws {
+        var next = row
+        next.updatedAt = try writeTime(advancing: [row.updatedAt])
+        guard next.isValid else { throw RegistryError.envelopeCorrupt }
+        setMigration(&envelope, uid: row.uid, next)
+        try write(&envelope)
+    }
+
+    private func blockMigration(_ row: LegacyResetMigrationV1, _ code: LegacyMigrationErrorCode, in envelope: inout Envelope) throws -> Error {
+        var blocked = row
+        blocked.phase = .blocked
+        blocked.errorCode = code
+        blocked.receipt = nil
+        blocked.applicationId = nil
+        try storeMigration(blocked, in: &envelope)
+        return RegistryError.migrationBlocked(uid: row.uid, errorCode: code.rawValue)
+    }
+
+    /// Whether the live key matches the row's immutable guard (`absent` counts as a crash-resume after an earlier clear).
+    private func keyMatches(_ keyGuard: LegacyKeyGuard, uid: String) -> Bool {
+        let raw = legacyKeyDefaults.object(forKey: LegacyResetMigrationV1.legacyKey(uid: uid))
+        switch keyGuard {
+        case .absent: return raw == nil
+        case let .validString(value): return raw == nil || (raw as? String) == value
+        case let .invalidValue(valueClass, length, sha):
+            guard let raw else { return true }
+            switch valueClass {
+            case .nonString: return !(raw is String)
+            case .invalidString:
+                guard let value = raw as? String else { return false }
+                return value.utf8.count == length && TaskCanonicalV1.sha256Hex(data: Data(value.utf8)) == sha
+            }
+        }
+    }
+
+    /// APPLYING compare-and-remove: the exact stored value is removed; a different value remains; `non_string` is never auto-removed.
+    private func compareAndRemoveKey(_ keyGuard: LegacyKeyGuard, uid: String) {
+        let key = LegacyResetMigrationV1.legacyKey(uid: uid)
+        guard let raw = legacyKeyDefaults.object(forKey: key) else { return }
+        switch keyGuard {
+        case .absent, .invalidValue(.nonString, _, _): return
+        case let .validString(value): if (raw as? String) == value { legacyKeyDefaults.removeObject(forKey: key) }
+        case let .invalidValue(.invalidString, length, sha):
+            if let value = raw as? String, value.utf8.count == length, TaskCanonicalV1.sha256Hex(data: Data(value.utf8)) == sha { legacyKeyDefaults.removeObject(forKey: key) }
+        }
+    }
+
+    private func runLegacyMigration(uid: String, remote: any ResetRemoteProviding) async throws -> ResetReserveOutcome {
+        var auth = try await signedAuth()
+        guard auth.uid == uid else { throw RegistryError.authRequired }
+        for _ in 0..<16 {
+            auth = try await revalidated(auth)
+            var (envelope, row) = try currentMigration(uid: uid)
+            if try normalizeMigration(&row, &envelope, tuple: auth) { setMigration(&envelope, uid: uid, row); try write(&envelope) }
+            switch row.phase {
+            case .prepared:
+                row.phase = .dispatched
+                try storeMigration(row, in: &envelope)
+            case .dispatched:
+                guard let legacy = row.legacyOperationId, let alias = row.migrationAlias, let ordinal = row.aliasCandidateOrdinal else { throw RegistryError.envelopeCorrupt }
+                let result: LegacyResetReconciliationV1
+                do {
+                    result = try await remote.reconcileLegacyReset(legacyOperationId: legacy, migrationAlias: alias)
+                } catch let error as ResetRemoteError {
+                    auth = try await revalidated(auth)
+                    (envelope, row) = try currentMigration(uid: uid)
+                    guard row.phase == .dispatched, row.legacyOperationId == legacy, row.migrationAlias == alias else { continue }
+                    switch error {
+                    case let .legacyResetAliasOccupied(occupiedLegacy, occupiedAlias):
+                        guard occupiedLegacy == legacy, occupiedAlias == alias else { throw ResetRemoteError.protocolAmbiguity }
+                        if ordinal >= 4 { throw try blockMigration(row, .aliasCollisionExhausted, in: &envelope) }
+                        row.migrationAlias = Self.freshAlias()
+                        row.aliasCandidateOrdinal = ordinal + 1
+                        row.phase = .prepared
+                        try storeMigration(row, in: &envelope)
+                    case let .legacyResetMigrationRequired(redirected):
+                        guard redirected != legacy, LegacyResetMigrationV1.isValidLegacyOperationId(redirected) else { throw ResetRemoteError.protocolAmbiguity }
+                        row.legacyOperationId = redirected
+                        row.migrationAlias = Self.freshAlias()
+                        row.aliasCandidateOrdinal = 1
+                        row.phase = .prepared
+                        try storeMigration(row, in: &envelope)
+                    case .operationReused:
+                        throw try blockMigration(row, .operationReused, in: &envelope)
+                    case .legacyResetCorrupt, .requestInvalid:
+                        throw try blockMigration(row, .legacyResetCorrupt, in: &envelope)
+                    case .resetActive:
+                        throw ResetRemoteError.protocolAmbiguity
+                    case .authRequired, .transport, .protocolAmbiguity, .staleState, .clientUpgradeRequired:
+                        throw error
+                    }
+                    continue
+                }
+                auth = try await revalidated(auth)
+                (envelope, row) = try currentMigration(uid: uid)
+                guard row.phase == .dispatched, row.legacyOperationId == legacy, row.migrationAlias == alias else { continue }
+                guard result.base.accountUid == uid, result.base.legacyOperationId == legacy, result.base.replayed || result.base.migrationAlias == alias,
+                      let bytes = TaskCanonicalV1.data(result.map()) else { throw ResetRemoteError.protocolAmbiguity }
+                row.receipt = bytes
+                row.phase = .receipt
+                try storeMigration(row, in: &envelope)
+            case .receipt:
+                guard let receipt = row.decodedReceipt, let migrationId = row.migrationId else { throw RegistryError.envelopeCorrupt }
+                let authority = row.initiatingAuthority
+                switch receipt {
+                case let .upgraded(_, _, progress), let .phase2Active(_, progress):
+                    try materialize(progress: progress, authority: authority, receiptAlias: receipt.base.migrationAlias, uid: uid, in: &envelope)
+                case .notDispatched, .finalizedCompat:
+                    try retireAuthority(authority, uid: uid, in: &envelope)
+                    row.applicationId = LegacyResetMigrationV1.applicationId(uid: uid, migrationId: migrationId, outcome: receipt.outcomeName)
+                }
+                row.initiatingAuthority = nil
+                row.phase = .applying
+                try storeMigration(row, in: &envelope)
+            case .applying:
+                guard let receipt = row.decodedReceipt, let keyGuard = row.legacyKeyGuard else { throw RegistryError.envelopeCorrupt }
+                compareAndRemoveKey(keyGuard, uid: uid)
+                setMigration(&envelope, uid: uid, nil)
+                try write(&envelope)
+                switch receipt {
+                case let .upgraded(_, _, progress), let .phase2Active(_, progress):
+                    guard let materialized = envelope.records.first(where: { $0.uid == uid && $0.expectedTaskGenerationEpoch == progress.expectedTaskGenerationEpoch }) else { throw RegistryError.envelopeCorrupt }
+                    return .operation(ResetOperationHandle(uid: uid, handleId: materialized.handleId))
+                case .notDispatched:
+                    return .legacyRetryRequired(LegacyResetRetryRequired(uid: uid, applicationId: row.applicationId ?? ""))
+                case .finalizedCompat:
+                    return .legacyCompleted(LegacyResetCompleted(uid: uid, applicationId: row.applicationId ?? ""))
+                }
+            case .blocked:
+                guard row.errorCode == .aliasInvalid else { throw RegistryError.migrationBlocked(uid: uid, errorCode: row.errorCode?.rawValue ?? LegacyMigrationErrorCode.legacyResetCorrupt.rawValue) }
+                return try await inspectInvalidAlias(row, remote: remote, uid: uid, auth: &auth)
+            }
+        }
+        throw ResetDriveError.stepBudgetExceeded
+    }
+
+    /// `receipt → applying` for upgraded/phase2_active: the progress receipt materializes (or transforms in place) the
+    /// `(uid, expectedTaskGenerationEpoch)` row under the bound alias; the gesture is removed.
+    private func materialize(progress: ResetReceiptV1, authority: LegacyInitiatingAuthority?, receiptAlias: String, uid: String, in envelope: inout Envelope) throws {
+        let epoch = progress.expectedTaskGenerationEpoch
+        let phase: ResetRowPhase = progress.state == .deleting ? .resetReceiptDeleting : .resetReceiptAwaitingLocalReset
+        if let index = envelope.records.firstIndex(where: { $0.uid == uid }) {
+            var existing = envelope.records[index]
+            guard case let .resetDispatched(expected, suggested)? = authority, existing.phase == .resetDispatched, existing.canonicalOperationId == nil, existing.progressReceipt == nil,
+                  existing.expectedTaskGenerationEpoch == expected, existing.suggestedOperationId == suggested else { throw RegistryError.envelopeCorrupt }
+            existing.expectedTaskGenerationEpoch = epoch
+            existing.canonicalOperationId = progress.operationId
+            existing.progressReceipt = progress.canonicalData()
+            existing.phase = phase
+            existing.updatedAt = try writeTime(advancing: [existing.updatedAt])
+            envelope.records[index] = existing
+            envelope.records = Self.sorted(envelope.records)
+            return
+        }
+        guard envelope.records.count < Self.capacity else {
+            throw RegistryError.registryFull(capacity: Self.capacity, occupants: envelope.records.map { RegistryOccupant(uid: $0.uid, expectedTaskGenerationEpoch: $0.expectedTaskGenerationEpoch, phase: $0.phase, recoveryAction: $0.recoveryAction) })
+        }
+        var createdAt = try writeTime(advancing: [])
+        var alias = receiptAlias
+        if case let .reservedGesture(gestureId, generation, boundAlias)? = authority {
+            guard let gesture = envelope.gesture, gesture.gestureId == gestureId, gesture.gestureGeneration == generation, gesture.alias == boundAlias else { throw RegistryError.envelopeCorrupt }
+            createdAt = gesture.reservedAt
+            alias = boundAlias
+            envelope.gesture = nil
+        }
+        let row = ResetOperationRegistryRecordV2(uid: uid, suggestedOperationId: alias, canonicalOperationId: progress.operationId, expectedTaskGenerationEpoch: epoch, phase: phase,
+                                                 progressReceipt: progress.canonicalData(), finalReceipt: nil, applicationId: nil, createdAt: createdAt, updatedAt: try writeTime(advancing: [createdAt]))
+        envelope.records = Self.sorted(envelope.records + [row])
+    }
+
+    /// `receipt → applying` for not_dispatched/finalized_compat: the initiating gesture or reset-dispatched row is retired; no epoch read, no reset row.
+    private func retireAuthority(_ authority: LegacyInitiatingAuthority?, uid: String, in envelope: inout Envelope) throws {
+        switch authority {
+        case let .reservedGesture(gestureId, generation, _)?:
+            if let gesture = envelope.gesture, gesture.gestureId == gestureId, gesture.gestureGeneration == generation { envelope.gesture = nil }
+        case let .resetDispatched(epoch, suggested)?:
+            envelope.records.removeAll { $0.uid == uid && $0.expectedTaskGenerationEpoch == epoch && $0.suggestedOperationId == suggested && $0.phase == .resetDispatched && $0.canonicalOperationId == nil }
+        case nil:
+            break
+        }
+    }
+
+    /// The `LEGACY_ALIAS_INVALID` inspection transitions (consent = the reserved-gesture initiating authority).
+    private func inspectInvalidAlias(_ row: LegacyResetMigrationV1, remote: any ResetRemoteProviding, uid: String, auth: inout SignedAuthTuple) async throws -> ResetReserveOutcome {
+        guard case .reservedGesture? = row.initiatingAuthority, let valueClass = row.legacyValueClass else {
+            throw RegistryError.migrationBlocked(uid: uid, errorCode: LegacyMigrationErrorCode.aliasInvalid.rawValue)
+        }
+        let inspection: LegacyResetInspectionV1
+        do { inspection = try await remote.inspectLegacyReset() } catch { throw RegistryError.migrationBlocked(uid: uid, errorCode: LegacyMigrationErrorCode.aliasInvalid.rawValue) }
+        auth = try await revalidated(auth)
+        var (envelope, current) = try currentMigration(uid: uid)
+        guard current == row, inspection.accountUid == uid else { throw RegistryError.migrationBlocked(uid: uid, errorCode: LegacyMigrationErrorCode.aliasInvalid.rawValue) }
+        let keyGuard = LegacyKeyGuard.invalidValue(valueClass: valueClass, utf8Length: row.legacyValueUtf8Length, sha256: row.legacyValueSHA256)
+        switch inspection {
+        case let .legacyActive(_, legacy):
+            current.phase = .prepared
+            current.errorCode = nil
+            current.legacyValueClass = nil
+            current.legacyValueUtf8Length = nil
+            current.legacyValueSHA256 = nil
+            current.legacyOperationId = legacy
+            current.migrationAlias = Self.freshAlias()
+            current.aliasCandidateOrdinal = 1
+            current.legacyKeyGuard = keyGuard
+            try storeMigration(current, in: &envelope)
+            return .migrationPending(ResetMigrationPending(uid: uid, phase: .prepared))
+        case let .phase2Active(_, canonical, epoch):
+            guard canonical.range(of: ResetReceiptV1.canonicalIdPattern, options: .regularExpression) != nil else { throw RegistryError.migrationBlocked(uid: uid, errorCode: LegacyMigrationErrorCode.aliasInvalid.rawValue) }
+            let matches = keyMatches(keyGuard, uid: uid)
+            try retireAuthority(nil, uid: uid, in: &envelope)
+            guard let gesture = envelope.gesture, gesture.uid == uid else { throw RegistryError.envelopeCorrupt }
+            envelope.gesture = nil
+            setMigration(&envelope, uid: uid, nil)
+            if matches {
+                compareAndRemoveKey(keyGuard, uid: uid)
+                guard !envelope.records.contains(where: { $0.uid == uid }), envelope.records.count < Self.capacity else { throw RegistryError.envelopeCorrupt }
+                let adopted = ResetOperationRegistryRecordV2(uid: uid, suggestedOperationId: gesture.alias, canonicalOperationId: nil, expectedTaskGenerationEpoch: epoch, phase: .resetDispatched,
+                                                             progressReceipt: nil, finalReceipt: nil, applicationId: nil, createdAt: gesture.reservedAt, updatedAt: try writeTime(advancing: [gesture.reservedAt]))
+                envelope.records = Self.sorted(envelope.records + [adopted])
+                try write(&envelope)
+                return .operation(ResetOperationHandle(uid: uid, handleId: adopted.handleId))
+            }
+            try write(&envelope)
+            return .legacyRetryRequired(LegacyResetRetryRequired(uid: uid, applicationId: LegacyResetMigrationV1.clearApplicationId(uid: uid, legacyValueClass: valueClass, utf8Length: row.legacyValueUtf8Length, sha256: row.legacyValueSHA256, outcome: "legacy_value_changed")))
+        case .none:
+            let matches = keyMatches(keyGuard, uid: uid)
+            if matches { compareAndRemoveKey(keyGuard, uid: uid) }
+            envelope.gesture = envelope.gesture?.uid == uid ? nil : envelope.gesture
+            setMigration(&envelope, uid: uid, nil)
+            try write(&envelope)
+            let outcome = matches ? "none" : "legacy_value_changed"
+            return .legacyRetryRequired(LegacyResetRetryRequired(uid: uid, applicationId: LegacyResetMigrationV1.clearApplicationId(uid: uid, legacyValueClass: valueClass, utf8Length: row.legacyValueUtf8Length, sha256: row.legacyValueSHA256, outcome: outcome)))
         }
     }
 }
