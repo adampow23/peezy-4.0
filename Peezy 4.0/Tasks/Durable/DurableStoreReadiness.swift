@@ -586,9 +586,18 @@ enum CompletionOpenResult: String, Sendable { case opened, stale, notOffered, fa
 enum CompletionProvider: String, Sendable { case apple, google }
 
 protocol AccountDeletionCompletionPresenting: Sendable {
+    /// nil only for observed absence (C2.5); `observeCompletion()` carries the malformed/unreadable states.
     func current() async -> CompletionSnapshotV1?
+    func observeCompletion() async -> CompletionObservation
     func acknowledge(expectedGenerationId: String, expectedSHA256: String) async -> CompletionAcknowledgeResult
     func open(expectedGenerationId: String, expectedSHA256: String, provider: CompletionProvider) async -> CompletionOpenResult
+}
+
+extension AccountDeletionCompletionPresenting {
+    func observeCompletion() async -> CompletionObservation {
+        if let snapshot = await current() { return .present(snapshot) }
+        return .absent
+    }
 }
 
 // MARK: - Apple, Google, telemetry seams (§8)
@@ -1136,8 +1145,19 @@ enum DurableEnvelopeCodec {
     /// minus itself; nil when the payload is not canonical, the complete bytes exceed
     /// `storeCap`, or the receipt-less base plus the 190-byte reserve exceeds `storeCap`
     /// (C9.7.1: `baseEnvelopeBytesWithoutRecoveryReceipt + 190 <= storeCap`).
+    /// The exact C9.7.1 receipt: `{schemaVersion:1,quarantineSHA256,recoveredCount,droppedCount}`, no other member.
+    static func isValidRecoveryReceipt(_ receipt: [String: Any]) -> Bool {
+        Set(receipt.keys) == ["schemaVersion", "quarantineSHA256", "recoveredCount", "droppedCount"]
+            && TaskGenerationEpochStamp.safeInteger(receipt["schemaVersion"]) == 1
+            && (receipt["quarantineSHA256"] as? String)?.range(of: #"^[0-9a-f]{64}$"#, options: .regularExpression) != nil
+            && TaskGenerationEpochStamp.safeInteger(receipt["recoveredCount"]) != nil
+            && TaskGenerationEpochStamp.safeInteger(receipt["droppedCount"]) != nil
+    }
+
     static func encode(fileKind: DurableFileKind, generationId: String, payload: [String: Any], recoveryReceipt: [String: Any]? = nil, storeCap: Int? = nil) -> Data? {
         let cap = storeCap ?? fileKind.storeCap
+        // a receipt exists only for the recoverable kinds and only in its exact grammar
+        if let recoveryReceipt, !fileKind.reservesRecoveryReceipt || !isValidRecoveryReceipt(recoveryReceipt) { return nil }
         var base: [String: Any] = ["schemaVersion": 1, "fileKind": fileKind.rawValue, "generationId": generationId, "payload": payload]
         guard let unsignedBase = TaskCanonicalV1.data(base) else { return nil }
         base["sha256"] = TaskCanonicalV1.sha256Hex(data: unsignedBase)
@@ -1163,11 +1183,17 @@ enum DurableEnvelopeCodec {
               generationId.range(of: uuidPattern, options: .regularExpression) != nil,
               let payload = object["payload"] as? [String: Any],
               let sha256 = object["sha256"] as? String else { return nil }
+        var receipt: [String: Any]?
+        if let rawReceipt = object["recoveryReceipt"] {
+            // strict: the exact C9.7.1 receipt grammar, and never on a kind that carries no receipt (the account-deletion files)
+            guard fileKind.reservesRecoveryReceipt, let map = rawReceipt as? [String: Any], isValidRecoveryReceipt(map) else { return nil }
+            receipt = map
+        }
         var unsigned = object
         unsigned.removeValue(forKey: "sha256")
         guard let unsignedBytes = TaskCanonicalV1.data(unsigned),
               TaskCanonicalV1.sha256Hex(data: unsignedBytes) == sha256,
               TaskCanonicalV1.data(object) == bytes else { return nil }
-        return DecodedDurableEnvelope(generationId: generationId, sha256: sha256, payload: payload, recoveryReceipt: object["recoveryReceipt"] as? [String: Any])
+        return DecodedDurableEnvelope(generationId: generationId, sha256: sha256, payload: payload, recoveryReceipt: receipt)
     }
 }

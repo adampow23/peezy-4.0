@@ -241,7 +241,17 @@ class AssessmentCoordinator: ObservableObject {
     }
     
     /// Reset the entire assessment.
+    /// P1-R load token: minted at creation and at every `reset()`, so a replacement load for the same UID retires the
+    /// completions of the flow it replaced.
+    private(set) var loadGeneration = UUID()
+
+    /// The pure P1-R rule: a completion applies only under the UID and the load generation that started it.
+    nonisolated static func completionIsCurrent(startedUID: String, currentUID: String, startedGeneration: UUID, currentGeneration: UUID) -> Bool {
+        startedUID == currentUID && startedGeneration == currentGeneration
+    }
+
     func reset() {
+        loadGeneration = UUID()
         currentIndex = 0
         isComplete = false
         isSaving = false
@@ -618,6 +628,7 @@ class AssessmentCoordinator: ObservableObject {
         isCompleting = true
 
         let userId = Auth.auth().currentUser?.uid ?? ""
+        let generation = loadGeneration
 
         #if DEBUG
         print("🚀 COMPLETE ASSESSMENT: userId='\(userId)' auth=\(Auth.auth().currentUser != nil)")
@@ -644,8 +655,8 @@ class AssessmentCoordinator: ObservableObject {
         let assessmentData = dataManager.getAllAssessmentData()
         let moveDate = dataManager.moveDate
 
-        // S4 (P1-R): every async completion below is applied only while the UID that started it is still current
-        func stillCurrent() -> Bool { (Auth.auth().currentUser?.uid ?? "") == userId }
+        // S4 (P1-R): every async completion below is applied only while the UID and the load generation that started it are still current
+        func stillCurrent() -> Bool { Self.completionIsCurrent(startedUID: userId, currentUID: Auth.auth().currentUser?.uid ?? "", startedGeneration: generation, currentGeneration: loadGeneration) }
 
         // Save assessment to Firestore (non-blocking for task generation)
         do {

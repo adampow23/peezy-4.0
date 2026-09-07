@@ -134,6 +134,28 @@ struct AppRootAuthRaceTests {
         #expect(AppRootLoadGuard(uid: "A", token: token) == started)
     }
 
+    /// S4 close-out (Sol round 1, finding 20): an assessment completion applies only under the UID and the load generation
+    /// that started it; a replacement load for the same UID (sign-out and re-sign-in, `reset()`) retires it.
+    @Test func assessmentCompletionRequiresTheUIDAndTheLoadGenerationThatStartedIt() {
+        let started = UUID()
+        #expect(AssessmentCoordinator.completionIsCurrent(startedUID: "A", currentUID: "A", startedGeneration: started, currentGeneration: started))
+        #expect(!AssessmentCoordinator.completionIsCurrent(startedUID: "A", currentUID: "", startedGeneration: started, currentGeneration: started), "signed out during the completion")
+        #expect(!AssessmentCoordinator.completionIsCurrent(startedUID: "A", currentUID: "B", startedGeneration: started, currentGeneration: started), "A→B during the completion")
+        #expect(!AssessmentCoordinator.completionIsCurrent(startedUID: "A", currentUID: "A", startedGeneration: started, currentGeneration: UUID()), "a same-UID replacement load retired the generation")
+    }
+
+    @MainActor @Test func assessmentResetMintsAFreshLoadGeneration() {
+        // the data manager's first-name cache short-circuits its Firebase Auth read (no FirebaseApp under test); restored afterwards
+        let key = "peezy.user.firstName"
+        let previous = UserDefaults.standard.string(forKey: key)
+        UserDefaults.standard.set("Test", forKey: key)
+        defer { if let previous { UserDefaults.standard.set(previous, forKey: key) } else { UserDefaults.standard.removeObject(forKey: key) } }
+        let coordinator = AssessmentCoordinator(dataManager: AssessmentDataManager())
+        let first = coordinator.loadGeneration
+        coordinator.reset()
+        #expect(coordinator.loadGeneration != first, "a replacement load mints a fresh generation")
+    }
+
     @Test func appleCredentialStateRevokedOrNotFoundSignsOutAndResumesOnlyANamedDeletion() async throws {
         let h = try makeDeletionHarness(auth: signedInA)
         #expect(await h.coordinator.appleCredentialState(.authorized, uid: "A") == .noOp)

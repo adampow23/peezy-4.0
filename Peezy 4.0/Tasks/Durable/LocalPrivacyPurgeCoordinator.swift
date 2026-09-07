@@ -32,8 +32,23 @@ struct FirebaseFirestoreInstanceController: FirestoreInstanceControlling {
     }
     func fresh() -> Firestore { Firestore.firestore() }
     func probe(_ firestore: Firestore) async throws {
-        // The cache must be empty after clearing: a cache-only read of a synthetic path returns nothing.
-        _ = try? await firestore.collection("phase2Probe").document("probe").getDocument(source: .cache)
+        // The cache must be empty after clearing: a cache-only read of a synthetic path proves the fresh instance is usable
+        // and holds nothing. Only the two expected empty-cache outcomes ack; every other error propagates and fails the purge.
+        let outcome: (exists: Bool?, error: Error?)
+        do { outcome = (try await firestore.collection("phase2Probe").document("probe").getDocument(source: .cache).exists, nil) }
+        catch { outcome = (nil, error) }
+        try Self.probeOutcome(exists: outcome.exists, error: outcome.error)
+    }
+
+    enum ProbeError: Error, Equatable { case cacheNotEmpty, probeFailed(code: Int) }
+
+    /// The expected empty-cache outcomes: a nonexistent cached document, or the SDK's `unavailable` cache miss. A cached
+    /// document (the cache was not cleared) or any other error throws, so the owner reports the purge failed.
+    static func probeOutcome(exists: Bool?, error: Error?) throws {
+        if let exists { if exists { throw ProbeError.cacheNotEmpty }; return }
+        let nsError = (error ?? ProbeError.probeFailed(code: -1)) as NSError
+        if nsError.domain == FirestoreErrorDomain, nsError.code == FirestoreErrorCode.unavailable.rawValue { return }
+        throw ProbeError.probeFailed(code: nsError.code)
     }
 }
 
@@ -253,6 +268,7 @@ actor RoomCaptureArtifactOwner: RoomCaptureArtifactPurging {
     private var transfers: [TransferHandle: @Sendable () -> Void] = [:]
     private var settlements: [TransferHandle: [CheckedContinuation<Void, Never>]] = [:]
     private var artifacts: [URL: NarrationLease] = [:]
+    private var narrationFlags: [NarrationLease: NarrationRevocationFlag] = [:]
     private var revocation: RevocationState = .open
 
     init(gateSnapshot: @escaping GateSnapshot, fileManager: FileManager = .default) {
@@ -279,6 +295,16 @@ actor RoomCaptureArtifactOwner: RoomCaptureArtifactPurging {
     func release(_ lease: NarrationLease) {
         leases.remove(lease)
         transcripts[lease] = nil
+        narrationFlags.removeValue(forKey: lease)?.revoke()
+    }
+
+    /// The synchronous revocation flag a narration service checks before every segment rollover: open while the lease
+    /// is outstanding, revoked by `release` and `revokeAll`; a lease that is not outstanding gets a flag already revoked.
+    func narrationRevocation(for lease: NarrationLease) -> NarrationRevocationFlag {
+        if let flag = narrationFlags[lease] { return flag }
+        let flag = NarrationRevocationFlag()
+        if leases.contains(lease) { narrationFlags[lease] = flag } else { flag.revoke() }
+        return flag
     }
 
     /// Stores the transcript under a live lease; false (and dropped) when the lease no longer revalidates.
@@ -332,6 +358,8 @@ actor RoomCaptureArtifactOwner: RoomCaptureArtifactPurging {
         revocation = .revoked
         leases.removeAll()
         transcripts.removeAll()
+        for (_, flag) in narrationFlags { flag.revoke() }
+        narrationFlags.removeAll()
         let pending = transfers
         for (_, cancel) in pending { cancel() }
         for (handle, _) in pending {
@@ -585,6 +613,9 @@ actor AccountDeletionCompletionPresentation: AccountDeletionCompletionPresenting
         return nil
     }
 
+    /// The complete observation (C2.5): malformed or unreadable completion bytes are durable authority, never absence.
+    func observeCompletion() async -> CompletionObservation { observe() }
+
     /// Rereads complete bytes/device/inode and requires the expected generation and hash before consuming.
     private func matching(generationId: String, sha256: String) -> (snapshot: CompletionSnapshotV1, observation: PrivacyDurableFile.Observation)? {
         guard let observation = try? PrivacyDurableFile.observe(at: target, limit: DurableFileKind.accountDeletionCompletionV1.storeCap),
@@ -638,9 +669,10 @@ enum PreferenceBarrier {
 
     static func keys(for uid: String) -> [String] { uidScopedTemplates.map { $0.replacingOccurrences(of: "{uid}", with: uid) } }
 
-    /// Every stored key that matches a template for any UID (all-scope).
+    /// Every stored key that matches a template for any UID (all-scope): the template's exact fixed prefix and suffix with
+    /// any nonempty UID between them (a UID may itself contain periods).
     static func uidScopedKeys(in defaults: UserDefaults) -> [String] {
-        let patterns = uidScopedTemplates.map { "^" + NSRegularExpression.escapedPattern(for: $0).replacingOccurrences(of: "\\{uid\\}", with: "[^.]+") + "$" }
+        let patterns = uidScopedTemplates.map { "^" + NSRegularExpression.escapedPattern(for: $0).replacingOccurrences(of: "\\{uid\\}", with: ".+") + "$" }
         let regexes = patterns.compactMap { try? NSRegularExpression(pattern: $0) }
         return defaults.dictionaryRepresentation().keys.filter { key in
             let range = NSRange(key.startIndex..., in: key)
@@ -917,7 +949,10 @@ actor LocalPrivacyPurgeCoordinator: LocalPrivacyPurgeCoordinating {
         let telemetry = await telemetry.purgeAll()
         log.append("telemetry:\(telemetry.rawValue)")
         guard telemetry == .cleared else { return .blocked(.localPrivacyPurgeFailed) }
-        if case .all = request.scope, request.terminalDeletionLink == nil { _ = unlinkJournal() }
+        // an ordinary all-scope purge owns its journal: `.cleared` only once the journal is unlinked and the directory synced (C3)
+        if case .all = request.scope, request.terminalDeletionLink == nil {
+            guard unlinkJournal() else { log.append("journal:unlink_failed"); return .blocked(.fileIO) }
+        }
         return .cleared
     }
 
@@ -946,6 +981,15 @@ actor LocalPrivacyPurgeCoordinator: LocalPrivacyPurgeCoordinating {
             }
         }
     }
+}
+
+/// The lock-guarded revocation of one narration lease (S4-CD7): flipped by the owner's `release`/`revokeAll` so the
+/// MainActor `NarrationService` can decide synchronously, before every segment rollover, whether it may keep listening.
+final class NarrationRevocationFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var revoked = false
+    var isRevoked: Bool { lock.withLock { revoked } }
+    func revoke() { lock.withLock { revoked = true } }
 }
 
 // MARK: - The room-capture owner in the SwiftUI environment (S7 injects the one production owner; nil until then)

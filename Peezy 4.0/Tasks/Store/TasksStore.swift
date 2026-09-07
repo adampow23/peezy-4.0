@@ -25,10 +25,13 @@ protocol TasksListenerHandle: Sendable {
 struct TasksSnapshot: Sendable {
     let cards: [PeezyCard]
     let rawContracts: [String: [String: Any]]
+    /// Every stored `task_instance_id` string, keyed by task document ID (C9.3.14 instance matching).
+    let instanceIds: [String: String]
 
-    init(cards: [PeezyCard], rawContracts: [String: [String: Any]] = [:]) {
+    init(cards: [PeezyCard], rawContracts: [String: [String: Any]] = [:], instanceIds: [String: String] = [:]) {
         self.cards = cards
         self.rawContracts = rawContracts
+        self.instanceIds = instanceIds
     }
 }
 
@@ -56,10 +59,12 @@ struct FirestoreTasksSource: TasksSnapshotSource {
                 if let error { onChange(.failure(error)); return }
                 guard let snapshot else { return }
                 var rawContracts: [String: [String: Any]] = [:]
+                var instanceIds: [String: String] = [:]
                 for document in snapshot.documents {
                     if let raw = document.data()["dispositionContract"] as? [String: Any] { rawContracts[document.documentID] = raw }
+                    if let instance = document.data()["task_instance_id"] as? String { instanceIds[document.documentID] = instance }
                 }
-                onChange(.success(TasksSnapshot(cards: snapshot.documents.compactMap { PeezyCardFirestoreMapper.card(from: $0) }, rawContracts: rawContracts)))
+                onChange(.success(TasksSnapshot(cards: snapshot.documents.compactMap { PeezyCardFirestoreMapper.card(from: $0) }, rawContracts: rawContracts, instanceIds: instanceIds)))
             }
         return Handle(registration: registration)
     }
@@ -127,10 +132,12 @@ enum UrgentRecoveryProjection {
 
     /// Eligible lines in the C9.3.14 comparison order: classified `(0,rank,threshold_at,threshold_id,task_document_id)`
     /// before unclassified `(1,threshold_at,threshold_id,task_document_id)`; string ties in unsigned UTF-8 order.
-    static func lines(cards: [PeezyCard], evidence: [UrgentRecoveryEvidence], registry: UrgentRecoveryRegistry) -> [UrgentRecoveryLine] {
+    /// The instance rule: the evidence names the exact stored `task_instance_id` of the task document (a document that
+    /// stores no instance never matches). The route follows the raw stored contract, never the card mapper's projection.
+    static func lines(cards: [PeezyCard], instanceIds: [String: String], rawContracts: [String: [String: Any]], evidence: [UrgentRecoveryEvidence], registry: UrgentRecoveryRegistry) -> [UrgentRecoveryLine] {
         let candidates: [(line: UrgentRecoveryLine, key: [String])] = evidence.compactMap { item in
             guard item.policyValid, item.basisResolves, item.urgency == "urgent_recovery", CanonicalInstant.isCanonical(item.thresholdAt), !item.thresholdId.isEmpty,
-                  let card = cards.first(where: { $0.id == item.taskDocumentId }) else { return nil }
+                  let card = cards.first(where: { $0.id == item.taskDocumentId }), instanceIds[card.id] == item.taskInstanceId else { return nil }
             switch item.liveState {
             case let .attentionNow(wakeId): guard wakeId == item.wakeId else { return nil }
             case .upcomingThreshold: break
@@ -141,7 +148,7 @@ enum UrgentRecoveryProjection {
                 guard let mapped = registry.ranks[consequenceClass] else { return nil } // an unregistered class is excluded, never downgraded
                 rank = mapped
             }
-            let route: UrgentRecoveryLine.Route = card.dispositionContract?.disposition == .waitingOnExternal ? .outcome : .row
+            let route: UrgentRecoveryLine.Route = rawContracts[card.id]?["disposition"] as? String == "WAITING_ON_EXTERNAL" ? .outcome : .row
             let line = UrgentRecoveryLine(taskDocumentId: card.id, title: card.title, thresholdId: item.thresholdId, thresholdAt: item.thresholdAt, consequenceRank: rank, route: route)
             let key = rank.map { ["0", String(format: "%020d", $0), item.thresholdAt, item.thresholdId, card.id] } ?? ["1", item.thresholdAt, item.thresholdId, card.id]
             return (line, key)
@@ -172,6 +179,8 @@ final class TasksStore {
     private(set) var tasks: [PeezyCard] = []
     /// The stored `dispositionContract` maps of the current snapshot, unmodified (C9.5.24 raw-input seam).
     private(set) var rawContracts: [String: [String: Any]] = [:]
+    /// The stored `task_instance_id` of every task document in the current snapshot.
+    private(set) var instanceIds: [String: String] = [:]
     private(set) var loadState: LoadState = .idle
     private(set) var pendingResetTaskIds: Set<String> = []
     /// The namespace of the installed listener; nil while stopped.
@@ -209,7 +218,7 @@ final class TasksStore {
 
     /// The one shared urgent-recovery projection Home and Tasks consume byte-identically.
     var urgentRecoveryLines: [UrgentRecoveryLine] {
-        UrgentRecoveryProjection.lines(cards: tasks, evidence: urgentRecoveryEvidence, registry: urgentRecoveryRegistry)
+        UrgentRecoveryProjection.lines(cards: tasks, instanceIds: instanceIds, rawContracts: rawContracts, evidence: urgentRecoveryEvidence, registry: urgentRecoveryRegistry)
     }
 
     // MARK: - Lifecycle
@@ -233,7 +242,8 @@ final class TasksStore {
         }
     }
 
-    private func apply(_ result: Result<TasksSnapshot, Error>, for token: TasksStoreNamespace, sequence: Int) {
+    /// Internal for the reordering fixture: a same-token snapshot older than the last applied one never regresses the store.
+    func apply(_ result: Result<TasksSnapshot, Error>, for token: TasksStoreNamespace, sequence: Int) {
         guard namespace == token else { return } // a late callback of a retired listener changes nothing
         guard sequence > lastAppliedSequence else { return } // an older snapshot never regresses the store
         lastAppliedSequence = sequence
@@ -243,6 +253,7 @@ final class TasksStore {
         case let .success(snapshot):
             tasks = snapshot.cards
             rawContracts = snapshot.rawContracts
+            instanceIds = snapshot.instanceIds
             revision += 1
             loadState = .loaded
         }
@@ -260,6 +271,7 @@ final class TasksStore {
         revision = 0
         tasks = []
         rawContracts = [:]
+        instanceIds = [:]
         urgentRecoveryEvidence = []
         loadState = .idle
     }

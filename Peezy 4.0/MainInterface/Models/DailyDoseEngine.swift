@@ -276,9 +276,18 @@ actor DailyDoseLocalStore {
     static func key(uid: String) -> String { "peezy.\(uid).dailyDose.v2" }
 
     func load(uid: String) -> LoadResult {
-        guard let data = defaults.data(forKey: Self.key(uid: uid)) else { return .absent }
-        guard let state = DailyDoseLocalStateV1.decode(data) else { return .malformed }
+        // only nil is absence (C9.5.16): any non-`Data` object under the key is malformed and never overwritten
+        guard let object = defaults.object(forKey: Self.key(uid: uid)) else { return .absent }
+        guard let data = object as? Data, let state = DailyDoseLocalStateV1.decode(data) else { return .malformed }
         return .present(state)
+    }
+
+    /// The malformed bytes under the v2 key: the stored `Data` when it does not decode, or the binary property-list
+    /// serialization of any other stored object; nil when the key is absent or holds a valid state.
+    static func malformedBytes(_ object: Any?) -> Data? {
+        guard let object else { return nil }
+        if let data = object as? Data { return DailyDoseLocalStateV1.decode(data) == nil ? data : nil }
+        return (try? PropertyListSerialization.data(fromPropertyList: object, format: .binary, options: 0)) ?? Data()
     }
 
     /// Returns the existing state, or creates the empty epoch floor when absent;
@@ -448,7 +457,7 @@ extension DailyDoseLocalStore {
     /// The dose `RecoveryObservedStateV1` iff `load(uid:) == .malformed` (bytes reread and hashed, the quarantine array counted
     /// in one call); nil otherwise. The only observation API for the key.
     func observeMalformed(uid: String) -> RecoveryObservedStateV1? {
-        guard let data = defaults.data(forKey: Self.key(uid: uid)), DailyDoseLocalStateV1.decode(data) == nil else { return nil }
+        guard let data = Self.malformedBytes(defaults.object(forKey: Self.key(uid: uid))) else { return nil }
         let count = (defaults.array(forKey: Self.quarantineKey(uid: uid)) ?? []).count
         return .dose(bytesSHA256: TaskCanonicalV1.sha256Hex(data: data), byteLength: data.count, quarantineCount: count)
     }
@@ -458,7 +467,7 @@ extension DailyDoseLocalStore {
     func quarantineMalformed(uid: String, expectedBytesSHA256: String) -> QuarantineResult {
         let key = Self.key(uid: uid)
         let quarantineKey = Self.quarantineKey(uid: uid)
-        guard let data = defaults.data(forKey: key), DailyDoseLocalStateV1.decode(data) == nil,
+        guard let data = Self.malformedBytes(defaults.object(forKey: key)),
               TaskCanonicalV1.sha256Hex(data: data) == expectedBytesSHA256 else { return .drifted }
         var blobs = defaults.array(forKey: quarantineKey) ?? []
         blobs.append(data)
@@ -467,7 +476,7 @@ extension DailyDoseLocalStore {
         guard let reread = defaults.array(forKey: quarantineKey), let last = reread.last as? Data, last == data else { return .ioFailed } // (3)
         defaults.removeObject(forKey: key)                                             // (4)
         guard defaults.synchronize() else { return .ioFailed }                         // (5)
-        guard defaults.data(forKey: key) == nil else { return .ioFailed }              // (6)
+        guard defaults.object(forKey: key) == nil else { return .ioFailed }            // (6)
         return .quarantined
     }
 

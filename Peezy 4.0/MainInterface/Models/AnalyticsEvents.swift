@@ -10,6 +10,16 @@ enum AnalyticsEvents {
         private var suspended = false
         var isSuspended: Bool { lock.withLock { suspended } }
         func suspend() { lock.withLock { suspended = true } }
+        /// Admission and the synchronous SDK invocation under one critical section: a call admitted before `suspend()`
+        /// completes before the barrier begins, and nothing is admitted afterwards (no check/use window).
+        @discardableResult
+        func admit(_ body: () -> Void) -> Bool {
+            lock.withLock {
+                guard !suspended else { return false }
+                body()
+                return true
+            }
+        }
     }
 
     nonisolated(unsafe) static let collection = CollectionGate()
@@ -128,11 +138,12 @@ enum AnalyticsEvents {
     }
 
     static func setHasSubscription(_ hasSubscription: Bool) {
-        guard !isSuspended else { return }
-        Analytics.setUserProperty(
-            hasSubscription ? "true" : "false",
-            forName: "has_subscription"
-        )
+        collection.admit {
+            Analytics.setUserProperty(
+                hasSubscription ? "true" : "false",
+                forName: "has_subscription"
+            )
+        }
     }
 
     /// Only the fixed parameter keys with scalar values reach the SDK: no UID, path, payload, or error text (C3 sink rule).
@@ -143,8 +154,7 @@ enum AnalyticsEvents {
     }
 
     private static func log(_ name: Name, _ parameters: [String: Any]? = nil) {
-        guard !isSuspended else { return }
-        Analytics.logEvent(name.rawValue, parameters: sanitized(parameters))
+        guard collection.admit({ Analytics.logEvent(name.rawValue, parameters: sanitized(parameters)) }) else { return }
 
         #if DEBUG
         let details = parameters?

@@ -171,8 +171,9 @@ enum TaskDispositionReadOnlyReason: String, CaseIterable, Sendable {
 }
 
 enum TaskDispositionSurfaceState: Equatable, Sendable {
-    /// A policy-absent or policy-bearing nonterminal contract whose row buttons are enabled.
-    case actionable
+    /// A policy-absent or policy-bearing nonterminal contract whose row buttons are enabled (`actionable(contract)`:
+    /// the member names whether a stored contract is present, so the Home queue never inspects the map itself).
+    case actionable(contractPresent: Bool)
     /// `contract` absent only for `malformed_present`.
     case readOnly(reason: TaskDispositionReadOnlyReason, contractPresent: Bool)
     case superseded(SupersededPresentation)
@@ -203,7 +204,7 @@ enum TaskDispositionSurface {
         switch status {
         case .completed: return .readOnly(reason: .completed, contractPresent: present)
         case .dismissed: return .readOnly(reason: .dismissed, contractPresent: present)
-        default: return .actionable
+        default: return .actionable(contractPresent: present)
         }
     }
 

@@ -187,6 +187,67 @@ enum AccountDeletionCapability {
     }
 }
 
+// MARK: - C2.3 wire binding
+
+/// Every wire the reducer consumes is bound to the durable capability before any transition: it names the intent's
+/// operation, every instant it carries is a representable canonical UTC millisecond (regex and Gregorian round trip),
+/// and the authority members and deadline the intent already persisted are byte-matched (immutable once stored).
+enum AccountDeletionWireBinding {
+    private static let formatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        formatter.timeZone = TimeZone(identifier: "UTC")
+        return formatter
+    }()
+
+    /// Canonical shape and a strict round trip: `2026-99-99T99:99:99.999Z` matches the shape and is refused here.
+    static func isRepresentableInstant(_ value: String) -> Bool {
+        guard CanonicalInstant.isCanonical(value), let date = formatter.date(from: value) else { return false }
+        return CanonicalInstant.string(from: date) == value
+    }
+
+    static func operationId(of wire: AccountDeletionRemoteResultV1) -> String {
+        switch wire {
+        case let .absent(operationId): return operationId
+        case let .dataFinal(w): return w.operationId
+        case let .authGuarding(w): return w.operationId
+        case let .accountDeleted(w): return w.operationId
+        }
+    }
+
+    static func instants(of wire: AccountDeletionRemoteResultV1) -> [String] {
+        switch wire {
+        case .absent: return []
+        case let .dataFinal(w): return [w.startedAt, w.dataDeletedAt]
+        case let .authGuarding(w): return [w.startedAt, w.dataDeletedAt, w.authAbsenceObservedAt, w.authGuardAfter]
+        case let .accountDeleted(w): return [w.startedAt, w.dataDeletedAt, w.authAbsenceObservedAt, w.authGuardAfter, w.authGuardCompletedAt, w.accountDeletedAt]
+        }
+    }
+
+    static func names(_ wire: AccountDeletionRemoteResultV1, operationId: String) -> Bool { self.operationId(of: wire) == operationId }
+
+    static func instantsRepresentable(_ wire: AccountDeletionRemoteResultV1) -> Bool { instants(of: wire).allSatisfy(isRepresentableInstant) }
+
+    static func binds(_ wire: AccountDeletionRemoteResultV1, to intent: AccountDeletionIntentV1) -> Bool {
+        guard names(wire, operationId: intent.operationId), instantsRepresentable(wire) else { return false }
+        let authority: (kind: AccountDeletionAuthorityKind, startedAt: String, dataDeletedAt: String)
+        var authGuardAfter: String?
+        switch wire {
+        case .absent: return true
+        case let .dataFinal(w): authority = (w.authorityKind, w.startedAt, w.dataDeletedAt)
+        case let .authGuarding(w): authority = (w.authorityKind, w.startedAt, w.dataDeletedAt); authGuardAfter = w.authGuardAfter
+        case let .accountDeleted(w): authority = (w.authorityKind, w.startedAt, w.dataDeletedAt); authGuardAfter = w.authGuardAfter
+        }
+        if let stored = intent.authorityKind {
+            guard stored == authority.kind, intent.startedAt == authority.startedAt, intent.dataDeletedAt == authority.dataDeletedAt else { return false }
+        }
+        if let deadline = intent.authGuardAfter, let authGuardAfter {
+            guard deadline == authGuardAfter else { return false } // deadline continuity
+        }
+        return true
+    }
+}
+
 // MARK: - Intent file store with generation/hash/inode CAS (C2.1, C2.2)
 
 /// The identity a compare-and-swap requires: the envelope generation and hash plus the device/inode of the bytes read.
@@ -394,13 +455,23 @@ actor DurableStoreRecoveryCoordinator {
             if case let .present(journal) = await dependencies.purge.observeJournal(), journal.scope == .all, let link = journal.terminalDeletionLink {
                 return await finishConsumption(link: link, intentIdentity: nil)
             }
-            // a stray completion file (crash between the journal unlink and the file unlink): re-present it for its acknowledge
-            if let snapshot = await dependencies.completion.current() {
+            // a stray completion file (crash between the journal unlink and the file unlink): re-present it for its acknowledge;
+            // malformed or unreadable completion bytes are durable authority, never absence (C2.5): the gate blocks with the bytes retained
+            switch await dependencies.completion.observeCompletion() {
+            case let .present(snapshot):
                 trace.append("completion:stray")
                 presentation = .completion(snapshot)
                 await dependencies.gate.setGate(.blocked)
                 await dependencies.gate.setPendingTerminalPresentation(Self.terminalKind(of: snapshot.result))
                 return .settled(.completion(snapshot))
+            case .malformed:
+                trace.append("completion:malformed")
+                return await blockGate(.fileIO)
+            case let .ioFailed(code):
+                trace.append("completion:io:\(code.rawValue)")
+                return await blockGate(.fileIO)
+            case .absent:
+                break
             }
             guard case let .signedIn(tuple) = await dependencies.auth.currentSignedAuth() else { return await clearGate() }
             inflightUID = tuple.uid
@@ -581,6 +652,11 @@ actor DurableStoreRecoveryCoordinator {
         } catch {
             return await blockGate(.remoteUnavailable)
         }
+        // the discovery wire must name the capability it was sent and carry only representable instants (C2.3)
+        if let outcome, !AccountDeletionWireBinding.names(outcome, operationId: operationId) || !AccountDeletionWireBinding.instantsRepresentable(outcome) {
+            trace.append("wire:unbound")
+            return await blockGate(.remoteMalformed)
+        }
         if case .absent = outcome { trace.append("discover:absent"); return await clearGate() }
         let now = dependencies.clock.now()
         guard CanonicalInstant.isCanonical(now) else { trace.append("clock:nonrepresentable"); return await blockGate(.fileIO) }
@@ -755,6 +831,7 @@ actor DurableStoreRecoveryCoordinator {
                 return .rest(.settled(.queued))
             }
         }
+        if let rest = unbound(outcome, intent) { return rest }
         guard let authority = Self.authority(of: outcome) else {
             presentation = .blocked(.remoteMalformed)
             return .rest(.settled(.blocked(.remoteMalformed)))
@@ -763,6 +840,15 @@ actor DurableStoreRecoveryCoordinator {
             next.phase = .dataConfirmed; next.purpose = nil
             next.authorityKind = authority.kind; next.startedAt = authority.startedAt; next.dataDeletedAt = authority.dataDeletedAt
         }
+    }
+
+    /// C2.3 binding before every transition: a wire that names another operation, carries a nonrepresentable instant, or
+    /// disagrees with the authority or deadline the intent already holds is `REMOTE_MALFORMED` with every byte retained.
+    private func unbound(_ wire: AccountDeletionRemoteResultV1, _ intent: AccountDeletionIntentV1) -> Step? {
+        guard !AccountDeletionWireBinding.binds(wire, to: intent) else { return nil }
+        trace.append("wire:unbound")
+        presentation = .blocked(.remoteMalformed)
+        return .rest(.settled(.blocked(.remoteMalformed)))
     }
 
     private static func authority(of wire: AccountDeletionRemoteResultV1) -> (kind: AccountDeletionAuthorityKind, startedAt: String, dataDeletedAt: String)? {
@@ -830,6 +916,7 @@ actor DurableStoreRecoveryCoordinator {
             case let .failure(error): return await rest(after: error, purged, purgedIdentity)
             }
         }
+        if let rest = unbound(root, purged) { return rest }
         switch root {
         case .dataFinal:
             return await transition(purged, purgedIdentity, wire: root) { $0.phase = .localDetaching; $0.stagedRoot = .dataDeleted }
@@ -891,6 +978,7 @@ actor DurableStoreRecoveryCoordinator {
         case let .success(value): outcome = value
         case let .failure(error): return await rest(after: error, intent, identity)
         }
+        if let rest = unbound(outcome, intent) { return rest }
         switch outcome {
         case let .authGuarding(w):
             // The guarding wire just received rests the reducer in `guarding`; a later Retry dispatches finalize again.
@@ -917,6 +1005,7 @@ actor DurableStoreRecoveryCoordinator {
             case let .failure(error): return await rest(after: error, intent, identity)
             }
         }
+        if let rest = unbound(outcome, intent) { return rest }
         switch outcome {
         case .authGuarding:
             let guarding: AccountDeletionPresentationV1 = .guarding(authGuardAfter: intent.authGuardAfter ?? "")
@@ -977,7 +1066,7 @@ actor DurableStoreRecoveryCoordinator {
     private func optionB(from guarding: AccountDeletionIntentV1, _ identity: AccountDeletionIntentIdentity, to newUID: String) async -> AccountDeletionDispatchResult {
         guard case let .signedIn(tuple) = await dependencies.auth.currentSignedAuth(), tuple.uid == newUID else { trace.append("optionB:auth_drift"); return .busy }
         guard case let .success(.authGuarding(wire)) = await dispatch(.resume(uid: guarding.uid, operationId: guarding.operationId, proofNonce: guarding.proofNonce)),
-              wire.authorityKind == guarding.authorityKind, wire.startedAt == guarding.startedAt, wire.dataDeletedAt == guarding.dataDeletedAt,
+              AccountDeletionWireBinding.binds(.authGuarding(wire), to: guarding), wire.authorityKind == guarding.authorityKind, wire.startedAt == guarding.startedAt, wire.dataDeletedAt == guarding.dataDeletedAt,
               wire.authGuardAfter == guarding.authGuardAfter else { trace.append("optionB:authority_mismatch"); return .busy }
         switch await dependencies.purge.observeJournal() {
         case .absent: break
@@ -1077,6 +1166,17 @@ enum DurableFileObserver {
     }
 
     /// The unlink precondition (C9.7.12): within-cap bytes reread and hashed; over-cap by a new no-follow descriptor's identity.
+    /// Whole-state CAS for a file that may be absent in the displayed observation: an absent observation matches only a
+    /// still-absent file; every other observation matches as `matches` does.
+    static func stillMatches(_ observation: FileObservationV1, at url: URL, cap: Int) -> Bool {
+        if case .absent = observation {
+            guard let current = try? PrivacyDurableFile.observe(at: url, limit: cap) else { return true }
+            _ = current
+            return false
+        }
+        return matches(observation, at: url, cap: cap)
+    }
+
     static func matches(_ observation: FileObservationV1, at url: URL, cap: Int) -> Bool {
         guard let current = try? PrivacyDurableFile.observe(at: url, limit: cap) else { return false }
         switch observation {

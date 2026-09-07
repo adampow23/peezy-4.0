@@ -692,6 +692,8 @@ actor ResetOperationRegistry {
         var records: [ResetOperationRegistryRecordV2]
         var migrations: [[String: Any]]
         var gesture: ResetGestureV1?
+        /// The C9.7.1 receipt the file carries; every ordinary write carries it through byte-identically (S4).
+        var recoveryReceipt: [String: Any]? = nil
     }
 
     private var fileURL: URL { directory.appendingPathComponent(Self.fileName) }
@@ -862,31 +864,16 @@ actor ResetOperationRegistry {
         guard FileManager.default.fileExists(atPath: path) else { return nil }
         guard let bytes = FileManager.default.contents(atPath: path) else { throw RegistryError.storageIO(.fileReadFailed) }
         guard let decoded = DurableEnvelopeCodec.decode(bytes, fileKind: .taskPlanResetV2) else { throw RegistryError.envelopeCorrupt }
-        let payload = decoded.payload
-        let keys = Set(payload.keys)
-        guard keys.isSubset(of: ["records", "legacyMigrations", "gesture"]), keys.isSuperset(of: ["records", "legacyMigrations"]),
-              let rawRecords = payload["records"] as? [[String: Any]], rawRecords.count <= Self.capacity,
-              let rawMigrations = payload["legacyMigrations"] as? [[String: Any]], rawMigrations.count <= Self.capacity else {
-            throw RegistryError.envelopeCorrupt
-        }
-        let records = rawRecords.compactMap(ResetOperationRegistryRecordV2.from)
-        guard records.count == rawRecords.count,
-              Set(records.map { "\($0.uid)|\($0.expectedTaskGenerationEpoch)" }).count == records.count,
-              Set(records.map(\.handleId)).count == records.count,
-              records == Self.sorted(records) else { throw RegistryError.envelopeCorrupt }
-        var gesture: ResetGestureV1?
-        if let rawGesture = payload["gesture"] {
-            guard let map = rawGesture as? [String: Any], let parsed = ResetGestureV1.from(map) else { throw RegistryError.envelopeCorrupt }
-            gesture = parsed
-        }
-        return Envelope(generationId: decoded.generationId, sha256: decoded.sha256, records: records, migrations: rawMigrations, gesture: gesture)
+        guard let envelope = Self.parse(decoded) else { throw RegistryError.envelopeCorrupt }
+        return envelope
     }
 
     private func write(_ envelope: inout Envelope, generationId: String? = nil) throws {
         let generation = generationId ?? UUID().uuidString.lowercased()
         var payload: [String: Any] = ["records": envelope.records.map { $0.map() }, "legacyMigrations": envelope.migrations]
         if let gesture = envelope.gesture { payload["gesture"] = gesture.map() }
-        guard let bytes = DurableEnvelopeCodec.encode(fileKind: .taskPlanResetV2, generationId: generation, payload: payload) else {
+        // an ordinary write carries the file's existing recovery receipt through unchanged (C9.7.1)
+        guard let bytes = DurableEnvelopeCodec.encode(fileKind: .taskPlanResetV2, generationId: generation, payload: payload, recoveryReceipt: envelope.recoveryReceipt) else {
             throw RegistryError.envelopeCorrupt
         }
         do {
@@ -959,12 +946,15 @@ actor ResetOperationRegistry {
               Set(records.map { "\($0.uid)|\($0.expectedTaskGenerationEpoch)" }).count == records.count,
               Set(records.map(\.handleId)).count == records.count,
               records == sorted(records) else { return nil }
+        // every legacy-migration row is type-validated on load (C9.4.5 grammar), one row per UID
+        let migrations = rawMigrations.compactMap(LegacyResetMigrationV1.from)
+        guard migrations.count == rawMigrations.count, Set(migrations.map(\.uid)).count == migrations.count else { return nil }
         var gesture: ResetGestureV1?
         if let rawGesture = payload["gesture"] {
             guard let map = rawGesture as? [String: Any], let parsed = ResetGestureV1.from(map) else { return nil }
             gesture = parsed
         }
-        return Envelope(generationId: decoded.generationId, sha256: decoded.sha256, records: records, migrations: rawMigrations, gesture: gesture)
+        return Envelope(generationId: decoded.generationId, sha256: decoded.sha256, records: records, migrations: rawMigrations, gesture: gesture, recoveryReceipt: decoded.recoveryReceipt)
     }
 
     fileprivate func writeRecovered(_ envelope: Envelope, receipt: [String: Any]?) throws -> String {
@@ -1091,6 +1081,12 @@ enum ResetReceiptState: String, Sendable, Equatable {
 struct ResetReceiptV1: Equatable, Sendable {
     static let keys: Set<String> = ["schemaVersion", "kind", "operationId", "replayed", "accountUid", "expectedTaskGenerationEpoch", "taskGenerationEpoch", "activeMoveEventId", "deletedCount", "deletedCounts", "state"]
     static let canonicalIdPattern = #"^rso1_[0-9a-f]{40}$"#
+
+    /// The server's canonical reset operation ID for the rotation to `taskGenerationEpoch`:
+    /// `rso1_` + first40(SHA-256(TaskCanonicalV1({account_uid, task_generation_epoch}))) (C9.4.5 phase2_active validation).
+    static func canonicalOperationId(uid: String, taskGenerationEpoch: Int) -> String {
+        "rso1_" + String(TaskCanonicalV1.sha256Hex(["account_uid": uid, "task_generation_epoch": taskGenerationEpoch]).prefix(40))
+    }
     static let moveEventIdPattern = #"^me1_[0-9a-f]{40}$"#
 
     let kind: ResetReceiptKind
@@ -1246,6 +1242,8 @@ enum LegacyResetReconciliationV1: Equatable, Sendable {
               let legacyOperationId = data["legacyOperationId"] as? String, !legacyOperationId.isEmpty,
               let migrationAlias = data["migrationAlias"] as? String, ResetOperationRegistry.isAlias(migrationAlias),
               let accountUid = data["accountUid"] as? String, !accountUid.isEmpty,
+              // the deterministic ID is recomputed from the response's own account and legacy ID (C9.4.5), never trusted by shape
+              migrationId == Self.migrationId(uid: accountUid, legacyOperationId: legacyOperationId),
               let replayed = ResetWireDecoding.bool(data["replayed"]) else { throw ResetRemoteError.protocolAmbiguity }
         let base = Base(migrationId: migrationId, legacyOperationId: legacyOperationId, migrationAlias: migrationAlias, accountUid: accountUid, replayed: replayed)
         let keys = Set(data.keys)
@@ -1289,10 +1287,50 @@ protocol ResetRemoteProviding: Sendable {
     func reconcileLegacyReset(legacyOperationId: String, migrationAlias: String) async throws -> LegacyResetReconciliationV1
     /// S4 (C9.4.5): `{action:"inspectLegacyTaskReset"}`, authenticated and read-only; offered only by `LEGACY_ALIAS_INVALID`.
     func inspectLegacyReset() async throws -> LegacyResetInspectionV1
+    /// S4 (C9.7.8): `inspectCommittedOperation` for the LEGACY_RESET_MIGRATION family, read-only; the reset store's
+    /// `reconcile` for a migration receipt without provenance.
+    func inspectLegacyMigration(uid: String, migrationId: String, requestFingerprint: String) async throws -> LegacyMigrationInspectionV1
 }
 
 extension ResetRemoteProviding {
     func inspectLegacyReset() async throws -> LegacyResetInspectionV1 { throw ResetRemoteError.protocolAmbiguity }
+    func inspectLegacyMigration(uid: String, migrationId: String, requestFingerprint: String) async throws -> LegacyMigrationInspectionV1 { throw ResetRemoteError.protocolAmbiguity }
+}
+
+/// `inspectCommittedOperation` for the LEGACY_RESET_MIGRATION family (C9.7.8): `{schemaVersion:1,kind:"committed_operation_inspection",
+/// accountUid,family:"LEGACY_RESET_MIGRATION",authority:{migrationId},requestAuthority:{requestFingerprint},identityDigest,outcome,receipt?}`;
+/// `receipt` (the complete durable migration receipt) required iff `committed`.
+struct LegacyMigrationInspectionV1: Equatable, Sendable {
+    enum Outcome: String, Sendable { case absent, committed }
+
+    let accountUid: String
+    let migrationId: String
+    let requestFingerprint: String
+    let identityDigest: String
+    let outcome: Outcome
+    let receipt: LegacyResetReconciliationV1?
+
+    static func decode(_ data: [String: Any]) throws -> LegacyMigrationInspectionV1 {
+        var expected: Set<String> = ["schemaVersion", "kind", "accountUid", "family", "authority", "requestAuthority", "identityDigest", "outcome"]
+        guard let outcomeRaw = data["outcome"] as? String, let outcome = Outcome(rawValue: outcomeRaw) else { throw ResetRemoteError.protocolAmbiguity }
+        if outcome == .committed { expected.insert("receipt") }
+        guard Set(data.keys) == expected, TaskGenerationEpochStamp.safeInteger(data["schemaVersion"]) == 1,
+              data["kind"] as? String == "committed_operation_inspection", data["family"] as? String == "LEGACY_RESET_MIGRATION",
+              let accountUid = data["accountUid"] as? String, !accountUid.isEmpty,
+              let authority = data["authority"] as? [String: Any], Set(authority.keys) == ["migrationId"],
+              let migrationId = authority["migrationId"] as? String, migrationId.range(of: LegacyResetReconciliationV1.migrationIdPattern, options: .regularExpression) != nil,
+              let requestAuthority = data["requestAuthority"] as? [String: Any], Set(requestAuthority.keys) == ["requestFingerprint"],
+              let fingerprint = requestAuthority["requestFingerprint"] as? String, fingerprint.range(of: #"^rlmreq1_[0-9a-f]{64}$"#, options: .regularExpression) != nil,
+              let identityDigest = data["identityDigest"] as? String, identityDigest.range(of: #"^[0-9a-f]{64}$"#, options: .regularExpression) != nil else { throw ResetRemoteError.protocolAmbiguity }
+        var receipt: LegacyResetReconciliationV1?
+        if outcome == .committed {
+            guard let raw = data["receipt"] as? [String: Any] else { throw ResetRemoteError.protocolAmbiguity }
+            let decoded = try LegacyResetReconciliationV1.decode(raw)
+            guard decoded.base.accountUid == accountUid, decoded.base.migrationId == migrationId else { throw ResetRemoteError.protocolAmbiguity }
+            receipt = decoded
+        }
+        return LegacyMigrationInspectionV1(accountUid: accountUid, migrationId: migrationId, requestFingerprint: fingerprint, identityDigest: identityDigest, outcome: outcome, receipt: receipt)
+    }
 }
 
 /// `{schemaVersion:1,kind:"legacy_reset_inspection",outcome:"none"|"legacy_active"|"phase2_active",accountUid,legacyOperationId?,canonicalOperationId?,expectedTaskGenerationEpoch?}` (C9.4.5).
@@ -1322,7 +1360,9 @@ enum LegacyResetInspectionV1: Equatable, Sendable {
         case "phase2_active":
             guard keys == common.union(["canonicalOperationId", "expectedTaskGenerationEpoch"]),
                   let canonical = data["canonicalOperationId"] as? String, canonical.range(of: ResetReceiptV1.canonicalIdPattern, options: .regularExpression) != nil,
-                  let epoch = TaskGenerationEpochStamp.safeInteger(data["expectedTaskGenerationEpoch"]), epoch < TaskGenerationEpochStamp.maxSafeInteger else { throw ResetRemoteError.protocolAmbiguity }
+                  let epoch = TaskGenerationEpochStamp.safeInteger(data["expectedTaskGenerationEpoch"]), epoch < TaskGenerationEpochStamp.maxSafeInteger,
+                  // C canonical formula for the safe rotation r = expectedTaskGenerationEpoch + 1 (C9.4.5)
+                  canonical == ResetReceiptV1.canonicalOperationId(uid: accountUid, taskGenerationEpoch: epoch + 1) else { throw ResetRemoteError.protocolAmbiguity }
             return .phase2Active(accountUid: accountUid, canonicalOperationId: canonical, expectedTaskGenerationEpoch: epoch)
         default:
             throw ResetRemoteError.protocolAmbiguity
@@ -1374,6 +1414,19 @@ extension TaskPlanService {
         func reconcileLegacyReset(legacyOperationId: String, migrationAlias: String) async throws -> LegacyResetReconciliationV1 {
             let payload: [String: Any] = ["action": "reconcileLegacyTaskReset", "legacyOperationId": legacyOperationId, "migrationAlias": migrationAlias]
             return try LegacyResetReconciliationV1.decode(try await invoke(payload))
+        }
+
+        func inspectLegacyMigration(uid: String, migrationId: String, requestFingerprint: String) async throws -> LegacyMigrationInspectionV1 {
+            let identity = ResetOperationRegistry.migrationIdentityDigest(uid: uid)
+            let payload: [String: Any] = [
+                "action": "inspectCommittedOperation", "family": "LEGACY_RESET_MIGRATION",
+                "authority": ["migrationId": migrationId],
+                "requestAuthority": ["requestFingerprint": requestFingerprint],
+                "identityDigest": identity
+            ]
+            let inspection = try LegacyMigrationInspectionV1.decode(try await invoke(payload))
+            guard inspection.accountUid == uid, inspection.migrationId == migrationId, inspection.requestFingerprint == requestFingerprint, inspection.identityDigest == identity else { throw ResetRemoteError.protocolAmbiguity }
+            return inspection
         }
 
         /// S4 (C9.4.5): the `LEGACY_RESET_MIGRATION` inspection transport, exactly `{action:"inspectLegacyTaskReset"}`.
@@ -1855,13 +1908,15 @@ extension ResetOperationRegistry: DurableStoreRecovering {
         let gesturePresent = payload["gesture"] != nil
         if gesturePresent, !(payload["gesture"] is [String: Any]) { return (false, nil) }
         let records = rawRecords.compactMap { ($0 as? [String: Any]).flatMap(ResetOperationRegistryRecordV2.from) }
-        let migrations = rawMigrations.compactMap { $0 as? [String: Any] }
+        // only type-valid migration rows are candidates (C9.4.5 grammar); an opaque map is never recovered
+        let typedMigrations = rawMigrations.compactMap { ($0 as? [String: Any]).flatMap(LegacyResetMigrationV1.from) }
+        let migrations = typedMigrations.map { $0.map() }
         var gesture: ResetGestureV1?
         var gestureValid = true
         if gesturePresent { gesture = (payload["gesture"] as? [String: Any]).flatMap(ResetGestureV1.from); gestureValid = gesture != nil }
         let uniqueRows = Set(records.map { "\($0.uid)|\($0.expectedTaskGenerationEpoch)" }).count == records.count
-        let migrationUIDs = migrations.compactMap { $0["uid"] as? String }
-        let uniqueMigrations = migrationUIDs.count == migrations.count && Set(migrationUIDs).count == migrations.count
+        let migrationUIDs = typedMigrations.map(\.uid)
+        let uniqueMigrations = Set(migrationUIDs).count == migrations.count
         let allValid = records.count == rawRecords.count && migrations.count == rawMigrations.count && gestureValid && uniqueRows && uniqueMigrations
             && records.count <= capacity && migrations.count <= capacity
         let rawCount = rawRecords.count + rawMigrations.count + (gesturePresent ? 1 : 0)
@@ -1930,10 +1985,15 @@ extension ResetOperationRegistry: DurableStoreRecovering {
             }
         }
         guard targetValid, let tuple, let live = liveEnvelope() else { return files("ready", []) }
-        // step 6: the first current-auth receipt-bearing row lacking or disagreeing with live provenance
+        // step 6: the first current-auth receipt-bearing row lacking or disagreeing with live provenance — the RESET rows in
+        // stored order, then the LEGACY_RESET_MIGRATION row (C9.7.8 identity `{kind:"legacy_reset_migration",uid}`)
         for row in live.records where row.uid == tuple.uid && (row.progressReceipt != nil || row.finalReceipt != nil) {
             let identity = Self.identityDigest(uid: row.uid, expectedTaskGenerationEpoch: row.expectedTaskGenerationEpoch)
             if provenance(for: identity) != Self.receiptSHA256(row) { return files("receipt_mismatch", ["reconcile"], auth: tuple, mismatch: identity) }
+        }
+        for migration in ((try? typedMigrations(live)) ?? []) where migration.uid == tuple.uid && migration.receipt != nil && (migration.phase == .receipt || migration.phase == .applying) {
+            let identity = Self.migrationIdentityDigest(uid: migration.uid)
+            if provenance(for: identity) != TaskCanonicalV1.sha256Hex(data: migration.receipt ?? Data()) { return files("receipt_mismatch", ["reconcile"], auth: tuple, mismatch: identity) }
         }
         // step 7: the current UID's epoch conflict
         let mine = live.records.filter { $0.uid == tuple.uid }
@@ -1946,6 +2006,11 @@ extension ResetOperationRegistry: DurableStoreRecovering {
     /// `{kind:"reset",uid,expectedTaskGenerationEpoch}` (C9.7.8 identity map).
     static func identityDigest(uid: String, expectedTaskGenerationEpoch: Int) -> String {
         TaskCanonicalV1.sha256Hex(["kind": "reset", "uid": uid, "expectedTaskGenerationEpoch": expectedTaskGenerationEpoch])
+    }
+
+    /// `{kind:"legacy_reset_migration",uid}` (C9.7.8 identity map of the LEGACY_RESET_MIGRATION family).
+    static func migrationIdentityDigest(uid: String) -> String {
+        TaskCanonicalV1.sha256Hex(["kind": "legacy_reset_migration", "uid": uid])
     }
 
     private static func receiptSHA256(_ row: ResetOperationRegistryRecordV2) -> String {
@@ -2042,11 +2107,21 @@ extension ResetOperationRegistry: DurableStoreRecovering {
                   DurableFileObserver.matches(quarantineObservation, at: quarantineURL, cap: Self.cap) else { return await reclassified() }
             try? PrivacyDurableFile.unlink(at: quarantineURL)
         case .recover, .merge:
+            // whole-state CAS (C9.7.12): both files must still match the displayed observation immediately before the replacement
             guard DurableFileObserver.matches(quarantineObservation, at: quarantineURL, cap: Self.cap),
-                  let bytes = try? PrivacyDurableFile.observe(at: quarantineURL, limit: Self.cap)?.bytes else { return await reclassified() }
+                  let bytes = try? PrivacyDurableFile.observe(at: quarantineURL, limit: Self.cap)?.bytes, TaskCanonicalV1.sha256Hex(data: bytes) == Self.sha(of: quarantineObservation) else { return await reclassified() }
             let parsed = Self.enumerate(bytes)
             guard parsed.enumerable, let candidates = parsed.candidates, candidates.allValid else { return await reclassified() }
-            let live: Envelope = (action == .merge ? liveEnvelope() : nil) ?? Envelope(generationId: "", sha256: "", records: [], migrations: [], gesture: nil)
+            var live = Envelope(generationId: "", sha256: "", records: [], migrations: [], gesture: nil)
+            if action == .merge {
+                // merge starts from the displayed live target: the bytes reread now must hash to the displayed valid target
+                guard case let .valid(_, targetSHA, _, _) = targetObservation, let targetBytes = try? PrivacyDurableFile.observe(at: fileURL, limit: Self.cap)?.bytes,
+                      TaskCanonicalV1.sha256Hex(data: targetBytes) == targetSHA, let decoded = DurableEnvelopeCodec.decode(targetBytes, fileKind: .taskPlanResetV2),
+                      let parsedLive = Self.parse(decoded) else { return await reclassified() }
+                live = parsedLive
+            } else {
+                guard DurableFileObserver.stillMatches(targetObservation, at: fileURL, cap: Self.cap) else { return await reclassified() }
+            }
             let merged = Self.merged(live, candidates)
             guard merged.records.count <= Self.capacity, merged.migrations.count <= Self.capacity else { return await reclassified() }
             let receipt: [String: Any] = ["schemaVersion": 1, "quarantineSHA256": TaskCanonicalV1.sha256Hex(data: bytes), "recoveredCount": merged.recovered, "droppedCount": 0]
@@ -2055,8 +2130,33 @@ extension ResetOperationRegistry: DurableStoreRecovering {
             try? PrivacyDurableFile.unlink(at: quarantineURL)
         case let .reconcile(identity):
             guard base == "receipt_mismatch", mismatch == identity, let remote = bundleRemote, let live = liveEnvelope(),
-                  case .signedIn(let tuple) = await auth.currentSignedAuth(),
-                  let row = live.records.first(where: { $0.uid == tuple.uid && (($0.progressReceipt != nil) || ($0.finalReceipt != nil)) && Self.identityDigest(uid: $0.uid, expectedTaskGenerationEpoch: $0.expectedTaskGenerationEpoch) == identity }),
+                  case .signedIn(let tuple) = await auth.currentSignedAuth() else { return .unavailable(store: .reset) }
+            // the LEGACY_RESET_MIGRATION family: the current UID's migration row whose receipt lacks provenance (C9.7.8)
+            if identity == Self.migrationIdentityDigest(uid: tuple.uid), let migration = ((try? typedMigrations(live)) ?? []).first(where: { $0.uid == tuple.uid && $0.receipt != nil }),
+               let migrationId = migration.migrationId, let fingerprint = migration.requestFingerprint {
+                let inspection: LegacyMigrationInspectionV1
+                do { inspection = try await remote.inspectLegacyMigration(uid: migration.uid, migrationId: migrationId, requestFingerprint: fingerprint) } catch { return Self.result(classify(current)) }
+                // post-await: auth, observed state, and the row are recomputed before any write
+                let after = await observe()
+                guard case let .observed(afterState) = after, afterState.recoveryStateDigest == expected,
+                      var (envelope, next) = try? currentMigration(uid: migration.uid), next.receipt == migration.receipt, next.phase == migration.phase else { return Self.result(classify(after)) }
+                switch inspection.outcome {
+                case .committed:
+                    // exact RECEIPT/APPLYING replacement with the committed receipt bytes, then provenance install
+                    guard let receipt = inspection.receipt, receipt.base.legacyOperationId == migration.legacyOperationId, let data = TaskCanonicalV1.data(receipt.map()) else { return Self.result(classify(after)) }
+                    next.receipt = data
+                    do { try storeMigration(next, in: &envelope) } catch { return await reclassified() }
+                    installProvenance(identityDigest: identity, receiptSHA256: TaskCanonicalV1.sha256Hex(data: data))
+                case .absent:
+                    // the exact pre-replay phase of the family: `dispatched`, no receipt, no application ID
+                    next.receipt = nil
+                    next.applicationId = nil
+                    next.phase = .dispatched
+                    do { try storeMigration(next, in: &envelope) } catch { return await reclassified() }
+                }
+                return await reclassified()
+            }
+            guard let row = live.records.first(where: { $0.uid == tuple.uid && (($0.progressReceipt != nil) || ($0.finalReceipt != nil)) && Self.identityDigest(uid: $0.uid, expectedTaskGenerationEpoch: $0.expectedTaskGenerationEpoch) == identity }),
                   let operationId = row.canonicalOperationId else { return .unavailable(store: .reset) }
             let inspection: ResetInspectionV1
             do { inspection = try await remote.inspectReset(uid: row.uid, canonicalOperationId: operationId, expectedTaskGenerationEpoch: row.expectedTaskGenerationEpoch) } catch { return Self.result(classify(current)) }
@@ -2084,6 +2184,13 @@ extension ResetOperationRegistry: DurableStoreRecovering {
             return .unavailable(store: .reset)
         }
         return await reclassified()
+    }
+
+    private static func sha(of observation: FileObservationV1) -> String? {
+        switch observation {
+        case let .valid(_, sha, _, _), let .malformed(_, sha): return sha
+        default: return nil
+        }
     }
 
     private static func digest(of key: RecoveryAttemptKey) -> String? {
@@ -2657,14 +2764,26 @@ extension ResetOperationRegistry {
                     }
                     continue
                 }
-                auth = try await revalidated(auth)
+                // C9.4.5 account-switch row: the returned response advances only the original-UID row to RECEIPT after the
+                // request/response/phase CAS, whatever the current auth is; a same-epoch higher revision rebases the row in the
+                // same write; application waits until that UID is current (the next revalidation surfaces pending otherwise).
                 (envelope, row) = try currentMigration(uid: uid)
                 guard row.phase == .dispatched, row.legacyOperationId == legacy, row.migrationAlias == alias else { continue }
                 guard result.base.accountUid == uid, result.base.legacyOperationId == legacy, result.base.replayed || result.base.migrationAlias == alias,
                       let bytes = TaskCanonicalV1.data(result.map()) else { throw ResetRemoteError.protocolAmbiguity }
+                if case let .signedIn(current) = await self.auth.currentSignedAuth(), current.uid == uid, current.authEpochUUID == row.authEpochUUID {
+                    guard current.credentialRevision >= row.credentialRevision else { throw RegistryError.credentialRevisionRegressed }
+                    row.credentialRevision = current.credentialRevision
+                    if let gesture = envelope.gesture, gesture.uid == uid, gesture.credentialRevision < current.credentialRevision {
+                        var rebased = gesture
+                        rebased.credentialRevision = current.credentialRevision
+                        envelope.gesture = rebased
+                    }
+                }
                 row.receipt = bytes
                 row.phase = .receipt
                 try storeMigration(row, in: &envelope)
+                auth = try await revalidated(auth)
             case .receipt:
                 guard let receipt = row.decodedReceipt, let migrationId = row.migrationId else { throw RegistryError.envelopeCorrupt }
                 let authority = row.initiatingAuthority
@@ -2771,7 +2890,7 @@ extension ResetOperationRegistry {
             try storeMigration(current, in: &envelope)
             return .migrationPending(ResetMigrationPending(uid: uid, phase: .prepared))
         case let .phase2Active(_, canonical, epoch):
-            guard canonical.range(of: ResetReceiptV1.canonicalIdPattern, options: .regularExpression) != nil else { throw RegistryError.migrationBlocked(uid: uid, errorCode: LegacyMigrationErrorCode.aliasInvalid.rawValue) }
+            guard canonical == ResetReceiptV1.canonicalOperationId(uid: uid, taskGenerationEpoch: epoch + 1) else { throw RegistryError.migrationBlocked(uid: uid, errorCode: LegacyMigrationErrorCode.aliasInvalid.rawValue) }
             let matches = keyMatches(keyGuard, uid: uid)
             try retireAuthority(nil, uid: uid, in: &envelope)
             guard let gesture = envelope.gesture, gesture.uid == uid else { throw RegistryError.envelopeCorrupt }

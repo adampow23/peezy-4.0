@@ -98,7 +98,15 @@ struct TasksTabView: View {
                     groups: groups,
                     expandedTaskId: $expandedTaskId,
                     onAction: handleAction,
-                    surfaceState: { card in store.surfaceState(for: card, gateProjection: gateProjection, readiness: readiness) }
+                    surfaceState: { card in store.surfaceState(for: card, gateProjection: gateProjection, readiness: readiness) },
+                    urgentRecoveryLines: store.urgentRecoveryLines,
+                    onOpenUrgent: { line in
+                        guard let card = store.tasks.first(where: { $0.id == line.taskDocumentId }) else { return }
+                        switch line.route {
+                        case .row: expandedTaskId = card.id
+                        case .outcome: handleAction(.open(card))
+                        }
+                    }
                 )
             }
         }

@@ -58,10 +58,19 @@ final class NarrationService {
     /// Starts listening. Silently no-ops on any failure.
     /// S4 (S4-CD7): the lease the current recording runs under; only a lease issued by `RoomCaptureArtifactOwner` starts listening.
     private(set) var activeLease: NarrationLease?
+    /// The owner's synchronous revocation of `activeLease`: checked before every segment rollover, so a revoked lease
+    /// never opens another microphone segment (C2.4, S4-CD7).
+    private var revocation: NarrationRevocationFlag?
 
-    func start(lease: NarrationLease) {
+    /// Whether a segment may start or roll over under the lease: a lease is held and its flag is not revoked.
+    static func mayContinue(lease: NarrationLease?, revocation: NarrationRevocationFlag?) -> Bool {
+        lease != nil && !(revocation?.isRevoked ?? false)
+    }
+
+    func start(lease: NarrationLease, revocation: NarrationRevocationFlag? = nil) {
         activeLease = lease
-        guard !isListening, Self.isAuthorized,
+        self.revocation = revocation
+        guard Self.mayContinue(lease: lease, revocation: revocation), !isListening, Self.isAuthorized,
               let recognizer = SFSpeechRecognizer(locale: Locale.current),
               recognizer.isAvailable, recognizer.supportsOnDeviceRecognition
         else { return }
@@ -99,6 +108,10 @@ final class NarrationService {
         removeInterruptionObserver()
         stopEngine()
         deactivateAudioSession()
+        let revoked = !Self.mayContinue(lease: activeLease, revocation: revocation)
+        activeLease = nil
+        revocation = nil
+        if revoked { accumulated = []; currentSegment = ""; return nil } // nothing captured under a revoked lease leaves the actor
 
         let joined = (accumulated + [currentSegment])
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -193,7 +206,8 @@ final class NarrationService {
         activeSegmentID = nil
         task = nil
         request = nil
-        guard isListening, !interruptedThisRecording else {
+        // a revoked lease never rolls into another segment: the recording stops here and the transcript is dropped
+        guard isListening, !interruptedThisRecording, Self.mayContinue(lease: activeLease, revocation: revocation) else {
             isListening = false
             removeInterruptionObserver()
             stopEngine()

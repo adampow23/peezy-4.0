@@ -1771,7 +1771,7 @@ struct DurableStoreRecoveryTests {
         // the inspection wire and the local-only surfaces
         #expect(try LegacyResetInspectionV1.decode(["schemaVersion": 1, "kind": "legacy_reset_inspection", "outcome": "none", "accountUid": uid]) == .none(accountUid: uid))
         #expect(try LegacyResetInspectionV1.decode(["schemaVersion": 1, "kind": "legacy_reset_inspection", "outcome": "legacy_active", "accountUid": uid, "legacyOperationId": legacy]) == .legacyActive(accountUid: uid, legacyOperationId: legacy))
-        #expect(try LegacyResetInspectionV1.decode(["schemaVersion": 1, "kind": "legacy_reset_inspection", "outcome": "phase2_active", "accountUid": uid, "canonicalOperationId": ResetFixtures.operationId, "expectedTaskGenerationEpoch": 3]) == .phase2Active(accountUid: uid, canonicalOperationId: ResetFixtures.operationId, expectedTaskGenerationEpoch: 3))
+        #expect(try LegacyResetInspectionV1.decode(["schemaVersion": 1, "kind": "legacy_reset_inspection", "outcome": "phase2_active", "accountUid": uid, "canonicalOperationId": ResetReceiptV1.canonicalOperationId(uid: uid, taskGenerationEpoch: 4), "expectedTaskGenerationEpoch": 3]) == .phase2Active(accountUid: uid, canonicalOperationId: ResetReceiptV1.canonicalOperationId(uid: uid, taskGenerationEpoch: 4), expectedTaskGenerationEpoch: 3))
         #expect(throws: ResetRemoteError.self) { try LegacyResetInspectionV1.decode(["schemaVersion": 1, "kind": "legacy_reset_inspection", "outcome": "none", "accountUid": uid, "legacyOperationId": legacy]) }
         #expect(throws: ResetRemoteError.self) { try LegacyResetInspectionV1.decode(["schemaVersion": 1, "kind": "legacy_reset_inspection", "outcome": "phase2_active", "accountUid": uid, "canonicalOperationId": "x", "expectedTaskGenerationEpoch": 3]) }
         #expect(TaskCanonicalV1.data(LegacyMigrationSurface.pending(uid: uid, phase: .dispatched).map) == TaskCanonicalV1.data(["schemaVersion": 1, "kind": "RESET_MIGRATION_PENDING", "uid": uid, "phase": "dispatched"]))
@@ -1978,7 +1978,7 @@ struct DurableStoreRecoveryTests {
         _ = try await registry3.reserve(gestureId: LegacyFixtures.gestureId())
         let reserved = try #require(await registry3.snapshot().gesture)
         let remote3 = LegacyRemote()
-        remote3.inspect(.success(.phase2Active(accountUid: "A", canonicalOperationId: ResetFixtures.operationId, expectedTaskGenerationEpoch: 3)))
+        remote3.inspect(.success(.phase2Active(accountUid: "A", canonicalOperationId: ResetReceiptV1.canonicalOperationId(uid: "A", taskGenerationEpoch: 4), expectedTaskGenerationEpoch: 3)))
         let adopted = try await registry3.driveLegacyMigration(remote: remote3)
         let adoptedRow = try #require(await registry3.snapshot().records.first)
         #expect(adopted == .operation(ResetOperationHandle(uid: "A", handleId: adoptedRow.handleId)))
@@ -1994,7 +1994,7 @@ struct DurableStoreRecoveryTests {
         _ = try await registry4.reserve(gestureId: LegacyFixtures.gestureId())
         defaults4.set("worse/id", forKey: LegacyResetMigrationV1.legacyKey(uid: "A"))
         let remote4 = LegacyRemote()
-        remote4.inspect(.success(.phase2Active(accountUid: "A", canonicalOperationId: ResetFixtures.operationId, expectedTaskGenerationEpoch: 3)))
+        remote4.inspect(.success(.phase2Active(accountUid: "A", canonicalOperationId: ResetReceiptV1.canonicalOperationId(uid: "A", taskGenerationEpoch: 4), expectedTaskGenerationEpoch: 3)))
         let sha = TaskCanonicalV1.sha256Hex(data: Data("bad/id".utf8))
         #expect(try await registry4.driveLegacyMigration(remote: remote4) == .legacyRetryRequired(LegacyResetRetryRequired(uid: "A", applicationId: LegacyResetMigrationV1.clearApplicationId(uid: "A", legacyValueClass: .invalidString, utf8Length: 6, sha256: sha, outcome: "legacy_value_changed"))))
         let afterDriftRecords = await registry4.snapshot().records
@@ -2126,6 +2126,463 @@ struct DurableStoreRecoveryTests {
         #expect(await model.acknowledgeCompletion() == .acknowledged)
         #expect(model.completion == nil && model.deletion == nil && h.signOut.calls == ["A"] && h.gate.gates.last == .clear)
         #expect(await model.acknowledgeCompletion() == nil)
+    }
+
+    // MARK: - S4 close-out part 2 (Sol round 1): the falsifiers of findings 1–8, 10–15, 19
+
+    /// F1: the completion host bootstraps from durable bytes with no in-memory snapshot; its load hangs on an always-present view.
+    @MainActor @Test func completionHostBootstrapsFromDurableBytesWithNoInMemorySnapshot() async throws {
+        let directory = try temporaryDirectory()
+        let presenter = AccountDeletionCompletionPresentation(directory: directory, clock: ResetClockStub(), consume: { _ in true }, opener: { _ in true })
+        guard case let .written(snapshot) = await presenter.derive(.localCleared) else { Issue.record("derive"); return }
+        let owners = DurableStoreOwners(route: ScriptedStoreOwner(store: .route), handoff: ScriptedStoreOwner(store: .handoff), reset: ScriptedStoreOwner(store: .reset), workflow: ScriptedStoreOwner(store: .workflow))
+        let driver = DurableStoreRecoveryDriver(owners: owners, dose: DailyDoseLocalStore(defaults: try isolatedDefaults()), currentUID: UIDProbe(nil)) { _, _ in }
+        let model = DurableStoreRecoveryModel(driver: driver, presenter: presenter)
+        #expect(model.completion == nil, "the host mounts over a nil snapshot")
+        await model.refresh()
+        #expect(model.completion == snapshot, "the always-present host's refresh loads the durable completion, with no coordinator presentation")
+        let source = try String(contentsOf: repositoryRoot().appendingPathComponent("Peezy 4.0/MainInterface/Views/AppRootView.swift"), encoding: .utf8)
+        let host = source.components(separatedBy: "struct AccountDeletionCompletionHost")[1].components(separatedBy: "struct AppRootView")[0]
+        let task = try #require(host.range(of: ".task { await model.refresh() }"))
+        let cover = try #require(host.range(of: "fullScreenCover"))
+        #expect(task.lowerBound < cover.lowerBound && host.contains("Color.clear"), "the refresh task is attached to the always-present view, outside the conditional cover")
+    }
+
+    /// F2: malformed or unreadable completion bytes are durable authority, never absence; startup blocks over them with the bytes retained.
+    @Test func malformedCompletionBytesAtStartupAreAuthorityNeverAbsence() async throws {
+        let h = try makeDeletionHarness(auth: .signedOut)
+        let url = h.directory.appendingPathComponent(AccountDeletionCompletionPresentation.fileName)
+        let malformed = Data("{not json".utf8)
+        try malformed.write(to: url)
+        let observed = await h.completion.observeCompletion()
+        let current = await h.completion.current()
+        #expect(observed == .malformed && current == nil, "`current()` is nil, `observeCompletion()` names the malformed state")
+        #expect(await h.coordinator.discoverAtStartup() == .settled(.blocked(.fileIO)), "startup never publishes clear over malformed completion authority")
+        #expect(try Data(contentsOf: url) == malformed && h.gate.gates.last == .blocked && h.remote.actions.isEmpty)
+        let trace = await h.coordinator.trace
+        #expect(trace.contains("completion:malformed"))
+        #expect(await h.coordinator.retry() == .clear, "Retry with no intent and no journal clears; the completion file itself is the presenter's to consume")
+        let big = try makeDeletionHarness(auth: .signedOut)
+        try Data(repeating: 0x20, count: 4_097).write(to: big.directory.appendingPathComponent(AccountDeletionCompletionPresentation.fileName))
+        #expect(await big.coordinator.discoverAtStartup() == .settled(.blocked(.fileIO)), "over-cap completion bytes are the same authority")
+    }
+
+    /// F3: no singleflight body re-enters a public entry (which would await the installed task itself).
+    @Test func singleflightBodiesNeverReenterAPublicEntry() throws {
+        let source = try String(contentsOf: repositoryRoot().appendingPathComponent("Peezy 4.0/Tasks/Durable/DurableStoreRecoveryCoordinator.swift"), encoding: .utf8)
+        let coordinator = source.components(separatedBy: "// MARK: - The coordinator (C2.1–C2.6)")[1].components(separatedBy: "// MARK: - Durable-file observation")[0]
+        let entries = ["await retry()", "await discoverAtStartup()", "await authTransition()", "await consumeTerminal(", "await startDeletion("]
+        // everything from `resume()` on (the reducer, consumption, Option B) runs inside the slot
+        let inside = coordinator.components(separatedBy: "// MARK: begin / discover / resume")[1]
+        for entry in entries { #expect(!inside.contains(entry), Comment(rawValue: "\(entry) inside a singleflight body would await its own task")) }
+        // the private bodies of the entries run inside the slot too
+        let entrySection = coordinator.components(separatedBy: "// MARK: begin / discover / resume")[0]
+        for body in ["private func discoverBody", "private func authTransitionBody", "private func consumeBody"] {
+            let parts = entrySection.components(separatedBy: body)
+            #expect(parts.count == 2, Comment(rawValue: body))
+            let text = parts.count == 2 ? parts[1].components(separatedBy: "\n    }\n")[0] : ""
+            for entry in entries { #expect(!text.contains(entry), Comment(rawValue: "\(body) calls \(entry)")) }
+        }
+        #expect(entrySection.contains("private func resume() async") == false && inside.contains("private func resume() async"), "resume is a body, not an entry")
+    }
+
+    /// F4: every wire is bound to the durable capability, the persisted authority, and the deadline before any transition.
+    @Test func wiresAreBoundToTheDurableCapabilityAuthorityAndDeadlineBeforeEveryTransition() async throws {
+        #expect(AccountDeletionWireBinding.isRepresentableInstant(DeletionWires.startedAt))
+        for bad in ["2026-99-99T99:99:99.999Z", "2026-02-30T00:00:00.000Z", "2026-09-06T24:00:00.000Z", "2026-09-06T11:59:00Z", "2026-09-06T11:59:00.000+00:00", ""] {
+            #expect(!AccountDeletionWireBinding.isRepresentableInstant(bad), Comment(rawValue: "\"\(bad)\" is not a representable canonical instant"))
+        }
+        // a wire for another operation never moves intent A
+        let other = try makeDeletionHarness(auth: signedInA)
+        other.remote.always("begin", .success(DeletionWires.dataFinal("adel1_22222222-2222-4222-8222-222222222222")))
+        #expect(await other.coordinator.startDeletion(uid: "A") == .settled(.blocked(.remoteMalformed)))
+        let kept = try #require(await other.coordinator.currentIntent())
+        #expect(kept.phase == .prepared && kept.authorityKind == nil && kept.startedAt == nil)
+        let otherTrace = await other.coordinator.trace
+        #expect(otherTrace.contains("wire:unbound") && !otherTrace.contains("phase:data_confirmed"))
+        // an impossible instant on an otherwise exact wire persists nothing
+        let impossible = try makeDeletionHarness(auth: signedInA)
+        impossible.remote.always("begin", .success(.dataFinal(AccountDeletionDataFinalWireV1(operationId: "x", authorityKind: .member, startedAt: "2026-99-99T99:99:99.999Z", dataDeletedAt: DeletionWires.dataDeletedAt, replayed: true))))
+        #expect(await impossible.coordinator.startDeletion(uid: "A") == .settled(.blocked(.remoteMalformed)))
+        let unmoved = try #require(await impossible.coordinator.currentIntent())
+        #expect(unmoved.phase == .prepared && unmoved.startedAt == nil)
+        // the persisted authority is immutable: a finalize reporting different times is refused with the bytes retained
+        let drift = try makeDeletionHarness(auth: signedInA)
+        drift.remote.always("begin", .success(DeletionWires.dataFinal("x")))
+        drift.remote.script("finalize", .success(.authGuarding(AccountDeletionAuthGuardingWireV1(operationId: "x", authorityKind: .member, startedAt: "2026-09-06T11:58:00.000Z", dataDeletedAt: DeletionWires.dataDeletedAt, authAbsenceObservedAt: DeletionWires.dataDeletedAt, authGuardAfter: DeletionWires.authGuardAfter, replayed: false))))
+        #expect(await drift.coordinator.startDeletion(uid: "A") == .settled(.blocked(.remoteMalformed)))
+        let stuck = try #require(await drift.coordinator.currentIntent())
+        #expect(stuck.phase == .authFinalizeDispatched && stuck.startedAt == DeletionWires.startedAt && stuck.authGuardAfter == nil)
+        // deadline continuity: the exact deadline rests guarding; a later finalize naming another deadline is refused
+        drift.remote.script("finalize", .success(DeletionWires.guarding("x")))
+        #expect(await drift.coordinator.retry() == .settled(.guarding(authGuardAfter: DeletionWires.authGuardAfter)))
+        drift.remote.script("finalize", .success(.authGuarding(AccountDeletionAuthGuardingWireV1(operationId: "x", authorityKind: .member, startedAt: DeletionWires.startedAt, dataDeletedAt: DeletionWires.dataDeletedAt, authAbsenceObservedAt: DeletionWires.dataDeletedAt, authGuardAfter: "2026-09-14T11:59:30.000Z", replayed: true))))
+        #expect(await drift.coordinator.retry() == .settled(.blocked(.remoteMalformed)))
+        let guarded = try #require(await drift.coordinator.currentIntent())
+        #expect(guarded.phase == .guarding && guarded.authGuardAfter == DeletionWires.authGuardAfter)
+        // a deleted wire that keeps the deadline completes; one naming another authority kind does not
+        drift.remote.script("finalize", .success(.accountDeleted(AccountDeletionAccountDeletedWireV1(operationId: "x", authorityKind: .authenticatedOverflow, startedAt: DeletionWires.startedAt, dataDeletedAt: DeletionWires.dataDeletedAt, authAbsenceObservedAt: DeletionWires.dataDeletedAt, authGuardAfter: DeletionWires.authGuardAfter, authGuardCompletedAt: DeletionWires.authGuardAfter, accountDeletedAt: DeletionWires.authGuardAfter, replayed: true))))
+        #expect(await drift.coordinator.retry() == .settled(.blocked(.remoteMalformed)))
+        drift.remote.script("finalize", .success(DeletionWires.deleted("x")))
+        guard case .settled(.completion) = await drift.coordinator.retry() else { Issue.record("the exact deleted wire completes"); return }
+        // the absent discovery wire must name the discovery capability it answers
+        let absent = try makeDeletionHarness(auth: signedInA)
+        absent.remote.always("discover", .success(.absent(operationId: "adel1_22222222-2222-4222-8222-222222222222")))
+        #expect(await absent.coordinator.discoverAtStartup() == .settled(.blocked(.remoteMalformed)))
+        #expect(absent.intentBytes() == nil, "discovery writes nothing over an unbound wire")
+    }
+
+    /// F5: an ordinary all-scope purge is `.cleared` only once its journal is unlinked; a failed unlink is `FILE_IO` with the journal retained.
+    @Test func ordinaryAllScopePurgeReportsClearedOnlyOnceItsJournalIsGone() async throws {
+        let directory = try temporaryDirectory()
+        let owners = RecordingPurgeOwners()
+        let telemetry = TelemetryStub()
+        let coordinator = LocalPrivacyPurgeCoordinator(directory: directory, clock: ResetClockStub(), owners: owners.owners, defaults: try isolatedDefaults(), currentUID: UIDProbe(nil), telemetry: telemetry)
+        let path = directory.path
+        // the directory turns read-only after the last barrier, so the journal unlink fails
+        telemetry.onPurge = { try? FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: path) }
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: path) }
+        #expect(await coordinator.purge(scope: .all) == .blocked(.fileIO), "an unlink failure is never reported as cleared")
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: path)
+        guard case let .present(journal) = await coordinator.observeJournal() else { Issue.record("the journal survives the failed unlink"); return }
+        #expect(journal.scope == .all && journal.acks == PurgeOwner.order && journal.terminalDeletionLink == nil)
+        let log = await coordinator.log
+        #expect(log.last == "journal:unlink_failed")
+        // the next purge resumes the complete journal (no owner runs again), unlinks it, and only then clears
+        telemetry.onPurge = nil
+        let before = owners.calls.count
+        #expect(await coordinator.purge(scope: .all) == .cleared)
+        #expect(owners.calls.count == before && telemetry.calls == 2)
+        #expect(await coordinator.observeJournal() == .absent)
+    }
+
+    /// F6: the production probe acks only the two empty-cache outcomes; a cached document or any other error fails the purge.
+    @Test func firestoreProbeAcceptsOnlyTheEmptyCacheOutcomes() {
+        #expect(throws: Never.self) { try FirebaseFirestoreInstanceController.probeOutcome(exists: false, error: nil) }
+        #expect(throws: Never.self) { try FirebaseFirestoreInstanceController.probeOutcome(exists: nil, error: NSError(domain: FirestoreErrorDomain, code: FirestoreErrorCode.unavailable.rawValue)) }
+        #expect(throws: FirebaseFirestoreInstanceController.ProbeError.cacheNotEmpty) { try FirebaseFirestoreInstanceController.probeOutcome(exists: true, error: nil) }
+        #expect(throws: FirebaseFirestoreInstanceController.ProbeError.probeFailed(code: FirestoreErrorCode.internal.rawValue)) { try FirebaseFirestoreInstanceController.probeOutcome(exists: nil, error: NSError(domain: FirestoreErrorDomain, code: FirestoreErrorCode.internal.rawValue)) }
+        #expect(throws: FirebaseFirestoreInstanceController.ProbeError.probeFailed(code: 7)) { try FirebaseFirestoreInstanceController.probeOutcome(exists: nil, error: NSError(domain: "other", code: 7)) }
+        #expect(throws: FirebaseFirestoreInstanceController.ProbeError.self) { try FirebaseFirestoreInstanceController.probeOutcome(exists: nil, error: nil) }
+    }
+
+    /// F7: the all-scope enumeration matches each template's exact prefix/suffix with any nonempty UID between, periods included.
+    @Test func allScopePreferenceEnumerationMatchesDottedUIDs() throws {
+        let defaults = try isolatedDefaults()
+        let dotted = ["peezy.alice.example.dailyDose.completedCount", "peezy.alice.example.dailyDose.v2", "peezy.alice.example.dailyDose.v2.quarantine", "inventory.scanCoaching.seen.alice.example", "phase1.pendingRetakeOperation.a.b.c"]
+        for key in dotted { defaults.set("v", forKey: key) }
+        defaults.set("keep", forKey: "peezy.explainer.seen")
+        defaults.set("keep", forKey: "peezy.dailyDose.completedCount")
+        #expect(Set(PreferenceBarrier.uidScopedKeys(in: defaults)) == Set(dotted), "an empty UID never matches; a dotted UID does")
+        #expect(PreferenceBarrier.run(scope: .all, defaults: defaults, currentFirebaseUID: nil) == .acknowledged)
+        #expect(PreferenceBarrier.uidScopedKeys(in: defaults).isEmpty && dotted.allSatisfy { defaults.object(forKey: $0) == nil })
+        #expect(defaults.string(forKey: "peezy.explainer.seen") == "keep" && defaults.string(forKey: "peezy.dailyDose.completedCount") == "keep")
+    }
+
+    /// F8: admission and the synchronous SDK call share one critical section: `suspend()` cannot return while an admitted call is in progress.
+    @Test func analyticsAdmissionAndTheSDKCallShareOneCriticalSection() {
+        final class Flag: @unchecked Sendable { private let lock = NSLock(); private var value = false; func get() -> Bool { lock.withLock { value } }; func set() { lock.withLock { value = true } } }
+        let gate = AnalyticsEvents.CollectionGate()
+        let entered = DispatchSemaphore(value: 0), release = DispatchSemaphore(value: 0), finished = DispatchSemaphore(value: 0)
+        let admitted = Flag(), suspended = Flag()
+        Thread { if gate.admit({ entered.signal(); release.wait() }) { admitted.set() }; finished.signal() }.start()
+        entered.wait()
+        Thread { gate.suspend(); suspended.set() }.start()
+        Thread.sleep(forTimeInterval: 0.1)
+        #expect(!suspended.get(), "the barrier cannot begin while an admitted SDK call is still executing")
+        release.signal()
+        finished.wait()
+        while !suspended.get() { Thread.sleep(forTimeInterval: 0.005) }
+        #expect(admitted.get() && gate.isSuspended)
+        var ran = false
+        #expect(!gate.admit { ran = true } && !ran, "nothing is admitted after the barrier")
+    }
+
+    /// F10: only nil is absence; a non-`Data` object under the v2 key is malformed, never overwritten, and quarantined as its plist bytes.
+    @Test func nonDataValueUnderTheDoseKeyIsMalformedNeverOverwritten() async throws {
+        let defaults = try isolatedDefaults()
+        let store = DailyDoseLocalStore(defaults: defaults)
+        let key = DailyDoseLocalStore.key(uid: "A")
+        defaults.set("not bytes", forKey: key)
+        #expect(await store.load(uid: "A") == .malformed)
+        let ensured = await store.ensure(uid: "A", taskGenerationEpoch: 1)
+        #expect(ensured == nil && defaults.object(forKey: key) as? String == "not bytes", "ensure never writes a floor over a malformed value")
+        let cleanup = await store.cleanup(uid: "A", taskGenerationEpoch: 1)
+        let bridge = await store.bridgeLegacy(uid: "A")
+        #expect(cleanup == .malformed && bridge == .malformed)
+        let plist = try #require(DailyDoseLocalStore.malformedBytes("not bytes"))
+        let observed = try #require(await store.observeMalformed(uid: "A"))
+        #expect(observed == .dose(bytesSHA256: TaskCanonicalV1.sha256Hex(data: plist), byteLength: plist.count, quarantineCount: 0))
+        #expect(await store.quarantineMalformed(uid: "A", expectedBytesSHA256: TaskCanonicalV1.sha256Hex(data: plist)) == .quarantined)
+        #expect(defaults.object(forKey: key) == nil && (defaults.array(forKey: DailyDoseLocalStore.quarantineKey(uid: "A")) as? [Data]) == [plist])
+        #expect(DailyDoseLocalStore.malformedBytes(nil) == nil)
+        let valid = DailyDoseLocalStateV1(taskGenerationEpoch: 1, revision: 0, completedCount: 0, lastDate: nil, firstLaunchDate: nil).canonicalData()
+        #expect(DailyDoseLocalStore.malformedBytes(valid) == nil && DailyDoseLocalStore.malformedBytes(Data("{".utf8)) == Data("{".utf8))
+        defaults.set(["a": 1], forKey: key)
+        #expect(await store.load(uid: "A") == .malformed)
+    }
+
+    /// F11: the receipt grammar is strict, never on an account-deletion kind, and an ordinary registry write carries the receipt through.
+    @Test func recoveryReceiptsDecodeStrictlyAndSurviveOrdinaryWrites() async throws {
+        let gen = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        let payload: [String: Any] = ["records": [], "legacyMigrations": []]
+        let good: [String: Any] = ["schemaVersion": 1, "quarantineSHA256": String(repeating: "a", count: 64), "recoveredCount": 2, "droppedCount": 0]
+        #expect(DurableEnvelopeCodec.isValidRecoveryReceipt(good))
+        let encoded = try #require(DurableEnvelopeCodec.encode(fileKind: .taskPlanResetV2, generationId: gen, payload: payload, recoveryReceipt: good))
+        #expect(TaskCanonicalV1.data(DurableEnvelopeCodec.decode(encoded, fileKind: .taskPlanResetV2)?.recoveryReceipt ?? [:]) == TaskCanonicalV1.data(good))
+        func signed(_ receipt: [String: Any], kind: String = "TASK_PLAN_RESET_V2", payload: [String: Any]) -> Data {
+            var envelope: [String: Any] = ["schemaVersion": 1, "fileKind": kind, "generationId": gen, "payload": payload, "recoveryReceipt": receipt]
+            envelope["sha256"] = TaskCanonicalV1.sha256Hex(data: TaskCanonicalV1.data(envelope) ?? Data())
+            return TaskCanonicalV1.data(envelope) ?? Data()
+        }
+        let bad: [(String, [String: Any])] = [
+            ("arbitrary", ["x": 1]),
+            ("surplus", good.merging(["extra": 1]) { a, _ in a }),
+            ("missing", ["schemaVersion": 1, "quarantineSHA256": String(repeating: "a", count: 64), "recoveredCount": 2]),
+            ("uppercase sha", good.merging(["quarantineSHA256": String(repeating: "A", count: 64)]) { _, b in b }),
+            ("negative count", good.merging(["recoveredCount": -1]) { _, b in b }),
+            ("schema 2", good.merging(["schemaVersion": 2]) { _, b in b }),
+            ("string count", good.merging(["droppedCount": "0"]) { _, b in b }),
+        ]
+        for (name, receipt) in bad {
+            #expect(!DurableEnvelopeCodec.isValidRecoveryReceipt(receipt), Comment(rawValue: name))
+            #expect(DurableEnvelopeCodec.encode(fileKind: .taskPlanResetV2, generationId: gen, payload: payload, recoveryReceipt: receipt) == nil, Comment(rawValue: "\(name) never encodes"))
+            #expect(DurableEnvelopeCodec.decode(signed(receipt, payload: payload), fileKind: .taskPlanResetV2) == nil, Comment(rawValue: "\(name) with a recomputed hash never decodes"))
+        }
+        // no receipt on a kind that carries none
+        #expect(DurableEnvelopeCodec.decode(signed(good, kind: "ACCOUNT_DELETION_COMPLETION_V1", payload: ["a": 1]), fileKind: .accountDeletionCompletionV1) == nil)
+        #expect(DurableEnvelopeCodec.encode(fileKind: .accountDeletionCompletionV1, generationId: gen, payload: ["a": 1], recoveryReceipt: good) == nil)
+        #expect(DurableEnvelopeCodec.encode(fileKind: .localPrivacyPurgeV1, generationId: gen, payload: ["a": 1], recoveryReceipt: good) == nil)
+        // an ordinary registry write after Recover carries the receipt through byte-identically, so the crash-recovery classification survives it
+        let directory = try temporaryDirectory()
+        let (registry, _) = await LegacyFixtures.registry(directory, defaults: try isolatedDefaults())
+        let quarantineBytes = ResetFixtures.envelope(records: [ResetFixtures.row(uid: "B", epoch: 1)])
+        try quarantineBytes.write(to: ResetFixtures.quarantine(directory))
+        guard case let .observed(displayed) = await registry.observe() else { Issue.record("observe"); return }
+        #expect(await registry.perform(.recover, expecting: .digest(displayed.recoveryStateDigest)) == .ready)
+        let recovered = try #require(DurableEnvelopeCodec.decode(try Data(contentsOf: ResetFixtures.target(directory)), fileKind: .taskPlanResetV2))
+        let receipt = try #require(recovered.recoveryReceipt)
+        _ = try await registry.reserve(gestureId: LegacyFixtures.gestureId())
+        let after = try #require(DurableEnvelopeCodec.decode(try Data(contentsOf: ResetFixtures.target(directory)), fileKind: .taskPlanResetV2))
+        #expect(after.generationId != recovered.generationId && after.payload["gesture"] != nil, "an ordinary write happened")
+        #expect(TaskCanonicalV1.data(after.recoveryReceipt ?? [:]) == TaskCanonicalV1.data(receipt), "the receipt is carried through byte-identically")
+        try quarantineBytes.write(to: ResetFixtures.quarantine(directory))
+        guard case let .observed(pending) = await registry.observe(), case let .files(_, base, _, _, actions, _, _, _, _, _, _, _) = pending else { Issue.record("pending"); return }
+        #expect(base == "recovered_pending_cleanup" && actions == ["retry_cleanup"], "the restored quarantine still matches the carried receipt")
+    }
+
+    /// F12: legacy-migration rows are type-validated on load and enumeration, and a migration receipt without provenance is a receipt mismatch reconciled through the family's inspection.
+    @Test func legacyMigrationRowsAreTypeValidatedOnLoadAndCarryReceiptProvenance() async throws {
+        // an opaque migration map inside a codec-valid envelope is a malformed target: renamed to the quarantine, discard-only
+        let opaqueDirectory = try temporaryDirectory()
+        let (opaque, _) = await ResetFixtures.registry(opaqueDirectory, auth: signedInA)
+        try ResetFixtures.envelope(records: [], migrations: [["uid": "A"]]).write(to: ResetFixtures.target(opaqueDirectory))
+        #expect(await opaque.load() == .corrupt)
+        guard case let .observed(state) = await opaque.observe(), case let .files(_, base, target, _, actions, _, _, _, _, enumerable, _, _) = state else { Issue.record("observe"); return }
+        #expect(base == "quarantined" && target == .absent && actions == ["discard_quarantine"] && enumerable, "enumerable, never recoverable")
+        #expect(await opaque.load() == .absent, "the target was renamed aside")
+        // a valid RECEIPT row whose receipt has no provenance is receipt_mismatch with the family identity
+        let directory = try temporaryDirectory()
+        let remote = LegacyRemote()
+        let (registry, _) = await LegacyFixtures.registry(directory, defaults: try isolatedDefaults())
+        await registry.attachRecovery(ResetRecoveryBundle(remote: remote, cleanup: ResetCleanupCallbacks(deleteAssessments: { _ in }, deleteUserKnowledge: { _ in }, resetDose: { _ in })))
+        let alias = "rsa1_22222222-2222-4222-8222-222222222222"
+        let stored = LegacyFixtures.notDispatched(uid: "A", legacy: LegacyFixtures.legacyA, alias: alias)
+        try LegacyFixtures.seed(directory, migration: LegacyFixtures.exactRow(phase: .receipt, receipt: stored))
+        let identity = ResetOperationRegistry.migrationIdentityDigest(uid: "A")
+        #expect(identity == TaskCanonicalV1.sha256Hex(["kind": "legacy_reset_migration", "uid": "A"]))
+        guard case let .observed(mismatch) = await registry.observe(), case let .files(_, base2, _, _, actions2, _, _, _, mismatchIdentity, _, _, _) = mismatch else { Issue.record("mismatch"); return }
+        #expect(base2 == "receipt_mismatch" && actions2 == ["reconcile"] && mismatchIdentity == identity)
+        let migrationId = LegacyResetReconciliationV1.migrationId(uid: "A", legacyOperationId: LegacyFixtures.legacyA)
+        let fingerprint = LegacyResetReconciliationV1.requestFingerprint(uid: "A", legacyOperationId: LegacyFixtures.legacyA)
+        // a transport failure writes nothing and returns the same classification
+        #expect(await registry.perform(.reconcile(mismatchIdentityDigest: identity), expecting: .digest(mismatch.recoveryStateDigest)) == .blocked(.receiptMismatch(store: .reset, recoveryStateDigest: mismatch.recoveryStateDigest, mismatchIdentityDigest: identity)))
+        // committed with the server's exact (replayed) receipt: the row's bytes are replaced, provenance is installed, the store is ready
+        let committed = LegacyFixtures.notDispatched(uid: "A", legacy: LegacyFixtures.legacyA, alias: alias, replayed: true)
+        remote.inspectMigration(.success(LegacyMigrationInspectionV1(accountUid: "A", migrationId: migrationId, requestFingerprint: fingerprint, identityDigest: identity, outcome: .committed, receipt: committed)))
+        #expect(await registry.perform(.reconcile(mismatchIdentityDigest: identity), expecting: .digest(mismatch.recoveryStateDigest)) == .ready)
+        #expect(remote.calls.last == "inspectMigration:A|\(migrationId)|\(fingerprint)")
+        let replaced = try #require(await registry.legacyMigration(uid: "A"))
+        #expect(replaced.phase == .receipt && replaced.receipt == TaskCanonicalV1.data(committed.map()))
+        #expect(await registry.classification() == .ready)
+        // absent: the exact pre-replay phase (dispatched, no receipt, no application ID)
+        let absentDirectory = try temporaryDirectory()
+        let absentRemote = LegacyRemote()
+        let (absent, _) = await LegacyFixtures.registry(absentDirectory, defaults: try isolatedDefaults())
+        await absent.attachRecovery(ResetRecoveryBundle(remote: absentRemote, cleanup: ResetCleanupCallbacks(deleteAssessments: { _ in }, deleteUserKnowledge: { _ in }, resetDose: { _ in })))
+        try LegacyFixtures.seed(absentDirectory, migration: LegacyFixtures.exactRow(phase: .receipt, receipt: stored))
+        guard case let .observed(absentState) = await absent.observe() else { Issue.record("absent"); return }
+        absentRemote.inspectMigration(.success(LegacyMigrationInspectionV1(accountUid: "A", migrationId: migrationId, requestFingerprint: fingerprint, identityDigest: identity, outcome: .absent, receipt: nil)))
+        #expect(await absent.perform(.reconcile(mismatchIdentityDigest: identity), expecting: .digest(absentState.recoveryStateDigest)) == .ready)
+        let redispatch = try #require(await absent.legacyMigration(uid: "A"))
+        #expect(redispatch.phase == .dispatched && redispatch.receipt == nil && redispatch.applicationId == nil)
+        // the inspection wire is exact: family, authority key, fingerprint grammar, receipt iff committed, receipt identity
+        let wire: [String: Any] = ["schemaVersion": 1, "kind": "committed_operation_inspection", "accountUid": "A", "family": "LEGACY_RESET_MIGRATION", "authority": ["migrationId": migrationId], "requestAuthority": ["requestFingerprint": fingerprint], "identityDigest": identity, "outcome": "committed", "receipt": committed.map()]
+        #expect(try LegacyMigrationInspectionV1.decode(wire).receipt == committed)
+        var wrongFamily = wire; wrongFamily["family"] = "RESET"
+        var noReceipt = wire; noReceipt["receipt"] = nil
+        var foreignReceipt = wire; foreignReceipt["receipt"] = LegacyFixtures.notDispatched(uid: "A", legacy: LegacyFixtures.legacyB, alias: alias, replayed: true).map()
+        var absentWithReceipt = wire; absentWithReceipt["outcome"] = "absent"
+        for (name, shape) in [("wrong family", wrongFamily), ("committed without receipt", noReceipt), ("receipt of another migration", foreignReceipt), ("absent with receipt", absentWithReceipt)] {
+            #expect(throws: ResetRemoteError.protocolAmbiguity) { try LegacyMigrationInspectionV1.decode(shape) }
+            _ = name
+        }
+    }
+
+    /// F13: Recover and Merge CAS the displayed target as well as the quarantine before any replacement.
+    @Test func recoverAndMergeCASTheDisplayedTargetNotOnlyTheQuarantine() async throws {
+        let directory = try temporaryDirectory()
+        let target = ResetFixtures.target(directory)
+        #expect(DurableFileObserver.stillMatches(.absent, at: target, cap: 1_000), "an absent display matches a still-absent file")
+        try Data("x".utf8).write(to: target)
+        #expect(!DurableFileObserver.stillMatches(.absent, at: target, cap: 1_000), "a file that appeared after the display never matches")
+        #expect(DurableFileObserver.stillMatches(.malformed(byteLength: 1, bytesSHA256: TaskCanonicalV1.sha256Hex(data: Data("x".utf8))), at: target, cap: 1_000))
+        #expect(!DurableFileObserver.stillMatches(.malformed(byteLength: 1, bytesSHA256: String(repeating: "0", count: 64)), at: target, cap: 1_000))
+        try FileManager.default.removeItem(at: target)
+        // a target that appears after the display: Recover with the displayed digest replaces nothing and reports the conflict
+        let (registry, _) = await ResetFixtures.registry(directory, auth: signedInA)
+        let quarantineBytes = ResetFixtures.envelope(records: [ResetFixtures.row(uid: "B", epoch: 1)])
+        try quarantineBytes.write(to: ResetFixtures.quarantine(directory))
+        guard case let .observed(displayed) = await registry.observe() else { Issue.record("observe"); return }
+        let live = ResetFixtures.envelope(records: [ResetFixtures.row(uid: "C", epoch: 1)])
+        try live.write(to: target)
+        let result = await registry.perform(.recover, expecting: .digest(displayed.recoveryStateDigest))
+        guard case .blocked(.quarantineConflict) = result else { Issue.record("\(result)"); return }
+        #expect(try Data(contentsOf: target) == live && FileManager.default.fileExists(atPath: ResetFixtures.quarantine(directory).path), "the live target is never replaced by the quarantine")
+        // the production path guards the target with the same predicate (source pin)
+        let source = try String(contentsOf: repositoryRoot().appendingPathComponent("Peezy 4.0/MainInterface/Models/TaskPlanService.swift"), encoding: .utf8)
+        let recover = source.components(separatedBy: "case .recover, .merge:")[1].components(separatedBy: "case let .reconcile(identity):")[0]
+        #expect(recover.contains("DurableFileObserver.stillMatches(targetObservation, at: fileURL") && recover.contains("TaskCanonicalV1.sha256Hex(data: targetBytes) == targetSHA"))
+    }
+
+    /// F14: legacy responses are bound to their derived identities, and a response that returns after an account switch persists against the original row.
+    @Test func legacyResponsesAreDerivedIdentityBoundAndPersistAgainstTheOriginalRowAfterAnAccountSwitch() async throws {
+        let alias = "rsa1_22222222-2222-4222-8222-222222222222"
+        var nonDerived = LegacyFixtures.notDispatched(uid: "A", legacy: LegacyFixtures.legacyA, alias: alias).map()
+        nonDerived["migrationId"] = "rlm1_" + String(repeating: "0", count: 40)
+        #expect(throws: ResetRemoteError.protocolAmbiguity) { try LegacyResetReconciliationV1.decode(nonDerived) }
+        #expect(try LegacyResetReconciliationV1.decode(LegacyFixtures.notDispatched(uid: "A", legacy: LegacyFixtures.legacyA, alias: alias).map()).base.migrationId == LegacyResetReconciliationV1.migrationId(uid: "A", legacyOperationId: LegacyFixtures.legacyA))
+        // phase2_active carries C's canonical formula for the safe rotation r = expectedTaskGenerationEpoch + 1
+        let canonical = ResetReceiptV1.canonicalOperationId(uid: "A", taskGenerationEpoch: 4)
+        #expect(canonical == "rso1_" + String(TaskCanonicalV1.sha256Hex(["account_uid": "A", "task_generation_epoch": 4]).prefix(40)))
+        let inspection: [String: Any] = ["schemaVersion": 1, "kind": "legacy_reset_inspection", "outcome": "phase2_active", "accountUid": "A", "canonicalOperationId": canonical, "expectedTaskGenerationEpoch": 3]
+        #expect(try LegacyResetInspectionV1.decode(inspection) == .phase2Active(accountUid: "A", canonicalOperationId: canonical, expectedTaskGenerationEpoch: 3))
+        var wrongFormula = inspection; wrongFormula["canonicalOperationId"] = "rso1_" + String(repeating: "d", count: 40)
+        #expect(throws: ResetRemoteError.protocolAmbiguity) { try LegacyResetInspectionV1.decode(wrongFormula) }
+        var wrongEpoch = inspection; wrongEpoch["expectedTaskGenerationEpoch"] = 4
+        #expect(throws: ResetRemoteError.protocolAmbiguity) { try LegacyResetInspectionV1.decode(wrongEpoch) }
+        // A→B while the reconcile is in flight: A's row advances to RECEIPT with the response bytes, nothing applies, the drive surfaces pending
+        let directory = try temporaryDirectory()
+        let defaults = try isolatedDefaults()
+        defaults.set(LegacyFixtures.legacyA, forKey: LegacyResetMigrationV1.legacyKey(uid: "A"))
+        let (registry, auth) = await LegacyFixtures.registry(directory, defaults: defaults)
+        let remote = LegacyRemote()
+        _ = try await registry.reserve(gestureId: LegacyFixtures.gestureId())
+        let prepared = try #require(await registry.legacyMigration(uid: "A"))
+        let response = LegacyFixtures.notDispatched(uid: "A", legacy: LegacyFixtures.legacyA, alias: prepared.migrationAlias ?? "")
+        remote.onReconcile = { auth.set(.signedIn(SignedAuthTuple(uid: "B", authEpochUUID: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", credentialRevision: 1))) }
+        remote.reconcile(.success(response))
+        await #expect(throws: ResetOperationRegistry.RegistryError.authRequired) { try await registry.driveLegacyMigration(remote: remote) }
+        let persisted = try #require(await registry.legacyMigration(uid: "A"))
+        #expect(persisted.phase == .receipt && persisted.receipt == TaskCanonicalV1.data(response.map()) && persisted.applicationId == nil)
+        #expect(persisted.authEpochUUID == prepared.authEpochUUID && persisted.credentialRevision == prepared.credentialRevision, "persisted against A's own tuple, never B's")
+        #expect(defaults.string(forKey: LegacyResetMigrationV1.legacyKey(uid: "A")) == LegacyFixtures.legacyA, "no application while B is current")
+        let gestureKept = await registry.snapshot().gesture
+        #expect(gestureKept != nil && persisted.initiatingAuthority != nil, "A's initiating authority waits")
+        // A returns: the receipt applies with no second dispatch
+        auth.set(signedInA)
+        remote.onReconcile = nil
+        let outcome = try await registry.driveLegacyMigration(remote: remote)
+        guard case .legacyRetryRequired = outcome else { Issue.record("\(outcome)"); return }
+        #expect(remote.calls.filter { $0.hasPrefix("reconcile") }.count == 1)
+        let removed = await registry.legacyMigration(uid: "A")
+        #expect(removed == nil)
+        // a same-epoch higher revision returning with the response rebases the row in the receipt-persisting write
+        let rebaseDirectory = try temporaryDirectory()
+        let rebaseDefaults = try isolatedDefaults()
+        rebaseDefaults.set(LegacyFixtures.legacyA, forKey: LegacyResetMigrationV1.legacyKey(uid: "A"))
+        let (rebased, rebaseAuth) = await LegacyFixtures.registry(rebaseDirectory, defaults: rebaseDefaults)
+        let rebaseRemote = LegacyRemote()
+        _ = try await rebased.reserve(gestureId: LegacyFixtures.gestureId())
+        let rebasePrepared = try #require(await rebased.legacyMigration(uid: "A"))
+        rebaseRemote.onReconcile = { rebaseAuth.set(.signedIn(SignedAuthTuple(uid: "A", authEpochUUID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", credentialRevision: 7))) }
+        rebaseRemote.reconcile(.success(LegacyFixtures.notDispatched(uid: "A", legacy: LegacyFixtures.legacyA, alias: rebasePrepared.migrationAlias ?? "")))
+        _ = try await rebased.driveLegacyMigration(remote: rebaseRemote)
+        #expect(await rebased.legacyMigration(uid: "A") == nil && rebaseRemote.calls.count == 1)
+    }
+
+    /// F15: a slow pre-action classification never overwrites the publication that followed the action.
+    @Test func aSlowPreActionClassificationNeverOverwritesThePostActionPublication() async throws {
+        let blocked = RecoveryObservation.observed(.files(store: .route, baseState: "quarantined", target: .absent, quarantine: .malformed(byteLength: 3, bytesSHA256: String(repeating: "e", count: 64)), availableActions: ["discard_quarantine"]))
+        let route = ScriptedStoreOwner(store: .route, observation: blocked)
+        let log = OpenedURLs()
+        let owners = DurableStoreOwners(route: route, handoff: ScriptedStoreOwner(store: .handoff), reset: ScriptedStoreOwner(store: .reset), workflow: ScriptedStoreOwner(store: .workflow))
+        let driver = DurableStoreRecoveryDriver(owners: owners, dose: DailyDoseLocalStore(defaults: try isolatedDefaults()), currentUID: UIDProbe(nil)) { store, readiness in
+            let state: String
+            switch readiness { case .loading: state = "loading"; case .ready: state = "ready"; case let .blocked(snapshot): state = snapshot.state }
+            await log.record(URL(string: "peezy://\(store.rawValue)/\(state)")!)
+        }
+        route.holdNextObserve()
+        let slow = Task { await driver.classify(.route) }
+        while !route.isHoldingObserve { await Task.yield() }
+        // the action lands and reclassifies to ready while the old classification is still parked
+        route.set(.observed(.files(store: .route, baseState: "ready", target: .absent, quarantine: .absent, availableActions: [])))
+        #expect(await driver.perform(store: .route, action: .discardQuarantine, expecting: .digest("d")) == .ready)
+        #expect(await driver.classifications[.route] == .ready)
+        route.releaseObserve()
+        let stale = await slow.value
+        guard case .blocked = stale else { Issue.record("the parked classification saw the old observation"); return }
+        #expect(await driver.classifications[.route] == .ready, "the stale pre-action classification is discarded, never published")
+        #expect(await log.urls.map(\.absoluteString) == ["peezy://route/ready"])
+    }
+
+    /// F19: a revoked lease never rolls narration into another segment, and a queued session-listener callback is admitted only under the UID, gate, and runtime generation it was installed for.
+    @MainActor @Test func narrationRolloverAndQueuedListenerCallbacksRespectRevocation() async throws {
+        let gate = GateSnapshotStub()
+        let owner = RoomCaptureArtifactOwner(gateSnapshot: gate.snapshot)
+        let lease = try #require(await owner.acquire(uid: "A", sessionId: "s1"))
+        let flag = await owner.narrationRevocation(for: lease)
+        #expect(!flag.isRevoked && NarrationService.mayContinue(lease: lease, revocation: flag))
+        let same = await owner.narrationRevocation(for: lease)
+        #expect(same === flag, "one flag per outstanding lease")
+        await owner.revokeAll()
+        #expect(flag.isRevoked && !NarrationService.mayContinue(lease: lease, revocation: flag), "revokeAll revokes the flag before it returns")
+        #expect(!NarrationService.mayContinue(lease: nil, revocation: nil), "no lease, no segment")
+        #expect(NarrationService.mayContinue(lease: lease, revocation: nil), "a service started without a flag keeps the committed behavior")
+        let foreign = NarrationLease(leaseId: "never-issued", uid: "A", gateGeneration: GateGeneration(rawValue: 1), sessionId: "s")
+        let foreignFlag = await owner.narrationRevocation(for: foreign)
+        #expect(foreignFlag.isRevoked, "a lease the owner never issued is revoked from the start")
+        let reopened = GateSnapshotStub()
+        let owner2 = RoomCaptureArtifactOwner(gateSnapshot: reopened.snapshot)
+        let lease2 = try #require(await owner2.acquire(uid: "A", sessionId: "s2"))
+        let flag2 = await owner2.narrationRevocation(for: lease2)
+        await owner2.release(lease2)
+        #expect(flag2.isRevoked, "release revokes too")
+        // the camera view starts narration under the owner's flag, and the service checks it before every rollover (source pins)
+        let camera = try String(contentsOf: repositoryRoot().appendingPathComponent("Peezy 4.0/Inventory/Views/InventoryCameraView.swift"), encoding: .utf8)
+        #expect(camera.contains("narration.start(lease: lease, revocation: await owner.narrationRevocation(for: lease))"))
+        let service = try String(contentsOf: repositoryRoot().appendingPathComponent("Peezy 4.0/Inventory/Services/NarrationService.swift"), encoding: .utf8)
+        let rollover = service.components(separatedBy: "private func rolloverSegmentIfStillListening()")[1].components(separatedBy: "private func finishSegment()")[0]
+        let guardIndex = try #require(rollover.range(of: "Self.mayContinue(lease: activeLease, revocation: revocation)"))
+        let beginIndex = try #require(rollover.range(of: "beginRecognitionSegment()"))
+        #expect(guardIndex.lowerBound < beginIndex.lowerBound, "the lease is revalidated before another segment opens")
+        // the queued listener callback admission
+        let uid = UIDProbe("A")
+        let manager = InventorySessionManager(coverageConfirmationStore: NoopCoverageStore(), userIDProvider: { uid.uid }, apiClient: HoldableInventoryClient())
+        manager.attachArtifactOwner(owner2)
+        #expect(await manager.listenerAdmits(userId: "A", generation: nil))
+        reopened.set(gate: .active(uid: "A"))
+        let gated = await manager.listenerAdmits(userId: "A", generation: nil)
+        #expect(!gated, "a gate that closed after the install")
+        reopened.set(gate: .clear)
+        uid.uid = "B"
+        let switched = await manager.listenerAdmits(userId: "A", generation: nil)
+        #expect(!switched, "A→B after the install")
+        uid.uid = "A"
+        let rotated = await manager.listenerAdmits(userId: "A", generation: FirestoreRuntimeGeneration(rawValue: 999))
+        #expect(!rotated, "a rotated runtime generation")
+        let sessionSource = try String(contentsOf: repositoryRoot().appendingPathComponent("Peezy 4.0/Inventory/Models/InventorySessionManager.swift"), encoding: .utf8)
+        #expect(sessionSource.contains("guard let self, await self.listenerAdmits(userId: userId, generation: installedGeneration) else { return }"))
     }
 
     // MARK: - S4 I8 — the analytics collection gate (C2.2 telemetry barrier) and the fixed-parameter sink rule
@@ -3576,9 +4033,15 @@ final class TelemetryStub: ClientTelemetryPrivacyPurging, @unchecked Sendable {
     private let lock = NSLock()
     private var outcome: ClientTelemetryPurgeOutcomeV1
     private(set) var calls = 0
+    /// Runs inside every `purgeAll` (the last barrier) so a fixture can change the world right before the journal unlink.
+    var onPurge: (@Sendable () -> Void)?
     init(_ outcome: ClientTelemetryPurgeOutcomeV1 = .cleared) { self.outcome = outcome }
     func set(_ value: ClientTelemetryPurgeOutcomeV1) { lock.withLock { outcome = value } }
-    func purgeAll() async -> ClientTelemetryPurgeOutcomeV1 { lock.withLock { calls += 1; return outcome } }
+    func purgeAll() async -> ClientTelemetryPurgeOutcomeV1 {
+        let hook: (@Sendable () -> Void)? = lock.withLock { calls += 1; return onPurge }
+        hook?()
+        return lock.withLock { outcome }
+    }
 }
 
 actor OpenedURLs {
@@ -3617,14 +4080,36 @@ final class ScriptedDeletionRemote: AccountDeletionRemoteProviding, @unchecked S
             return fallbacks[request.action]
         }
         switch outcome {
-        case let .success(value)?: return value
+        case let .success(value)?: return DeletionWires.echo(value, request)
         case let .failure(error)?: throw error
         case nil: throw AccountDeletionRemoteError.protocolAmbiguity
         }
     }
 }
 
+extension AccountDeletionRequestV1 {
+    var operationId: String {
+        switch self {
+        case let .discover(_, operationId, _), let .begin(_, operationId, _), let .resume(_, operationId, _), let .finalize(_, operationId, _): return operationId
+        }
+    }
+}
+
 enum DeletionWires {
+    /// The placeholder operation ID a scripted wire carries when it should name the capability it answers (C2.3 binding).
+    static let echoPlaceholder = "x"
+
+    /// A scripted wire with the placeholder names the request's operation; an explicit ID is delivered verbatim.
+    static func echo(_ wire: AccountDeletionRemoteResultV1, _ request: AccountDeletionRequestV1) -> AccountDeletionRemoteResultV1 {
+        let id = request.operationId
+        switch wire {
+        case let .absent(operationId): return operationId == echoPlaceholder ? .absent(operationId: id) : wire
+        case let .dataFinal(w): return w.operationId == echoPlaceholder ? .dataFinal(AccountDeletionDataFinalWireV1(operationId: id, authorityKind: w.authorityKind, startedAt: w.startedAt, dataDeletedAt: w.dataDeletedAt, replayed: w.replayed)) : wire
+        case let .authGuarding(w): return w.operationId == echoPlaceholder ? .authGuarding(AccountDeletionAuthGuardingWireV1(operationId: id, authorityKind: w.authorityKind, startedAt: w.startedAt, dataDeletedAt: w.dataDeletedAt, authAbsenceObservedAt: w.authAbsenceObservedAt, authGuardAfter: w.authGuardAfter, replayed: w.replayed)) : wire
+        case let .accountDeleted(w): return w.operationId == echoPlaceholder ? .accountDeleted(AccountDeletionAccountDeletedWireV1(operationId: id, authorityKind: w.authorityKind, startedAt: w.startedAt, dataDeletedAt: w.dataDeletedAt, authAbsenceObservedAt: w.authAbsenceObservedAt, authGuardAfter: w.authGuardAfter, authGuardCompletedAt: w.authGuardCompletedAt, accountDeletedAt: w.accountDeletedAt, replayed: w.replayed)) : wire
+        }
+    }
+
     static let startedAt = "2026-09-06T11:59:00.000Z"
     static let dataDeletedAt = "2026-09-06T11:59:30.000Z"
     static let authGuardAfter = "2026-09-13T11:59:30.000Z"
@@ -3736,7 +4221,20 @@ final class ScriptedStoreOwner: DurableStoreRecovering, @unchecked Sendable {
     func set(_ value: RecoveryObservation) { lock.withLock { observation = value } }
     func setResult(_ value: RecoveryResult) { lock.withLock { result = value } }
     var performedActions: [String] { lock.withLock { performed } }
-    func observe() async -> RecoveryObservation { lock.withLock { observation } }
+    private var holdObserve = false
+    private var observeContinuation: CheckedContinuation<Void, Never>?
+    /// The next `observe()` reads its observation, then parks until `releaseObserve()` (a slow classification).
+    func holdNextObserve() { lock.withLock { holdObserve = true } }
+    var isHoldingObserve: Bool { lock.withLock { observeContinuation != nil } }
+    func releaseObserve() {
+        let held: CheckedContinuation<Void, Never>? = lock.withLock { defer { observeContinuation = nil }; return observeContinuation }
+        held?.resume()
+    }
+    func observe() async -> RecoveryObservation {
+        let (value, shouldHold): (RecoveryObservation, Bool) = lock.withLock { defer { holdObserve = false }; return (observation, holdObserve) }
+        if shouldHold { await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in lock.withLock { observeContinuation = c } } }
+        return value
+    }
     func classify(_ observation: RecoveryObservation) -> RecoveryClassification {
         switch observation {
         case let .unavailable(token):
@@ -3858,14 +4356,24 @@ final class LegacyRemote: ResetRemoteProviding, @unchecked Sendable {
     private let lock = NSLock()
     private var reconciles: [Result<LegacyResetReconciliationV1, ResetRemoteError>] = []
     private var inspections: [Result<LegacyResetInspectionV1, ResetRemoteError>] = []
+    private var migrationInspections: [Result<LegacyMigrationInspectionV1, ResetRemoteError>] = []
     private var recorded: [String] = []
+    /// Runs inside `reconcileLegacyReset` before the response returns (the auth may switch while the call is in flight).
+    var onReconcile: (@Sendable () -> Void)?
     var calls: [String] { lock.withLock { recorded } }
     func reconcile(_ outcome: Result<LegacyResetReconciliationV1, ResetRemoteError>) { lock.withLock { reconciles.append(outcome) } }
     func inspect(_ outcome: Result<LegacyResetInspectionV1, ResetRemoteError>) { lock.withLock { inspections.append(outcome) } }
+    func inspectMigration(_ outcome: Result<LegacyMigrationInspectionV1, ResetRemoteError>) { lock.withLock { migrationInspections.append(outcome) } }
+    func inspectLegacyMigration(uid: String, migrationId: String, requestFingerprint: String) async throws -> LegacyMigrationInspectionV1 {
+        let next: Result<LegacyMigrationInspectionV1, ResetRemoteError>? = lock.withLock { recorded.append("inspectMigration:\(uid)|\(migrationId)|\(requestFingerprint)"); return migrationInspections.isEmpty ? nil : migrationInspections.removeFirst() }
+        guard let next else { throw ResetRemoteError.transport }
+        return try next.get()
+    }
     func reset(_ action: ResetRemoteAction, alias: String, expectedTaskGenerationEpoch: Int) async throws -> ResetReceiptV1 { throw ResetRemoteError.protocolAmbiguity }
     func inspectReset(uid: String, canonicalOperationId: String, expectedTaskGenerationEpoch: Int) async throws -> ResetInspectionV1 { throw ResetRemoteError.protocolAmbiguity }
     func reconcileLegacyReset(legacyOperationId: String, migrationAlias: String) async throws -> LegacyResetReconciliationV1 {
-        let next: Result<LegacyResetReconciliationV1, ResetRemoteError>? = lock.withLock { recorded.append("reconcile:\(legacyOperationId)|\(migrationAlias)"); return reconciles.isEmpty ? nil : reconciles.removeFirst() }
+        let (next, hook): (Result<LegacyResetReconciliationV1, ResetRemoteError>?, (@Sendable () -> Void)?) = lock.withLock { recorded.append("reconcile:\(legacyOperationId)|\(migrationAlias)"); return (reconciles.isEmpty ? nil : reconciles.removeFirst(), onReconcile) }
+        hook?()
         guard let next else { throw ResetRemoteError.transport }
         return try next.get()
     }
@@ -3893,7 +4401,7 @@ enum LegacyFixtures {
     static func phase2Active(uid: String, legacy: String, alias: String, epoch: Int) -> LegacyResetReconciliationV1 {
         .phase2Active(base(uid: uid, legacy: legacy, alias: alias, replayed: true), progress: progress(uid: uid, epoch: epoch, state: .awaitingLocalReset, replayed: true))
     }
-    static func notDispatched(uid: String, legacy: String, alias: String) -> LegacyResetReconciliationV1 { .notDispatched(base(uid: uid, legacy: legacy, alias: alias)) }
+    static func notDispatched(uid: String, legacy: String, alias: String, replayed: Bool = false) -> LegacyResetReconciliationV1 { .notDispatched(base(uid: uid, legacy: legacy, alias: alias, replayed: replayed)) }
     static func finalizedCompat(uid: String, legacy: String, alias: String) -> LegacyResetReconciliationV1 {
         .finalizedCompat(base(uid: uid, legacy: legacy, alias: alias), legacyFinal: LegacyResetFinalReceiptV1(operationId: legacy, accountUid: uid, deletedCount: 2))
     }

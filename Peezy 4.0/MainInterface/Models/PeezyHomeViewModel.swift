@@ -42,6 +42,8 @@ struct PeezyHomeTaskProjection: Equatable {
     var actionableLegacy: [PeezyCard]
     var userInProgressLegacy: [PeezyCard]
     var readOnlyContractStatus: [PeezyCard]
+    /// S4 (C9.5.24): the shared surface's status line per read-only task, when the union carries one.
+    var readOnlyStatusLines: [String: String] = [:]
 }
 
 protocol NudgeAnswerClock {
@@ -136,6 +138,11 @@ final class PeezyHomeViewModel {
 
     var allActiveTasks: [PeezyCard] = []
     var readOnlyContractStatus: [PeezyCard] = []
+    /// S4 (C9.5.24): the union's status line per passive row.
+    var readOnlyStatusLines: [String: String] = [:]
+    /// S4-CD3: the deletion-gate projection and readiness the Home surface state is derived from (S7 wires the live values).
+    var gateProjection: AccountDeletionGateProjection = .clear
+    var readiness: ReadinessVector = ReadinessVector()
     var inProgressTaskCount: Int = 0
     var userInProgressTaskCount: Int = 0
     var gettingAhead: Bool = false
@@ -340,14 +347,36 @@ final class PeezyHomeViewModel {
         _ tasks: [PeezyCard],
         now: Date
     ) -> PeezyHomeTaskProjection {
+        projectHomeTasks(tasks, now: now, surfaceState: { card in
+            card.dispositionContract != nil ? .actionable(contractPresent: true) : .actionable(contractPresent: false)
+        })
+    }
+
+    /// S4 (C9.5.24): the Home queue consumes the shared surface state and never inspects the stored map itself. Only
+    /// `actionable(contractPresent: false)` enters the legacy status/snooze path; a completed or dismissed contractless
+    /// row leaves the surface; every other member is the passive status row (the union names the contract's presence,
+    /// so S1's pinned Home projection of contract-bearing tasks is unchanged) with the union's status line.
+    nonisolated static func projectHomeTasks(
+        _ tasks: [PeezyCard],
+        now: Date,
+        surfaceState: (PeezyCard) -> TaskDispositionSurfaceState
+    ) -> PeezyHomeTaskProjection {
         var actionable: [PeezyCard] = []
         var userInProgress: [PeezyCard] = []
         var contracted: [PeezyCard] = []
+        var statusLines: [String: String] = [:]
 
         for original in tasks {
             var card = original
-            if card.dispositionContract != nil {
+            let state = surfaceState(card)
+            switch state {
+            case .actionable(contractPresent: false):
+                break
+            case .readOnly(reason: .completed, contractPresent: false), .readOnly(reason: .dismissed, contractPresent: false):
+                continue
+            default:
                 contracted.append(card)
+                if let line = TaskDispositionSurface.statusLine(for: state) { statusLines[card.id] = line }
                 continue
             }
             if card.status == .completed || card.status == .skipped { continue }
@@ -379,7 +408,8 @@ final class PeezyHomeViewModel {
         return PeezyHomeTaskProjection(
             actionableLegacy: actionable,
             userInProgressLegacy: userInProgress,
-            readOnlyContractStatus: contracted
+            readOnlyContractStatus: contracted,
+            readOnlyStatusLines: statusLines
         )
     }
 
@@ -420,6 +450,7 @@ final class PeezyHomeViewModel {
                 .getDocuments()
 
             var decoded: [PeezyCard] = []
+            var rawContracts: [String: [String: Any]] = [:]
             let now = Date()
 
             for document in snapshot.documents {
@@ -427,9 +458,15 @@ final class PeezyHomeViewModel {
                 // Do not re-inline field decoding here.
                 guard let card = PeezyCardFirestoreMapper.card(from: document) else { continue }
                 decoded.append(card)
+                if let raw = document.data()["dispositionContract"] as? [String: Any] { rawContracts[document.documentID] = raw }
             }
 
-            let projection = Self.projectHomeTasks(decoded, now: now)
+            // S4 (C9.5.24): the shared surface over the raw stored map, the deletion gate, and readiness
+            let gate = gateProjection
+            let readiness = self.readiness
+            let projection = Self.projectHomeTasks(decoded, now: now, surfaceState: { card in
+                TaskDispositionSurface.state(rawContract: rawContracts[card.id], status: card.status, gateProjection: gate, readiness: readiness)
+            })
             let sorted = doseEngine.urgencySorted(projection.actionableLegacy)
 
             // Dose freeze (Spec 04 Phase E): first computation of the day
@@ -454,6 +491,7 @@ final class PeezyHomeViewModel {
             await MainActor.run {
                 self.allActiveTasks = sorted
                 self.readOnlyContractStatus = projection.readOnlyContractStatus
+                self.readOnlyStatusLines = projection.readOnlyStatusLines
                 self.inProgressTaskCount = 0
                 self.userInProgressTaskCount = projection.userInProgressLegacy.count
                 self.frozenDoseTaskIds = frozenIds

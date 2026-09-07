@@ -499,6 +499,9 @@ final class InventorySessionManager {
         roomName: String
     ) {
         observedSessionId = sessionId
+        // S4 (S4-CD6): the listener is admitted under the UID, gate, and runtime generation it was installed for; a
+        // callback already queued when any of them rotates is dropped before it touches state.
+        let installedGeneration = currentRuntimeGeneration()
 
         sessionListener = storageService.observeSession(
             userId: userId,
@@ -508,9 +511,16 @@ final class InventorySessionManager {
             // self is captured weakly so a stale callback after manager
             // deallocation is a no-op.
             Task { @MainActor [weak self] in
-                self?.handleSessionUpdate(session, roomName: roomName)
+                guard let self, await self.listenerAdmits(userId: userId, generation: installedGeneration) else { return }
+                self.handleSessionUpdate(session, roomName: roomName)
             }
         }
+    }
+
+    /// The §8.9.3 admission for a queued listener callback: same UID, clear gate, same runtime generation.
+    func listenerAdmits(userId: String, generation: FirestoreRuntimeGeneration?) async -> Bool {
+        if let generation, !FirestoreRuntime.provider.isCurrent(generation) { return false }
+        return Self.admits(currentUID: userIDProvider(), requestUID: userId, gate: await artifactOwner.currentGate().gate)
     }
 
     /// Handle a Firestore session snapshot update. Runs on MainActor.

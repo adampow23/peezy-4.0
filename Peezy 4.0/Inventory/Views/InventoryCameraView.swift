@@ -620,7 +620,7 @@ struct InventoryCameraView: View {
                     return
                 }
                 pendingNarrationTranscript = lease
-                narration.start(lease: lease)
+                narration.start(lease: lease, revocation: await owner.narrationRevocation(for: lease))
             }
         }
     }

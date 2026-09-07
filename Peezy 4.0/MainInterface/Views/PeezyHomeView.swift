@@ -99,6 +99,12 @@ struct PeezyHomeView: View {
 
             VStack(spacing: 0) {
                 PeezyWordmark()
+                // C9.3.14: the same shared projection the Tasks tab renders, byte-identically
+                UrgentRecoveryGroupView(lines: TasksStore.shared.urgentRecoveryLines) { line in
+                    if let card = TasksStore.shared.tasks.first(where: { $0.id == line.taskDocumentId }) { focusedTask = card }
+                }
+                .padding(.horizontal, 24)
+                .padding(.top, 8)
                 if let status = viewModel.readOnlyContractStatus.first {
                     passiveContractStatus(status)
                         .padding(.horizontal, 24)
@@ -457,7 +463,7 @@ struct PeezyHomeView: View {
             Text(task.title)
                 .font(PeezyTheme.Typography.captionMedium)
                 .foregroundStyle(deepInk.opacity(0.75))
-            Text(task.visibleStatusCopy ?? "Status needs attention")
+            Text(viewModel.readOnlyStatusLines[task.id] ?? task.visibleStatusCopy ?? "Status needs attention")
                 .font(PeezyTheme.Typography.caption)
                 .foregroundStyle(deepInk.opacity(0.55))
         }
