@@ -2161,7 +2161,14 @@ struct DurableStoreRecoveryTests {
         #expect(try Data(contentsOf: url) == malformed && h.gate.gates.last == .blocked && h.remote.actions.isEmpty)
         let trace = await h.coordinator.trace
         #expect(trace.contains("completion:malformed"))
-        #expect(await h.coordinator.retry() == .clear, "Retry with no intent and no journal clears; the completion file itself is the presenter's to consume")
+        // Retry performs the same typed journal/completion discovery: the malformed authority still blocks and survives
+        #expect(await h.coordinator.retry() == .settled(.blocked(.fileIO)), "Retry never publishes clear over malformed completion authority")
+        #expect(try Data(contentsOf: url) == malformed && h.gate.gates.last == .blocked)
+        // a linked all-scope journal with no intent is consumed by Retry as by startup; a well-formed stray completion is re-presented
+        let stray = try makeDeletionHarness(auth: .signedOut)
+        guard case let .written(snapshot) = await stray.completion.derive(.localCleared) else { Issue.record("derive"); return }
+        #expect(await stray.coordinator.retry() == .settled(.completion(snapshot)))
+        #expect(stray.gate.terminals.last! == .localCleared)
         let big = try makeDeletionHarness(auth: .signedOut)
         try Data(repeating: 0x20, count: 4_097).write(to: big.directory.appendingPathComponent(AccountDeletionCompletionPresentation.fileName))
         #expect(await big.coordinator.discoverAtStartup() == .settled(.blocked(.fileIO)), "over-cap completion bytes are the same authority")
@@ -2541,17 +2548,19 @@ struct DurableStoreRecoveryTests {
         let gate = GateSnapshotStub()
         let owner = RoomCaptureArtifactOwner(gateSnapshot: gate.snapshot)
         let lease = try #require(await owner.acquire(uid: "A", sessionId: "s1"))
-        let flag = await owner.narrationRevocation(for: lease)
+        // revocation is inseparable from the lease: the owner registers the flag at acquire, and `start(lease:)` looks it up by lease ID
+        let flag = try #require(NarrationRevocationRegistry.flag(for: lease.leaseId))
         #expect(!flag.isRevoked && NarrationService.mayContinue(lease: lease, revocation: flag))
         let same = await owner.narrationRevocation(for: lease)
         #expect(same === flag, "one flag per outstanding lease")
         await owner.revokeAll()
         #expect(flag.isRevoked && !NarrationService.mayContinue(lease: lease, revocation: flag), "revokeAll revokes the flag before it returns")
+        #expect(NarrationRevocationRegistry.flag(for: lease.leaseId) == nil, "a revoked lease has no registered flag")
         #expect(!NarrationService.mayContinue(lease: nil, revocation: nil), "no lease, no segment")
-        #expect(NarrationService.mayContinue(lease: lease, revocation: nil), "a service started without a flag keeps the committed behavior")
+        #expect(!NarrationService.mayContinue(lease: lease, revocation: nil), "a lease with no registered flag is fail-closed: no segment starts or rolls over")
         let foreign = NarrationLease(leaseId: "never-issued", uid: "A", gateGeneration: GateGeneration(rawValue: 1), sessionId: "s")
         let foreignFlag = await owner.narrationRevocation(for: foreign)
-        #expect(foreignFlag.isRevoked, "a lease the owner never issued is revoked from the start")
+        #expect(foreignFlag.isRevoked && NarrationRevocationRegistry.flag(for: foreign.leaseId) == nil, "a lease the owner never issued is revoked from the start")
         let reopened = GateSnapshotStub()
         let owner2 = RoomCaptureArtifactOwner(gateSnapshot: reopened.snapshot)
         let lease2 = try #require(await owner2.acquire(uid: "A", sessionId: "s2"))
@@ -2560,8 +2569,9 @@ struct DurableStoreRecoveryTests {
         #expect(flag2.isRevoked, "release revokes too")
         // the camera view starts narration under the owner's flag, and the service checks it before every rollover (source pins)
         let camera = try String(contentsOf: repositoryRoot().appendingPathComponent("Peezy 4.0/Inventory/Views/InventoryCameraView.swift"), encoding: .utf8)
-        #expect(camera.contains("narration.start(lease: lease, revocation: await owner.narrationRevocation(for: lease))"))
         let service = try String(contentsOf: repositoryRoot().appendingPathComponent("Peezy 4.0/Inventory/Services/NarrationService.swift"), encoding: .utf8)
+        #expect(camera.contains("narration.start(lease: lease)") && !camera.contains("revocation:"), "the contract-shaped start(lease:) is the only entry; the flag comes with the lease")
+        #expect(service.contains("let revocation = NarrationRevocationRegistry.flag(for: lease.leaseId)"))
         let rollover = service.components(separatedBy: "private func rolloverSegmentIfStillListening()")[1].components(separatedBy: "private func finishSegment()")[0]
         let guardIndex = try #require(rollover.range(of: "Self.mayContinue(lease: activeLease, revocation: revocation)"))
         let beginIndex = try #require(rollover.range(of: "beginRecognitionSegment()"))
@@ -2583,6 +2593,98 @@ struct DurableStoreRecoveryTests {
         #expect(!rotated, "a rotated runtime generation")
         let sessionSource = try String(contentsOf: repositoryRoot().appendingPathComponent("Peezy 4.0/Inventory/Models/InventorySessionManager.swift"), encoding: .utf8)
         #expect(sessionSource.contains("guard let self, await self.listenerAdmits(userId: userId, generation: installedGeneration) else { return }"))
+    }
+
+    // MARK: - S4 close-out part 3 (Sol round 2): the falsifiers of the partial findings 3, 12, 13, 20
+
+    /// F3 (round 2): two callers parked on one predecessor run one after the other; the slot is never overwritten.
+    @Test func twoWaitersOnOnePredecessorRunSequentiallyAndNeverReplaceEachOthersSlot() async throws {
+        let h = try makeDeletionHarness(auth: signedInA)
+        h.remote.always("discover", .success(.absent(operationId: "x")))
+        h.owners.setHoldRoute()
+        let first = Task { await h.coordinator.authTransition() }
+        while !h.owners.isHoldingRoute { await Task.yield() }
+        // A and B both park on the first transition's task
+        let second = Task { await h.coordinator.authTransition() }
+        for _ in 0..<20 { await Task.yield() }
+        let third = Task { await h.coordinator.authTransition() }
+        for _ in 0..<20 { await Task.yield() }
+        h.owners.releaseRoute()
+        let results = await [first.value, second.value, third.value]
+        #expect(results == [.clear, .clear, .clear])
+        let trace = await h.coordinator.trace
+        let starts = trace.indices.filter { trace[$0] == "auth_transition" }
+        #expect(starts.count == 3, "every transition ran")
+        for (earlier, later) in zip(starts, starts.dropFirst()) {
+            #expect(later - earlier > 1, "a transition's body runs to its end (purge and discovery traced) before the next waiter's body starts")
+        }
+        #expect(h.remote.actions == ["discover", "discover", "discover"] && h.owners.calls.filter { $0 == "route(all)" }.count == 3)
+    }
+
+    /// F12 (round 2): the exposed mismatch is the unsigned-UTF-8-smallest canonical identity among the store's mismatches, and a
+    /// failed inspection answers the classification observed fresh after the await.
+    @Test func exposedReceiptMismatchIsTheCanonicalMinimumAndAFailedInspectionReclassifiesFresh() async throws {
+        let directory = try temporaryDirectory()
+        let remote = LegacyRemote()
+        let (registry, _) = await LegacyFixtures.registry(directory, defaults: try isolatedDefaults())
+        await registry.attachRecovery(ResetRecoveryBundle(remote: remote, cleanup: ResetCleanupCallbacks(deleteAssessments: { _ in }, deleteUserKnowledge: { _ in }, resetDose: { _ in })))
+        // two receipt-bearing rows for A: epoch 2 (created first) and epoch 10; epoch 10's canonical identity sorts first ("1" < "2")
+        let rows = [ResetFixtures.row(uid: "A", epoch: 2, phase: "final_receipt", finalReceipt: ResetFixtures.finalReceipt(uid: "A", epoch: 2)),
+                    ResetFixtures.row(uid: "A", epoch: 10, createdAt: "2026-09-06T12:00:01.000Z", phase: "final_receipt", finalReceipt: ResetFixtures.finalReceipt(uid: "A", epoch: 10, operationId: "rso1_" + String(repeating: "c", count: 40)), suggested: "rsa1_33333333-3333-4333-8333-333333333333")]
+        try ResetFixtures.envelope(records: rows).write(to: ResetFixtures.target(directory))
+        guard case let .observed(state) = await registry.observe(), case let .files(_, base, _, _, _, _, _, _, mismatch, _, _, _) = state else { Issue.record("observe"); return }
+        let ten = ResetOperationRegistry.identityMap(uid: "A", expectedTaskGenerationEpoch: 10), two = ResetOperationRegistry.identityMap(uid: "A", expectedTaskGenerationEpoch: 2)
+        #expect(Array(TaskCanonicalV1.data(ten)!).lexicographicallyPrecedes(Array(TaskCanonicalV1.data(two)!)))
+        #expect(base == "receipt_mismatch" && mismatch == TaskCanonicalV1.sha256Hex(ten), "epoch 10, not the stored-order first row")
+        // a migration receipt beside a reset receipt: `{"expectedTaskGenerationEpoch":…,"kind":"reset",…}` ("e") sorts before `{"kind":"legacy_reset_migration",…}` ("k")
+        let mixedDirectory = try temporaryDirectory()
+        let (mixed, _) = await LegacyFixtures.registry(mixedDirectory, defaults: try isolatedDefaults())
+        let alias = "rsa1_22222222-2222-4222-8222-222222222222"
+        let stored = LegacyFixtures.notDispatched(uid: "A", legacy: LegacyFixtures.legacyA, alias: alias)
+        try LegacyFixtures.seed(mixedDirectory, migration: LegacyFixtures.exactRow(phase: .receipt, receipt: stored), records: [rows[0]])
+        guard case let .observed(mixedState) = await mixed.observe(), case let .files(_, mixedBase, _, _, _, _, _, _, mixedMismatch, _, _, _) = mixedState else { Issue.record("mixed"); return }
+        let migrationIdentity = ResetOperationRegistry.migrationIdentityDigest(uid: "A")
+        #expect(Array(TaskCanonicalV1.data(two)!).lexicographicallyPrecedes(Array(TaskCanonicalV1.data(ResetOperationRegistry.migrationIdentityMap(uid: "A"))!)))
+        #expect(mixedBase == "receipt_mismatch" && mixedMismatch == TaskCanonicalV1.sha256Hex(two), "the reset identity is the canonical minimum here; the migration mismatch is exposed once it is reconciled")
+        // the inspection is held while the migration row on disk moves back to dispatched (no receipt), then the call throws: the fresh classification is ready
+        let heldDirectory = try temporaryDirectory()
+        let heldRemote = LegacyRemote()
+        let (held, _) = await LegacyFixtures.registry(heldDirectory, defaults: try isolatedDefaults())
+        await held.attachRecovery(ResetRecoveryBundle(remote: heldRemote, cleanup: ResetCleanupCallbacks(deleteAssessments: { _ in }, deleteUserKnowledge: { _ in }, resetDose: { _ in })))
+        try LegacyFixtures.seed(heldDirectory, migration: LegacyFixtures.exactRow(phase: .receipt, receipt: stored))
+        guard case let .observed(heldState) = await held.observe(), case let .files(_, heldBase, _, _, _, _, _, _, heldMismatch, _, _, _) = heldState else { Issue.record("held"); return }
+        #expect(heldBase == "receipt_mismatch" && heldMismatch == migrationIdentity)
+        heldRemote.onInspectMigration = { try? LegacyFixtures.seed(heldDirectory, migration: LegacyFixtures.exactRow(phase: .dispatched), records: []) }
+        #expect(await held.perform(.reconcile(mismatchIdentityDigest: migrationIdentity), expecting: .digest(heldState.recoveryStateDigest)) == .ready, "not the stale pre-call mismatch")
+        #expect(heldRemote.calls.count == 1)
+    }
+
+    /// F13 (round 2): a target displayed absent matches only a successful observation that finds nothing; an unreadable file is drift.
+    @Test func displayedAbsenceNeverMatchesAnUnreadableTarget() throws {
+        let directory = try temporaryDirectory()
+        let target = ResetFixtures.target(directory)
+        #expect(DurableFileObserver.stillMatches(.absent, at: target, cap: 1_000))
+        try Data("x".utf8).write(to: target)
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: target.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: target.path) }
+        #expect(!DurableFileObserver.stillMatches(.absent, at: target, cap: 1_000), "an observation that throws is drift, never absence")
+        try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: target.path)
+        #expect(!DurableFileObserver.stillMatches(.absent, at: target, cap: 1_000))
+    }
+
+    /// F20 (round 2): the assessment completion is guarded immediately after its geocode await, before any store call, and its
+    /// deferred mutation belongs to the completion that started it (source pin: the real completion needs Firebase).
+    @Test func assessmentCompletionGuardsAfterEveryAwaitAndConditionsItsDeferredMutation() throws {
+        let source = try String(contentsOf: repositoryRoot().appendingPathComponent("Peezy 4.0/Assessment/AssessmentModels/AssessmentCoordinator.swift"), encoding: .utf8)
+        let body = source.components(separatedBy: "func completeAssessment() async {")[1].components(separatedBy: "// MARK: - Notification Name")[0]
+        #expect(body.contains("defer { if stillCurrent() { isSaving = false } }"), "the deferred mutation is conditioned on the captured UID and generation")
+        let geocode = try #require(body.range(of: "_ = await geocodeTask.value"))
+        let guardAfter = try #require(body.range(of: "guard stillCurrent() else { return }", range: geocode.upperBound..<body.endIndex))
+        let save = try #require(body.range(of: "try await dataManager.saveAssessment()"))
+        #expect(guardAfter.upperBound < save.lowerBound, "the guard sits between the geocode await and the first store call")
+        let generate = try #require(body.range(of: "generateTasksForUser("))
+        let guardBeforeGenerate = body.range(of: "guard stillCurrent() else { return }", range: save.upperBound..<generate.lowerBound)
+        #expect(guardBeforeGenerate != nil, "and between the save and task generation")
     }
 
     // MARK: - S4 I8 — the analytics collection gate (C2.2 telemetry barrier) and the fixed-parameter sink rule
@@ -4364,8 +4466,11 @@ final class LegacyRemote: ResetRemoteProviding, @unchecked Sendable {
     func reconcile(_ outcome: Result<LegacyResetReconciliationV1, ResetRemoteError>) { lock.withLock { reconciles.append(outcome) } }
     func inspect(_ outcome: Result<LegacyResetInspectionV1, ResetRemoteError>) { lock.withLock { inspections.append(outcome) } }
     func inspectMigration(_ outcome: Result<LegacyMigrationInspectionV1, ResetRemoteError>) { lock.withLock { migrationInspections.append(outcome) } }
+    /// Runs inside `inspectLegacyMigration` before the outcome is returned or thrown (disk may drift while the call is held).
+    var onInspectMigration: (@Sendable () -> Void)?
     func inspectLegacyMigration(uid: String, migrationId: String, requestFingerprint: String) async throws -> LegacyMigrationInspectionV1 {
-        let next: Result<LegacyMigrationInspectionV1, ResetRemoteError>? = lock.withLock { recorded.append("inspectMigration:\(uid)|\(migrationId)|\(requestFingerprint)"); return migrationInspections.isEmpty ? nil : migrationInspections.removeFirst() }
+        let (next, hook): (Result<LegacyMigrationInspectionV1, ResetRemoteError>?, (@Sendable () -> Void)?) = lock.withLock { recorded.append("inspectMigration:\(uid)|\(migrationId)|\(requestFingerprint)"); return (migrationInspections.isEmpty ? nil : migrationInspections.removeFirst(), onInspectMigration) }
+        hook?()
         guard let next else { throw ResetRemoteError.transport }
         return try next.get()
     }

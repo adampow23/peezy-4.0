@@ -62,13 +62,16 @@ final class NarrationService {
     /// never opens another microphone segment (C2.4, S4-CD7).
     private var revocation: NarrationRevocationFlag?
 
-    /// Whether a segment may start or roll over under the lease: a lease is held and its flag is not revoked.
+    /// Whether a segment may start or roll over under the lease: a lease is held and its registered flag is not revoked;
+    /// a lease without a registered flag (never issued by the owner) is fail-closed.
     static func mayContinue(lease: NarrationLease?, revocation: NarrationRevocationFlag?) -> Bool {
-        lease != nil && !(revocation?.isRevoked ?? false)
+        guard lease != nil, let revocation else { return false }
+        return !revocation.isRevoked
     }
 
-    func start(lease: NarrationLease, revocation: NarrationRevocationFlag? = nil) {
+    func start(lease: NarrationLease) {
         activeLease = lease
+        let revocation = NarrationRevocationRegistry.flag(for: lease.leaseId)
         self.revocation = revocation
         guard Self.mayContinue(lease: lease, revocation: revocation), !isListening, Self.isAuthorized,
               let recognizer = SFSpeechRecognizer(locale: Locale.current),

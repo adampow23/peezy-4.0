@@ -157,14 +157,31 @@ struct TasksStoreNamespaceTests {
         #expect(UrgentRecoveryProjection.lines(cards: cards, instanceIds: staleInstance, rawContracts: [:], evidence: mixed, registry: registry).map(\.taskDocumentId) == ["d", "a"])
         // the route follows the raw stored contract, never the mapped card: WAITING_ON_EXTERNAL routes to the outcome capture
         let routed = UrgentRecoveryProjection.lines(cards: cards, instanceIds: instances(cards), rawContracts: ["a": ["disposition": "WAITING_ON_EXTERNAL", "owner": "peezy"], "d": ["disposition": "USER_ACTION_TRACKED"]], evidence: mixed, registry: .production)
-        #expect(routed.map { "\($0.taskDocumentId):\($0.route)" } == ["d:row", "a:outcome"])
+        #expect(routed.map(\.route) == [.row, .outcome(sessionId: nil)] && routed.map(\.taskDocumentId) == ["d", "a"])
+        // the C9.3.12 precedence over the raw contract and the document's routing authority
+        typealias R = TaskRoutingAuthorityV1
+        let waiting: [String: Any] = ["disposition": "WAITING_ON_EXTERNAL"], tracked: [String: Any] = ["disposition": "USER_ACTION_TRACKED"], deferred: [String: Any] = ["disposition": "DEFERRED"]
+        #expect(UrgentRecoveryProjection.route(rawContract: waiting, routing: R(planChangeState: "pending_confirmation"), coherent: true) == .row, "1: a coherent pending confirmation opens only the plan update, never the waiting outcome")
+        #expect(UrgentRecoveryProjection.route(rawContract: waiting, routing: R(planChangeState: "pending_confirmation"), coherent: false) == .outcome(sessionId: nil), "an incoherent cycle does not take precedence 1")
+        #expect(UrgentRecoveryProjection.route(rawContract: deferred, routing: R(activeHandoffState: "returned", activeHandoffSessionId: "s1"), coherent: true) == .row, "2: DEFERRED")
+        #expect(UrgentRecoveryProjection.route(rawContract: tracked, routing: R(waitingFallbackPresent: true, activeHandoffState: "returned", activeHandoffSessionId: "s1"), coherent: true) == .row, "3: a waiting fallback state")
+        #expect(UrgentRecoveryProjection.route(rawContract: tracked, routing: R(activeHandoffState: "returned", activeHandoffSessionId: "s1"), coherent: true) == .outcome(sessionId: "s1"), "4: USER_ACTION with a returned handoff")
+        #expect(UrgentRecoveryProjection.route(rawContract: waiting, routing: R(activeHandoffState: "returned", activeHandoffSessionId: "s2"), coherent: true) == .outcome(sessionId: "s2"), "4: WAITING with a returned handoff")
+        #expect(UrgentRecoveryProjection.route(rawContract: waiting, routing: R(activeHandoffState: "opened"), coherent: true) == .outcome(sessionId: nil), "5: WAITING without a returned handoff")
+        #expect(UrgentRecoveryProjection.route(rawContract: tracked, routing: R(activeHandoffState: "opened"), coherent: true) == .row && UrgentRecoveryProjection.route(rawContract: nil, routing: nil, coherent: false) == .row, "6")
+        #expect(R(document: ["planChangeState": "pending_confirmation", "taskInteractionState": ["waiting_fallback_state": ["x": 1]], "activeHandoff": ["state": "returned", "sessionId": "s9"]]) == R(planChangeState: "pending_confirmation", waitingFallbackPresent: true, activeHandoffState: "returned", activeHandoffSessionId: "s9"))
         // the production registry is empty: every classified line is excluded and the rest keep deadline order
         let production = UrgentRecoveryProjection.lines(cards: cards, instanceIds: instances(cards), rawContracts: [:], evidence: mixed, registry: .production)
         #expect(production.map(\.taskDocumentId) == ["d", "a"] && UrgentRecoveryRegistry.production.ranks.isEmpty)
         // zero / one / many rendering
         #expect(UrgentRecoveryProjection.header(for: []) == nil)
-        #expect(UrgentRecoveryProjection.header(for: Array(production.prefix(1))) == "Task d")
+        #expect(UrgentRecoveryProjection.header(for: Array(production.prefix(1))) == "Needs attention now", "one line: the same group header")
         #expect(UrgentRecoveryProjection.header(for: production) == "Needs attention now")
+        // line content: the policy threshold label/protected outcome and the current owner/action
+        let labelled = UrgentRecoveryEvidence(taskDocumentId: "a", taskInstanceId: "ti_a", wakeId: "w_a", urgency: "urgent_recovery", thresholdId: "th1", thresholdAt: "2026-09-09T00:00:00.000Z", thresholdLabel: "Deposit due", protectedOutcome: "Lease signed", consequenceClass: nil, deadlineEvidenceId: "de_a", policyValid: true, basisResolves: true, liveState: .attentionNow(wakeId: "w_a"))
+        let content = UrgentRecoveryProjection.lines(cards: cards, instanceIds: instances(cards), rawContracts: ["a": ["disposition": "WAITING_ON_EXTERNAL", "owner": "peezy"]], evidence: [labelled], registry: .production)
+        #expect(content.map(\.thresholdText) == ["Deposit due \u{00B7} Lease signed"] && content.map(\.ownerActionText) == ["peezy \u{00B7} Record outcome"])
+        #expect(UrgentRecoveryProjection.lines(cards: cards, instanceIds: instances(cards), rawContracts: [:], evidence: [labelled], registry: .production).map(\.ownerActionText) == ["Open task"], "no contract: no owner, the row action")
         // the Upcoming-with-threshold live state is eligible; a mutation of one line leaves its siblings
         let upcoming = [evidence("a", live: .upcomingThreshold), evidence("b", at: "2026-09-11T00:00:00.000Z", live: .upcomingThreshold)]
         let both = UrgentRecoveryProjection.lines(cards: cards, instanceIds: instances(cards), rawContracts: [:], evidence: upcoming, registry: .production)
@@ -183,8 +200,8 @@ struct TasksStoreNamespaceTests {
         store.setUrgentRecovery(evidence: evidence, for: TasksStoreNamespace(uid: "A", listenerToken: UUID()))
         #expect(store.urgentRecoveryLines.isEmpty, "evidence for another token is ignored")
         store.setUrgentRecovery(evidence: evidence, for: namespace)
-        #expect(store.urgentRecoveryLines == UrgentRecoveryProjection.lines(cards: store.tasks, instanceIds: store.instanceIds, rawContracts: store.rawContracts, evidence: evidence, registry: .production), "Home and Tasks consume the same projection")
-        #expect(store.urgentRecoveryLines.map(\.route) == [.outcome], "the route comes from the raw stored contract")
+        #expect(store.urgentRecoveryLines == UrgentRecoveryProjection.lines(cards: store.tasks, instanceIds: store.instanceIds, rawContracts: store.rawContracts, routing: store.routing, evidence: evidence, registry: .production), "Home and Tasks consume the same projection")
+        #expect(store.urgentRecoveryLines.map(\.route) == [.outcome(sessionId: nil)], "the route comes from the raw stored contract")
         #expect(store.urgentRecoveryLines.map(\.taskDocumentId) == ["b"])
         store.start(userId: "B")
         #expect(store.urgentRecoveryLines.isEmpty && store.urgentRecoveryEvidence.isEmpty)
@@ -195,7 +212,7 @@ struct TasksStoreNamespaceTests {
         #expect(presentation.source == .v2 && presentation.supersededBy == "inst_2")
         #expect(store.surfaceState(for: card("s"), gateProjection: .activeSameUID, readiness: ReadinessVector()) == .readOnly(reason: .gateNonclear, contractPresent: true))
         store.stop()
-        #expect(store.rawContracts.isEmpty && store.instanceIds.isEmpty)
+        #expect(store.rawContracts.isEmpty && store.instanceIds.isEmpty && store.routing.isEmpty)
     }
 
     /// S4 close-out (Sol round 1, findings 17/18): a same-token snapshot older than the last applied one never regresses the
@@ -222,6 +239,5 @@ struct TasksStoreNamespaceTests {
         let home = try String(contentsOf: repositoryRoot().appendingPathComponent("Peezy 4.0/MainInterface/Views/PeezyHomeView.swift"), encoding: .utf8)
         let tab = try String(contentsOf: repositoryRoot().appendingPathComponent("Peezy 4.0/Tasks/Views/TasksTabView.swift"), encoding: .utf8)
         #expect(home.contains("TasksStore.shared.urgentRecoveryLines") && tab.contains("urgentRecoveryLines: store.urgentRecoveryLines"), "one projection, consumed byte-identically")
-        #expect(UrgentRecoveryGroupView.actionLabel(for: .row) == "Open task" && UrgentRecoveryGroupView.actionLabel(for: .outcome) == "Record outcome")
     }
 }

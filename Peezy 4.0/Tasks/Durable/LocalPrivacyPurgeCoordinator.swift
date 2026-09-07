@@ -268,7 +268,6 @@ actor RoomCaptureArtifactOwner: RoomCaptureArtifactPurging {
     private var transfers: [TransferHandle: @Sendable () -> Void] = [:]
     private var settlements: [TransferHandle: [CheckedContinuation<Void, Never>]] = [:]
     private var artifacts: [URL: NarrationLease] = [:]
-    private var narrationFlags: [NarrationLease: NarrationRevocationFlag] = [:]
     private var revocation: RevocationState = .open
 
     init(gateSnapshot: @escaping GateSnapshot, fileManager: FileManager = .default) {
@@ -282,6 +281,7 @@ actor RoomCaptureArtifactOwner: RoomCaptureArtifactPurging {
         guard revocation == .open, snapshot.gate == .clear, !uid.isEmpty, !sessionId.isEmpty else { return nil }
         let lease = NarrationLease(leaseId: UUID().uuidString.lowercased(), uid: uid, gateGeneration: snapshot.generation, sessionId: sessionId)
         leases.insert(lease)
+        _ = NarrationRevocationRegistry.register(lease.leaseId) // revocation is inseparable from the lease
         return lease
     }
 
@@ -295,16 +295,16 @@ actor RoomCaptureArtifactOwner: RoomCaptureArtifactPurging {
     func release(_ lease: NarrationLease) {
         leases.remove(lease)
         transcripts[lease] = nil
-        narrationFlags.removeValue(forKey: lease)?.revoke()
+        NarrationRevocationRegistry.revoke(lease.leaseId)
     }
 
-    /// The synchronous revocation flag a narration service checks before every segment rollover: open while the lease
-    /// is outstanding, revoked by `release` and `revokeAll`; a lease that is not outstanding gets a flag already revoked.
+    /// The synchronous revocation flag a narration service checks before every segment rollover: registered at `acquire`,
+    /// revoked by `release` and `revokeAll`; a lease the owner never issued (or already revoked) answers a revoked flag.
     func narrationRevocation(for lease: NarrationLease) -> NarrationRevocationFlag {
-        if let flag = narrationFlags[lease] { return flag }
-        let flag = NarrationRevocationFlag()
-        if leases.contains(lease) { narrationFlags[lease] = flag } else { flag.revoke() }
-        return flag
+        if let flag = NarrationRevocationRegistry.flag(for: lease.leaseId), leases.contains(lease) { return flag }
+        let revoked = NarrationRevocationFlag()
+        revoked.revoke()
+        return revoked
     }
 
     /// Stores the transcript under a live lease; false (and dropped) when the lease no longer revalidates.
@@ -356,10 +356,9 @@ actor RoomCaptureArtifactOwner: RoomCaptureArtifactPurging {
     /// transfer's settlement before returning (S4-CD7); no lease is issued again until `reopen()`.
     func revokeAll() async {
         revocation = .revoked
+        for lease in leases { NarrationRevocationRegistry.revoke(lease.leaseId) }
         leases.removeAll()
         transcripts.removeAll()
-        for (_, flag) in narrationFlags { flag.revoke() }
-        narrationFlags.removeAll()
         let pending = transfers
         for (_, cancel) in pending { cancel() }
         for (handle, _) in pending {
@@ -990,6 +989,25 @@ final class NarrationRevocationFlag: @unchecked Sendable {
     private var revoked = false
     var isRevoked: Bool { lock.withLock { revoked } }
     func revoke() { lock.withLock { revoked = true } }
+}
+
+/// The process-wide lease-ID → revocation-flag map that makes revocation inseparable from a `NarrationLease`: the owner
+/// registers at `acquire` and revokes at `release`/`revokeAll`; `NarrationService.start(lease:)` looks the flag up and
+/// never starts without one (a lease no owner issued is fail-closed).
+enum NarrationRevocationRegistry {
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var flags: [String: NarrationRevocationFlag] = [:]
+
+    static func register(_ leaseId: String) -> NarrationRevocationFlag {
+        lock.withLock { let flag = NarrationRevocationFlag(); flags[leaseId] = flag; return flag }
+    }
+
+    static func flag(for leaseId: String) -> NarrationRevocationFlag? { lock.withLock { flags[leaseId] } }
+
+    static func revoke(_ leaseId: String) {
+        let flag: NarrationRevocationFlag? = lock.withLock { flags.removeValue(forKey: leaseId) }
+        flag?.revoke()
+    }
 }
 
 // MARK: - The room-capture owner in the SwiftUI environment (S7 injects the one production owner; nil until then)

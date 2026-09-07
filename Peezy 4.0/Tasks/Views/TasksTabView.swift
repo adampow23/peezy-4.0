@@ -104,7 +104,7 @@ struct TasksTabView: View {
                         guard let card = store.tasks.first(where: { $0.id == line.taskDocumentId }) else { return }
                         switch line.route {
                         case .row: expandedTaskId = card.id
-                        case .outcome: handleAction(.open(card))
+                        case .outcome: handleAction(.open(card)) // the outcome surface (S6/S7 wire the session-bound transition)
                         }
                     }
                 )

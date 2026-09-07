@@ -451,28 +451,7 @@ actor DurableStoreRecoveryCoordinator {
         case .present:
             return await resume()
         case .absent:
-            // a surviving linked all-scope journal is crash-recovery authority (the intent was already unlinked)
-            if case let .present(journal) = await dependencies.purge.observeJournal(), journal.scope == .all, let link = journal.terminalDeletionLink {
-                return await finishConsumption(link: link, intentIdentity: nil)
-            }
-            // a stray completion file (crash between the journal unlink and the file unlink): re-present it for its acknowledge;
-            // malformed or unreadable completion bytes are durable authority, never absence (C2.5): the gate blocks with the bytes retained
-            switch await dependencies.completion.observeCompletion() {
-            case let .present(snapshot):
-                trace.append("completion:stray")
-                presentation = .completion(snapshot)
-                await dependencies.gate.setGate(.blocked)
-                await dependencies.gate.setPendingTerminalPresentation(Self.terminalKind(of: snapshot.result))
-                return .settled(.completion(snapshot))
-            case .malformed:
-                trace.append("completion:malformed")
-                return await blockGate(.fileIO)
-            case let .ioFailed(code):
-                trace.append("completion:io:\(code.rawValue)")
-                return await blockGate(.fileIO)
-            case .absent:
-                break
-            }
+            if let settled = await residualAuthority() { return settled }
             guard case let .signedIn(tuple) = await dependencies.auth.currentSignedAuth() else { return await clearGate() }
             inflightUID = tuple.uid
             return await discover(tuple: tuple)
@@ -484,11 +463,48 @@ actor DurableStoreRecoveryCoordinator {
         }
     }
 
+    /// With no intent, the durable authority that may still exist (the same typed discovery startup and Retry perform):
+    /// a surviving linked all-scope journal finishes its consumption (the intent was already unlinked); a stray completion
+    /// file (crash between the journal unlink and the file unlink) is re-presented for its acknowledge; malformed or
+    /// unreadable completion bytes block `FILE_IO` with the bytes retained (C2.5: never absence). nil when none exists.
+    private func residualAuthority() async -> AccountDeletionDispatchResult? {
+        if case let .present(journal) = await dependencies.purge.observeJournal(), journal.scope == .all, let link = journal.terminalDeletionLink {
+            return await finishConsumption(link: link, intentIdentity: nil)
+        }
+        switch await dependencies.completion.observeCompletion() {
+        case let .present(snapshot):
+            trace.append("completion:stray")
+            presentation = .completion(snapshot)
+            await dependencies.gate.setGate(.blocked)
+            await dependencies.gate.setPendingTerminalPresentation(Self.terminalKind(of: snapshot.result))
+            return .settled(.completion(snapshot))
+        case .malformed:
+            trace.append("completion:malformed")
+            return await blockGate(.fileIO)
+        case let .ioFailed(code):
+            trace.append("completion:io:\(code.rawValue)")
+            return await blockGate(.fileIO)
+        case .absent:
+            return nil
+        }
+    }
+
     /// Every SIGNED_OUT transition and direct A→B switch (C2.4): `loading`, the intent-linked reducer first, then the
     /// crash-durable all-scope purge, then startup discovery; `clear` or the next UID is published only after both finish.
+    /// Every waiter re-arbitrates after each await, so two callers parked on one predecessor run one after the other.
     func authTransition() async -> AccountDeletionDispatchResult {
-        if let inflight { _ = await inflight.value }
+        await awaitPredecessors()
         return await runSingleflight(uid: "") { await self.authTransitionBody() }
+    }
+
+    /// Re-arbitrates after every await: a caller parked on a predecessor waits for it, retires the completed task from the
+    /// slot itself (the installing caller's deferred clear becomes a no-op), and looks again, so two waiters on one
+    /// predecessor run one after the other and never install over each other.
+    private func awaitPredecessors() async {
+        while let predecessor = inflight {
+            _ = await predecessor.value
+            if inflight == predecessor { inflight = nil; inflightUID = nil; inflightToken = nil }
+        }
     }
 
     private func authTransitionBody() async -> AccountDeletionDispatchResult {
@@ -524,7 +540,7 @@ actor DurableStoreRecoveryCoordinator {
 
     /// The presenter's `consume`: the terminal consumption order of C2.2. True only when the intent and journal are gone.
     func consumeTerminal(_ snapshot: CompletionSnapshotV1) async -> Bool {
-        if let inflight { _ = await inflight.value }
+        await awaitPredecessors()
         _ = snapshot
         return await runSingleflight(uid: "") { await self.consumeBody() } == .clear
     }
@@ -559,7 +575,12 @@ actor DurableStoreRecoveryCoordinator {
         case let .present(intent, _):
             return await runSingleflight(uid: intent.uid) { await self.resume() }
         case .absent:
-            return await clearGate()
+            // no intent: a linked all-scope journal or a completion file is durable authority (the startup discovery's typed
+            // journal/completion step, without the server discovery); only their absence clears
+            return await runSingleflight(uid: "") {
+                if let settled = await self.residualAuthority() { return settled }
+                return await self.clearGate()
+            }
         case .malformed:
             return await blockGate(.fileIO)
         case let .ioFailed(code):
@@ -578,6 +599,8 @@ actor DurableStoreRecoveryCoordinator {
     // MARK: singleflight
 
     private func runSingleflight(uid: String, _ body: @escaping @Sendable () async -> AccountDeletionDispatchResult) async -> AccountDeletionDispatchResult {
+        // the slot is never overwritten: a task installed by another caller between this caller's last await and now is joined
+        if let existing = inflight { return await existing.value }
         let token = UUID()
         let task = Task { await body() }
         inflight = task
@@ -1170,9 +1193,8 @@ enum DurableFileObserver {
     /// still-absent file; every other observation matches as `matches` does.
     static func stillMatches(_ observation: FileObservationV1, at url: URL, cap: Int) -> Bool {
         if case .absent = observation {
-            guard let current = try? PrivacyDurableFile.observe(at: url, limit: cap) else { return true }
-            _ = current
-            return false
+            // only a successful observation that finds nothing matches displayed absence; a thrown error (unreadable file) is drift
+            do { return try PrivacyDurableFile.observe(at: url, limit: cap) == nil } catch { return false }
         }
         return matches(observation, at: url, cap: cap)
     }

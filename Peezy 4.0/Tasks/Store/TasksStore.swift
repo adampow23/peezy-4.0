@@ -27,11 +27,14 @@ struct TasksSnapshot: Sendable {
     let rawContracts: [String: [String: Any]]
     /// Every stored `task_instance_id` string, keyed by task document ID (C9.3.14 instance matching).
     let instanceIds: [String: String]
+    /// The routing authority of every task document (C9.3.12 precedence), keyed by task document ID.
+    let routing: [String: TaskRoutingAuthorityV1]
 
-    init(cards: [PeezyCard], rawContracts: [String: [String: Any]] = [:], instanceIds: [String: String] = [:]) {
+    init(cards: [PeezyCard], rawContracts: [String: [String: Any]] = [:], instanceIds: [String: String] = [:], routing: [String: TaskRoutingAuthorityV1] = [:]) {
         self.cards = cards
         self.rawContracts = rawContracts
         self.instanceIds = instanceIds
+        self.routing = routing
     }
 }
 
@@ -60,11 +63,13 @@ struct FirestoreTasksSource: TasksSnapshotSource {
                 guard let snapshot else { return }
                 var rawContracts: [String: [String: Any]] = [:]
                 var instanceIds: [String: String] = [:]
+                var routing: [String: TaskRoutingAuthorityV1] = [:]
                 for document in snapshot.documents {
                     if let raw = document.data()["dispositionContract"] as? [String: Any] { rawContracts[document.documentID] = raw }
                     if let instance = document.data()["task_instance_id"] as? String { instanceIds[document.documentID] = instance }
+                    routing[document.documentID] = TaskRoutingAuthorityV1(document: document.data())
                 }
-                onChange(.success(TasksSnapshot(cards: snapshot.documents.compactMap { PeezyCardFirestoreMapper.card(from: $0) }, rawContracts: rawContracts, instanceIds: instanceIds)))
+                onChange(.success(TasksSnapshot(cards: snapshot.documents.compactMap { PeezyCardFirestoreMapper.card(from: $0) }, rawContracts: rawContracts, instanceIds: instanceIds, routing: routing)))
             }
         return Handle(registration: registration)
     }
@@ -95,6 +100,9 @@ struct UrgentRecoveryEvidence: Equatable, Sendable {
     let urgency: String
     let thresholdId: String
     let thresholdAt: String
+    /// The policy threshold's label and the protected outcome it guards (C9.3.14 line content).
+    var thresholdLabel: String = ""
+    var protectedOutcome: String? = nil
     let consequenceClass: String?
     let deadlineEvidenceId: String
     /// The mapped policy is valid and `urgency_basis` resolves byte-for-byte to the retained evidence.
@@ -110,21 +118,64 @@ struct UrgentRecoveryRegistry: Equatable, Sendable {
     nonisolated static let production = UrgentRecoveryRegistry(ranks: [:])
 }
 
-/// One line of the "Needs attention now" group: the policy threshold label and the line's route.
+/// The stored routing authority of one task document the C9.3.12 precedence reads (never the card mapper's projection).
+struct TaskRoutingAuthorityV1: Equatable, Sendable {
+    var planChangeState: String? = nil
+    /// `taskInteractionState.waiting_fallback_state` present.
+    var waitingFallbackPresent: Bool = false
+    var activeHandoffState: String? = nil
+    var activeHandoffSessionId: String? = nil
+
+    init(planChangeState: String? = nil, waitingFallbackPresent: Bool = false, activeHandoffState: String? = nil, activeHandoffSessionId: String? = nil) {
+        self.planChangeState = planChangeState
+        self.waitingFallbackPresent = waitingFallbackPresent
+        self.activeHandoffState = activeHandoffState
+        self.activeHandoffSessionId = activeHandoffSessionId
+    }
+
+    init(document: [String: Any]) {
+        planChangeState = document["planChangeState"] as? String
+        waitingFallbackPresent = (document["taskInteractionState"] as? [String: Any])?["waiting_fallback_state"] != nil
+        let handoff = document["activeHandoff"] as? [String: Any]
+        activeHandoffState = handoff?["state"] as? String
+        activeHandoffSessionId = (handoff?["sessionId"] as? String) ?? (handoff?["session_id"] as? String)
+    }
+}
+
+/// One line of the "Needs attention now" group: the policy threshold label/protected outcome, the current owner/action,
+/// and the line's route (C9.3.14 line content; C9.3.12 per-line routing).
 struct UrgentRecoveryLine: Equatable, Identifiable, Sendable {
     enum Route: Equatable, Sendable {
         case row
-        case outcome
+        /// The outcome surface; the returned handoff's session when one matches.
+        case outcome(sessionId: String?)
     }
 
     let taskDocumentId: String
     let title: String
     let thresholdId: String
+    let thresholdLabel: String
+    let protectedOutcome: String?
     let thresholdAt: String
     let consequenceRank: Int?
+    /// The stored contract's `owner` (`user`|`peezy`), when the contract carries one.
+    let owner: String?
     let route: Route
 
     var id: String { taskDocumentId }
+
+    /// `{label}` or `{label} · {protected outcome}`.
+    var thresholdText: String { protectedOutcome.map { "\(thresholdLabel) \u{00B7} \($0)" } ?? thresholdLabel }
+
+    /// The current owner/action: `{owner} · {action}`; the action names the route.
+    var ownerActionText: String {
+        let action: String
+        switch route {
+        case .row: action = "Open task"
+        case .outcome: action = "Record outcome"
+        }
+        return owner.map { "\($0) \u{00B7} \(action)" } ?? action
+    }
 }
 
 enum UrgentRecoveryProjection {
@@ -132,9 +183,24 @@ enum UrgentRecoveryProjection {
 
     /// Eligible lines in the C9.3.14 comparison order: classified `(0,rank,threshold_at,threshold_id,task_document_id)`
     /// before unclassified `(1,threshold_at,threshold_id,task_document_id)`; string ties in unsigned UTF-8 order.
+    /// The C9.3.12 route selection precedence over the raw stored contract and the document's routing authority:
+    /// 1 pending-confirmation plan change with a coherent cycle → `row`; 2 DEFERRED → `row`; 3 USER_ACTION carrying
+    /// `waiting_fallback_state` → `row`; 4 USER_ACTION/WAITING with a returned handoff → `outcome` + session; 5 WAITING
+    /// without a returned handoff → `outcome` without session; 6 every other USER_ACTION (and no contract) → `row`.
+    static func route(rawContract: [String: Any]?, routing: TaskRoutingAuthorityV1?, coherent: Bool) -> UrgentRecoveryLine.Route {
+        let disposition = rawContract?["disposition"] as? String
+        if routing?.planChangeState == "pending_confirmation", coherent { return .row }
+        if disposition == "DEFERRED" { return .row }
+        if disposition == "USER_ACTION_TRACKED", routing?.waitingFallbackPresent == true { return .row }
+        if disposition == "USER_ACTION_TRACKED" || disposition == "WAITING_ON_EXTERNAL", routing?.activeHandoffState == "returned" { return .outcome(sessionId: routing?.activeHandoffSessionId) }
+        if disposition == "WAITING_ON_EXTERNAL" { return .outcome(sessionId: nil) }
+        return .row
+    }
+
     /// The instance rule: the evidence names the exact stored `task_instance_id` of the task document (a document that
-    /// stores no instance never matches). The route follows the raw stored contract, never the card mapper's projection.
-    static func lines(cards: [PeezyCard], instanceIds: [String: String], rawContracts: [String: [String: Any]], evidence: [UrgentRecoveryEvidence], registry: UrgentRecoveryRegistry) -> [UrgentRecoveryLine] {
+    /// stores no instance never matches). The route follows the raw stored contract and routing authority, never the
+    /// card mapper's projection.
+    static func lines(cards: [PeezyCard], instanceIds: [String: String], rawContracts: [String: [String: Any]], routing: [String: TaskRoutingAuthorityV1] = [:], evidence: [UrgentRecoveryEvidence], registry: UrgentRecoveryRegistry) -> [UrgentRecoveryLine] {
         let candidates: [(line: UrgentRecoveryLine, key: [String])] = evidence.compactMap { item in
             guard item.policyValid, item.basisResolves, item.urgency == "urgent_recovery", CanonicalInstant.isCanonical(item.thresholdAt), !item.thresholdId.isEmpty,
                   let card = cards.first(where: { $0.id == item.taskDocumentId }), instanceIds[card.id] == item.taskInstanceId else { return nil }
@@ -148,8 +214,9 @@ enum UrgentRecoveryProjection {
                 guard let mapped = registry.ranks[consequenceClass] else { return nil } // an unregistered class is excluded, never downgraded
                 rank = mapped
             }
-            let route: UrgentRecoveryLine.Route = rawContracts[card.id]?["disposition"] as? String == "WAITING_ON_EXTERNAL" ? .outcome : .row
-            let line = UrgentRecoveryLine(taskDocumentId: card.id, title: card.title, thresholdId: item.thresholdId, thresholdAt: item.thresholdAt, consequenceRank: rank, route: route)
+            let route = self.route(rawContract: rawContracts[card.id], routing: routing[card.id], coherent: card.dispositionContractIsCoherent)
+            let line = UrgentRecoveryLine(taskDocumentId: card.id, title: card.title, thresholdId: item.thresholdId, thresholdLabel: item.thresholdLabel, protectedOutcome: item.protectedOutcome,
+                                          thresholdAt: item.thresholdAt, consequenceRank: rank, owner: rawContracts[card.id]?["owner"] as? String, route: route)
             let key = rank.map { ["0", String(format: "%020d", $0), item.thresholdAt, item.thresholdId, card.id] } ?? ["1", item.thresholdAt, item.thresholdId, card.id]
             return (line, key)
         }
@@ -159,14 +226,8 @@ enum UrgentRecoveryProjection {
         }.map(\.line)
     }
 
-    /// Zero lines: group hidden (nil). One: the task's own header. Many: one "Needs attention now" group.
-    static func header(for lines: [UrgentRecoveryLine]) -> String? {
-        switch lines.count {
-        case 0: return nil
-        case 1: return lines[0].title
-        default: return groupTitle
-        }
-    }
+    /// Zero lines: group hidden (nil). One or many: the same "Needs attention now" group header (C9.3.14).
+    static func header(for lines: [UrgentRecoveryLine]) -> String? { lines.isEmpty ? nil : groupTitle }
 }
 
 // MARK: - The store
@@ -181,6 +242,8 @@ final class TasksStore {
     private(set) var rawContracts: [String: [String: Any]] = [:]
     /// The stored `task_instance_id` of every task document in the current snapshot.
     private(set) var instanceIds: [String: String] = [:]
+    /// The routing authority of every task document in the current snapshot (C9.3.12).
+    private(set) var routing: [String: TaskRoutingAuthorityV1] = [:]
     private(set) var loadState: LoadState = .idle
     private(set) var pendingResetTaskIds: Set<String> = []
     /// The namespace of the installed listener; nil while stopped.
@@ -218,7 +281,7 @@ final class TasksStore {
 
     /// The one shared urgent-recovery projection Home and Tasks consume byte-identically.
     var urgentRecoveryLines: [UrgentRecoveryLine] {
-        UrgentRecoveryProjection.lines(cards: tasks, instanceIds: instanceIds, rawContracts: rawContracts, evidence: urgentRecoveryEvidence, registry: urgentRecoveryRegistry)
+        UrgentRecoveryProjection.lines(cards: tasks, instanceIds: instanceIds, rawContracts: rawContracts, routing: routing, evidence: urgentRecoveryEvidence, registry: urgentRecoveryRegistry)
     }
 
     // MARK: - Lifecycle
@@ -254,6 +317,7 @@ final class TasksStore {
             tasks = snapshot.cards
             rawContracts = snapshot.rawContracts
             instanceIds = snapshot.instanceIds
+            routing = snapshot.routing
             revision += 1
             loadState = .loaded
         }
@@ -272,6 +336,7 @@ final class TasksStore {
         tasks = []
         rawContracts = [:]
         instanceIds = [:]
+        routing = [:]
         urgentRecoveryEvidence = []
         loadState = .idle
     }

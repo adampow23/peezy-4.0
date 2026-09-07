@@ -1987,14 +1987,17 @@ extension ResetOperationRegistry: DurableStoreRecovering {
         guard targetValid, let tuple, let live = liveEnvelope() else { return files("ready", []) }
         // step 6: the first current-auth receipt-bearing row lacking or disagreeing with live provenance — the RESET rows in
         // stored order, then the LEGACY_RESET_MIGRATION row (C9.7.8 identity `{kind:"legacy_reset_migration",uid}`)
+        // the exposed mismatch is the unsigned-UTF-8-smallest canonical identity map among the store's current-auth mismatches (C9.7.8)
+        var mismatches: [(identity: String, key: [UInt8])] = []
         for row in live.records where row.uid == tuple.uid && (row.progressReceipt != nil || row.finalReceipt != nil) {
-            let identity = Self.identityDigest(uid: row.uid, expectedTaskGenerationEpoch: row.expectedTaskGenerationEpoch)
-            if provenance(for: identity) != Self.receiptSHA256(row) { return files("receipt_mismatch", ["reconcile"], auth: tuple, mismatch: identity) }
+            let map = Self.identityMap(uid: row.uid, expectedTaskGenerationEpoch: row.expectedTaskGenerationEpoch)
+            if provenance(for: TaskCanonicalV1.sha256Hex(map)) != Self.receiptSHA256(row) { mismatches.append((TaskCanonicalV1.sha256Hex(map), Array(TaskCanonicalV1.data(map) ?? Data()))) }
         }
         for migration in ((try? typedMigrations(live)) ?? []) where migration.uid == tuple.uid && migration.receipt != nil && (migration.phase == .receipt || migration.phase == .applying) {
-            let identity = Self.migrationIdentityDigest(uid: migration.uid)
-            if provenance(for: identity) != TaskCanonicalV1.sha256Hex(data: migration.receipt ?? Data()) { return files("receipt_mismatch", ["reconcile"], auth: tuple, mismatch: identity) }
+            let map = Self.migrationIdentityMap(uid: migration.uid)
+            if provenance(for: TaskCanonicalV1.sha256Hex(map)) != TaskCanonicalV1.sha256Hex(data: migration.receipt ?? Data()) { mismatches.append((TaskCanonicalV1.sha256Hex(map), Array(TaskCanonicalV1.data(map) ?? Data()))) }
         }
+        if let exposed = mismatches.min(by: { $0.key.lexicographicallyPrecedes($1.key) }) { return files("receipt_mismatch", ["reconcile"], auth: tuple, mismatch: exposed.identity) }
         // step 7: the current UID's epoch conflict
         let mine = live.records.filter { $0.uid == tuple.uid }
         if mine.count > 1 { return files("reset_epoch_conflict", ["recover_epoch"], auth: tuple, occupants: Self.epochOccupants(mine)) }
@@ -2004,14 +2007,16 @@ extension ResetOperationRegistry: DurableStoreRecovering {
     private static func isValid(_ observation: FileObservationV1) -> Bool { if case .valid = observation { return true }; return false }
 
     /// `{kind:"reset",uid,expectedTaskGenerationEpoch}` (C9.7.8 identity map).
+    static func identityMap(uid: String, expectedTaskGenerationEpoch: Int) -> [String: Any] {
+        ["kind": "reset", "uid": uid, "expectedTaskGenerationEpoch": expectedTaskGenerationEpoch]
+    }
     static func identityDigest(uid: String, expectedTaskGenerationEpoch: Int) -> String {
-        TaskCanonicalV1.sha256Hex(["kind": "reset", "uid": uid, "expectedTaskGenerationEpoch": expectedTaskGenerationEpoch])
+        TaskCanonicalV1.sha256Hex(identityMap(uid: uid, expectedTaskGenerationEpoch: expectedTaskGenerationEpoch))
     }
 
     /// `{kind:"legacy_reset_migration",uid}` (C9.7.8 identity map of the LEGACY_RESET_MIGRATION family).
-    static func migrationIdentityDigest(uid: String) -> String {
-        TaskCanonicalV1.sha256Hex(["kind": "legacy_reset_migration", "uid": uid])
-    }
+    static func migrationIdentityMap(uid: String) -> [String: Any] { ["kind": "legacy_reset_migration", "uid": uid] }
+    static func migrationIdentityDigest(uid: String) -> String { TaskCanonicalV1.sha256Hex(migrationIdentityMap(uid: uid)) }
 
     private static func receiptSHA256(_ row: ResetOperationRegistryRecordV2) -> String {
         TaskCanonicalV1.sha256Hex(data: row.finalReceipt ?? row.progressReceipt ?? Data())
@@ -2135,7 +2140,8 @@ extension ResetOperationRegistry: DurableStoreRecovering {
             if identity == Self.migrationIdentityDigest(uid: tuple.uid), let migration = ((try? typedMigrations(live)) ?? []).first(where: { $0.uid == tuple.uid && $0.receipt != nil }),
                let migrationId = migration.migrationId, let fingerprint = migration.requestFingerprint {
                 let inspection: LegacyMigrationInspectionV1
-                do { inspection = try await remote.inspectLegacyMigration(uid: migration.uid, migrationId: migrationId, requestFingerprint: fingerprint) } catch { return Self.result(classify(current)) }
+                // a failed inspection writes nothing and answers the complete current classification, observed fresh after the await
+                do { inspection = try await remote.inspectLegacyMigration(uid: migration.uid, migrationId: migrationId, requestFingerprint: fingerprint) } catch { return await reclassified() }
                 // post-await: auth, observed state, and the row are recomputed before any write
                 let after = await observe()
                 guard case let .observed(afterState) = after, afterState.recoveryStateDigest == expected,
@@ -2159,7 +2165,7 @@ extension ResetOperationRegistry: DurableStoreRecovering {
             guard let row = live.records.first(where: { $0.uid == tuple.uid && (($0.progressReceipt != nil) || ($0.finalReceipt != nil)) && Self.identityDigest(uid: $0.uid, expectedTaskGenerationEpoch: $0.expectedTaskGenerationEpoch) == identity }),
                   let operationId = row.canonicalOperationId else { return .unavailable(store: .reset) }
             let inspection: ResetInspectionV1
-            do { inspection = try await remote.inspectReset(uid: row.uid, canonicalOperationId: operationId, expectedTaskGenerationEpoch: row.expectedTaskGenerationEpoch) } catch { return Self.result(classify(current)) }
+            do { inspection = try await remote.inspectReset(uid: row.uid, canonicalOperationId: operationId, expectedTaskGenerationEpoch: row.expectedTaskGenerationEpoch) } catch { return await reclassified() }
             // post-await: auth, observed state, and the first mismatch are recomputed before any write
             let after = await observe()
             guard case let .observed(afterState) = after, afterState.recoveryStateDigest == expected else { return Self.result(classify(after)) }

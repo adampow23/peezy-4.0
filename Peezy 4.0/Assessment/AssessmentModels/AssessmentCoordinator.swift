@@ -639,7 +639,10 @@ class AssessmentCoordinator: ObservableObject {
         isSaving = true
         AnalyticsEvents.assessmentCompleted(questionCount: sequence.count)
 
-        defer { isSaving = false }
+        // S4 (P1-R): every async completion below is applied only while the UID and the load generation that started it are still current
+        func stillCurrent() -> Bool { Self.completionIsCurrent(startedUID: userId, currentUID: Auth.auth().currentUser?.uid ?? "", startedGeneration: generation, currentGeneration: loadGeneration) }
+        // the deferred mutation belongs to this completion only, never to a replacement flow's
+        defer { if stillCurrent() { isSaving = false } }
 
         // Race geocoding against a 5-second timeout so a slow network can't hang forever
         let geocodeTask = Task {
@@ -651,12 +654,11 @@ class AssessmentCoordinator: ObservableObject {
         }
         _ = await geocodeTask.value
         timeoutTask.cancel()
+        // guarded immediately after the await and before any store call
+        guard stillCurrent() else { return }
 
         let assessmentData = dataManager.getAllAssessmentData()
         let moveDate = dataManager.moveDate
-
-        // S4 (P1-R): every async completion below is applied only while the UID and the load generation that started it are still current
-        func stillCurrent() -> Bool { Self.completionIsCurrent(startedUID: userId, currentUID: Auth.auth().currentUser?.uid ?? "", startedGeneration: generation, currentGeneration: loadGeneration) }
 
         // Save assessment to Firestore (non-blocking for task generation)
         do {

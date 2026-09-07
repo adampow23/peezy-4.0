@@ -95,12 +95,6 @@ struct UrgentRecoveryGroupView: View {
     let lines: [UrgentRecoveryLine]
     let onOpen: (UrgentRecoveryLine) -> Void
 
-    static func actionLabel(for route: UrgentRecoveryLine.Route) -> String {
-        switch route {
-        case .row: return "Open task"
-        case .outcome: return "Record outcome"
-        }
-    }
 
     var body: some View {
         if let header = UrgentRecoveryProjection.header(for: lines) {
@@ -112,7 +106,10 @@ struct UrgentRecoveryGroupView: View {
                             Text(line.title)
                                 .font(PeezyTheme.Typography.captionMedium)
                                 .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.85))
-                            Text("\(line.thresholdId) · \(Self.actionLabel(for: line.route))")
+                            Text(line.thresholdText)
+                                .font(PeezyTheme.Typography.caption)
+                                .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.7))
+                            Text(line.ownerActionText)
                                 .font(PeezyTheme.Typography.caption)
                                 .foregroundStyle(PeezyTheme.Colors.deepInk.opacity(0.55))
                         }
