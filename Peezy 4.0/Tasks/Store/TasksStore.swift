@@ -160,13 +160,38 @@ struct TaskRoutingAuthorityV1: Equatable, Sendable {
         return history.contains { row in
             guard row["action"] as? String == "supersede", TaskGenerationEpochStamp.safeInteger(row["revision"]) == revision,
                   row["replacementTaskId"] as? String == link,
-                  let fingerprint = row["amendmentBaselineFingerprint"] as? String, !fingerprint.isEmpty,
-                  let replacement = row["replacement"] as? [String: Any],
-                  let institution = replacement["institution"] as? String, !institution.isEmpty,
-                  replacement["verification"] is [String: Any], replacement["amendmentAction"] is [String: Any],
-                  let snapshot = row["priorDispositionContract"] as? [String: Any], !snapshot.isEmpty else { return false }
+                  (row["amendmentBaselineFingerprint"] as? String)?.range(of: #"^[0-9a-f]{64}$"#, options: .regularExpression) != nil,
+                  let replacement = row["replacement"] as? [String: Any], isSanitizedReplacement(replacement),
+                  let snapshot = row["priorDispositionContract"] as? [String: Any],
+                  (snapshot["disposition"] as? String).map({ !$0.isEmpty }) == true else { return false }
             return true
         }
+    }
+
+    /// The exact map `cleanReplacement` returns and the server stores: six members, nonempty identity strings, an approved
+    /// subject, and two sanitized descriptors. A map missing or malforming any of them was never server-written.
+    static func isSanitizedReplacement(_ replacement: [String: Any]) -> Bool {
+        guard Set(replacement.keys) == ["taskId", "subject", "institutionId", "institution", "amendmentAction", "verification"],
+              (replacement["taskId"] as? String).map({ !$0.isEmpty }) == true,
+              (replacement["institutionId"] as? String).map({ !$0.isEmpty }) == true,
+              (replacement["institution"] as? String).map({ !$0.isEmpty }) == true,
+              let subject = replacement["subject"] as? [String: Any], Set(subject.keys) == ["kind", "id"],
+              (subject["kind"] as? String).map({ !$0.isEmpty }) == true,
+              (subject["id"] as? String).map({ !$0.isEmpty && $0.utf8.count <= 256 }) == true,
+              let amendment = replacement["amendmentAction"] as? [String: Any], isSanitizedDescriptor(amendment),
+              let verification = replacement["verification"] as? [String: Any], isSanitizedDescriptor(verification) else { return false }
+        return true
+    }
+
+    /// The exact map `cleanDescriptor` returns: `{nextTrigger, resumeDestination}` with a nonempty destination and a trigger
+    /// carrying its own `date`/`event` discriminator. The trigger's remaining grammar is the disposition contract's and is
+    /// server-checked against server time; the routing decision needs only that this member is a server-written trigger.
+    static func isSanitizedDescriptor(_ descriptor: [String: Any]) -> Bool {
+        guard Set(descriptor.keys) == ["nextTrigger", "resumeDestination"],
+              (descriptor["resumeDestination"] as? String).map({ !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) == true,
+              let trigger = descriptor["nextTrigger"] as? [String: Any],
+              let kind = trigger["kind"] as? String, kind == "date" || kind == "event" else { return false }
+        return true
     }
 }
 

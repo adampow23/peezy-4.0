@@ -170,9 +170,14 @@ struct TasksStoreNamespaceTests {
         #expect(UrgentRecoveryProjection.route(rawContract: tracked, routing: R()) == .row && UrgentRecoveryProjection.route(rawContract: nil, routing: nil) == .row, "6")
         // the strict document decoder: every member proves its row completely or proves nothing
         // the complete precedence-1 authority as `taskPlan.js` writes it for an external supersede
+        // byte-shaped like `taskPlan.js`: `cleanReplacement`'s six members with `cleanDescriptor`'s two, and
+        // `documentFingerprint`'s unprefixed 64-hex SHA-256
+        let descriptor: [String: Any] = ["nextTrigger": ["kind": "date", "at": "2026-10-01T00:00:00.000Z", "payload": ["basis": "derived", "protected_outcome": "Lease signed"]], "resumeDestination": "task_detail"]
+        let replacement: [String: Any] = ["taskId": "UPDATE_BANK_ADDRESS", "subject": ["kind": "financial_institution", "id": "inst_9"], "institutionId": "inst_9", "institution": "Bank",
+                                          "amendmentAction": descriptor, "verification": descriptor]
         let cycle: [String: Any] = ["action": "supersede", "reason": "institution_changed", "revision": 3, "priorStatus": "InProgress", "replacementTaskId": "amend_1",
-                                    "replacement": ["institution": "Bank", "verification": ["kind": "DATE"], "amendmentAction": ["kind": "submit"]],
-                                    "amendmentBaselineFingerprint": "tf1_" + String(repeating: "a", count: 40),
+                                    "replacement": replacement,
+                                    "amendmentBaselineFingerprint": String(repeating: "a", count: 64),
                                     "priorDispositionContract": ["disposition": "WAITING_ON_EXTERNAL", "external_submission": true]]
         let coherent: [String: Any] = ["task_instance_id": "ti_a", "planChangeState": "pending_confirmation", "pendingAmendmentTaskId": "amend_1", "planChangeRevision": 3, "planChangeHistory": [["action": "confirm_amendment", "revision": 2], cycle],
                                        "taskInteractionState": ["waiting_fallback_state": ["fallback_evidence_id": "fe_1"]], "activeHandoff": ["state": "returned", "session_id": "s9", "task_instance_id": "ti_a"]]
@@ -181,19 +186,42 @@ struct TasksStoreNamespaceTests {
         var noLink = coherent; noLink["pendingAmendmentTaskId"] = nil
         var staleCycle = coherent; staleCycle["planChangeRevision"] = 4
         var otherReplacement = coherent; otherReplacement["planChangeHistory"] = [cycle.merging(["replacementTaskId": "amend_9"]) { _, b in b }]
+        func withReplacement(_ change: [String: Any]) -> [String: Any] {
+            var document = coherent; document["planChangeHistory"] = [cycle.merging(["replacement": replacement.merging(change) { _, b in b }]) { _, b in b }]; return document
+        }
         var garbageReplacement = coherent; garbageReplacement["planChangeHistory"] = [cycle.merging(["replacement": ["garbage": 1]]) { _, b in b }]
-        var noVerification = coherent; noVerification["planChangeHistory"] = [cycle.merging(["replacement": ["institution": "Bank", "amendmentAction": ["kind": "submit"]]]) { _, b in b }]
+        var noVerification = coherent; noVerification["planChangeHistory"] = [cycle.merging(["replacement": ["institution": "Bank", "amendmentAction": descriptor]]) { _, b in b }]
         var emptySnapshot = coherent; emptySnapshot["planChangeHistory"] = [cycle.merging(["priorDispositionContract": [:]]) { _, b in b }]
+        var unshapedSnapshot = coherent; unshapedSnapshot["planChangeHistory"] = [cycle.merging(["priorDispositionContract": ["visible_status_copy": "Waiting"]]) { _, b in b }]
+        var shortFingerprint = coherent; shortFingerprint["planChangeHistory"] = [cycle.merging(["amendmentBaselineFingerprint": "tf1_" + String(repeating: "a", count: 40)]) { _, b in b }]
+        var upperFingerprint = coherent; upperFingerprint["planChangeHistory"] = [cycle.merging(["amendmentBaselineFingerprint": String(repeating: "A", count: 64)]) { _, b in b }]
         var notPending = coherent; notPending["planChangeState"] = "confirmed"
         var noCycleRow = coherent; noCycleRow["planChangeHistory"] = [["action": "undo_confirmation", "revision": 3, "replacementTaskId": "amend_1"]]
         for (name, document) in [("no replacement link on the task", noLink), ("cycle not at the current revision", staleCycle), ("cycle naming another replacement", otherReplacement),
-                                 ("an arbitrary nonempty replacement map", garbageReplacement), ("no verification descriptor", noVerification), ("no retained snapshot", emptySnapshot),
+                                 ("an arbitrary nonempty replacement map", garbageReplacement), ("no verification descriptor", noVerification), ("an empty retained snapshot", emptySnapshot),
+                                 ("a snapshot with no disposition", unshapedSnapshot), ("a prefixed 44-char fingerprint", shortFingerprint), ("an uppercase fingerprint", upperFingerprint),
                                  ("no source binding", without("amendmentBaselineFingerprint")), ("no retained snapshot member", without("priorDispositionContract")),
-                                 ("no replacement descriptor", without("replacement")), ("not pending", notPending), ("no supersede row at all", noCycleRow)] {
+                                 ("no replacement descriptor", without("replacement")), ("not pending", notPending), ("no supersede row at all", noCycleRow),
+                                 // malformed-present nested authority: every member the server sanitizes, corrupted one at a time
+                                 ("an empty verification descriptor", withReplacement(["verification": [:]])),
+                                 ("a verification with no resumeDestination", withReplacement(["verification": ["nextTrigger": ["kind": "date"]]])),
+                                 ("a blank resumeDestination", withReplacement(["verification": ["nextTrigger": ["kind": "date"], "resumeDestination": "   "]])),
+                                 ("a surplus descriptor member", withReplacement(["verification": ["nextTrigger": ["kind": "date"], "resumeDestination": "task_detail", "extra": 1]])),
+                                 ("a trigger with no kind", withReplacement(["verification": ["nextTrigger": ["at": "2026-10-01T00:00:00.000Z"], "resumeDestination": "task_detail"]])),
+                                 ("a trigger of an unknown kind", withReplacement(["verification": ["nextTrigger": ["kind": "DATE"], "resumeDestination": "task_detail"]])),
+                                 ("an empty amendmentAction", withReplacement(["amendmentAction": [:]])),
+                                 ("a surplus replacement member", withReplacement(["extra": 1])),
+                                 ("a blank institution", withReplacement(["institution": ""])),
+                                 ("a blank institutionId", withReplacement(["institutionId": ""])),
+                                 ("a blank catalog taskId", withReplacement(["taskId": ""])),
+                                 ("a subject with no id", withReplacement(["subject": ["kind": "financial_institution"]])),
+                                 ("a subject with a blank id", withReplacement(["subject": ["kind": "financial_institution", "id": ""]])),
+                                 ("an over-long subject id", withReplacement(["subject": ["kind": "financial_institution", "id": String(repeating: "x", count: 257)]]))] {
             #expect(!R(document: document).pendingConfirmationCoherent, Comment(rawValue: name))
         }
         #expect(UrgentRecoveryProjection.route(rawContract: waiting, routing: R(document: noLink)) == .outcome(sessionId: "s9"), "an incoherent pending confirmation falls through to the returned WAIT outcome")
         #expect(UrgentRecoveryProjection.route(rawContract: waiting, routing: R(document: garbageReplacement)) == .outcome(sessionId: "s9"), "an arbitrary replacement map never proves precedence 1")
+        #expect(UrgentRecoveryProjection.route(rawContract: waiting, routing: R(document: withReplacement(["verification": [:]]))) == .outcome(sessionId: "s9"), "one corrupted nested descriptor falls through to the returned WAIT outcome")
         var malformedFallback = coherent; malformedFallback["planChangeState"] = nil; malformedFallback["taskInteractionState"] = ["waiting_fallback_state": 7]
         #expect(!R(document: malformedFallback).waitingFallbackValid)
         #expect(UrgentRecoveryProjection.route(rawContract: tracked, routing: R(document: malformedFallback)) == .outcome(sessionId: "s9"), "a malformed fallback state proves nothing; the returned handoff routes the outcome")
