@@ -176,11 +176,21 @@ struct TaskRoutingAuthorityV1: Equatable, Sendable {
         value.utf8.count <= 256 && !value.contains("/") && value != "." && value != ".." && !(value.hasPrefix("__") && value.hasSuffix("__"))
     }
 
-    /// A member as the server stores it: already trimmed by its sanitizer, nonempty, and within its byte bound where the
-    /// sanitizer imposes one. `maxBytes` is nil for members the writer bounds only by the request size, so the client never
-    /// rejects a value the server would have stored.
+    /// The exact set ECMAScript `String.prototype.trim` removes — `WhiteSpace ∪ LineTerminator`: tab and the Unicode
+    /// space separators (`CharacterSet.whitespaces` is precisely `Zs ∪ U+0009`), plus VT, FF, ZWNBSP, LF, CR, LS and PS.
+    /// Foundation's `.whitespacesAndNewlines` is not the same set in either direction: it trims U+0085, which JavaScript
+    /// keeps, and it keeps U+FEFF, which JavaScript trims. The server's sanitizers all trim in JavaScript, so a client that
+    /// used Foundation's set would both reject values the writer can store and accept values it never could.
+    static let ecmaScriptTrimSet: CharacterSet = CharacterSet.whitespaces
+        .union(CharacterSet(charactersIn: "\u{000A}\u{000B}\u{000C}\u{000D}\u{2028}\u{2029}\u{FEFF}"))
+
+    static func ecmaScriptTrimmed(_ value: String) -> String { value.trimmingCharacters(in: ecmaScriptTrimSet) }
+
+    /// A member as the server stores it: already trimmed by its sanitizer's own `String.prototype.trim`, nonempty, and
+    /// within its byte bound where the sanitizer imposes one. `maxBytes` is nil for members the writer bounds only by the
+    /// request size, so the client never rejects a value the server would have stored.
     private static func storedString(_ value: Any?, maxBytes: Int? = nil) -> String? {
-        guard let string = value as? String, string == string.trimmingCharacters(in: .whitespacesAndNewlines), !string.isEmpty else { return nil }
+        guard let string = value as? String, string == ecmaScriptTrimmed(string), !string.isEmpty else { return nil }
         if let maxBytes, string.utf8.count > maxBytes { return nil }
         return string
     }
