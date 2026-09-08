@@ -234,6 +234,10 @@ struct TasksStoreNamespaceTests {
         #expect(UrgentRecoveryProjection.route(rawContract: waiting, routing: R(document: withReplacement(["verification": [:]]))) == .outcome(sessionId: "s9"), "one corrupted nested descriptor falls through to the returned WAIT outcome")
         #expect(UrgentRecoveryProjection.route(rawContract: waiting, routing: R(document: withReplacement(["subject": ["kind": "financial_institution", "id": "inst_9"]]))) == .outcome(sessionId: "s9"), "a subject kind the server would reject never proves precedence 1")
         #expect(TaskRoutingAuthorityV1.approvedSubjectKinds == ["person", "pet", "vehicle", "property", "service", "child"], "the closed set `validateSpawnRequest` accepts")
+        // the decoder is never stricter than the writer: `cleanDescriptor` bounds `resumeDestination` only by the request size
+        let longDestination: [String: Any] = ["nextTrigger": ["kind": "date"], "resumeDestination": String(repeating: "x", count: 1_025)]
+        #expect(R(document: withReplacement(["verification": longDestination])).pendingConfirmationCoherent, "a long but server-storable resumeDestination still proves precedence 1")
+        #expect(UrgentRecoveryProjection.route(rawContract: waiting, routing: R(document: withReplacement(["verification": longDestination]))) == .row)
         #expect(TaskRoutingAuthorityV1.isValidDocumentId("UPDATE_BANK_ADDRESS") && !TaskRoutingAuthorityV1.isValidDocumentId("a/b") && !TaskRoutingAuthorityV1.isValidDocumentId(".") && !TaskRoutingAuthorityV1.isValidDocumentId("..") && !TaskRoutingAuthorityV1.isValidDocumentId("__x__") && !TaskRoutingAuthorityV1.isValidDocumentId(String(repeating: "t", count: 257)))
         var malformedFallback = coherent; malformedFallback["planChangeState"] = nil; malformedFallback["taskInteractionState"] = ["waiting_fallback_state": 7]
         #expect(!R(document: malformedFallback).waitingFallbackValid)

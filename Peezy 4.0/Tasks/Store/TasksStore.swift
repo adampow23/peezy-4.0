@@ -176,10 +176,12 @@ struct TaskRoutingAuthorityV1: Equatable, Sendable {
         value.utf8.count <= 256 && !value.contains("/") && value != "." && value != ".." && !(value.hasPrefix("__") && value.hasSuffix("__"))
     }
 
-    /// A member as the server stores it: already trimmed by its sanitizer, nonempty, within its byte bound.
-    private static func storedString(_ value: Any?, maxBytes: Int) -> String? {
-        guard let string = value as? String, string == string.trimmingCharacters(in: .whitespacesAndNewlines),
-              !string.isEmpty, string.utf8.count <= maxBytes else { return nil }
+    /// A member as the server stores it: already trimmed by its sanitizer, nonempty, and within its byte bound where the
+    /// sanitizer imposes one. `maxBytes` is nil for members the writer bounds only by the request size, so the client never
+    /// rejects a value the server would have stored.
+    private static func storedString(_ value: Any?, maxBytes: Int? = nil) -> String? {
+        guard let string = value as? String, string == string.trimmingCharacters(in: .whitespacesAndNewlines), !string.isEmpty else { return nil }
+        if let maxBytes, string.utf8.count > maxBytes { return nil }
         return string
     }
 
@@ -205,7 +207,7 @@ struct TaskRoutingAuthorityV1: Equatable, Sendable {
     /// server-checked against server time; the routing decision needs only that this member is a server-written trigger.
     static func isSanitizedDescriptor(_ descriptor: [String: Any]) -> Bool {
         guard Set(descriptor.keys) == ["nextTrigger", "resumeDestination"],
-              storedString(descriptor["resumeDestination"], maxBytes: 1024) != nil,
+              storedString(descriptor["resumeDestination"]) != nil, // `cleanDescriptor` imposes no length limit
               let trigger = descriptor["nextTrigger"] as? [String: Any],
               let kind = trigger["kind"] as? String, kind == "date" || kind == "event" else { return false }
         return true
