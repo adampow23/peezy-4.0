@@ -146,14 +146,26 @@ struct TaskRoutingAuthorityV1: Equatable, Sendable {
         }
     }
 
+    /// The complete C9.3.12 precedence-1 authority, decoded from the members `taskPlan.js` actually writes for an external
+    /// supersede: the state, the task's own replacement link (`pendingAmendmentTaskId`), the coherent cycle (the `supersede`
+    /// history row at the current `planChangeRevision`), that row's matching replacement link, its current source binding
+    /// (`amendmentBaselineFingerprint` plus the `replacement` descriptor's `institution`, `verification` and
+    /// `amendmentAction`), and the retained snapshot (`priorDispositionContract`, always written for an external supersede
+    /// because only a contract-bearing task can be externally superseded). Any missing or malformed member proves nothing.
     static func pendingConfirmationIsCoherent(_ document: [String: Any]) -> Bool {
         guard document["planChangeState"] as? String == "pending_confirmation",
-              let replacement = document["replacementTaskId"] as? String, !replacement.isEmpty,
+              let link = document["pendingAmendmentTaskId"] as? String, !link.isEmpty,
               let revision = TaskGenerationEpochStamp.safeInteger(document["planChangeRevision"]),
               let history = document["planChangeHistory"] as? [[String: Any]] else { return false }
         return history.contains { row in
-            row["action"] as? String == "supersede" && TaskGenerationEpochStamp.safeInteger(row["revision"]) == revision
-                && row["replacementTaskId"] as? String == replacement && (row["replacement"] as? [String: Any]).map { !$0.isEmpty } == true
+            guard row["action"] as? String == "supersede", TaskGenerationEpochStamp.safeInteger(row["revision"]) == revision,
+                  row["replacementTaskId"] as? String == link,
+                  let fingerprint = row["amendmentBaselineFingerprint"] as? String, !fingerprint.isEmpty,
+                  let replacement = row["replacement"] as? [String: Any],
+                  let institution = replacement["institution"] as? String, !institution.isEmpty,
+                  replacement["verification"] is [String: Any], replacement["amendmentAction"] is [String: Any],
+                  let snapshot = row["priorDispositionContract"] as? [String: Any], !snapshot.isEmpty else { return false }
+            return true
         }
     }
 }
