@@ -240,13 +240,18 @@ struct TasksStoreNamespaceTests {
         #expect(UrgentRecoveryProjection.route(rawContract: waiting, routing: R(document: withReplacement(["verification": longDestination]))) == .row)
         // trimming parity with the writer's own `String.prototype.trim`, which is neither Foundation's `.whitespaces` nor
         // `.whitespacesAndNewlines`: JavaScript keeps U+0085 and trims U+FEFF, and Foundation does the opposite of both
-        #expect(TaskRoutingAuthorityV1.ecmaScriptTrimmed("route\u{0085}") == "route\u{0085}", "U+0085 is not ECMAScript whitespace")
+        // the scalars JavaScript keeps but a Foundation set would trim, and the one it trims that neither Foundation set does
+        for (name, scalar) in [("next line", "\u{0085}"), ("zero-width space", "\u{200B}"), ("mongolian vowel separator", "\u{180E}")] {
+            #expect(TaskRoutingAuthorityV1.ecmaScriptTrimmed("route" + scalar) == "route" + scalar, Comment(rawValue: "\(name) is not ECMAScript whitespace"))
+        }
         #expect(TaskRoutingAuthorityV1.ecmaScriptTrimmed("route\u{FEFF}") == "route", "U+FEFF is")
         for (name, scalar) in [("tab", "\u{0009}"), ("line feed", "\u{000A}"), ("vertical tab", "\u{000B}"), ("form feed", "\u{000C}"), ("carriage return", "\u{000D}"), ("space", "\u{0020}"), ("no-break space", "\u{00A0}"), ("ogham space", "\u{1680}"), ("en quad", "\u{2000}"), ("hair space", "\u{200A}"), ("line separator", "\u{2028}"), ("paragraph separator", "\u{2029}"), ("narrow no-break space", "\u{202F}"), ("medium mathematical space", "\u{205F}"), ("ideographic space", "\u{3000}"), ("zero-width no-break space", "\u{FEFF}")] {
             #expect(TaskRoutingAuthorityV1.ecmaScriptTrimmed(scalar + "route" + scalar) == "route", Comment(rawValue: name))
         }
-        let keptDestination: [String: Any] = ["nextTrigger": ["kind": "date"], "resumeDestination": "route\u{0085}"]
-        #expect(R(document: withReplacement(["verification": keptDestination])).pendingConfirmationCoherent, "a value the writer can store is never rejected: JavaScript does not trim U+0085")
+        for (name, scalar) in [("U+0085", "\u{0085}"), ("U+200B", "\u{200B}")] {
+            let kept: [String: Any] = ["nextTrigger": ["kind": "date"], "resumeDestination": "route" + scalar]
+            #expect(R(document: withReplacement(["verification": kept])).pendingConfirmationCoherent, Comment(rawValue: "a value the writer can store is never rejected: JavaScript does not trim \(name)"))
+        }
         let bomDestination: [String: Any] = ["nextTrigger": ["kind": "date"], "resumeDestination": "route\u{FEFF}"]
         #expect(!R(document: withReplacement(["verification": bomDestination])).pendingConfirmationCoherent, "a value the writer could never store is never accepted: JavaScript trims U+FEFF")
         #expect(!R(document: withReplacement(["institution": "Bank\u{FEFF}"])).pendingConfirmationCoherent)

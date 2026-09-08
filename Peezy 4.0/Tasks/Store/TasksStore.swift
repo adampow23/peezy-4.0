@@ -176,13 +176,15 @@ struct TaskRoutingAuthorityV1: Equatable, Sendable {
         value.utf8.count <= 256 && !value.contains("/") && value != "." && value != ".." && !(value.hasPrefix("__") && value.hasSuffix("__"))
     }
 
-    /// The exact set ECMAScript `String.prototype.trim` removes — `WhiteSpace ∪ LineTerminator`: tab and the Unicode
-    /// space separators (`CharacterSet.whitespaces` is precisely `Zs ∪ U+0009`), plus VT, FF, ZWNBSP, LF, CR, LS and PS.
-    /// Foundation's `.whitespacesAndNewlines` is not the same set in either direction: it trims U+0085, which JavaScript
-    /// keeps, and it keeps U+FEFF, which JavaScript trims. The server's sanitizers all trim in JavaScript, so a client that
-    /// used Foundation's set would both reject values the writer can store and accept values it never could.
-    static let ecmaScriptTrimSet: CharacterSet = CharacterSet.whitespaces
-        .union(CharacterSet(charactersIn: "\u{000A}\u{000B}\u{000C}\u{000D}\u{2028}\u{2029}\u{FEFF}"))
+    /// The exact set ECMAScript `String.prototype.trim` removes — `WhiteSpace ∪ LineTerminator` — enumerated scalar by
+    /// scalar rather than derived from a Foundation set, because no Foundation set is this set and the nearest ones differ
+    /// in three directions at once: `.whitespacesAndNewlines` trims U+0085, which JavaScript keeps; neither Foundation set
+    /// trims U+FEFF, which JavaScript does; and `.whitespaces` on Apple platforms still trims U+200B, which JavaScript
+    /// keeps (U+200B left general category Zs in Unicode 4.0.1; Foundation's table did not follow). Every server sanitizer
+    /// trims in JavaScript, so any of those would make the client reject values the writer can store or accept values it
+    /// never could — and both pick the wrong C9.3.12 row.
+    static let ecmaScriptTrimSet: CharacterSet = CharacterSet(charactersIn: "\u{0009}\u{000A}\u{000B}\u{000C}\u{000D}\u{0020}\u{00A0}\u{1680}\u{2028}\u{2029}\u{202F}\u{205F}\u{3000}\u{FEFF}")
+        .union(CharacterSet(charactersIn: Unicode.Scalar(0x2000)!...Unicode.Scalar(0x200A)!))
 
     static func ecmaScriptTrimmed(_ value: String) -> String { value.trimmingCharacters(in: ecmaScriptTrimSet) }
 
