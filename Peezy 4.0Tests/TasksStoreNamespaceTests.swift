@@ -173,7 +173,7 @@ struct TasksStoreNamespaceTests {
         // byte-shaped like `taskPlan.js`: `cleanReplacement`'s six members with `cleanDescriptor`'s two, and
         // `documentFingerprint`'s unprefixed 64-hex SHA-256
         let descriptor: [String: Any] = ["nextTrigger": ["kind": "date", "at": "2026-10-01T00:00:00.000Z", "payload": ["basis": "derived", "protected_outcome": "Lease signed"]], "resumeDestination": "task_detail"]
-        let replacement: [String: Any] = ["taskId": "UPDATE_BANK_ADDRESS", "subject": ["kind": "financial_institution", "id": "inst_9"], "institutionId": "inst_9", "institution": "Bank",
+        let replacement: [String: Any] = ["taskId": "UPDATE_BANK_ADDRESS", "subject": ["kind": "service", "id": "inst_9"], "institutionId": "inst_9", "institution": "Bank",
                                           "amendmentAction": descriptor, "verification": descriptor]
         let cycle: [String: Any] = ["action": "supersede", "reason": "institution_changed", "revision": 3, "priorStatus": "InProgress", "replacementTaskId": "amend_1",
                                     "replacement": replacement,
@@ -214,14 +214,27 @@ struct TasksStoreNamespaceTests {
                                  ("a blank institution", withReplacement(["institution": ""])),
                                  ("a blank institutionId", withReplacement(["institutionId": ""])),
                                  ("a blank catalog taskId", withReplacement(["taskId": ""])),
-                                 ("a subject with no id", withReplacement(["subject": ["kind": "financial_institution"]])),
-                                 ("a subject with a blank id", withReplacement(["subject": ["kind": "financial_institution", "id": ""]])),
-                                 ("an over-long subject id", withReplacement(["subject": ["kind": "financial_institution", "id": String(repeating: "x", count: 257)]]))] {
+                                 ("a subject with no id", withReplacement(["subject": ["kind": "service"]])),
+                                 ("a subject with a blank id", withReplacement(["subject": ["kind": "service", "id": ""]])),
+                                 ("an over-long subject id", withReplacement(["subject": ["kind": "service", "id": String(repeating: "x", count: 257)]])),
+                                 // every non-temporal identity constraint `validateSpawnRequest` enforces
+                                 ("a subject kind outside the approved set", withReplacement(["subject": ["kind": "financial_institution", "id": "inst_9"]])),
+                                 ("an untrimmed subject id", withReplacement(["subject": ["kind": "service", "id": " inst_9 "]])),
+                                 ("an untrimmed institution", withReplacement(["institution": " Bank "])),
+                                 ("an over-long institution", withReplacement(["institution": String(repeating: "b", count: 513)])),
+                                 ("an over-long institutionId", withReplacement(["institutionId": String(repeating: "i", count: 257)])),
+                                 ("a taskId containing a path separator", withReplacement(["taskId": "catalog/row"])),
+                                 ("a taskId of two dots", withReplacement(["taskId": ".."])),
+                                 ("a reserved taskId", withReplacement(["taskId": "__name__"])),
+                                 ("an over-long taskId", withReplacement(["taskId": String(repeating: "t", count: 257)]))] {
             #expect(!R(document: document).pendingConfirmationCoherent, Comment(rawValue: name))
         }
         #expect(UrgentRecoveryProjection.route(rawContract: waiting, routing: R(document: noLink)) == .outcome(sessionId: "s9"), "an incoherent pending confirmation falls through to the returned WAIT outcome")
         #expect(UrgentRecoveryProjection.route(rawContract: waiting, routing: R(document: garbageReplacement)) == .outcome(sessionId: "s9"), "an arbitrary replacement map never proves precedence 1")
         #expect(UrgentRecoveryProjection.route(rawContract: waiting, routing: R(document: withReplacement(["verification": [:]]))) == .outcome(sessionId: "s9"), "one corrupted nested descriptor falls through to the returned WAIT outcome")
+        #expect(UrgentRecoveryProjection.route(rawContract: waiting, routing: R(document: withReplacement(["subject": ["kind": "financial_institution", "id": "inst_9"]]))) == .outcome(sessionId: "s9"), "a subject kind the server would reject never proves precedence 1")
+        #expect(TaskRoutingAuthorityV1.approvedSubjectKinds == ["person", "pet", "vehicle", "property", "service", "child"], "the closed set `validateSpawnRequest` accepts")
+        #expect(TaskRoutingAuthorityV1.isValidDocumentId("UPDATE_BANK_ADDRESS") && !TaskRoutingAuthorityV1.isValidDocumentId("a/b") && !TaskRoutingAuthorityV1.isValidDocumentId(".") && !TaskRoutingAuthorityV1.isValidDocumentId("..") && !TaskRoutingAuthorityV1.isValidDocumentId("__x__") && !TaskRoutingAuthorityV1.isValidDocumentId(String(repeating: "t", count: 257)))
         var malformedFallback = coherent; malformedFallback["planChangeState"] = nil; malformedFallback["taskInteractionState"] = ["waiting_fallback_state": 7]
         #expect(!R(document: malformedFallback).waitingFallbackValid)
         #expect(UrgentRecoveryProjection.route(rawContract: tracked, routing: R(document: malformedFallback)) == .outcome(sessionId: "s9"), "a malformed fallback state proves nothing; the returned handoff routes the outcome")

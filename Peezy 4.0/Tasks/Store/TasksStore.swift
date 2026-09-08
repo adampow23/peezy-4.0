@@ -168,16 +168,33 @@ struct TaskRoutingAuthorityV1: Equatable, Sendable {
         }
     }
 
-    /// The exact map `cleanReplacement` returns and the server stores: six members, nonempty identity strings, an approved
-    /// subject, and two sanitized descriptors. A map missing or malforming any of them was never server-written.
+    /// The closed set `validateSpawnRequest` accepts for a subject-aware spawn.
+    static let approvedSubjectKinds: Set<String> = ["person", "pet", "vehicle", "property", "service", "child"]
+
+    /// `isValidDocumentId`: at most 256 UTF-8 bytes, no `/`, not `.` or `..`, not `__…__`.
+    static func isValidDocumentId(_ value: String) -> Bool {
+        value.utf8.count <= 256 && !value.contains("/") && value != "." && value != ".." && !(value.hasPrefix("__") && value.hasSuffix("__"))
+    }
+
+    /// A member as the server stores it: already trimmed by its sanitizer, nonempty, within its byte bound.
+    private static func storedString(_ value: Any?, maxBytes: Int) -> String? {
+        guard let string = value as? String, string == string.trimmingCharacters(in: .whitespacesAndNewlines),
+              !string.isEmpty, string.utf8.count <= maxBytes else { return nil }
+        return string
+    }
+
+    /// The exact map `cleanReplacement` returns and the server stores: six members, and every non-temporal identity
+    /// constraint `validateSpawnRequest` enforces — a catalog `taskId` that is a valid document ID, an approved subject
+    /// kind with an id of at most 256 bytes, an `institutionId` of at most 256 and an `institution` of at most 512, each
+    /// already trimmed — plus two sanitized descriptors. Anything the writer could not have produced proves nothing.
     static func isSanitizedReplacement(_ replacement: [String: Any]) -> Bool {
         guard Set(replacement.keys) == ["taskId", "subject", "institutionId", "institution", "amendmentAction", "verification"],
-              (replacement["taskId"] as? String).map({ !$0.isEmpty }) == true,
-              (replacement["institutionId"] as? String).map({ !$0.isEmpty }) == true,
-              (replacement["institution"] as? String).map({ !$0.isEmpty }) == true,
+              let taskId = storedString(replacement["taskId"], maxBytes: 256), isValidDocumentId(taskId),
+              storedString(replacement["institutionId"], maxBytes: 256) != nil,
+              storedString(replacement["institution"], maxBytes: 512) != nil,
               let subject = replacement["subject"] as? [String: Any], Set(subject.keys) == ["kind", "id"],
-              (subject["kind"] as? String).map({ !$0.isEmpty }) == true,
-              (subject["id"] as? String).map({ !$0.isEmpty && $0.utf8.count <= 256 }) == true,
+              let kind = subject["kind"] as? String, approvedSubjectKinds.contains(kind),
+              storedString(subject["id"], maxBytes: 256) != nil,
               let amendment = replacement["amendmentAction"] as? [String: Any], isSanitizedDescriptor(amendment),
               let verification = replacement["verification"] as? [String: Any], isSanitizedDescriptor(verification) else { return false }
         return true
@@ -188,7 +205,7 @@ struct TaskRoutingAuthorityV1: Equatable, Sendable {
     /// server-checked against server time; the routing decision needs only that this member is a server-written trigger.
     static func isSanitizedDescriptor(_ descriptor: [String: Any]) -> Bool {
         guard Set(descriptor.keys) == ["nextTrigger", "resumeDestination"],
-              (descriptor["resumeDestination"] as? String).map({ !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) == true,
+              storedString(descriptor["resumeDestination"], maxBytes: 1024) != nil,
               let trigger = descriptor["nextTrigger"] as? [String: Any],
               let kind = trigger["kind"] as? String, kind == "date" || kind == "event" else { return false }
         return true
