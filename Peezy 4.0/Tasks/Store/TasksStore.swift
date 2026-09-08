@@ -119,26 +119,42 @@ struct UrgentRecoveryRegistry: Equatable, Sendable {
 }
 
 /// The stored routing authority of one task document the C9.3.12 precedence reads (never the card mapper's projection).
+/// Every member is decoded strictly and fail-closed: a malformed or incomplete authority is absent, so it selects no
+/// precedence row.
 struct TaskRoutingAuthorityV1: Equatable, Sendable {
-    var planChangeState: String? = nil
-    /// `taskInteractionState.waiting_fallback_state` present.
-    var waitingFallbackPresent: Bool = false
-    var activeHandoffState: String? = nil
-    var activeHandoffSessionId: String? = nil
+    /// Precedence 1 proof: `planChangeState == "pending_confirmation"`, the replacement link, and the coherent cycle — the
+    /// `supersede` history row at the current `planChangeRevision` naming the same replacement with its retained snapshot.
+    var pendingConfirmationCoherent: Bool = false
+    /// Precedence 3 proof: `taskInteractionState.waiting_fallback_state` is a nonempty map.
+    var waitingFallbackValid: Bool = false
+    /// Precedence 4 proof: `activeHandoff.state == "returned"` with a nonempty `session_id`, for this document's instance.
+    var returnedHandoffSessionId: String? = nil
 
-    init(planChangeState: String? = nil, waitingFallbackPresent: Bool = false, activeHandoffState: String? = nil, activeHandoffSessionId: String? = nil) {
-        self.planChangeState = planChangeState
-        self.waitingFallbackPresent = waitingFallbackPresent
-        self.activeHandoffState = activeHandoffState
-        self.activeHandoffSessionId = activeHandoffSessionId
+    init(pendingConfirmationCoherent: Bool = false, waitingFallbackValid: Bool = false, returnedHandoffSessionId: String? = nil) {
+        self.pendingConfirmationCoherent = pendingConfirmationCoherent
+        self.waitingFallbackValid = waitingFallbackValid
+        self.returnedHandoffSessionId = returnedHandoffSessionId
     }
 
     init(document: [String: Any]) {
-        planChangeState = document["planChangeState"] as? String
-        waitingFallbackPresent = (document["taskInteractionState"] as? [String: Any])?["waiting_fallback_state"] != nil
-        let handoff = document["activeHandoff"] as? [String: Any]
-        activeHandoffState = handoff?["state"] as? String
-        activeHandoffSessionId = (handoff?["sessionId"] as? String) ?? (handoff?["session_id"] as? String)
+        pendingConfirmationCoherent = Self.pendingConfirmationIsCoherent(document)
+        if let fallback = (document["taskInteractionState"] as? [String: Any])?["waiting_fallback_state"] as? [String: Any], !fallback.isEmpty { waitingFallbackValid = true }
+        if let handoff = document["activeHandoff"] as? [String: Any], handoff["state"] as? String == "returned",
+           let session = handoff["session_id"] as? String, !session.isEmpty,
+           (handoff["task_instance_id"] as? String).map({ $0 == document["task_instance_id"] as? String }) ?? true {
+            returnedHandoffSessionId = session
+        }
+    }
+
+    static func pendingConfirmationIsCoherent(_ document: [String: Any]) -> Bool {
+        guard document["planChangeState"] as? String == "pending_confirmation",
+              let replacement = document["replacementTaskId"] as? String, !replacement.isEmpty,
+              let revision = TaskGenerationEpochStamp.safeInteger(document["planChangeRevision"]),
+              let history = document["planChangeHistory"] as? [[String: Any]] else { return false }
+        return history.contains { row in
+            row["action"] as? String == "supersede" && TaskGenerationEpochStamp.safeInteger(row["revision"]) == revision
+                && row["replacementTaskId"] as? String == replacement && (row["replacement"] as? [String: Any]).map { !$0.isEmpty } == true
+        }
     }
 }
 
@@ -158,8 +174,9 @@ struct UrgentRecoveryLine: Equatable, Identifiable, Sendable {
     let protectedOutcome: String?
     let thresholdAt: String
     let consequenceRank: Int?
-    /// The stored contract's `owner` (`user`|`peezy`), when the contract carries one.
+    /// The stored contract's `owner` and `next_action`, when the contract carries them (the current owner/action).
     let owner: String?
+    let currentAction: String?
     let route: Route
 
     var id: String { taskDocumentId }
@@ -167,12 +184,15 @@ struct UrgentRecoveryLine: Equatable, Identifiable, Sendable {
     /// `{label}` or `{label} · {protected outcome}`.
     var thresholdText: String { protectedOutcome.map { "\(thresholdLabel) \u{00B7} \($0)" } ?? thresholdLabel }
 
-    /// The current owner/action: `{owner} · {action}`; the action names the route.
+    /// The current owner/action from the stored contract: `{owner} · {next_action}`; the route's surface name only when
+    /// the contract carries no `next_action`.
     var ownerActionText: String {
         let action: String
-        switch route {
-        case .row: action = "Open task"
-        case .outcome: action = "Record outcome"
+        if let currentAction { action = currentAction } else {
+            switch route {
+            case .row: action = "Open task"
+            case .outcome: action = "Record outcome"
+            }
         }
         return owner.map { "\($0) \u{00B7} \(action)" } ?? action
     }
@@ -183,16 +203,17 @@ enum UrgentRecoveryProjection {
 
     /// Eligible lines in the C9.3.14 comparison order: classified `(0,rank,threshold_at,threshold_id,task_document_id)`
     /// before unclassified `(1,threshold_at,threshold_id,task_document_id)`; string ties in unsigned UTF-8 order.
-    /// The C9.3.12 route selection precedence over the raw stored contract and the document's routing authority:
-    /// 1 pending-confirmation plan change with a coherent cycle → `row`; 2 DEFERRED → `row`; 3 USER_ACTION carrying
-    /// `waiting_fallback_state` → `row`; 4 USER_ACTION/WAITING with a returned handoff → `outcome` + session; 5 WAITING
-    /// without a returned handoff → `outcome` without session; 6 every other USER_ACTION (and no contract) → `row`.
-    static func route(rawContract: [String: Any]?, routing: TaskRoutingAuthorityV1?, coherent: Bool) -> UrgentRecoveryLine.Route {
+    /// The C9.3.12 route selection precedence over the raw stored contract and the document's strictly decoded routing
+    /// authority: 1 pending-confirmation plan change with a coherent cycle → `row`; 2 DEFERRED → `row`; 3 USER_ACTION
+    /// carrying a valid `waiting_fallback_state` → `row`; 4 USER_ACTION/WAITING with a matching returned handoff →
+    /// `outcome` + session; 5 WAITING without one → `outcome` without session; 6 every other USER_ACTION (and no contract) → `row`.
+    /// A malformed or incomplete authority member proves nothing and falls through.
+    static func route(rawContract: [String: Any]?, routing: TaskRoutingAuthorityV1?) -> UrgentRecoveryLine.Route {
         let disposition = rawContract?["disposition"] as? String
-        if routing?.planChangeState == "pending_confirmation", coherent { return .row }
+        if routing?.pendingConfirmationCoherent == true { return .row }
         if disposition == "DEFERRED" { return .row }
-        if disposition == "USER_ACTION_TRACKED", routing?.waitingFallbackPresent == true { return .row }
-        if disposition == "USER_ACTION_TRACKED" || disposition == "WAITING_ON_EXTERNAL", routing?.activeHandoffState == "returned" { return .outcome(sessionId: routing?.activeHandoffSessionId) }
+        if disposition == "USER_ACTION_TRACKED", routing?.waitingFallbackValid == true { return .row }
+        if disposition == "USER_ACTION_TRACKED" || disposition == "WAITING_ON_EXTERNAL", let session = routing?.returnedHandoffSessionId { return .outcome(sessionId: session) }
         if disposition == "WAITING_ON_EXTERNAL" { return .outcome(sessionId: nil) }
         return .row
     }
@@ -214,9 +235,10 @@ enum UrgentRecoveryProjection {
                 guard let mapped = registry.ranks[consequenceClass] else { return nil } // an unregistered class is excluded, never downgraded
                 rank = mapped
             }
-            let route = self.route(rawContract: rawContracts[card.id], routing: routing[card.id], coherent: card.dispositionContractIsCoherent)
+            let route = self.route(rawContract: rawContracts[card.id], routing: routing[card.id])
+            let contract = rawContracts[card.id]
             let line = UrgentRecoveryLine(taskDocumentId: card.id, title: card.title, thresholdId: item.thresholdId, thresholdLabel: item.thresholdLabel, protectedOutcome: item.protectedOutcome,
-                                          thresholdAt: item.thresholdAt, consequenceRank: rank, owner: rawContracts[card.id]?["owner"] as? String, route: route)
+                                          thresholdAt: item.thresholdAt, consequenceRank: rank, owner: contract?["owner"] as? String, currentAction: contract?["next_action"] as? String, route: route)
             let key = rank.map { ["0", String(format: "%020d", $0), item.thresholdAt, item.thresholdId, card.id] } ?? ["1", item.thresholdAt, item.thresholdId, card.id]
             return (line, key)
         }

@@ -2860,12 +2860,17 @@ extension ResetOperationRegistry {
     }
 
     /// `receipt → applying` for not_dispatched/finalized_compat: the initiating gesture or reset-dispatched row is retired; no epoch read, no reset row.
+    /// Retires the referenced initiating authority, fail-closed: the reserved member must byte-match the sole gesture
+    /// (uid, ID, generation, alias) and the reset_dispatched member must name an existing same-UID `reset_dispatched` row
+    /// with canonical ID and progress receipt absent (C9.4.5 binding); anything else is `envelopeCorrupt` and writes nothing.
     private func retireAuthority(_ authority: LegacyInitiatingAuthority?, uid: String, in envelope: inout Envelope) throws {
         switch authority {
-        case let .reservedGesture(gestureId, generation, _)?:
-            if let gesture = envelope.gesture, gesture.gestureId == gestureId, gesture.gestureGeneration == generation { envelope.gesture = nil }
+        case let .reservedGesture(gestureId, generation, alias)?:
+            guard let gesture = envelope.gesture, gesture.uid == uid, gesture.gestureId == gestureId, gesture.gestureGeneration == generation, gesture.alias == alias else { throw RegistryError.envelopeCorrupt }
+            envelope.gesture = nil
         case let .resetDispatched(epoch, suggested)?:
-            envelope.records.removeAll { $0.uid == uid && $0.expectedTaskGenerationEpoch == epoch && $0.suggestedOperationId == suggested && $0.phase == .resetDispatched && $0.canonicalOperationId == nil }
+            guard let index = envelope.records.firstIndex(where: { $0.uid == uid && $0.expectedTaskGenerationEpoch == epoch && $0.suggestedOperationId == suggested && $0.phase == .resetDispatched && $0.canonicalOperationId == nil && $0.progressReceipt == nil }) else { throw RegistryError.envelopeCorrupt }
+            envelope.records.remove(at: index)
         case nil:
             break
         }

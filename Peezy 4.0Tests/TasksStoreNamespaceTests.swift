@@ -158,18 +158,40 @@ struct TasksStoreNamespaceTests {
         // the route follows the raw stored contract, never the mapped card: WAITING_ON_EXTERNAL routes to the outcome capture
         let routed = UrgentRecoveryProjection.lines(cards: cards, instanceIds: instances(cards), rawContracts: ["a": ["disposition": "WAITING_ON_EXTERNAL", "owner": "peezy"], "d": ["disposition": "USER_ACTION_TRACKED"]], evidence: mixed, registry: .production)
         #expect(routed.map(\.route) == [.row, .outcome(sessionId: nil)] && routed.map(\.taskDocumentId) == ["d", "a"])
-        // the C9.3.12 precedence over the raw contract and the document's routing authority
+        // the C9.3.12 precedence over the raw contract and the document's strictly decoded routing authority
         typealias R = TaskRoutingAuthorityV1
         let waiting: [String: Any] = ["disposition": "WAITING_ON_EXTERNAL"], tracked: [String: Any] = ["disposition": "USER_ACTION_TRACKED"], deferred: [String: Any] = ["disposition": "DEFERRED"]
-        #expect(UrgentRecoveryProjection.route(rawContract: waiting, routing: R(planChangeState: "pending_confirmation"), coherent: true) == .row, "1: a coherent pending confirmation opens only the plan update, never the waiting outcome")
-        #expect(UrgentRecoveryProjection.route(rawContract: waiting, routing: R(planChangeState: "pending_confirmation"), coherent: false) == .outcome(sessionId: nil), "an incoherent cycle does not take precedence 1")
-        #expect(UrgentRecoveryProjection.route(rawContract: deferred, routing: R(activeHandoffState: "returned", activeHandoffSessionId: "s1"), coherent: true) == .row, "2: DEFERRED")
-        #expect(UrgentRecoveryProjection.route(rawContract: tracked, routing: R(waitingFallbackPresent: true, activeHandoffState: "returned", activeHandoffSessionId: "s1"), coherent: true) == .row, "3: a waiting fallback state")
-        #expect(UrgentRecoveryProjection.route(rawContract: tracked, routing: R(activeHandoffState: "returned", activeHandoffSessionId: "s1"), coherent: true) == .outcome(sessionId: "s1"), "4: USER_ACTION with a returned handoff")
-        #expect(UrgentRecoveryProjection.route(rawContract: waiting, routing: R(activeHandoffState: "returned", activeHandoffSessionId: "s2"), coherent: true) == .outcome(sessionId: "s2"), "4: WAITING with a returned handoff")
-        #expect(UrgentRecoveryProjection.route(rawContract: waiting, routing: R(activeHandoffState: "opened"), coherent: true) == .outcome(sessionId: nil), "5: WAITING without a returned handoff")
-        #expect(UrgentRecoveryProjection.route(rawContract: tracked, routing: R(activeHandoffState: "opened"), coherent: true) == .row && UrgentRecoveryProjection.route(rawContract: nil, routing: nil, coherent: false) == .row, "6")
-        #expect(R(document: ["planChangeState": "pending_confirmation", "taskInteractionState": ["waiting_fallback_state": ["x": 1]], "activeHandoff": ["state": "returned", "sessionId": "s9"]]) == R(planChangeState: "pending_confirmation", waitingFallbackPresent: true, activeHandoffState: "returned", activeHandoffSessionId: "s9"))
+        #expect(UrgentRecoveryProjection.route(rawContract: waiting, routing: R(pendingConfirmationCoherent: true, returnedHandoffSessionId: "s1")) == .row, "1: a coherent pending confirmation opens only the plan update, never the waiting outcome")
+        #expect(UrgentRecoveryProjection.route(rawContract: deferred, routing: R(returnedHandoffSessionId: "s1")) == .row, "2: DEFERRED")
+        #expect(UrgentRecoveryProjection.route(rawContract: tracked, routing: R(waitingFallbackValid: true, returnedHandoffSessionId: "s1")) == .row, "3: a valid waiting fallback state")
+        #expect(UrgentRecoveryProjection.route(rawContract: tracked, routing: R(returnedHandoffSessionId: "s1")) == .outcome(sessionId: "s1"), "4: USER_ACTION with a returned handoff")
+        #expect(UrgentRecoveryProjection.route(rawContract: waiting, routing: R(returnedHandoffSessionId: "s2")) == .outcome(sessionId: "s2"), "4: WAITING with a returned handoff")
+        #expect(UrgentRecoveryProjection.route(rawContract: waiting, routing: R()) == .outcome(sessionId: nil), "5: WAITING without a returned handoff")
+        #expect(UrgentRecoveryProjection.route(rawContract: tracked, routing: R()) == .row && UrgentRecoveryProjection.route(rawContract: nil, routing: nil) == .row, "6")
+        // the strict document decoder: every member proves its row completely or proves nothing
+        let cycle: [String: Any] = ["action": "supersede", "revision": 3, "replacementTaskId": "amend_1", "replacement": ["institution": "Bank", "verification": ["kind": "DATE"]]]
+        let coherent: [String: Any] = ["task_instance_id": "ti_a", "planChangeState": "pending_confirmation", "replacementTaskId": "amend_1", "planChangeRevision": 3, "planChangeHistory": [["action": "confirm_amendment", "revision": 2], cycle],
+                                       "taskInteractionState": ["waiting_fallback_state": ["fallback_evidence_id": "fe_1"]], "activeHandoff": ["state": "returned", "session_id": "s9", "task_instance_id": "ti_a"]]
+        #expect(R(document: coherent) == R(pendingConfirmationCoherent: true, waitingFallbackValid: true, returnedHandoffSessionId: "s9"))
+        var noLink = coherent; noLink["replacementTaskId"] = nil
+        var staleCycle = coherent; staleCycle["planChangeRevision"] = 4
+        var otherReplacement = coherent; otherReplacement["planChangeHistory"] = [cycle.merging(["replacementTaskId": "amend_9"]) { _, b in b }]
+        var noSnapshot = coherent; noSnapshot["planChangeHistory"] = [cycle.merging(["replacement": [:]]) { _, b in b }]
+        var notPending = coherent; notPending["planChangeState"] = "confirmed"
+        for (name, document) in [("no replacement link", noLink), ("cycle not at the current revision", staleCycle), ("cycle naming another replacement", otherReplacement), ("no retained snapshot", noSnapshot), ("not pending", notPending)] {
+            #expect(!R(document: document).pendingConfirmationCoherent, Comment(rawValue: name))
+        }
+        #expect(UrgentRecoveryProjection.route(rawContract: waiting, routing: R(document: noLink)) == .outcome(sessionId: "s9"), "an incoherent pending confirmation falls through to the returned WAIT outcome")
+        var malformedFallback = coherent; malformedFallback["planChangeState"] = nil; malformedFallback["taskInteractionState"] = ["waiting_fallback_state": 7]
+        #expect(!R(document: malformedFallback).waitingFallbackValid)
+        #expect(UrgentRecoveryProjection.route(rawContract: tracked, routing: R(document: malformedFallback)) == .outcome(sessionId: "s9"), "a malformed fallback state proves nothing; the returned handoff routes the outcome")
+        var staleHandoff = coherent; staleHandoff["activeHandoff"] = ["state": "returned", "session_id": "s9", "task_instance_id": "ti_previous"]
+        var openedHandoff = coherent; openedHandoff["activeHandoff"] = ["state": "opened", "session_id": "s9"]
+        var sessionless = coherent; sessionless["activeHandoff"] = ["state": "returned"]
+        var camelSession = coherent; camelSession["activeHandoff"] = ["state": "returned", "sessionId": "s9"]
+        for (name, document) in [("another instance's handoff", staleHandoff), ("not returned", openedHandoff), ("no session", sessionless), ("wrong member name", camelSession)] {
+            #expect(R(document: document).returnedHandoffSessionId == nil, Comment(rawValue: name))
+        }
         // the production registry is empty: every classified line is excluded and the rest keep deadline order
         let production = UrgentRecoveryProjection.lines(cards: cards, instanceIds: instances(cards), rawContracts: [:], evidence: mixed, registry: .production)
         #expect(production.map(\.taskDocumentId) == ["d", "a"] && UrgentRecoveryRegistry.production.ranks.isEmpty)
@@ -179,8 +201,9 @@ struct TasksStoreNamespaceTests {
         #expect(UrgentRecoveryProjection.header(for: production) == "Needs attention now")
         // line content: the policy threshold label/protected outcome and the current owner/action
         let labelled = UrgentRecoveryEvidence(taskDocumentId: "a", taskInstanceId: "ti_a", wakeId: "w_a", urgency: "urgent_recovery", thresholdId: "th1", thresholdAt: "2026-09-09T00:00:00.000Z", thresholdLabel: "Deposit due", protectedOutcome: "Lease signed", consequenceClass: nil, deadlineEvidenceId: "de_a", policyValid: true, basisResolves: true, liveState: .attentionNow(wakeId: "w_a"))
-        let content = UrgentRecoveryProjection.lines(cards: cards, instanceIds: instances(cards), rawContracts: ["a": ["disposition": "WAITING_ON_EXTERNAL", "owner": "peezy"]], evidence: [labelled], registry: .production)
-        #expect(content.map(\.thresholdText) == ["Deposit due \u{00B7} Lease signed"] && content.map(\.ownerActionText) == ["peezy \u{00B7} Record outcome"])
+        let content = UrgentRecoveryProjection.lines(cards: cards, instanceIds: instances(cards), rawContracts: ["a": ["disposition": "WAITING_ON_EXTERNAL", "owner": "leasing office", "next_action": "Call before Friday"]], evidence: [labelled], registry: .production)
+        #expect(content.map(\.thresholdText) == ["Deposit due \u{00B7} Lease signed"] && content.map(\.ownerActionText) == ["leasing office \u{00B7} Call before Friday"], "the contract's current owner and next_action, never a fabricated route label")
+        #expect(UrgentRecoveryProjection.lines(cards: cards, instanceIds: instances(cards), rawContracts: ["a": ["disposition": "WAITING_ON_EXTERNAL", "owner": "peezy"]], evidence: [labelled], registry: .production).map(\.ownerActionText) == ["peezy \u{00B7} Record outcome"], "no next_action: the route's surface")
         #expect(UrgentRecoveryProjection.lines(cards: cards, instanceIds: instances(cards), rawContracts: [:], evidence: [labelled], registry: .production).map(\.ownerActionText) == ["Open task"], "no contract: no owner, the row action")
         // the Upcoming-with-threshold live state is eligible; a mutation of one line leaves its siblings
         let upcoming = [evidence("a", live: .upcomingThreshold), evidence("b", at: "2026-09-11T00:00:00.000Z", live: .upcomingThreshold)]

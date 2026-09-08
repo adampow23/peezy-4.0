@@ -468,9 +468,7 @@ actor DurableStoreRecoveryCoordinator {
     /// file (crash between the journal unlink and the file unlink) is re-presented for its acknowledge; malformed or
     /// unreadable completion bytes block `FILE_IO` with the bytes retained (C2.5: never absence). nil when none exists.
     private func residualAuthority() async -> AccountDeletionDispatchResult? {
-        if case let .present(journal) = await dependencies.purge.observeJournal(), journal.scope == .all, let link = journal.terminalDeletionLink {
-            return await finishConsumption(link: link, intentIdentity: nil)
-        }
+        if let settled = await journalResidue() { return settled }
         switch await dependencies.completion.observeCompletion() {
         case let .present(snapshot):
             trace.append("completion:stray")
@@ -487,6 +485,38 @@ actor DurableStoreRecoveryCoordinator {
         case .absent:
             return nil
         }
+    }
+
+    /// The journal half of the residue, classified exhaustively before anything can clear (C3): a linked all-scope journal
+    /// finishes its consumption; a crash-surviving ordinary all-scope journal resumes until every owner and both barriers
+    /// ack; a UID journal whose intent is gone is unmatched authority; malformed and unreadable journals block with the
+    /// bytes retained. nil only for observed absence. The consumption uses this alone: the completion file it is consuming
+    /// is the presenter's, and re-presenting it there would refuse the acknowledge that is running.
+    private func journalResidue() async -> AccountDeletionDispatchResult? {
+        switch await dependencies.purge.observeJournal() {
+        case let .present(journal) where journal.scope == .all && journal.terminalDeletionLink != nil:
+            return await finishConsumption(link: journal.terminalDeletionLink!, intentIdentity: nil)
+        case let .present(journal) where journal.scope == .all:
+            trace.append("journal:resume_all")
+            let result = await dependencies.purge.purge(scope: .all)
+            trace.append("journal:resume_all:\(result)")
+            guard result == .cleared else {
+                if case let .blocked(reason) = result { return await blockGate(reason) }
+                return await blockGate(.localPrivacyPurgeFailed)
+            }
+        case .present:
+            trace.append("journal:unmatched_uid")
+            return await blockGate(.localPrivacyPurgeFailed)
+        case .malformed:
+            trace.append("journal:malformed")
+            return await blockGate(.localPrivacyPurgeFailed)
+        case let .ioFailed(code):
+            trace.append("journal:io:\(code.rawValue)")
+            return await blockGate(.fileIO)
+        case .absent:
+            break
+        }
+        return nil
     }
 
     /// Every SIGNED_OUT transition and direct A→B switch (C2.4): `loading`, the intent-linked reducer first, then the
@@ -558,9 +588,8 @@ actor DurableStoreRecoveryCoordinator {
             let link = TerminalDeletionLinkV1(deletionOperationId: intent.operationId, deletionProofSHA256: intent.proofSHA256)
             return await finishConsumption(link: link, intentIdentity: identity)
         case .absent:
-            if case let .present(journal) = await dependencies.purge.observeJournal(), journal.scope == .all, let link = journal.terminalDeletionLink {
-                return await finishConsumption(link: link, intentIdentity: nil)
-            }
+            // the same exhaustive journal classification; the completion file is the presenter's and is not re-presented here
+            if let settled = await journalResidue() { return settled }
             // the consumption already completed; only the completion file remained
             return await clearGate()
         case .malformed, .ioFailed:

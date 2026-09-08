@@ -2687,6 +2687,93 @@ struct DurableStoreRecoveryTests {
         #expect(guardBeforeGenerate != nil, "and between the save and task generation")
     }
 
+    // MARK: - S4 close-out part 4 (Sol round 3): the falsifiers of 2 (journal residue) and 12a (authority retirement)
+
+    /// F2 (round 3): with no intent, every journal observation is classified before anything can clear.
+    @Test func journalResidueIsClassifiedExhaustivelyBeforeAnyClear() async throws {
+        func journalBytes(_ journal: LocalPrivacyPurgeJournalV1) throws -> Data {
+            try #require(DurableEnvelopeCodec.encode(fileKind: .localPrivacyPurgeV1, generationId: UUID().uuidString.lowercased(), payload: journal.canonical))
+        }
+        // a crash-surviving ordinary all-scope journal with only route acknowledged: startup resumes it — the seven remaining owners and both barriers run, the journal goes, then clear
+        let resumed = try makeDeletionHarness(auth: .signedOut)
+        let journalURL = resumed.directory.appendingPathComponent(LocalPrivacyPurgeCoordinator.journalFileName)
+        try journalBytes(LocalPrivacyPurgeJournalV1(scope: .all, providerContext: nil, terminalDeletionLink: nil, acks: [.route], createdAt: "2026-09-06T12:00:00.000Z", updatedAt: "2026-09-06T12:00:00.000Z")).write(to: journalURL)
+        #expect(await resumed.coordinator.discoverAtStartup() == .clear)
+        #expect(resumed.owners.calls == ["handoff(all)", "reset(all)", "workflow(all)", "room_capture(all)", "firestore_cache(all)", "notifications(all)", "google.signOutAll"], "route is not run again; the other seven are")
+        #expect(resumed.telemetry.calls == 1 && !FileManager.default.fileExists(atPath: journalURL.path))
+        let resumedTrace = await resumed.coordinator.trace
+        #expect(resumedTrace.contains("journal:resume_all"))
+        // the same journal blocked by an owner failure: no clear, the journal retained with its acks
+        let blocked = try makeDeletionHarness(auth: .signedOut)
+        let blockedURL = blocked.directory.appendingPathComponent(LocalPrivacyPurgeCoordinator.journalFileName)
+        try journalBytes(LocalPrivacyPurgeJournalV1(scope: .all, providerContext: nil, terminalDeletionLink: nil, acks: [.route], createdAt: "2026-09-06T12:00:00.000Z", updatedAt: "2026-09-06T12:00:00.000Z")).write(to: blockedURL)
+        blocked.owners.fail("notifications")
+        #expect(await blocked.coordinator.discoverAtStartup() == .settled(.blocked(.localPrivacyPurgeFailed)))
+        guard case let .present(survivor) = await blocked.purge.observeJournal() else { Issue.record("journal retained"); return }
+        #expect(survivor.acks == [.route, .handoff, .reset, .workflow, .roomCapture, .firestoreCache] && blocked.gate.gates.last == .blocked)
+        // a UID journal whose intent is gone is unmatched authority: blocked, retained, nothing run
+        let unmatched = try makeDeletionHarness(auth: .signedOut)
+        let context = PurgeProviderContextV1(deletionOperationId: "adel1_11111111-1111-4111-8111-111111111111", deletionProofSHA256: String(repeating: "a", count: 64), googleRevocation: .notRequired, googleProviderUid: nil)
+        let unmatchedURL = unmatched.directory.appendingPathComponent(LocalPrivacyPurgeCoordinator.journalFileName)
+        try journalBytes(LocalPrivacyPurgeJournalV1(scope: .uid("A"), providerContext: context, terminalDeletionLink: nil, acks: [.route], createdAt: "2026-09-06T12:00:00.000Z", updatedAt: "2026-09-06T12:00:00.000Z")).write(to: unmatchedURL)
+        #expect(await unmatched.coordinator.discoverAtStartup() == .settled(.blocked(.localPrivacyPurgeFailed)))
+        #expect(unmatched.owners.calls.isEmpty && FileManager.default.fileExists(atPath: unmatchedURL.path))
+        #expect(await unmatched.coordinator.retry() == .settled(.blocked(.localPrivacyPurgeFailed)), "Retry classifies the same residue")
+        // malformed journal bytes block with the bytes retained; unreadable bytes are FILE_IO
+        let malformed = try makeDeletionHarness(auth: .signedOut)
+        let malformedURL = malformed.directory.appendingPathComponent(LocalPrivacyPurgeCoordinator.journalFileName)
+        try Data("{not a journal".utf8).write(to: malformedURL)
+        #expect(await malformed.coordinator.discoverAtStartup() == .settled(.blocked(.localPrivacyPurgeFailed)))
+        #expect(try Data(contentsOf: malformedURL) == Data("{not a journal".utf8) && malformed.owners.calls.isEmpty)
+        let unreadable = try makeDeletionHarness(auth: .signedOut)
+        let unreadableURL = unreadable.directory.appendingPathComponent(LocalPrivacyPurgeCoordinator.journalFileName)
+        try journalBytes(LocalPrivacyPurgeJournalV1(scope: .all, providerContext: nil, terminalDeletionLink: nil, acks: [], createdAt: "2026-09-06T12:00:00.000Z", updatedAt: "2026-09-06T12:00:00.000Z")).write(to: unreadableURL)
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: unreadableURL.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: unreadableURL.path) }
+        #expect(await unreadable.coordinator.discoverAtStartup() == .settled(.blocked(.fileIO)))
+        #expect(unreadable.owners.calls.isEmpty)
+        // the completion file is inspected only after observed journal absence: a stray completion beside a malformed journal stays behind the journal's block
+        let both = try makeDeletionHarness(auth: .signedOut)
+        try Data("{not a journal".utf8).write(to: both.directory.appendingPathComponent(LocalPrivacyPurgeCoordinator.journalFileName))
+        _ = await both.completion.derive(.localCleared)
+        #expect(await both.coordinator.discoverAtStartup() == .settled(.blocked(.localPrivacyPurgeFailed)))
+    }
+
+    /// F12a (round 3): retiring an initiating authority is fail-closed — the referenced gesture or reset_dispatched row must exist and byte-match.
+    @Test func retiringAnInitiatingAuthorityRequiresItsExactReferent() async throws {
+        let alias = "rsa1_22222222-2222-4222-8222-222222222222"
+        let receipt = LegacyFixtures.notDispatched(uid: "A", legacy: LegacyFixtures.legacyA, alias: alias)
+        func drive(gesture: ResetGestureV1?, authority: LegacyInitiatingAuthority? = .reservedGesture(gestureId: "rsg1_11111111-1111-4111-8111-111111111111", gestureGeneration: "g1", alias: alias), records: [[String: Any]] = []) async throws -> (ResetReserveOutcome?, Error?, UserDefaults, ResetOperationRegistry) {
+            let directory = try temporaryDirectory()
+            let defaults = try isolatedDefaults()
+            defaults.set(LegacyFixtures.legacyA, forKey: LegacyResetMigrationV1.legacyKey(uid: "A"))
+            let (registry, _) = await LegacyFixtures.registry(directory, defaults: defaults)
+            try LegacyFixtures.seed(directory, migration: LegacyFixtures.exactRow(phase: .receipt, receipt: receipt, authority: authority), records: records, gesture: gesture)
+            do { return (try await registry.driveLegacyMigration(remote: LegacyRemote()), nil, defaults, registry) } catch { return (nil, error, defaults, registry) }
+        }
+        // the sole gesture is absent: nothing applies — the row stays in RECEIPT, the guarded key survives
+        let (absentOutcome, absentError, absentDefaults, absentRegistry) = try await drive(gesture: nil)
+        #expect(absentOutcome == nil && (absentError as? ResetOperationRegistry.RegistryError) == .envelopeCorrupt)
+        let absentRow = try #require(await absentRegistry.legacyMigration(uid: "A"))
+        #expect(absentRow.phase == .receipt && absentDefaults.string(forKey: LegacyResetMigrationV1.legacyKey(uid: "A")) == LegacyFixtures.legacyA)
+        // the gesture exists but carries another alias: the same refusal (ID/generation alone never retire it)
+        let otherAlias = ResetGestureV1(gestureId: "rsg1_11111111-1111-4111-8111-111111111111", uid: "A", authEpochUUID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", credentialRevision: 3, phase: .reserved, alias: "rsa1_99999999-9999-4999-8999-999999999999", gestureGeneration: "g1", reservedAt: "2026-09-06T12:00:00.000Z")
+        let (_, aliasError, aliasDefaults, aliasRegistry) = try await drive(gesture: otherAlias)
+        #expect((aliasError as? ResetOperationRegistry.RegistryError) == .envelopeCorrupt && aliasDefaults.string(forKey: LegacyResetMigrationV1.legacyKey(uid: "A")) == LegacyFixtures.legacyA)
+        #expect(await aliasRegistry.snapshot().gesture == otherAlias, "the non-matching gesture is never removed")
+        // the byte-matching gesture: retired, the row applies, the key is removed
+        let matching = ResetGestureV1(gestureId: "rsg1_11111111-1111-4111-8111-111111111111", uid: "A", authEpochUUID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", credentialRevision: 3, phase: .reserved, alias: alias, gestureGeneration: "g1", reservedAt: "2026-09-06T12:00:00.000Z")
+        let (outcome, error, defaults, registry) = try await drive(gesture: matching)
+        #expect(error == nil)
+        guard case .legacyRetryRequired = outcome else { Issue.record("\(String(describing: outcome))"); return }
+        #expect(defaults.object(forKey: LegacyResetMigrationV1.legacyKey(uid: "A")) == nil)
+        let gone = await registry.snapshot().gesture
+        #expect(gone == nil)
+        // a reset_dispatched authority whose row is absent: the same refusal
+        let (_, rowError, rowDefaults, _) = try await drive(gesture: nil, authority: .resetDispatched(expectedTaskGenerationEpoch: 1, suggestedOperationId: alias))
+        #expect((rowError as? ResetOperationRegistry.RegistryError) == .envelopeCorrupt && rowDefaults.string(forKey: LegacyResetMigrationV1.legacyKey(uid: "A")) == LegacyFixtures.legacyA)
+    }
+
     // MARK: - S4 I8 — the analytics collection gate (C2.2 telemetry barrier) and the fixed-parameter sink rule
 
     @Test func analyticsCollectionGateClosesOnTheTelemetryBarrierAndOnlyFixedScalarParametersReachTheSDK() async {
