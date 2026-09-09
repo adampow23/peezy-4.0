@@ -1,6 +1,6 @@
 # HANDOFF — from the S4 close to the S5 gate (2026-09-08)
 
-Read first, in this order and by section only: `PEEZY_STATE.md` §4, the last entry of `tasks/todo.md`, `briefs/S5_BRIEF.md`, then `STATUS.md`. The contract (`docs/plans/PHASE2_CONTRACT.md`, sha256 `f675caaf…`) is the sole executable authority; manifest v9 and spec v5 are archived under `docs/archive/phase2/` and are never read again — a missing shape is a contract defect to fix in the contract.
+Read first, in this order and by section only: `PEEZY_STATE.md` §4, the last entry of `tasks/todo.md`, `briefs/S5_BRIEF.md`, then `STATUS.md`. The contract (`docs/plans/PHASE2_CONTRACT.md`, sha256 `090f98dc…`, S5-CD1..CD9 registered 2026-09-08) is the sole executable authority; manifest v9 and spec v5 are archived under `docs/archive/phase2/` and are never read again — a missing shape is a contract defect to fix in the contract.
 
 ## Where things stand
 
@@ -8,9 +8,9 @@ S4 is closed at `994afac`, the final reviewed commit. The rule-4 diff review ret
 
 ## Next work
 
-1. **S5 I0 is in progress.** The brief gate ran (Sol, before the reviewer change) and returned ITERATE with nine BLOCKERs and one HIGH, all folded into `briefs/S5_BRIEF.md`. The owner then ruled on all nine decisions, approving every one. S5-CD1..CD8 are being written from those rulings, fresh-context verified, and registered in one commit with the hash recorded in `STATUS.md` and the ledger; then one Astra re-gate round on the amended brief before I1.
+1. **S5 I0 is done, and the slice is stopped for three owner decisions — none of which blocks I1 through I10.** Read `~/Downloads/peezy-reports/S5_GATE/S5_OWNER_DECISIONS_10-12.md` first: **10** the workflow submission protocol (writer, inspector and client disagree on six points; every fix is S2's, and C9.7.19's `receipt_mismatch` can be neither specified nor implemented until one protocol is stated), **11** the three shapes that are S6's (per-action request maps, the application reducer's effects, and the per-action byte maxima C9.7.7 L3680's projection needs — no ceiling is invented here), **12** whether the self-contained transition table Decision 1 asked for should be replaced by the consolidated recovery-edge table that four review rounds now say it has to be. Decision 11 lands at I4/I5, Decision 10 at I11, and 12 is already narrowed conservatively enough to build on, so **I1 can start before any of them is answered.**
 2. **What the amendments carry**: CD1 the handoff record grammar (both unions, per-phase required/forbidden, transitions, sort, request/receipt mapping); CD2 the workflow durable store's schema and physical targets plus the widened C10.3 `WorkflowService` row; CD3 the handoff store's file names; CD4 the `HANDOFF`/`HANDOFF_CANCEL`/`WORKFLOW` inspection transports in `TaskPlanService.swift`; CD5 the C2.7 real-conformer harness in `DurableStoreRecoveryTests.swift`; CD6 the Home dose ordered-writer row; CD7 the assessment geocode seam row; CD8 `PEEZY_STATE.md` excluded except §4. Decision 9 is a ledger interpretation with no contract change: the real auth-epoch conformer lands in `HandoffSessionStore.swift`, `AuthViewModel.swift` injects it and supplies `CurrentFirebaseUIDProviding`, and `TransitionalFirebaseAuthAuthority` stays declared so the S1 pin compiles.
-3. **Then I1 onward** per the brief's Sequence, with fresh-context verification at every increment boundary.
+3. **Then I1 onward** per the brief's Sequence (now I0–I13 + close-out), with fresh-context verification at every increment boundary. The S5-CD9 correction is the standing example of why: two passes over four blockers' worth of fixes found 24 more, including a missing happy path.
 4. **After S5**: S6, then S7's close-out with the owner-run sealer, the observer wiring, and the deploys.
 
 ## Commands and environment

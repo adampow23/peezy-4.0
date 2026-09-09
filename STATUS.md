@@ -1,6 +1,6 @@
 # STATUS — Phase 2 at the S4 close (2026-09-08)
 
-Authority: `docs/plans/PHASE2_CONTRACT.md` (sha256 `13473c310c98f5fce4dec910f86637e058cc48b32bf9328f54271c23a72e3347`, amended 2026-09-08 by S5-CD1..CD8; prior `f675caaf…` at the S4 close). Project state: `PEEZY_STATE.md`. Workflow: `PHASE2_WORKFLOW_v2.md`. This file is the one-page snapshot a reader needs before opening either; it is rewritten at every slice close.
+Authority: `docs/plans/PHASE2_CONTRACT.md` (sha256 `090f98dc21ba24d397e20e0243588b512da98fb448d48da309429e3da502dc43`, amended 2026-09-08 by S5-CD1..CD9; prior `13473c31…` before the re-gate corrections, `f675caaf…` at the S4 close). Project state: `PEEZY_STATE.md`. Workflow: `PHASE2_WORKFLOW_v2.md`. This file is the one-page snapshot a reader needs before opening either; it is rewritten at every slice close.
 
 ## Where Phase 2 stands
 
@@ -10,7 +10,7 @@ Authority: `docs/plans/PHASE2_CONTRACT.md` (sha256 `13473c310c98f5fce4dec910f866
 | S2 workflow / server implementation | closed | `8f9cbdf` |
 | S3 scheduler / migration / deletion / outbound integration | closed; review at `docs/reviews/S3_DIFF_REVIEW.md`, close-out amendments S3-CD5..CD9, trust anchor `5d1a90b` | `e31db84` (tag `351f2da`) |
 | S4 recovery / privacy UI + durable deletion orchestration | **closed 2026-09-08**; the rule-4 diff review returned APPROVE after ten Sol rounds; two findings registered for the owner (below) | **`994afac`** |
-| S5 identity / provider conformance | I0: brief gated and revised; the owner ruled on all nine decisions; S5-CD1..CD8 registered; Astra re-gate before I1 | `briefs/S5_BRIEF.md` |
+| S5 identity / provider conformance | I0: brief gated twice (Sol, then **GPT-6 Astra**) and revised; the owner ruled on all nine decisions; S5-CD1..CD9 registered; **stopped for Decisions 10–12**, none of which blocks I1–I10 | `briefs/S5_BRIEF.md`, `~/Downloads/peezy-reports/S5_GATE/S5_OWNER_DECISIONS_10-12.md` |
 | S6, S7 close-out | not started | — |
 
 ## Verification envelope at `994afac`
