@@ -1,0 +1,33 @@
+I'm going to go through all these and read out loud what they are and what I think, and then you can help me confirm if they're good or not.
+- The business search manager: we don't have the details. Any more? Those files don't exist. I mean, they're there, but I don't think they need to be there. All of those components that it listed, I believe, are attached to the assessment files. I think those are new components.
+- Suggestive text field is again with those detail ones, so that one probably can go.
+- Typing text: I think that one doesn't need to be there anymore.
+- We need to remove:
+- Current bedrooms
+- Financial details
+- Fitness details
+- Has storage
+- Has vehicles
+- Health care details
+- Hire packers
+- Move concerns
+- New bedrooms
+- Promo code
+- Want to sell
+- Storage fullness
+- Storage size
+- Has storage
+- I'm not sure about:
+- PZ card
+- PZ client
+- PZ response
+- Workflow card models
+- Workflow manager
+- Workflow service
+I think those are all part of our old system, so I don't think we would need those anymore.
+- Confirm card content, PZ task card stack view, PZ task card view, task card tile. I think those are all part of the old system we don't need anymore.
+- Preview data research intro view, self-handle view, static info view, submitted view, transfer decision view, webhook service. Those are all from the old task system.
+- I don't know if webhook service is still being used, though.
+- There's workflow card view; I think that's the old one.
+- Task preview data. I think that's the thing we just built, but I don't think we need it anymore.
+Think about those, and if you don't think it should be deleted, ask me a question, like, "This needs to be done for this. Do we still have that?" so then I can let you know instead of you just assuming it's just something that's still connected. I'm pretty confident about those ones that I went through; those should be able to go. I had a bunch of the assessment ones, so that was something I decided on a different chat. We just never did it. We are going to get rid of a lot of those because they don't really provide any value, so let me know.

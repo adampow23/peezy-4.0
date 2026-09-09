@@ -109,3 +109,12 @@ Peezy 4.0Tests/TasksStoreNamespaceTests.swift
 Peezy 4.0Tests/AppRootAuthRaceTests.swift
 Peezy 4.0Tests/TaskGroupingTests.swift
 docs/reviews/S4_DIFF_REVIEW.md
+Peezy 4.0/Tasks/Handoff/HandoffSession.swift
+Peezy 4.0/Tasks/Handoff/HandoffSessionStore.swift
+Peezy 4.0/Tasks/Handoff/ContextualOutcome.swift
+Peezy 4.0/Tasks/Handoff/TaskExternalActionButton.swift
+Peezy 4.0/Auth/GoogleIdentityAuthority.swift
+Peezy 4.0/MainInterface/Models/NotificationIdentityAuthority.swift
+Peezy 4.0Tests/HandoffSessionTests.swift
+Peezy 4.0Tests/ContextualOutcomeTests.swift
+Peezy 4.0Tests/LegacyTaskMutationFenceTests.swift
