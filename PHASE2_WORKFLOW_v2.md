@@ -30,6 +30,12 @@ Review rules Codex works under: one authority per rule (the contract), prose lin
 - Each slice close writes STATUS.md and HANDOFF.md; tasks/lessons.md records which retro recommendations were applied.
 - Contract outranks brief: a brief-versus-contract conflict where the contract wins, or a disclosed boundary exception, is a ledger line, not a stop.
 
+### Amended 2026-09-08 (owner direction, S5)
+
+- Fresh-context verification runs at **every** increment boundary, not every other one.
+- Every review gate runs on **GPT-6 Astra** in Codex: `codex exec --skip-git-repo-check -m gpt-6-astra -s read-only --json -o <verdict> - <prompt`, resumed with `codex exec resume <thread> -m gpt-6-astra -c sandbox_mode="read-only"`. It needs codex-cli 0.153.4 or newer; 0.147.0 refuses the model with "requires a newer version of Codex" (`npm install -g @openai/codex@latest`). The prior reviewer was `gpt-5.6-sol` through the S4 close.
+- Every gate packet and every ledger gate entry names the reviewer model, so the review history stays readable across model changes.
+
 ## Standard preamble (paste at the top of every Claude Code session)
 
 ```
