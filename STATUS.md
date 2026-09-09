@@ -1,4 +1,6 @@
-# STATUS — Phase 2 at the S4 close (2026-09-08)
+# STATUS — Phase 2 PARKED at the S4 close (2026-09-08)
+
+> **Phase 2 is parked by owner direction (2026-09-08).** S1–S4 are committed, dormant and unwired; nothing is mounted and nothing is deployed. S5 was stopped after I1, which is committed at `cc663de` and referenced by nothing. Start at [docs/PHASE2_PARKED.md](docs/PHASE2_PARKED.md), which is written for a non-technical reader; the rest of this file is the technical snapshot behind it.
 
 Authority: `docs/plans/PHASE2_CONTRACT.md` (sha256 `26db63b8b52eab3f34344568f5fce36158a1e93e2836c0de725355be20a8ddfa`, amended 2026-09-08 by S5-CD1..CD11; prior `090f98dc…` before the owner's Decision 10-12 rulings, `f675caaf…` at the S4 close). Project state: `PEEZY_STATE.md`. Workflow: `PHASE2_WORKFLOW_v2.md`. This file is the one-page snapshot a reader needs before opening either; it is rewritten at every slice close.
 
